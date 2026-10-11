@@ -9,6 +9,8 @@ npm test
 
 Tests cover path containment, source changes, copy/exchange recovery, metadata/profile checks, job matching, plain-text API replies, batch concurrency, configuration, artwork proxy limits, rejection evidence, audio alignment/A-B playback, quarantine retention, release/history binding, deferred quota and shared status. Fixtures are disposable fictional records, not live credentials or production repair approvals.
 
+Recovery status tests cover fragmented/nonfinite progress, per-pass ETA, heartbeat versus cached Tdarr freshness, serialized/coalesced publication, timer cleanup and write failure recovery. Linux worker integration fixtures execute the actual worker/journal with loopback-only Radarr/Tdarr mocks, temporary SQLite and a synthetic decoder. They verify two-pass cooldown diagnosis, one exact Hold, unchanged media/parent quarantine, no repeated decoding after restart, preserved active handoffs and manual handling of a changed movie-file identity. The synthetic decoder tests worker wiring; actual decoding behavior remains covered by the bundled FFmpeg tests and media integration checks.
+
 The integration test generates short media using FFmpeg and runs a local mock Tdarr API and isolated SQLite database:
 
 ```bash
@@ -42,7 +44,7 @@ The public pending-evidence worker retains strict identity/history/evidence chec
 - Review and optional Recovery run as separate single processes/containers. No shared supervisor or multiple-writer deployment support.
 - Tdarr API authentication support is not implemented; changed future API/schema versions require testing.
 - Recovery configuration is a private JSON file, not part of Review's settings UI.
-- Snapshot publication can be delayed by a long original decode. No live worker progress/ETA in that shared snapshot.
+- Original-decode ETA is an estimate for the current pass only. Unknown duration, missing/stalled measurements and cached Tdarr jobs have no reliable percentage or ETA.
 - Some older imported cases lack exact replacement/evidence fields and remain unresolved visibly instead of being called complete.
 - No Plex refresh API. Plex scans the library through its existing configuration.
 - Complete transcode flows, tools for every HDR format, MVC/3D and ISO processing are not installed by this repository.

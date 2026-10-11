@@ -2,10 +2,13 @@ import {approvedBind,validatePending,processPending} from './pending-approved.mj
 import {maintainWaitingSources,publishRecoveryStatus} from './waiting-source.mjs';
 import {refreshOriginalLanguages} from './original-language-cache.mjs';
 import {retainCase} from './quarantine-retention.mjs';
+import {createLiveStatusPublisher,createDecodeProgressParser} from './live-status.mjs';
+import {probeDuration,runOriginalDecode} from './original-decode.mjs';
+import {ensureHandoff} from './replacement-handoff.mjs';
+import {cooldownFor,deferConfirmedReplacement,inspectDeferredReplacement,reconcileDeferredIntent} from './replacement-gate.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import {spawn} from 'node:child_process';
 import {DatabaseSync} from 'node:sqlite';
 import {classify,confirmed,relative,bindHistory,bindApprovedImport,blocked,identity,within} from './policy.mjs';
 import {readHeader} from './container-header.mjs';
@@ -17,18 +20,23 @@ let state=JSON.parse(await fs.readFile(stateFile,'utf8').catch(e=>{if(e.code!=='
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 async function atomic(file,value){const t=file+'.tmp';const h=await fs.open(t,'w',0o600);try{await h.writeFile(JSON.stringify(value,null,2)+'\n');await h.sync();}finally{await h.close();}await fs.rename(t,file);const d=await fs.open(path.dirname(file),'r');try{await d.sync();}finally{await d.close();}}
 async function save(){state.updated=new Date().toISOString();await atomic(stateFile,state);}
-async function phase(c,status,message){Object.assign(c,{status,message,updated:new Date().toISOString()});await save();console.log(JSON.stringify({time:c.updated,id:c.id,title:c.relative?.split('/')[0],status,message}));}
+async function publishNow(run){try{await run();delete state.statusPublicationError;}catch(e){state.statusPublicationError=e.message;console.error('Recovery status publication: '+e.message);}}
+async function phase(c,status,message){Object.assign(c,{status,message,updated:new Date().toISOString()});await save();await publishNow(()=>liveStatus.phaseChanged(c));console.log(JSON.stringify({time:c.updated,id:c.id,title:c.relative?.split('/')[0],status,message}));}
 async function api(base,route,body,key){const r=await fetch(base.replace(/\/$/,'')+route,{method:body===undefined?'GET':'POST',headers:{'content-type':'application/json',...(key?{'X-Api-Key':key}:{})},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(30000)});if(!r.ok)throw Error('API '+route.split('?')[0]+' HTTP '+r.status);const t=await r.text();try{return JSON.parse(t)}catch{return t}}
 const rad=(p,b)=>api(cfg.radarrUrl+'/api/v3',p,b,cfg.radarrApiKey);
 const td=(p,b)=>api(cfg.tdarrUrl,p,b===undefined?undefined:{data:b});
 function rows(table){const db=new DatabaseSync(cfg.database,{readOnly:true});try{return db.prepare('SELECT json_data FROM '+table).all().map(r=>JSON.parse(r.json_data));}finally{db.close();}}
+const liveStatus=createLiveStatusPublisher({getState:()=>state,readTdarrFiles:()=>rows('filejsondb'),publish:({state,tdarrFiles,decorate})=>publishRecoveryStatus({cfg,state,tdarrFiles,atomic:(p,v)=>atomic(p,decorate(v))}),onError:e=>{state.statusPublicationError=e.message;console.error('Recovery status publication: '+e.message);}});
 async function safeSource(rel){const p=within(cfg.mediaRoot,rel);const real=await fs.realpath(p);if(real!==p)throw Error('Symlink source is not eligible');const s=await fs.stat(p);if(!s.isFile()||s.size===0||Date.now()-s.mtimeMs<cfg.stableMinutes*60000)throw Error('Source is not a stable regular file');return {p,size:s.size,fp:[s.dev,s.ino,s.size,s.mtimeMs,s.ctimeMs].join(':')};}
 async function sample(file){const h=await fs.open(file,'r');try{const s=await h.stat();const sum=crypto.createHash('sha256');for(const position of [0,Math.max(0,Math.floor(s.size/2)-524288),Math.max(0,s.size-1048576)]){const b=Buffer.alloc(Math.min(s.size,1048576));const n=await h.read(b,0,b.length,position);if(n.bytesRead!==b.length)throw Error('Short source read');sum.update(b);}return sum.digest('hex');}finally{await h.close();}}
 async function decode(c,pass){
   await phase(c,'verifying','Independent original decode '+pass+'/2');
   if(c.headerDamage&&await readHeader(c.source)!=='terminal_overwrite')throw Error('Header signature changed');
-  const args=['-hide_banner','-nostdin','-v','error','-xerror','-err_detect','explode','-threads','2',...(c.headerDamage?['-f','matroska']:[]),'-i',c.source,'-map','0:v:0','-map','0:a?','-threads','2','-f','null','-'];
-  const result=await new Promise(resolve=>{let stderr='',error=null,timeout=false;const child=spawn(cfg.ffmpeg,args,{stdio:['ignore','ignore','pipe']});const timer=setTimeout(()=>{timeout=true;child.kill('SIGKILL');},cfg.decodeTimeoutHours*3600000);child.stderr.on('data',b=>{stderr=(stderr+b.toString()).slice(-131072)});child.on('error',e=>{error=e.code||'spawn failure'});child.on('close',(code,signal)=>{clearTimeout(timer);resolve({code,signal,error,timeout,stderr});});});
+  const durationSeconds=await probeDuration({ffmpeg:cfg.ffmpeg,ffprobe:cfg.ffprobe,file:c.source});
+  await publishNow(()=>liveStatus.startDecode(c,{pass,durationSeconds}));
+  let result;
+  try{result=await runOriginalDecode({ffmpeg:cfg.ffmpeg,file:c.source,headerDamage:c.headerDamage,timeoutMs:cfg.decodeTimeoutHours*3600000,onProgressData:createDecodeProgressParser(measurement=>liveStatus.updateDecode(c,measurement,pass))});}
+  finally{await publishNow(()=>liveStatus.finishDecode(c));}
   await atomic(path.join(DATA,c.id+'-decode-'+pass+'.json'),result);return result;
 }
 async function idle(c){
@@ -53,23 +61,34 @@ async function verifyExclusion(c){
  const specs=f.specifications||[];
  if(specs.length!==1||specs[0].implementation!=='ReleaseTitleSpecification'||specs[0].negate||!specs[0].required||specs[0].fields?.find(x=>x.name==='value')?.value!==b.regex||!new RegExp(b.regex,'i').test(b.sourceTitle)||!Number.isFinite(score)||score+otherPositive>=p.minFormatScore)throw Error('Exact bad release exclusion is not enforced by the current profile');
 }
-async function repair(c){
+async function readBinding(c){const {movie,target}=await movieFor(c);if(movie.id!==c.movieId)throw Error('Radarr movie binding changed');return bind(c,movie,await rad('/history/movie?movieId='+movie.id),target);}
+async function repair(c,{reuseConfirmedEvidence=false}={}){
   await idle(c);const before=await safeSource(c.relative);if(before.fp!==c.fp)throw Error('Source changed before verification');
   const {movie,target}=await movieFor(c);
   c.movieId=movie.id;c.binding=bind(c,movie,await rad('/history/movie?movieId='+movie.id),target);await save();
+  if(reuseConfirmedEvidence&&JSON.stringify(c.binding)!==JSON.stringify(c.deferredCooldown?.binding))throw Error('Deferred replacement Radarr binding changed');
   if(c.binding.mode==='exact_title_exclusion')await verifyExclusion(c);
-  if(Object.values(state.cases).some(x=>x.id!==c.id&&x.movieId===c.movieId&&x.mutationStarted&&Date.now()-x.mutationStarted<cfg.movieCooldownDays*86400000))throw Error('Movie repair cooldown; manual review required');
-  let hash;if(isApprovedCase(c)){validatePending(c.approval);hash=await sample(c.source);if((await safeSource(c.relative)).fp!==c.fp)throw Error('Source changed');c.evidence={signature:c.approval.signature,independentChecks:c.approval.checks,sampleSHA256:hash,confirmed:new Date().toISOString()};}else{
+  let hash;if(reuseConfirmedEvidence){
+   if(c.evidence?.sourceFP!==c.fp||c.evidence.checks?.length!==2||!confirmed(...c.evidence.checks)||classify(c.evidence.checks[0]).signature!==c.evidence.signature)throw Error('Deferred source evidence no longer confirmed');
+   hash=await sample(c.source);if(hash!==c.evidence.sampleSHA256||(await safeSource(c.relative)).fp!==c.fp)throw Error('Deferred source changed');
+  }else if(isApprovedCase(c)){validatePending(c.approval);hash=await sample(c.source);if((await safeSource(c.relative)).fp!==c.fp)throw Error('Source changed');c.evidence={signature:c.approval.signature,independentChecks:c.approval.checks,sampleSHA256:hash,confirmed:new Date().toISOString()};}else{
   hash=await sample(c.source);const a=await decode(c,1);
-  if(classify(a).kind!=='corrupt'){await phase(c,'no_action','Original check: '+classify(a).kind+'; no Radarr action');return;}
+  if(classify(a).kind!=='corrupt'){
+   if(classify(a).kind==='healthy'&&(await sample(c.source)!==hash||(await safeSource(c.relative)).fp!==c.fp))throw Error('Source changed during original decode; clean result does not apply to current source');
+   c.originalCheckKind=classify(a).kind;await phase(c,'no_action','Original check: '+classify(a).kind+'; no Radarr action');return;
+  }
   await delay(cfg.confirmDelaySeconds*1000);
   const b=await decode(c,2);
   if(!confirmed(a,b)){await phase(c,'manual','Repeated checks did not confirm the same structural corruption');return;}
   if((await safeSource(c.relative)).fp!==c.fp||await sample(c.source)!==hash)throw Error('Source changed or repeated reads differ');
-  c.evidence={signature:classify(a).signature,sampleSHA256:hash,confirmed:new Date().toISOString()};
+  c.evidence={signature:classify(a).signature,sourceFP:c.fp,checks:[a,b],sampleSHA256:hash,confirmed:new Date().toISOString()};
 }
   await phase(c,'confirmed','Same structural decoding error reproduced twice in unchanged original');
   if(!cfg.enabled){await phase(c,'dry_run','Confirmed; external changes disabled');return;}
+  if(cooldownFor({cfg,state,c})){
+   if(await deferConfirmedReplacement({cfg,state,c,td,phase,idle,safeSource,sample,readBinding}))return;
+   throw Error('Movie repair cooldown; confirmed source preserved for manual review');
+  }
   // Rebind immediately before any mutation; never rely on stale import history.
   const fresh=await rad('/movie/'+c.movieId);
   const binding=bind(c,fresh,await rad('/history/movie?movieId='+c.movieId),target);
@@ -78,7 +97,7 @@ async function repair(c){
   if(recent.length>=cfg.maxRepairsPerDay&&!(cfg.approvedCaseIds||[]).includes(c.id)){await phase(c,'deferred_limit','Daily circuit breaker reached; retry after cooldown');return;}
   await idle(c);
   if(isApprovedCase(c))await ensureApprovedFloor(c,movie);
-  c.mutationStarted=Date.now();await phase(c,'holding','Preventing another Tdarr dispatch');
+  c.skipCurrentEdition=false;delete c.nextRetryAt;c.mutationStarted=Date.now();await phase(c,'holding','Preventing another Tdarr dispatch');
   await td('/api/v2/bulk-update-files',{fileIds:[c.file],updatedObj:{TranscodeDecisionMaker:'Hold',holdUntil:Date.now()+30*86400000}});
   await delay(3000);await idle(c);
   if((await safeSource(c.relative)).fp!==c.fp||await sample(c.source)!==hash)throw Error('Source changed before quarantine');
@@ -107,26 +126,42 @@ async function repair(c){
   await phase(c,'waiting_replacement','Release blocked; replacement search requested; original retained in quarantine');
 }
 async function observe(){
- for(const c of Object.values(state.cases).filter(x=>x.status==='waiting_replacement')){
+ for(const c of Object.values(state.cases).filter(x=>['waiting_replacement','replacement_queue_intent'].includes(x.status))){
   try {
   const m=await rad('/movie/'+c.movieId);
+  if(c.status==='replacement_queue_intent'&&(!m.movieFileId||m.movieFileId!==(c.replacement?.movieFileId)||!m.movieFile))throw Object.assign(Error('Replacement Radarr identity disappeared after handoff intent'),{code:'TDARR_HANDOFF_BINDING'});
   if(m.movieFileId&&m.movieFileId!==(c.keptMovieFileId||c.binding.movieFileId)){
    const rel=relative(m.movieFile.path,cfg.radarrRoot),s=await safeSource(rel);
    if(s.size!==m.movieFile.size)throw Error('Replacement file size does not match Radarr');
+   if(c.status==='replacement_queue_intent'&&(rel!==c.replacementRelative||s.fp!==c.replacementSourceFP||m.movieFileId!==c.replacement?.movieFileId))throw Object.assign(Error('Replacement identity changed after handoff intent'),{code:'TDARR_HANDOFF_BINDING'});
    c.replacement={movieFileId:m.movieFileId,path:m.movieFile.path,size:m.movieFile.size};
    c.replacementRelative=rel;c.replacementSourceFP=s.fp;
    const file=cfg.sourceRoot+'/'+rel;
    await phase(c,'replacement_queue_intent','Replacement imported; refreshing Tdarr entry');
-   await td('/api/v2/rescan-file',{_id:file,DB:cfg.libraryId});
-   await td('/api/v2/bulk-update-files',{fileIds:[file],updatedObj:{TranscodeDecisionMaker:'Queued',holdUntil:0}});
+   // A newer case may already have held this exact imported source after its
+   // own confirmed failure. An older handoff must not release that protection.
+   const preserveHold=Object.values(state.cases).some(other=>other.id!==c.id&&other.file===file&&((other.skipCurrentEdition===true&&other.preservedSourceFP===s.fp)||(other.deferredCooldown?.file===file&&other.deferredCooldown.sourceFP===s.fp&&other.deferredCooldown.libraryId===cfg.libraryId)));
+   c.handoffStatus=await ensureHandoff({tdarr:td,file,libraryId:cfg.libraryId,preserveHold});
    await phase(c,'replacement_imported','Replacement submitted to Tdarr; quarantine retained until quality is verified');
   }
   delete c.observationError;
   } catch(e) {
    c.observationError=e.message;
-   if(c.status==='replacement_queue_intent')await phase(c,'manual','Replacement queue result uncertain; inspect before retry');
+   if(c.status==='replacement_queue_intent'&&['TDARR_HANDOFF_BINDING','TDARR_HANDOFF_STATE'].includes(e.code))await phase(c,'manual',e.message);
    // A temporarily unavailable replacement must not stop checks for other films.
   }
+ }
+}
+async function resumeDeferred(){
+ for(const c of Object.values(state.cases).filter(c=>['deferred_cooldown','defer_cooldown_intent'].includes(c.status))){
+  try{
+   const deps={cfg,state,c,td,phase,idle,safeSource,sample,readBinding};
+   if(c.status==='defer_cooldown_intent')await reconcileDeferredIntent(deps);
+   const result=await inspectDeferredReplacement(deps);
+   if(result.retryAt)c.nextRetryAt=result.retryAt;
+   if(result.status==='ready'){await repair(c,{reuseConfirmedEvidence:true});return;}
+   delete c.observationError;
+  }catch(e){await phase(c,'manual',e.message);}
  }
 }
 async function ensureApprovedFloor(c,movie){
@@ -147,11 +182,13 @@ async function ensureApprovedFloor(c,movie){
 const pendingApprovals=JSON.parse(await fs.readFile(new URL('./pending-approvals.json',import.meta.url),'utf8'));
 const isApprovedCase=c=>!!c.approval&&pendingApprovals.cases.some(a=>a.id===c.id&&JSON.stringify(a)===JSON.stringify(c.approval));
 async function tick(){
+ await publishNow(()=>liveStatus.refresh());
  try{await refreshOriginalLanguages({cfg,rad,atomic});delete state.languageMetadataError;}catch(e){state.languageMetadataError=e.message;}
  await maintainWaitingSources({cfg,state,rad,td,phase,save,command,idle,safeSource,sample});
  await observe();
+ await resumeDeferred();
  await processPending({approvals:pendingApprovals,cfg,state,safeSource,identity,phase,repair});
- await publishRecoveryStatus({cfg,state,atomic,tdarrFiles:rows('filejsondb')});
+ await publishNow(()=>liveStatus.refresh());
  for(const c of Object.values(state.cases).filter(c=>c.status==='replacement_imported')){try{await retainCase(c,{mediaRoot:cfg.mediaRoot,quarantineRoot:cfg.quarantineRoot,atomicCase:save});delete c.retentionError;}catch(e){c.retentionError=e.message;}}
  // Catch these files even when Tdarr has silently classified them Not required.
  if(cfg.detectTerminalHeaders){
@@ -190,6 +227,7 @@ async function tick(){
  await save();
 }
 // Never replay uncertain API mutations after restart. The journal stays reviewable.
-for(const c of Object.values(state.cases))if(!['manual','no_action','dry_run','waiting_replacement','waiting_source_kept','replacement_imported','deferred_limit'].includes(c.status))await phase(c,'manual','Interrupted '+c.status+'; inspect journal before any retry');
+for(const c of Object.values(state.cases))if(!['manual','no_action','dry_run','waiting_replacement','waiting_source_kept','replacement_imported','replacement_queue_intent','deferred_limit','deferred_cooldown','defer_cooldown_intent'].includes(c.status))await phase(c,'manual','Interrupted '+c.status+'; inspect journal before any retry');
 console.log('Tdarr recovery started; enabled='+cfg.enabled);
-do {try{await tick();state.lastError=null;}catch(e){state.lastError=e.message;console.error('Recovery: '+e.message);}await save();if(process.argv.includes('--once'))break;await delay(cfg.pollSeconds*1000);}while(true);
+do {try{await tick();state.lastError=null;}catch(e){state.lastError=e.message;console.error('Recovery: '+e.message);}await publishNow(()=>liveStatus.refresh());await save();if(process.argv.includes('--once'))break;await delay(cfg.pollSeconds*1000);}while(true);
+await publishNow(()=>liveStatus.close());

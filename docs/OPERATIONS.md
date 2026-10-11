@@ -50,9 +50,17 @@ Inspect the film's detail and durable journal. Preserve `.tdarr-review-*.old`, `
 
 ## Recovery status is stale
 
-Check worker logs and its private `state.json` for `lastError`. Verify both services map the same media parent and Radarr is configured in Review. The normal publication cadence is one worker pass, roughly five minutes when idle. A full original decode can delay publication; a 12-minute warning is not by itself proof that the worker is dead.
+Check worker logs and its private `state.json` for `lastError` or `statusPublicationError`. Verify both services map the same media parent and Radarr is configured in Review. Idle publication is roughly five minutes. During a full original decode the worker publishes a 30-second heartbeat and measured progress at most every 15 seconds. Review displays the current pass, media position, elapsed time and an ETA when duration/rate are available. With no known duration the bar stays indeterminate. The decoder measurement time and worker heartbeat are shown separately; a responding worker can still be waiting for I/O. A stale/no-advance warning is not proof of film damage.
 
 Manual replacement requests created in Review continue checking the imported file's exact Tdarr record and library. A fresh status timestamp means that observation ran, not that Tdarr approved the film. Observation and quarantine retention errors are reported separately. Quarantine deletion still requires explicit Review approval evidence and the seven-day retention period.
+
+## A replacement also fails decoding
+
+The movie cooldown no longer prevents read-only diagnosis of the new edition. Recovery requires two matching recognized errors, unchanged source identity/sample and exact current Radarr history before holding it. `deferred_cooldown` means the confirmed bad edition remains in Plex and is held in Tdarr; the next permitted repair time appears in Review. It does not authorize another download during the cooldown or change an older quarantine's approval/retention state. After the cooldown and daily limit expire, verified frozen evidence can continue the normal recovery path without repeating the decode.
+
+`defer_cooldown_intent` after interruption is reconciled only if the exact acknowledged Hold and original binding are still present; unknown results are not replayed. Changed source/history, a released Hold or incomplete historical evidence goes to `manual`. Existing manual cases are not automatically migrated or reactivated by installing this version.
+
+`no_action` with a healthy result means a full original decode completed cleanly; it is a diagnostic completion, not Review approval. Operational/ambiguous results remain visible for inspection and never trigger replacement downloads. `dry_run` means decoding confirmed an error but external repair changes are disabled.
 
 ## Quarantine keeps growing
 

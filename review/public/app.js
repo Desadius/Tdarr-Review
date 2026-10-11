@@ -1,4 +1,4 @@
-import {capabilities, classifyRecovery, projectRequests, historyWarnings, historyFollowup} from '/review-model.js?v=20261011-ui1';
+import {capabilities, classifyRecovery, recoveryProgress, liveRecoveryRecord, projectRequests, historyWarnings, historyFollowup} from '/review-model.js?v=20261011-ui2';
 
 const $=id=>document.getElementById(id);
 const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n};
@@ -140,9 +140,18 @@ function makeTabs(container,tabs,current,onChange){
 function recoveryRow(projected){
  const r=projected.record||projected.raw||projected,cl=projected.classification||classifyRecovery(r,Date.now()),row=el('article','recovery-row'),info=el('div','row-info');
  info.append(badge(cl.label,cl.category==='attention'?'warning':cl.category==='done'?'ready':''),el('h2','',r.title),el('p','details',cl.nextStep));
+ const progress=recoveryProgress(r);if(progress)info.append(decodeProgressView(progress,false));
  const meta=el('div','row-metric');meta.append(el('span','details',r.source==='recovery'?'Recovery · Radarr · Tdarr':'Náhrada přes Radarr'),el('small',cl.stale?'failure':'details',cl.stale?'Stav starší než 12 minut':date(r.statusUpdated||r.updated)));
  const b=button('Prohlédnout',()=>openDetail('request',projected.key));b.setAttribute('aria-label','Prohlédnout obnovu '+r.title);b.dataset.focus='recovery:'+projected.key;
  row.append(poster('request',r.id,r.title),info,meta,b);return row;
+}
+function decodeProgressView(p,detail=true){
+ const box=el('div','decode-progress'),meter=el('progress','task-meter');meter.max=100;meter.setAttribute('aria-label',`Kontrola originálu, průchod ${p.pass} ze 2`);if(p.percent!==null)meter.value=p.percent;
+ box.append(el('strong','',`Kontrola originálu · průchod ${p.pass}/2${p.percent===null?'':` · ${p.percent.toLocaleString('cs-CZ',{maximumFractionDigits:1})} %`}`),meter);
+ const position=p.seconds===null?'Čeká na měření':`Zkontrolováno ${elapsedText(p.seconds)}${p.duration===null?'':` z ${elapsedText(p.duration)}`}`;
+ box.append(el('p','details',`${position} · ${p.etaSeconds===null?'Odhad času zatím není dostupný':'Zbývá '+etaText(p.etaSeconds)}`));
+ if(detail){box.append(el('p','details',`${p.elapsedSeconds===null?'':`Tento průchod běží ${elapsedText(p.elapsedSeconds)} · `}${p.speed===null?'':'Rychlost '+p.speed.toLocaleString('cs-CZ',{maximumFractionDigits:2})+'×'}`),el('p','details',p.note),detailsFacts([['Poslední měření dekodéru',date(p.measuredAt)],['Poslední odezva Recovery',date(p.heartbeatAt)]]));}
+ return box;
 }
 function renderRecovery(){
  const projects=projectRequests(requests,latest?.items||[],Date.now()),categories=[['running','Probíhá'],['waiting','Čeká'],['attention','Vyžaduje zásah'],['done','Dokončeno']];
@@ -194,7 +203,7 @@ function detailReview(item,tab){
 }
 function detailRequest(r,tab){
  const box=$('detailBody'),cl=classifyRecovery(r,Date.now());box.replaceChildren();
- if(tab==='overview'){box.append(el('h3','',cl.label),el('p','',cl.nextStep));for(const warning of cl.warnings||[])box.append(el('p','alert inline-warning',warning));box.append(detailsFacts([['Poslední potvrzený stav',date(r.statusUpdated||r.updated)],['Původní kopie',r.quarantineRetained?'Zachovaná v karanténě':r.phase==='waiting_source_kept'?'Zůstává v Plexu; vydání vyloučeno z převodů':'Viz aktuální protokol obnovy'],['Další hledání',r.nextSearchAt?date(r.nextSearchAt):'Termín není doložen']]));if(r.message)box.append(el('p','details',r.message));
+ if(tab==='overview'){box.append(el('h3','',cl.label),el('p','',cl.nextStep));for(const warning of cl.warnings||[])box.append(el('p','alert inline-warning',warning));const progress=recoveryProgress(r);if(progress)box.append(decodeProgressView(progress));box.append(detailsFacts([['Poslední potvrzený stav',date(r.statusUpdated||r.updated)],['Původní kopie',r.quarantineRetained?'Zachovaná v karanténě':r.sourceRetained||r.phase==='waiting_source_kept'?'Zůstává v Plexu; vydání vyloučeno z převodů':'Viz aktuální protokol obnovy'],['Další hledání',r.nextSearchAt?date(r.nextSearchAt):'Termín není doložen'],['Další pokus obnovy',r.nextRetryAt?date(r.nextRetryAt):'Termín není doložen']]));if(r.message)box.append(el('p','details',r.message));
  }else if(tab==='comparison'){
   const item=latest?.items.find(x=>x.id===r.itemId);box.append(el('h3','','Ověření nové kopie'));
   if(item)box.append(el('p','','Výsledek je v Review a má přesně přiřazené ID.'),button('Posoudit výsledek v Review',()=>openDetail('review',item.id)));
@@ -202,6 +211,7 @@ function detailRequest(r,tab){
   if(r.replacement)box.append(detailsFacts([['Nové vydání',r.replacement.title||'Nedoloženo'],['Kvalita',r.replacement.quality||'Nedoloženo'],['Jazyky',r.replacement.languages?.join(', ')||'Nedoloženo']]));
  }else if(tab==='recovery'){
   box.append(el('h3','','Průběh obnovy'),recoveryDetails(r));
+  const progress=recoveryProgress(r);if(progress)box.append(decodeProgressView(progress));
   if(r.canRestore)box.append(guardedButton(r,'restore','Vrátit originál i převod z karantény',()=>askRestore(r)));
   box.append(button('Prohlédnout karanténu případu',()=>openQuarantine(r.title,r.id)));
  }else{
@@ -256,7 +266,7 @@ async function loadStatistics(){
 }
 setInterval(()=>{if(ui.view==='savings')loadStatistics()},15000);
 async function load(){if(loading)return;loading=true;try{const d=await api('/api/items');receivedAt=Date.now();serverAt=d.serverTime||receivedAt;authenticated=true;dataError='';$('lastUpdate').textContent=date(receivedAt);$('lastUpdate').dateTime=new Date(receivedAt).toISOString();const sig=JSON.stringify({...d,serverTime:undefined});if(sig!==lastRender||$('workspace').hidden||!$('login').hidden){render(d);lastRender=sig}else updateGuards()}catch(e){dataError=e.message;updateGuards();if(!latest)error(e)}finally{loading=false}}
-async function loadRequests(force=false){if(requestsLoading||!authenticated||(!force&&Date.now()-requestsReceived<30000))return;requestsLoading=true;try{requests=(await api('/api/radarr/requests')).requests;requestsReceived=Date.now();requestsError='';if(latest){renderAttention();renderRecovery();$('recoveryCount').textContent=projectRequests(requests,latest.items,Date.now()).filter(x=>x.classification.category!=='done').length;updateGuards();handleHash()}}catch(e){requestsError=e.message;renderRecovery();updateGuards()}finally{requestsLoading=false}}
+async function loadRequests(force=false){if(requestsLoading||!authenticated||(!force&&Date.now()-requestsReceived<30000))return;requestsLoading=true;try{requests=(await api('/api/radarr/requests')).requests;requestsReceived=Date.now();requestsError='';if(latest){renderAttention();renderRecovery();$('recoveryCount').textContent=projectRequests(requests,latest.items,Date.now()).filter(x=>x.classification.category!=='done').length;const live=ui.detail?.kind==='request'?liveRecoveryRecord(ui.detail.record,requests):null;if(live){ui.detail.record=live;$('detailSubtitle').textContent=classifyRecovery(live).label;renderDetailTab();}updateGuards();handleHash()}}catch(e){requestsError=e.message;renderRecovery();updateGuards()}finally{requestsLoading=false}}
 function parseHash(){const [view,query='']=location.hash.slice(1).split('?');return {view:['attention','recovery','history','savings','settings'].includes(view)?view:'attention',params:new URLSearchParams(query)}}
 function navigate(view,params={}){if(view==='recovery'&&!params.filter)params.filter=ui.filter;const query=new URLSearchParams(params).toString(),hash='#'+view+(query?'?'+query:'');if(location.hash===hash)handleHash();else location.hash=hash}
 function handleHash(){

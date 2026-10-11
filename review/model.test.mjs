@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import {capabilities, classifyRecovery, projectRequests, historyWarnings, historyFollowup, RECOVERY_STALE_MS} from './public/review-model.js';
+import {capabilities, classifyRecovery, recoveryProgress, liveRecoveryRecord, projectRequests, historyWarnings, historyFollowup, RECOVERY_STALE_MS} from './public/review-model.js';
 
 const NOW = Date.parse('2026-10-11T11:35:00Z');
 const freshTime = new Date(NOW - 30000).toISOString();
@@ -9,6 +9,35 @@ const ready = {id:'a'.repeat(24),snapshot:'b'.repeat(64),status:'ready',duration
 const clear = {active:null,batchRunning:false,batch:null,recovery:[],restorePending:0};
 const context = {authenticated:true,fresh:true};
 const writes = ['approve','approveBatch','select','reject','replace','recheck','restore','compareImage','compareAudio'];
+
+test('read-only Recovery detail follows the exact live case while decision snapshots stay frozen',()=>{
+ const current={source:'recovery',id:'case',canRestore:false,progress:{seconds:1}},fresh={...current,progress:{seconds:20}};
+ assert.equal(liveRecoveryRecord(current,[{...fresh,id:'other'},fresh]),fresh);assert.equal(current.progress.seconds,1);
+ assert.equal(liveRecoveryRecord(current,[{...fresh,id:'other'}]),null);
+ for(const patch of [{source:undefined},{canRestore:true},{canRestore:undefined}])assert.equal(liveRecoveryRecord({...current,...patch},[fresh]),null);
+ assert.equal(liveRecoveryRecord(current,[{...fresh,source:undefined}]),null);assert.equal(liveRecoveryRecord(current,[{...fresh,canRestore:true}]),null);
+ assert.equal(liveRecoveryRecord(ready,[fresh]),null,'film approval must keep its reviewed snapshot');
+});
+
+test('deferred faulty replacements and completed diagnostics do not imply Review approval',()=>{
+ const rec={source:'recovery',statusUpdated:freshTime};
+ const deferred=classifyRecovery({...rec,phase:'deferred_cooldown',sourceRetained:true},NOW);assert.equal(deferred.category,'waiting');assert.match(deferred.nextStep,/Plexu/);
+ assert.equal(classifyRecovery({...rec,phase:'no_action',originalCheckKind:'healthy'},NOW).category,'done');
+ for(const kind of [null,'operational','unconfirmed'])assert.equal(classifyRecovery({...rec,phase:'no_action',originalCheckKind:kind},NOW).category,'attention');
+ assert.equal(classifyRecovery({...rec,phase:'dry_run'},NOW).category,'attention');
+ const hold=classifyRecovery({...rec,phase:'replacement_imported',tdarrStatus:'Hold'},NOW);assert.equal(hold.category,'attention');assert.equal(hold.unknown,false);assert.match(hold.label,/pozastavená/);
+});
+
+test('progress renders only original decode measurements, with unknown duration and stale ETA handled explicitly',()=>{
+ const rec={source:'recovery',phase:'verifying',progress:{stage:'original_decode',pass:1,running:true,startedAt:new Date(NOW-20000).toISOString(),updatedAt:freshTime,lastAdvanceAt:freshTime,heartbeatAt:freshTime,seconds:20,durationSeconds:100,speed:2,etaSeconds:40}};
+ const p=recoveryProgress(rec,NOW);assert.equal(p.percent,20);assert.equal(p.elapsedSeconds,20);assert.equal(p.etaSeconds,40);assert.equal(p.alive,true);
+ assert.equal(recoveryProgress({...rec,phase:'replacement_imported'},NOW),null);
+ assert.equal(recoveryProgress({...rec,progress:{...rec.progress,pass:3}},NOW),null);
+ const unknown=recoveryProgress({...rec,progress:{...rec.progress,durationSeconds:'100',etaSeconds:NaN}},NOW);assert.equal(unknown.percent,null);assert.equal(unknown.etaSeconds,null);
+ const quiet=recoveryProgress({...rec,progress:{...rec.progress,lastAdvanceAt:new Date(NOW-91000).toISOString()}},NOW);assert.equal(quiet.etaSeconds,null);assert.match(quiet.note,/nezměnila/);assert.match(quiet.note,/není potvrzená/);
+ const disconnected=recoveryProgress({...rec,progress:{...rec.progress,heartbeatAt:new Date(NOW-91000).toISOString()}},NOW);assert.equal(disconnected.alive,false);assert.equal(disconnected.etaSeconds,null);assert.match(disconnected.note,/spojení/);
+ const ended=recoveryProgress({...rec,progress:{...rec.progress,running:false,ended:true,seconds:100}},NOW);assert.equal(ended.percent,99.9);assert.equal(ended.etaSeconds,null);assert.match(ended.note,/vyhodnocení/);
+});
 
 test('safe defaults and identity validation prevent actions from incomplete data', () => {
   const closed = capabilities(ready,clear);

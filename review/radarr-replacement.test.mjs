@@ -76,6 +76,14 @@ async function importedFixture(){
  const journal=path.join(f.data,'radarr-replacements',c.id+'.json');
  return {...f,file,journal,readJournal:async()=>JSON.parse(await fs.readFile(journal,'utf8'))};
 }
+test('Review preserves per-case Recovery freshness instead of replacing it with another case heartbeat',async()=>{
+ const f=await fixture();try{
+  const now=Date.now(),old=new Date(now-20*60000).toISOString(),fresh=new Date(now).toISOString(),file=path.join(path.dirname(f.media),'.tdarr-recovery-status.json');
+  await f.atomicJSON(file,{version:1,updated:fresh,cases:[{id:'b'.repeat(24),phase:'replacement_imported',tdarrStatus:'Queued',statusUpdated:old},{id:'c'.repeat(24),phase:'verifying',statusUpdated:null,heartbeatAt:fresh,progress:{stage:'original_decode',pass:1,seconds:20}}]});
+  const records=await f.service.list();assert.equal(records[0].statusUpdated,old);assert.equal(classifyRecovery(records[0],now).stale,true);assert.equal(records[1].statusUpdated,null);assert.equal(records[1].progress.seconds,20);
+  await f.atomicJSON(file,{version:1,updated:old,cases:[{id:'b'.repeat(24),phase:'replacement_imported',tdarrStatus:'Queued'}]});assert.equal((await f.service.list())[0].statusUpdated,old,'legacy snapshots use their own whole-file time');
+ }finally{await f.cleanup();}
+});
 test('manual replacement preserves both exact files and never deletes current media through Radarr',async()=>{
  const f=await fixture();try{const result=await f.service.run(f.item,'Vadný originální zvuk');assert.equal(result.phase,'waiting');assert.equal(f.movie.movieFileId,0);assert.equal(f.resumes(),1);const journal=JSON.parse(await fs.readFile(path.join(f.data,'radarr-replacements',result.id+'.json')));assert.equal(await fs.readFile(journal.originalQuarantine,'utf8'),'ORIGINAL');assert.equal(await fs.readFile(journal.reviewQuarantine,'utf8'),'TRANSCODE');assert.equal(journal.reason,'Vadný originální zvuk');assert(!f.calls.some(v=>v.method==='DELETE'));assert(!JSON.stringify(await f.service.publicSettings()).includes('secret'));assert(!JSON.stringify(await f.service.list()).includes('secret'));assert.equal(f.formats[1].specifications.filter(v=>v.required).length,2);assert.deepEqual(f.profiles.at(-1).items.map(v=>v.allowed),[false,true,true]);}finally{await f.cleanup()}
 });

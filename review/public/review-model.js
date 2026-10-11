@@ -62,6 +62,7 @@ const RECOVERY_RUNNING = {
   blocklist_intent: ['Vyřazuje se vadné vydání', 'Vyčkej na dokončení vyřazení.'],
   blocked: ['Vadné vydání vyřazeno', 'Obnova připraví hledání náhrady.'],
   search_intent: ['Spouští se hledání náhrady', 'Vyčkej na výsledek hledání.'],
+  defer_cooldown_intent: ['Pozastavuje se vadná náhrada', 'Vyčkej na potvrzení pozastavení přesného vydání.'],
   replacement_queue_intent: ['Náhrada se předává Tdarru', 'Vyčkej na potvrzení předání.'],
   restore_source_intent: ['Vrací se zachovaná kopie', 'Vyčkej na dokončení návratu.'],
   remove_kept_source_intent: ['Připravuje se stažení náhrady', 'Vyčkej na dokončení přípravy.'],
@@ -113,6 +114,16 @@ export function classifyRecovery(record, now = Date.now()) {
     label = 'Obnova vyžaduje kontrolu'; nextStep = 'Otevři detail a ověř zachované kopie před další akcí.';
   } else if (r.phase === 'deferred_limit') {
     category = 'waiting'; label = 'Čeká na denní limit obnov'; nextStep = 'Obnova pokračuje po uvolnění limitu.';
+  } else if (r.phase === 'deferred_cooldown') {
+    category = 'waiting'; label = 'Vadná náhrada pozastavena'; nextStep = 'Film zůstává v Plexu. Další obnova čeká na ochranný limit; toto vydání se znovu nepřevádí.';
+  } else if (r.phase === 'no_action') {
+    if (r.originalCheckKind === 'healthy') {
+      category = 'done'; label = 'Kontrola originálu bez chyby'; nextStep = 'Celý originál se dekódoval bez chyby. Jde o dokončení diagnostiky; výsledek převodu se schvaluje zvlášť v Review.';
+    } else {
+      label = 'Kontrola originálu nepotvrdila poškození'; nextStep = 'Prověř provozní nebo nejednoznačnou chybu v detailu. Náhrada se automaticky nestahuje.';
+    }
+  } else if (r.phase === 'dry_run') {
+    label = 'Chyba potvrzena; změny jsou vypnuté'; nextStep = 'Zkontroluj nastavení Recovery před povolením obnovy.';
   } else if (r.phase === 'waiting_source_kept') {
     category = 'waiting'; label = 'Náhrada zatím nenalezena'; nextStep = 'Film zůstává v knihovně; vadné vydání se znovu nepřevádí.';
   } else if (r.phase === 'replacement_imported' || r.phase === 'imported') {
@@ -126,6 +137,8 @@ export function classifyRecovery(record, now = Date.now()) {
       label = 'Převod náhrady skončil chybou'; nextStep = 'Zkontroluj detail chyby a zachované kopie.';
     } else if (tdarrStatus === 'not required') {
       label = 'Tdarr náhradu vynechal'; nextStep = 'Posuď důvod vynechání a funkčnost náhrady.';
+    } else if (tdarrStatus === 'hold') {
+      label = 'Náhrada je pozastavená v Tdarru'; nextStep = 'Zkontroluj důvod pozastavení a navazující případ Recovery.';
     } else {
       unknown = true; label = 'Náhrada předána; stav Tdarru není doložen'; nextStep = 'Obnov stav a ověř, kde se náhrada nachází.';
     }
@@ -150,6 +163,36 @@ export function classifyRecovery(record, now = Date.now()) {
     category = 'attention'; nextStep = 'Obnov stav; aktuální průběh nelze spolehlivě ověřit.';
   }
   return {category, label, nextStep, stale, unknown: unknown || unknownTime, warnings: [...new Set(warnings)], confirmedAudioFault: r.audioFaultConfirmed === true || r.phase === 'waiting_source_kept'};
+}
+
+/** Display only measured progress. Completion of FFmpeg's progress stream is
+ * never approval or evidence of a healthy full decode. */
+export function recoveryProgress(record, now = Date.now()) {
+  const p = record?.progress;
+  if (record?.source !== 'recovery' || record.phase !== 'verifying' || p?.stage !== 'original_decode' || ![1, 2].includes(p.pass)) return null;
+  const started = finiteTime(p.startedAt), measured = finiteTime(p.updatedAt), heartbeat = finiteTime(p.heartbeatAt), advanced = finiteTime(p.lastAdvanceAt);
+  const validTime = value => value !== null && value <= now + 120000;
+  const number = value => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+  const seconds = number(p.seconds) ? p.seconds : null, duration = hasDuration(p.durationSeconds) ? p.durationSeconds : null;
+  const freshMeasurement = validTime(measured) && now - measured <= 90000;
+  const alive = p.running === true && validTime(heartbeat) && now - heartbeat <= 90000;
+  const noAdvance = p.running === true && validTime(advanced ?? started) && now - (advanced ?? started) > 90000;
+  let note = 'Kontroluje se dekódování původního obrazu a všech zvukových stop. Každý průchod má vlastní postup.';
+  if (!p.running) note = 'Průchod skončil; čeká se na vyhodnocení skutečného výsledku dekódování.';
+  else if (!alive) note = 'Chybí čerstvé hlášení Recovery; obnovením ověř spojení. Samo o sobě to nedokazuje chybu filmu.';
+  else if (noAdvance) note = 'Recovery odpovídá, ale poloha kontroly se přes 90 sekund nezměnila. Může čekat na čtení dat; chyba filmu tím není potvrzená.';
+  else if (!freshMeasurement) note = 'Recovery odpovídá; čeká se na další měření z dekodéru.';
+  return {pass:p.pass,running:p.running === true,alive,note,seconds,duration,percent:seconds !== null && duration !== null ? Math.min(99.9,100 * seconds / duration) : null,
+    elapsedSeconds:validTime(started) ? Math.max(0,(now-started)/1000) : null,
+    etaSeconds:p.running === true && duration !== null && freshMeasurement && alive && !noAdvance && number(p.etaSeconds) ? p.etaSeconds : null,
+    speed:hasDuration(p.speed) ? p.speed : null,measuredAt:validTime(measured)?p.updatedAt:null,heartbeatAt:validTime(heartbeat)?p.heartbeatAt:null};
+}
+
+/** Only read-only Recovery details may follow live observations automatically.
+ * Approval and restorable requests keep their original decision snapshot. */
+export function liveRecoveryRecord(current, records) {
+  if (current?.source !== 'recovery' || current.canRestore !== false || typeof current.id !== 'string') return null;
+  return list(records).find(r => r?.source === 'recovery' && r.id === current.id && r.canRestore === false) || null;
 }
 
 /** Exact itemId matches only. Same titles never merge distinct cases/files. */
