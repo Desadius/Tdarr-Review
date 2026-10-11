@@ -95,7 +95,9 @@ async function host(){
   const names={review:prefix+'-review',integration:prefix+'-integration',recovery:prefix+'-recovery'},volumes=[prefix+'-review-data',prefix+'-recovery-data'];
   const script=fileURLToPath(import.meta.url),label='org.tdarr-review.smoke';
   const common=['--label',label+'='+prefix,'--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--memory','1g','--cpus','1','--pids-limit','128','--tmpfs','/tmp:rw,noexec,nosuid,size=128m'];
-  const copyScript=async name=>run('docker',['cp',script,name+':/tmp/docker-smoke.mjs'],{quiet:true});
+  // Docker's copy API rejects a readonly rootfs even for a writable tmpfs.
+  // Write only the disposable tmpfs file through the unprivileged process.
+  const copyScript=async name=>run('docker',['exec','-i',name,'/usr/bin/node','-e',"require('node:fs').writeFileSync('/tmp/docker-smoke.mjs', require('node:fs').readFileSync(0))"],{input:await fs.readFile(script),quiet:true});
   const existingContainers=(await run('docker',['ps','-a','--format','{{.Names}}'],{quiet:true})).trim().split('\n');
   const existingVolumes=(await run('docker',['volume','ls','--format','{{.Name}}'],{quiet:true})).trim().split('\n');
   assert.ok(Object.values(names).every(n=>!existingContainers.includes(n))&&volumes.every(v=>!existingVolumes.includes(v)),'Disposable resource name already exists');
@@ -107,8 +109,8 @@ async function host(){
     await copyScript(names.review);
     await run('docker',['exec',names.review,'/usr/bin/node','/tmp/docker-smoke.mjs','inside-review']);
     await run('docker',['run','--rm','--name',names.integration,...common,'-e','FFMPEG='+decoder+'ffmpeg','-e','FFPROBE='+decoder+'ffprobe','--entrypoint','/usr/bin/node','tdarr-review:smoke','/review-app/integration.mjs'],{timeout:180000});
-    // docker cp cannot write before start into tmpfs. Start a fixture process that
-    // waits for the copied script; application entrypoint is then spawned by it.
+    // Start a fixture process so exec can write into its disposable tmpfs;
+    // the application entrypoint is then spawned by the fixture script.
     await run('docker',['run','-d','--name',names.recovery,...common,'--mount',`type=volume,source=${volumes[1]},target=/data`,'-e','SMOKE_ENTRYPOINT='+JSON.stringify(info.Config.Entrypoint),'-e','SMOKE_CMD='+JSON.stringify(info.Config.Cmd),'--entrypoint','/usr/bin/node','tdarr-recovery:smoke','-e',"setInterval(()=>{},1000)"],{quiet:true});
     await copyScript(names.recovery);
     await run('docker',['exec',names.recovery,'/usr/bin/node','/tmp/docker-smoke.mjs','inside-recovery'],{timeout:60000});
