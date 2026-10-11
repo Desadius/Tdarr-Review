@@ -348,7 +348,7 @@ const server=http.createServer(async(req,res)=>{
     }
     if(url.pathname==='/api/items'&&req.method==='GET'){
       if(state.pauses.length&&!recovery.length&&!active&&!batchRunning)await resume();
-      return respond(res,200,{version:'1.10.0',label:config.label,serverTime:Date.now(),items:await scan(),active,batch:state.batch||null,batchRunning,history:state.history,recovery,restorePending:state.pauses.length});
+      return respond(res,200,{version:'1.10.1',label:config.label,serverTime:Date.now(),items:await scan(),active,batch:state.batch||null,batchRunning,history:state.history,recovery,restorePending:state.pauses.length});
     }
     if(url.pathname==='/api/approve-batch'&&req.method==='POST'){
       if(active||batchRunning||resumeTask||previewBusy||settingsBusy)return respond(res,409,{error:'Jiná akce nebo dávka právě probíhá.'});

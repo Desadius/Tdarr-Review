@@ -8,6 +8,8 @@ Back up during an idle period. Keep media and quarantined originals protected by
 
 ## Update an existing deployment
 
+Source publication, Docker image publication and updating a running deployment are separate decisions. Pushing a commit or version tag runs tests only. Use [the release process](RELEASES.md) for approved image publication; installing it still requires the idle checks below.
+
 1. Inspect authenticated `/api/items` or the UI. Wait for `active`, `batchRunning`, `restorePending` and unresolved exchange transactions (`recovery`) to clear. These exchange transactions are distinct from the background movie-replacement list.
 2. Check that the background worker is not in a mutating phase. A long decode is read-only but restarting it leaves an interrupted case requiring deliberate inspection.
 3. Back up code/images and private persistent data. Record the previous Git commit.
@@ -49,6 +51,8 @@ Inspect the film's detail and durable journal. Preserve `.tdarr-review-*.old`, `
 ## Recovery status is stale
 
 Check worker logs and its private `state.json` for `lastError`. Verify both services map the same media parent and Radarr is configured in Review. The normal publication cadence is one worker pass, roughly five minutes when idle. A full original decode can delay publication; a 12-minute warning is not by itself proof that the worker is dead.
+
+Manual replacement requests created in Review continue checking the imported file's exact Tdarr record and library. A fresh status timestamp means that observation ran, not that Tdarr approved the film. Observation and quarantine retention errors are reported separately. Quarantine deletion still requires explicit Review approval evidence and the seven-day retention period.
 
 ## Quarantine keeps growing
 

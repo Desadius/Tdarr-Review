@@ -4,7 +4,7 @@ Review and approve Tdarr transcodes before replacing the files in your media lib
 
 The application currently uses a **Czech interface**. It is a community project, independent of Tdarr, Radarr and Plex.
 
-Current application version: **1.10.0**. The source was collected from the deployed installation on 11 October 2026. Personal configuration, credentials, journals, film files and one-off repair approvals are excluded.
+Current source version: **1.10.1**. The published Docker images and existing deployment remain at **1.10.0** until a separate release/update is approved. The initial source was collected from the deployed installation on 11 October 2026. Personal configuration, credentials, journals, film files and one-off repair approvals are excluded.
 
 ## What is included
 
@@ -29,6 +29,7 @@ Review does not automatically approve films, and it does not repeat a complete v
 | [Tdarr integration](docs/TDARR-INTEGRATION.md) | Flow placement, health checks and receipt format |
 | [Architecture and safety](docs/ARCHITECTURE.md) | Replacement transaction, lifecycle and quarantine |
 | [Operations](docs/OPERATIONS.md) | Updates, backup, restart and troubleshooting |
+| [Release process](docs/RELEASES.md) | Separate source publication, Docker publication and deployment |
 | [Development and verification](docs/DEVELOPMENT.md) | Tests, fixtures and compatibility limits |
 | [Český přehled](docs/README-CS.md) | Rychlý rozcestník v češtině |
 | [Change history](CHANGELOG.md) | Features and fixes implemented so far |

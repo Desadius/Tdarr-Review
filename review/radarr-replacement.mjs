@@ -57,7 +57,34 @@ export function createReplacement({data,getConfig,safeFile,hash,atomicJSON,tdarr
  }
  async function persist(c,phase,message){if(phase){c.phase=phase;c.message=message;}c.updated=new Date().toISOString();await atomicJSON(path.join(directory,c.id+'.json'),c);}
  async function list(){await fs.mkdir(directory,{recursive:true});const result=[];for(const name of await fs.readdir(directory)){if(!/^[a-f0-9]{24}\.json$/.test(name))continue;result.push(JSON.parse(await fs.readFile(path.join(directory,name),'utf8')));}return result.sort((a,b)=>b.created.localeCompare(a.created));}
- function visible(c){return {id:c.id,itemId:c.itemId,title:c.title,phase:c.phase,message:c.message,reason:c.reason,created:c.created,updated:c.updated,queue:c.queue||[],search:c.search||null,replacement:c.replacement||null,originalQuality:c.originalQuality,profileId:c.profileId,canRestore:['waiting','manual'].includes(c.phase)&&!!c.originalQuarantine};}
+ // Keep private journal paths, fingerprints and nested API data out of the UI.
+ function publicText(value){
+  if(typeof value!=='string')return null;
+  return value.slice(0,2000).replace(/(?:[A-Za-z]:[\\/]|\\\\)[^\s'"<>]+|\/(?:[^\s/'"<>]+\/)+[^\s'"<>]*/g,'[soukromá cesta]');
+ }
+ const importedLabels={'Queued':'Náhrada čeká ve frontě Tdarru','Transcoding':'Tdarr převádí náhradu','Transcode success':'Převod dokončen; ověř výsledek v Review','Transcode error':'Převod náhrady skončil chybou','Not required':'Tdarr náhradu vynechal; vyžaduje posouzení','Hold':'Náhrada je pozastavená v Tdarru'};
+ function visible(c){
+  const cleanup=c.cleanup,complete=cleanup?.complete===true;
+  const pipelineLabel=c.observationError||c.retentionError?'Obnova vyžaduje kontrolu':complete?'Náhrada schválena; karanténa uklizena':cleanup?.approvedAt?'Náhrada schválena; čeká na úklid karantény':c.phase==='imported'?(importedLabels[c.tdarrStatus]||'Náhrada předána; stav Tdarru není doložen'):publicText(c.message);
+  return {id:c.id,itemId:c.itemId,title:c.title,phase:c.phase,message:publicText(c.message),pipelineLabel,reason:publicText(c.reason),created:c.created,updated:c.updated,statusUpdated:c.statusUpdated||c.updated,
+   queue:(Array.isArray(c.queue)?c.queue:[]).map(q=>({title:q.title,status:q.status,percent:q.percent,timeleft:q.timeleft,error:publicText(q.error)})),
+   search:c.phase!=='imported'&&c.search?{id:c.search.id,status:c.search.status,message:publicText(c.search.message)}:null,
+   replacement:c.replacement?{title:c.replacement.title,quality:c.replacement.quality,languages:Array.isArray(c.replacement.languages)?c.replacement.languages:[],bytes:c.replacement.bytes}:null,
+   originalQuality:c.originalQuality,profileId:c.profileId,tdarrStatus:c.tdarrStatus||null,replacementTitle:c.replacement?.title||null,
+   observationError:publicText(c.observationError),retentionError:publicText(c.retentionError),error:publicText(c.observationError||c.retentionError),
+   approvedAt:cleanup?.approvedAt||null,deleteAfter:cleanup?.deleteAfter||null,cleanupComplete:complete,
+   quarantineRetained:c.phase!=='restored'&&!complete&&(c.originalQuarantineRetained===true||!!c.originalQuarantine&&['quarantined','rescan_intent','search_intent','waiting','queue_intent','imported'].includes(c.phase)),
+   canRestore:['waiting','manual'].includes(c.phase)&&!!c.originalQuarantine};
+ }
+ function observed(c){delete c.observationError;c.statusUpdated=new Date().toISOString();}
+ async function observeImported(c,cfg){
+  const root=cfg.sourceRoots?.[0],relative=c.replacementRelative;
+  if(!root||!cfg.libraryId||c.libraryId!==cfg.libraryId||c.tdarrSource!==root+'/'+c.relative||typeof relative!=='string'||relative.includes('\\')||relative.startsWith('/')||relative.split('/').some(v=>!v||v==='.'||v==='..'))throw Error('Nelze ověřit přesnou vazbu náhrady na knihovnu Tdarr.');
+  const file=root+'/'+relative,row=await tdarr('/api/v2/cruddb',{collection:'FileJSONDB',mode:'getById',docID:file});
+  if(!row||typeof row!=='object'||Array.isArray(row)||row._id!==file||row.DB!==c.libraryId)throw Error('Tdarr nepotvrdil přesný soubor náhrady ve správné knihovně.');
+  if(!['Queued','Transcoding','Transcode success','Transcode error','Not required','Hold'].includes(row.TranscodeDecisionMaker))throw Error('Tdarr vrátil neznámý stav náhrady.');
+  c.tdarrStatus=row.TranscodeDecisionMaker;c.message=importedLabels[c.tdarrStatus];c.queue=[];observed(c);
+ }
  async function publicSettings(){try{const c=await connection();return {configured:true,url:c.url,mediaRoot:c.mediaRoot,quarantineRoot:c.quarantineRoot||path.join(path.dirname(getConfig().mediaRoot),'.tdarr-review-quarantine'),preferCzechEnglish:c.preferCzechEnglish,hasApiKey:true}}catch(e){if(e.code!=='ENOENT')return {configured:false,error:'Nastavení Radarru je neplatné.'};return {configured:false,url:'',mediaRoot:'/media',quarantineRoot:path.join(path.dirname(getConfig().mediaRoot),'.tdarr-review-quarantine'),preferCzechEnglish:true,hasApiKey:false}}}
  async function settings(input,testOnly=false){if(observing||mutating)throw Error('Probíhá kontrola náhrad, zkus to za chvíli.');if(!testOnly&&(await list()).some(c=>!['restored','imported'].includes(c.phase)))throw Error('Nejprve dokonči nebo obnov otevřené žádosti o náhradu.');let previous;try{previous=await connection()}catch{}const c=validateConnection({...input,apiKey:input.apiKey?.trim()||previous?.apiKey});await api(c,'/system/status');const movies=await api(c,'/movie');if(!Array.isArray(movies)||!movies.some(m=>m.path===c.mediaRoot||m.path.startsWith(c.mediaRoot+'/')))throw Error('Cesta knihovny neodpovídá filmům Radarru.');if(!testOnly)await atomicJSON(connectionFile,c);return {ok:true,message:'Spojení s Radarrem a cesta knihovny ověřeny.'};}
  async function prepare(item,reason){
@@ -112,7 +139,7 @@ export function createReplacement({data,getConfig,safeFile,hash,atomicJSON,tdarr
    await tdarr('/api/v2/bulk-update-files',{fileIds:[c.tdarrSource],updatedObj:{TranscodeDecisionMaker:'Hold',holdUntil:Date.now()+30*86400000}});
    await verifyPaused(item);
    await fs.rename(b.path,c.reviewQuarantine);await persist(c,'review_quarantined','Výsledek je zachovaný v karanténě.');
-   await fs.rename(a.path,c.originalQuarantine);await persist(c,'quarantined','Originál i výsledek jsou zachované v karanténě.');
+   await fs.rename(a.path,c.originalQuarantine);c.originalQuarantineRetained=true;await persist(c,'quarantined','Originál i výsledek jsou zachované v karanténě.');
    await persist(c,'rescan_intent','Obnovuji evidenci filmu v Radarru.');const rescan=await api(con,'/command','POST',{name:'RescanMovie',movieId:m.id});c.rescanId=rescan?.id;await persist(c);
    if(!Number.isInteger(c.rescanId))throw Error('Výsledek obnovení evidence je nejistý.');
    for(let i=0;i<60;i++){const s=await api(con,'/command/'+c.rescanId);if(s.status==='completed')break;if(['failed','aborted','cancelled'].includes(s.status))throw Error('Radarr nedokončil obnovu evidence.');await new Promise(r=>setTimeout(r,1000));}
@@ -123,9 +150,12 @@ export function createReplacement({data,getConfig,safeFile,hash,atomicJSON,tdarr
  }
  async function observe(){
   if(observing||mutating)return;observing=true;
-  try{const all=await list(),pending=all.filter(c=>['waiting','queue_intent'].includes(c.phase));if(!pending.length)return;const con=await connection(),cfg=getConfig();
+  try{const all=await list(),pending=all.filter(c=>['waiting','queue_intent','imported'].includes(c.phase)&&!c.cleanup?.complete);if(!pending.length)return;const con=await connection(),cfg=getConfig();
    for(const c of pending){try{
-    if(c.radarrUrl!==con.url||c.radarrRoot!==con.mediaRoot||c.mediaRoot!==cfg.mediaRoot||c.reviewRoot!==cfg.reviewRoot||c.libraryId!==cfg.libraryId)throw Error('Změnilo se mapování. Náhrada vyžaduje ruční kontrolu.');
+    if(c.radarrUrl!==con.url||c.radarrRoot!==con.mediaRoot||c.mediaRoot!==cfg.mediaRoot||c.reviewRoot!==cfg.reviewRoot||c.libraryId!==cfg.libraryId||c.tdarrSource!==cfg.sourceRoots?.[0]+'/'+c.relative)throw Error('Změnilo se mapování. Náhrada vyžaduje ruční kontrolu.');
+    // An imported case is only observed. Never rescan/requeue it, including
+    // after a missing entry, a timeout or an unsupported Tdarr state.
+    if(c.phase==='imported'){await observeImported(c,cfg);await persist(c);continue;}
     const m=await api(con,'/movie/'+c.movieId),queue=(await api(con,'/queue?pageSize=1000')).records.filter(q=>q.movieId===c.movieId);
     c.queue=queue.map(q=>({title:q.title,status:q.status,percent:q.size?Math.max(0,Math.min(100,100*(1-q.sizeleft/q.size))):null,timeleft:q.timeleft,error:q.errorMessage||null}));
     if(c.searchId){const s=await api(con,'/command/'+c.searchId);c.search={id:s.id,status:s.status,message:s.message};}
@@ -134,15 +164,16 @@ export function createReplacement({data,getConfig,safeFile,hash,atomicJSON,tdarr
      const relative=f.path.slice(root.length),s=await safeFile(cfg.mediaRoot,relative);if(s.stat.size!==f.size)throw Error('Velikost importu se neshoduje.');if(c.phase==='queue_intent'&&(relative!==c.replacementRelative||retentionFP(s.stat).split(':').slice(0,4).join(':')!==c.replacementSourceFP.split(':').slice(0,4).join(':')))throw Error('Identita náhrady se po přerušeném předání změnila.');
      c.replacement={title:f.sceneName,quality:f.quality?.quality?.name,languages:(f.languages||[]).map(v=>v.name),bytes:f.size};
      c.replacementRelative=relative;c.replacementSourceFP=retentionFP(s.stat);
-     if(Date.now()-s.stat.mtimeMs<600000){c.message='Nová kopie je importovaná; čekám 10 minut na stabilní soubor.';await persist(c);continue;}
+     if(Date.now()-s.stat.mtimeMs<600000){c.message='Nová kopie je importovaná; čekám 10 minut na stabilní soubor.';observed(c);await persist(c);continue;}
      if(c.nativeAudioRepair){const probe=JSON.parse((await runProbe(cfg.ffprobe,['-v','error','-show_streams','-of','json',s.path],{timeout:60000,maxBuffer:4000000})).stdout);if(!hasNorwegianAudio(probe.streams||[]))throw Error('Náhrada nemá označený norský dialog; karanténa zůstává zachovaná.');if((await safeFile(cfg.mediaRoot,relative)).fp!==s.fp)throw Error('Import se během kontroly zvuku změnil.');c.nativeAudioVerifiedAt=new Date().toISOString();}
      if(!cfg.libraryId)throw Error('Pro automatické předání vyplň ID knihovny Tdarr.');
-     if(await isWorkerBusy({relative,reviewRelative:'',outputRelative:relative})){await persist(c,'imported','Novou kopii už zpracovává Tdarr. Karanténa je zachovaná.');continue;}
+     if(await isWorkerBusy({relative,reviewRelative:'',outputRelative:relative})){await observeImported(c,cfg);await persist(c,'imported','Novou kopii už zpracovává Tdarr. Karanténa je zachovaná.');continue;}
      await persist(c,'queue_intent','Předávám novou kopii Tdarru.');const file=cfg.sourceRoots[0]+'/'+relative;
      c.handoffStatus=await ensureHandoff({tdarr,file,libraryId:cfg.libraryId});
+     c.tdarrStatus=c.handoffStatus;observed(c);
      await persist(c,'imported','Náhrada je předaná Tdarru. Obě původní kopie zůstávají v karanténě; kvalitu náhrady ještě ověř.');
-    }else{c.message=queue.length?'Radarr stahuje náhradu podle profilu.':['failed','aborted','cancelled'].includes(c.search?.status)?'Hledání v Radarru selhalo nebo bylo zrušené. Obě kopie jsou zachované v karanténě.':c.search?.status==='completed'?'Hledání dokončeno; ve frontě není náhrada. Žádné vhodné vydání nemusí být dostupné.':'Radarr hledá náhradu.';await persist(c);}
-   }catch(e){c.message='Kontrola stavu: '+e.message;await persist(c);}}
+    }else{c.message=queue.length?'Radarr stahuje náhradu podle profilu.':['failed','aborted','cancelled'].includes(c.search?.status)?'Hledání v Radarru selhalo nebo bylo zrušené. Obě kopie jsou zachované v karanténě.':c.search?.status==='completed'?'Hledání dokončeno; ve frontě není náhrada. Žádné vhodné vydání nemusí být dostupné.':'Radarr hledá náhradu.';observed(c);await persist(c);}
+   }catch(e){c.observationError=e.message;c.statusUpdated=new Date().toISOString();delete c.tdarrStatus;c.message='Kontrola stavu: '+e.message;await persist(c);}}
   }finally{observing=false;}
  }
  async function restore(id){

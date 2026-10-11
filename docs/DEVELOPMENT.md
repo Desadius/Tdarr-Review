@@ -17,7 +17,7 @@ FFMPEG=/path/to/ffmpeg FFPROBE=/path/to/ffprobe npm run test:integration
 
 It must never point at real media or a real Tdarr/Radarr endpoint. The test server uses localhost port 18270. The approval subprocess deliberately receives an invalid decoder path so the test proves ordinary approval does not perform another complete decode.
 
-CI runs syntax and unit tests on Node 24 / Linux, builds the actual Linux amd64 images, and runs isolated image smoke and Review integration tests before publication. Pull requests are tested without registry write permission. Trusted main commits publish `latest` and immutable `sha-<commit>` tags to GHCR; matching `v<version>` tags can publish version tags. No production media or live Tdarr/Radarr endpoint is used. A complete new Unraid installation and Community Applications approval remain separate checks.
+CI runs syntax and unit tests on Node 24 / Linux, builds the actual Linux amd64 images, and runs isolated image smoke and Review integration tests. Pushes to `main`, version tags and pull requests are tested with read-only repository permissions and never publish images. Docker publication uses a separate manually dispatched workflow for an approved full commit SHA already in `main`; it repeats tests and smoke checks before obtaining registry credentials. Updating `latest` is an explicit option, disabled by default. See [the release process](RELEASES.md). No production media or live Tdarr/Radarr endpoint is used. A complete new Unraid installation and Community Applications approval remain separate checks.
 
 To exercise built images locally on Linux:
 

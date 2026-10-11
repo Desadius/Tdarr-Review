@@ -2,6 +2,13 @@
 
 This records the implemented application features. Versions before 1.10.0 were deployed snapshots and are not published Git tags.
 
+## 1.10.1 — prepared, not yet published or deployed
+
+- Continue observing manual Review replacement requests after Radarr import, using the exact replacement path and original Tdarr library binding.
+- Expose current Tdarr state, observation time, separate observation/retention errors and approval-based quarantine cleanup state without publishing private paths.
+- Keep Tdarr success distinct from explicit Review approval and seven-day retention evidence.
+- Separate read-only source CI from manual Docker publication for an approved main commit. Updating `latest` is disabled by default; deployment is a separate step.
+
 ## 1.10.0 — 2026-10-11
 
 - Separate attention dashboard, library, recoveries, history, savings and settings.
