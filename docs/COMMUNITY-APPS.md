@@ -1,6 +1,8 @@
 # Community Applications packaging
 
-This repository contains the packaging files for an Unraid Community Applications submission. **Catalog inclusion is still pending submission and acceptance.** Both Docker images were built, tested and published on 11 October 2026. Anonymous access to their manifests and image configurations was verified; their digests match the images tested and pushed by [CI](https://github.com/Desadius/Tdarr-Review/actions/runs/38158144901). The Community Applications scanner found one valid Docker app with no template warnings. The final catalog submission is a separate step.
+**Submitted and auto-approved on 11 October 2026 as Desadius' Repository.** The portal states that the Docker app will appear after the next Community Applications build publishes. Approval does not mean the current catalog build already contains it.
+
+Both Docker images were built, tested and published on 11 October 2026. Anonymous access to their manifests and image configurations was verified; their digests match the images tested and pushed by [CI](https://github.com/Desadius/Tdarr-Review/actions/runs/38158144901). The Community Applications scanner found one valid Docker app with no template warnings and confirmed that its image is publicly pullable. The repository owner authorized the final submission and acceptance of the portal's terms.
 
 ## Included files
 

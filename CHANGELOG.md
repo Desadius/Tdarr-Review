@@ -57,4 +57,4 @@ This records the implemented application features. Versions before 1.10.0 were d
 - Linux amd64 Review and optional Recovery images, with bundled Node/SQLite/FFmpeg, writable state provisioning and source/revision labels.
 - Container health check respects the configured browser origin and saved settings.
 - Isolated image startup, login, approval integration and disabled Recovery smoke checks gate GHCR publication.
-- Unraid Community Applications profile, beta template, project icon and submission guide. Catalog inclusion is pending separate acceptance.
+- Unraid Community Applications profile, beta template, project icon and submission guide. Submission received and auto-approved; the app will appear after the next catalog build publishes.

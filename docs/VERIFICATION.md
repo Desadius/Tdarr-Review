@@ -26,4 +26,4 @@ Published and anonymously verified on 11 October 2026:
 
 Anonymous checks fetched and hashed each manifest and image configuration, confirmed Linux amd64, and matched the revision/digests pushed by CI. This was a manifest/config accessibility check, not a full fresh download of every layer to a new Unraid host. The initial compressed image layers total about 1.5 GB because the pinned upstream Tdarr runtime is retained.
 
-The Community Applications portal accepted the repository's MIT license and profile and found one valid Docker application with no template errors or warnings. Scanner validation is not catalog acceptance. The template remains marked beta.
+The Community Applications portal accepted the repository's MIT license and profile and found one valid Docker application with no template errors or warnings. The image pullability check also passed. Final submission was received and auto-approved on 11 October 2026; the portal states that inclusion follows the next published catalog build. The template remains marked beta.
