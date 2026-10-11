@@ -46,7 +46,7 @@ docker compose pull review
 docker compose up -d --no-build review
 ```
 
-Follow [the installation guide](docs/INSTALL-UNRAID.md) before enabling file replacement. The image is `ghcr.io/desadius/tdarr-review:latest` for Linux amd64; optional Recovery uses `ghcr.io/desadius/tdarr-recovery:latest`. First publication and package visibility must be verified before anonymous pulls; [packaging status](docs/COMMUNITY-APPS.md) records the remaining catalog steps. You can also build from source with `docker compose build review`. The default bind address is localhost. Set it to your server's LAN address and set `PUBLIC_ORIGIN` to the exact address used in your browser.
+Follow [the installation guide](docs/INSTALL-UNRAID.md) before enabling file replacement. The public image is `ghcr.io/desadius/tdarr-review:latest` for Linux amd64; optional Recovery uses `ghcr.io/desadius/tdarr-recovery:latest`. Builds and isolated image tests passed, and anonymous registry access was verified; [packaging status](docs/COMMUNITY-APPS.md) records the remaining catalog steps. You can also build from source with `docker compose build review`. The default bind address is localhost. Set it to your server's LAN address and set `PUBLIC_ORIGIN` to the exact address used in your browser.
 
 ## Project layout
 

@@ -1,6 +1,6 @@
 # Community Applications packaging
 
-This repository contains the packaging files for an Unraid Community Applications submission. **Prepared packaging is not a Community Applications listing or approval.** At the time these files were added, submission and catalog approval were still pending. A Docker image must be published and publicly downloadable before the template can be installed by other users.
+This repository contains the packaging files for an Unraid Community Applications submission. **Catalog inclusion is still pending submission and acceptance.** Both Docker images were built, tested and published on 11 October 2026. Anonymous access to their manifests and image configurations was verified; their digests match the images tested and pushed by [CI](https://github.com/Desadius/Tdarr-Review/actions/runs/38158144901). The Community Applications scanner found one valid Docker app with no template warnings. The final catalog submission is a separate step.
 
 ## Included files
 
@@ -11,13 +11,13 @@ This repository contains the packaging files for an Unraid Community Application
 | [`../assets/icon.svg`](../assets/icon.svg) | Original project icon |
 | [`../LICENSE`](../LICENSE) | MIT license for the project's own code, templates and documentation |
 
-The template references `ghcr.io/desadius/tdarr-review:latest`, for **Linux amd64**. This does not assert that the tag has already been published or tested. It installs one Review container. Recovery remains an optional worker described in [Installation on Unraid](INSTALL-UNRAID.md); no separate Recovery catalog entry is provided.
+The template references the public `ghcr.io/desadius/tdarr-review:latest` image, for **Linux amd64**. It installs one Review container. Recovery remains an optional worker described in [Installation on Unraid](INSTALL-UNRAID.md); no separate Recovery catalog entry is provided. First public image revision: `cab3774c4f42b200da294ee9adc5ec06a39a05fc`; see [verification](VERIFICATION.md) for digests and test scope.
 
 The MIT license does not replace licenses belonging to the Tdarr runtime, Node.js, FFmpeg or other bundled third-party components.
 
 ## Validate before submitting
 
-1. Publish the tested image and make its GHCR package public. Confirm an anonymous machine can pull `ghcr.io/desadius/tdarr-review:latest`. A public GitHub repository does not automatically make its GHCR package public.
+1. Confirm the selected image is publicly pullable. The first published images have passed anonymous manifest/config checks. A public GitHub repository does not automatically establish its GHCR package visibility.
 2. Confirm the public repository is active, the root license is present, and all raw template/profile/icon and support URLs resolve.
 3. Install the template on an amd64 Unraid test installation. Test first login, connection/path checks, a disposable approval, host-port changes, restart, update and persistence. Do not reuse the same `/data` directory in two running Review containers.
 4. Open [Submit a Repository](https://ca.unraid.net/submit/new), sign in with an Unraid account and enter `https://github.com/Desadius/Tdarr-Review`.
