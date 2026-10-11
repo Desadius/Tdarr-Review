@@ -8,7 +8,7 @@ import {DatabaseSync} from 'node:sqlite';
 
 // No production mounts, published ports, real API keys or external network.
 const decoder='/app/Tdarr_Node/assets/app/ffmpeg/linux_x64/';
-function run(exe,args,{input,timeout=120000,quiet=false}={}){
+function run(exe,args,{input,timeout=120000,quiet=false,includeStderr=false}={}){
   return new Promise((resolve,reject)=>{
     const child=spawn(exe,args,{stdio:['pipe','pipe','pipe']});
     let stdout='',stderr='',expired=false;
@@ -16,7 +16,7 @@ function run(exe,args,{input,timeout=120000,quiet=false}={}){
     child.stdout.on('data',b=>{stdout=(stdout+b).slice(-65536);});
     child.stderr.on('data',b=>{stderr=(stderr+b).slice(-65536);});
     child.on('error',e=>{clearTimeout(timer);reject(e);});
-    child.on('close',code=>{clearTimeout(timer);if(expired||code!==0)return reject(Error(`${exe} failed (${expired?'timeout':code}): ${stderr}`));if(!quiet&&stdout.trim())console.log(stdout.trim());resolve(stdout);});
+    child.on('close',code=>{clearTimeout(timer);if(expired||code!==0)return reject(Error(`${exe} failed (${expired?'timeout':code}): ${stderr}`));const output=stdout+(includeStderr?stderr:'');if(!quiet&&output.trim())console.log(output.trim());resolve(output);});
     child.stdin.end(input);
   });
 }
@@ -32,10 +32,17 @@ async function review(){
   const base='http://127.0.0.1:8270',origin='http://review.example.invalid:48270';
   // Deliberately differ from the listener: reverse proxies/custom host ports
   // must be honored without resolving or connecting to any external address.
-  const request=(route,options={})=>fetch(base+route,{...options,headers:{host:new URL(origin).host,origin,...options.headers}});
-  let ready=false;
-  for(let i=0;i<100;i++){try{if((await request('/',{signal:AbortSignal.timeout(1000)})).status===200){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,100));}
-  assert.ok(ready,'Review default entrypoint did not start');
+  // Node fetch/Undici rewrites Host to the physical URL. Use the HTTP API so
+  // the configured public Host is preserved while the socket stays loopback.
+  const request=(route,options={})=>new Promise((resolve,reject)=>{
+    const req=http.request(base+route,{method:options.method||'GET',headers:{host:new URL(origin).host,origin,...options.headers},signal:options.signal||AbortSignal.timeout(2000)},res=>{
+      res.on('error',reject);res.on('end',()=>resolve({status:res.statusCode,headers:{get(name){const value=res.headers[name.toLowerCase()];return Array.isArray(value)?value.join('; '):value??null;}}}));res.resume();
+    });
+    req.on('error',reject);req.end(options.body);
+  });
+  let ready=false,lastProbe='no response';
+  for(let i=0;i<100;i++){try{const response=await request('/',{signal:AbortSignal.timeout(1000)});lastProbe='HTTP '+response.status;if(response.status===200){ready=true;break;}}catch(e){lastProbe=e.code||e.name||'request error';}await new Promise(r=>setTimeout(r,100));}
+  assert.ok(ready,'Review default entrypoint did not start; last probe: '+lastProbe);
   assert.equal((await request('/api/items')).status,401);
   const key=await fs.readFile('/data/access-key','utf8');
   assert.ok(key.trim().length>=24);
@@ -115,6 +122,12 @@ async function host(){
     await copyScript(names.recovery);
     await run('docker',['exec',names.recovery,'/usr/bin/node','/tmp/docker-smoke.mjs','inside-recovery'],{timeout:60000});
     console.log('Docker smoke passed. Tests used only fresh volumes, synthetic fixtures and container loopback.');
+  }catch(e){
+    for(const name of Object.values(names)){
+      const owner=await run('docker',['inspect','--format',`{{index .Config.Labels "${label}"}}`,name],{quiet:true,timeout:30000}).catch(()=>null);
+      if(owner?.trim()===prefix){console.error('Disposable smoke container logs: '+name);await run('docker',['logs','--tail','80',name],{includeStderr:true,timeout:30000}).catch(()=>{});}
+    }
+    throw e;
   }finally{
     for(const name of Object.values(names)){
       const owner=await run('docker',['inspect','--format',`{{index .Config.Labels "${label}"}}`,name],{quiet:true,timeout:30000}).catch(()=>null);
