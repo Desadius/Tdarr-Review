@@ -105,6 +105,16 @@ Plex sees the replacement at the original film path (or the verified MKV destina
 
 Copy `examples/recovery-config.example.json` to the directory named by `RECOVERY_DATA_HOST`, as `config.json`. Edit every relevant field, supply the Radarr key privately, and restrict the file to the container UID (`chmod 600`). Set a suitable `since` timestamp in Unix **milliseconds** instead of zero if you only want recent Tdarr errors considered.
 
+Create the quarantine root before enabling repairs. For the example media mapping:
+
+```bash
+mkdir -p /mnt/user/media/.tdarr-corrupt
+chown nobody:users /mnt/user/media/.tdarr-corrupt
+chmod 770 /mnt/user/media/.tdarr-corrupt
+```
+
+Use the parent of your actual movie library if it differs. It must be writable by Recovery and outside Plex's movie root, but within the same mounted media tree.
+
 ```bash
 docker compose --profile recovery build recovery
 docker compose --profile recovery up -d recovery
