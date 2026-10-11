@@ -22,7 +22,8 @@ Review does not automatically approve films, and it does not repeat a complete v
 
 | Document | Contents |
 | --- | --- |
-| [Installation on Unraid](docs/INSTALL-UNRAID.md) | Build, mappings, permissions, login and first configuration |
+| [Installation on Unraid](docs/INSTALL-UNRAID.md) | Docker image, mappings, permissions, login and first configuration |
+| [Community Applications](docs/COMMUNITY-APPS.md) | Unraid template, maintainer submission and catalog status |
 | [Configuration](docs/CONFIGURATION.md) | Paths, database, Radarr and Recovery settings |
 | [User guide](docs/USER-GUIDE.md) | Approval, comparison, rejection, recovery and statistics |
 | [Tdarr integration](docs/TDARR-INTEGRATION.md) | Flow placement, health checks and receipt format |
@@ -41,11 +42,11 @@ git clone https://github.com/Desadius/Tdarr-Review.git
 cd Tdarr-Review
 cp .env.example .env
 # Edit .env, create its host directories and set write permissions first.
-docker compose build review
-docker compose up -d review
+docker compose pull review
+docker compose up -d --no-build review
 ```
 
-Follow [the installation guide](docs/INSTALL-UNRAID.md) before enabling file replacement. There is no published container image yet; the example builds locally. The default bind address is localhost. Set it to your server's LAN address and set `PUBLIC_ORIGIN` to the exact address used in your browser.
+Follow [the installation guide](docs/INSTALL-UNRAID.md) before enabling file replacement. The image is `ghcr.io/desadius/tdarr-review:latest` for Linux amd64; optional Recovery uses `ghcr.io/desadius/tdarr-recovery:latest`. First publication and package visibility must be verified before anonymous pulls; [packaging status](docs/COMMUNITY-APPS.md) records the remaining catalog steps. You can also build from source with `docker compose build review`. The default bind address is localhost. Set it to your server's LAN address and set `PUBLIC_ORIGIN` to the exact address used in your browser.
 
 ## Project layout
 
@@ -61,4 +62,4 @@ compose.yaml  Review, plus opt-in Recovery profile
 
 Linux is required for the file replacement implementation, including directory synchronization. The supplied runtime has Node 24.15.0 and Jellyfin FFmpeg 7.1.4. The application was used with the Rust Tdarr engine and its existing API/database schema; future Tdarr releases and authenticated Tdarr API installations require separate compatibility verification.
 
-No distribution license has been selected yet. Publication of the repository does not by itself grant a software license.
+The project's own code, templates and documentation use the [MIT license](LICENSE). Upstream runtime components retain their own licenses; see [NOTICE](NOTICE).

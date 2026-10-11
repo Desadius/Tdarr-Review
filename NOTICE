@@ -1,0 +1,14 @@
+Tdarr Review source code, templates and documentation are licensed under MIT.
+
+The Dockerfiles extend the upstream ghcr.io/haveagitgat/tdarr runtime. That
+runtime and its bundled programs, including Tdarr, Node.js and Jellyfin FFmpeg,
+retain their own licenses and notices. The MIT license in this repository does
+not relicense those components or imply endorsement by their authors.
+
+Upstream projects:
+https://github.com/HaveAGitGat/Tdarr
+https://github.com/nodejs/node
+https://github.com/jellyfin/jellyfin-ffmpeg
+
+This is an independent community application. Tdarr, Radarr, Plex and Unraid
+remain the names and products of their respective owners.

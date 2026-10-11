@@ -1,0 +1,65 @@
+# Community Applications packaging
+
+This repository contains the packaging files for an Unraid Community Applications submission. **Prepared packaging is not a Community Applications listing or approval.** At the time these files were added, submission and catalog approval were still pending. A Docker image must be published and publicly downloadable before the template can be installed by other users.
+
+## Included files
+
+| File | Purpose |
+| --- | --- |
+| [`../templates/tdarr-review.xml`](../templates/tdarr-review.xml) | Main Review application template, marked beta |
+| [`../ca_profile.xml`](../ca_profile.xml) | Repository and maintainer profile |
+| [`../assets/icon.svg`](../assets/icon.svg) | Original project icon |
+| [`../LICENSE`](../LICENSE) | MIT license for the project's own code, templates and documentation |
+
+The template references `ghcr.io/desadius/tdarr-review:latest`, for **Linux amd64**. This does not assert that the tag has already been published or tested. It installs one Review container. Recovery remains an optional worker described in [Installation on Unraid](INSTALL-UNRAID.md); no separate Recovery catalog entry is provided.
+
+The MIT license does not replace licenses belonging to the Tdarr runtime, Node.js, FFmpeg or other bundled third-party components.
+
+## Validate before submitting
+
+1. Publish the tested image and make its GHCR package public. Confirm an anonymous machine can pull `ghcr.io/desadius/tdarr-review:latest`. A public GitHub repository does not automatically make its GHCR package public.
+2. Confirm the public repository is active, the root license is present, and all raw template/profile/icon and support URLs resolve.
+3. Install the template on an amd64 Unraid test installation. Test first login, connection/path checks, a disposable approval, host-port changes, restart, update and persistence. Do not reuse the same `/data` directory in two running Review containers.
+4. Open [Submit a Repository](https://ca.unraid.net/submit/new), sign in with an Unraid account and enter `https://github.com/Desadius/Tdarr-Review`.
+5. Run **Validate**, then **Scan**. Resolve findings and inspect the listing preview. Repeat these steps after meaningful XML changes.
+6. Submit for review. Only describe the app as available in Community Applications after it is accepted and visible in the catalog.
+
+GHCR publication can use GitHub Actions `GITHUB_TOKEN` with `packages: write`. The first package publication defaults to private. A package administrator changes this in **Package settings → Danger Zone → Change visibility → Public**. GitHub documents no package visibility update endpoint in its REST package API; do not assume a publishing workflow changes visibility. See [Container registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry) and [package visibility](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility).
+
+## Template configuration
+
+Set both required URLs for your own installation:
+
+- `PUBLIC_ORIGIN`: exact browser origin, such as `http://YOUR_UNRAID_IP:8270`; use your selected host port.
+- `TDARR_URL`: Tdarr server API URL reachable from Review, such as `http://YOUR_UNRAID_IP:8266`.
+
+Both fields are deliberately blank in the template. No personal server address is embedded. The default `WebUI` uses Unraid's `[IP]` and `[PORT:8270]` substitutions. If you use HTTPS or a reverse proxy, set `PUBLIC_ORIGIN` to that actual origin and launch it through the proxy.
+
+| Container path | Access | Host directory |
+| --- | --- | --- |
+| `/data` | Read/write | Persistent Review state, key, settings and journals |
+| `/media` | Read/write | Media parent containing the movie library and space for quarantine outside Plex |
+| `/review` | Read/write | Completed results awaiting approval, separate from originals |
+| `/tdarr` | Read-only | Tdarr DB2 directory containing `SQL/database.db` and sidecars |
+
+The defaults expect movies at `/media/movies`. Adjust the media-root variable if your folder differs. Configure Tdarr's own source roots and result-root aliases in Review Settings after login. Saved settings take precedence over environment defaults. Use the path/connection test before approving anything.
+
+The template preserves the Compose restrictions: UID 99/GID 100, read-only container root, all capabilities dropped, no new privileges, one CPU, 1 GiB RAM, 128 processes, a 128 MiB `/tmp` tmpfs with `noexec,nosuid`, and bounded Docker logs. It does not request privileged mode, host networking or a Docker socket. If your file owner differs, change `--user=99:100` in Extra Parameters to the UID/GID that can access the chosen mappings; do not recursively change the entire media library's ownership.
+
+The normal Unraid port mapping makes the UI reachable on the published host port. Compose defaults to localhost binding; choose the address/network exposure deliberately when installing the Unraid template. Keep access credentials private. Review writes to the media library only through an approval or a separately requested recovery operation; install against disposable media first.
+
+Enable Unraid Autostart. Do not also launch the Compose Review service against these same state and media paths. See [Installation on Unraid](INSTALL-UNRAID.md) for directory preparation and first login.
+
+## Maintainer metadata
+
+GitHub Issues is the support destination: <https://github.com/Desadius/Tdarr-Review/issues>. The current official field reference explicitly accepts an issues URL in `<Support>`. The root profile uses the same support landing page in optional `<Forum>`; an Unraid forum thread is not asserted to exist.
+
+The submission requires a public active repository, an OSI-approved root license, valid Docker XML and a nonempty root `ca_profile.xml` `<Profile>`. The template is marked `<Beta>true</Beta>` because this is the first packaged public installation path. Remove the beta marker only after fresh-install/update validation supports doing so.
+
+Official references:
+
+- [Submission requirements and workflow](https://ca.unraid.net/submit/new)
+- [Docker repository XML](https://ca.unraid.net/submit/help/repository-xml)
+- [Repository profile XML](https://ca.unraid.net/submit/help/repository-info-xml)
+- [Public XML field reference](https://ca.unraid.net/submit/help/xml-field-reference)
+- [Builder guide](https://ca.unraid.net/submit/help/builders)

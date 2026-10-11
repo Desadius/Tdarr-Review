@@ -49,4 +49,12 @@ This records the implemented application features. Versions before 1.10.0 were d
 - Publish current source, installation examples, documentation and isolated regression tests.
 - Exclude production state, credentials, one-off migration runner and real film repair approvals.
 - Approved pending repairs use an explicit frozen registry rather than deployment-specific movie IDs; the shipped registry is empty.
-- Container builds and GitHub CI are supplied; no container image has been published.
+- Container builds and GitHub CI were supplied with the source snapshot.
+
+## Docker and Community Applications packaging — 2026-10-11
+
+- MIT license for the project's own code, templates and documentation; upstream runtime notices retained.
+- Linux amd64 Review and optional Recovery images, with bundled Node/SQLite/FFmpeg, writable state provisioning and source/revision labels.
+- Container health check respects the configured browser origin and saved settings.
+- Isolated image startup, login, approval integration and disabled Recovery smoke checks gate GHCR publication.
+- Unraid Community Applications profile, beta template, project icon and submission guide. Catalog inclusion is pending separate acceptance.

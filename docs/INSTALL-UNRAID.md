@@ -1,6 +1,6 @@
 # Install on Unraid
 
-The examples build a local image. There is no prebuilt Tdarr Review image or Community Applications listing yet. Existing production containers are not changed by cloning this repository.
+Use the Linux amd64 image `ghcr.io/desadius/tdarr-review:latest` or build it from source. A Community Applications template is supplied in [`templates/tdarr-review.xml`](../templates/tdarr-review.xml); inclusion in the catalog requires separate submission and acceptance. See [publication status](COMMUNITY-APPS.md) before attempting an anonymous image pull. Existing production containers are not changed by cloning this repository.
 
 ## 1. Prepare paths and permissions
 
@@ -37,14 +37,26 @@ Edit `.env` in a text editor. Set your real paths and API address. Set `REVIEW_B
 If Docker Compose is available on your Unraid installation:
 
 ```bash
-docker compose build review
-docker compose up -d review
+docker compose pull review
+docker compose up -d --no-build review
 docker compose logs --tail 40 review
 ```
 
-## 3. Alternative: Unraid Docker template
+For a local source build instead, use `docker compose build review` and `docker compose up -d review`.
 
-Build from the repository directory:
+## 3. Unraid Docker template
+
+Once catalog inclusion is confirmed, search **Apps** for **tdarr-review**, select Install and edit the paths and the two required URLs. Before catalog acceptance, you can import the supplied XML manually in your Unraid template directory:
+
+```bash
+mkdir -p /boot/config/plugins/dockerMan/templates-user
+curl --fail --location --output /boot/config/plugins/dockerMan/templates-user/my-tdarr-review.xml \
+  https://raw.githubusercontent.com/Desadius/Tdarr-Review/main/templates/tdarr-review.xml
+```
+
+Then select it in **Docker → Add Container**. Confirm the existing template file will not be overwritten if you already have an installation. The image must be publicly downloadable first. The template includes resource limits and writable state; prepare host directory permissions as in step 1. It does not install a Tdarr server or change its flows.
+
+If using a local build rather than the registry image, build from the repository directory and replace Repository with `tdarr-review:local`:
 
 ```bash
 docker build -t tdarr-review:local .
@@ -55,7 +67,7 @@ In **Docker → Add Container**, configure:
 | Field | Value |
 | --- | --- |
 | Name | `tdarr-review` |
-| Repository | `tdarr-review:local` |
+| Repository | `ghcr.io/desadius/tdarr-review:latest` |
 | Network | `bridge` |
 | WebUI | `http://[IP]:[PORT:8270]` |
 | Port | Host `8270` → container `8270/TCP` |
@@ -116,11 +128,11 @@ chmod 770 /mnt/user/media/.tdarr-corrupt
 Use the parent of your actual movie library if it differs. It must be writable by Recovery and outside Plex's movie root, but within the same mounted media tree.
 
 ```bash
-docker compose --profile recovery build recovery
-docker compose --profile recovery up -d recovery
+docker compose --profile recovery pull recovery
+docker compose --profile recovery up -d --no-build recovery
 docker compose logs --tail 40 recovery
 ```
 
 The example starts with `enabled:false`. This allows verification but disables automatic external repairs. Dry-run cases are not automatically replayed when you later enable it; inspect them deliberately. Do not enable repairs until the mappings and Radarr history are confirmed.
 
-The optional worker runs in a second container, with no HTTP port. Combining both processes in one container is not implemented in this release. Without this worker, normal Review approval and its manual Radarr integration still work.
+For a local worker build, use `docker compose --profile recovery build recovery` first. The optional worker runs in a second container, with no HTTP port. Combining both processes in one container is not implemented in this release. Without this worker, normal Review approval and its manual Radarr integration still work.

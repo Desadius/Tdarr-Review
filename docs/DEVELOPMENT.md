@@ -17,7 +17,17 @@ FFMPEG=/path/to/ffmpeg FFPROBE=/path/to/ffprobe npm run test:integration
 
 It must never point at real media or a real Tdarr/Radarr endpoint. The test server uses localhost port 18270. The approval subprocess deliberately receives an invalid decoder path so the test proves ordinary approval does not perform another complete decode.
 
-The published CI runs syntax and unit tests on Node 24 / Linux. It does not approve production movies or publish Docker images. Container build and a complete new Unraid installation should be verified separately before deploying a release.
+CI runs syntax and unit tests on Node 24 / Linux, builds the actual Linux amd64 images, and runs isolated image smoke and Review integration tests before publication. Pull requests are tested without registry write permission. Trusted main commits publish `latest` and immutable `sha-<commit>` tags to GHCR; matching `v<version>` tags can publish version tags. No production media or live Tdarr/Radarr endpoint is used. A complete new Unraid installation and Community Applications approval remain separate checks.
+
+To exercise built images locally on Linux:
+
+```bash
+docker build --platform linux/amd64 -t tdarr-review:smoke .
+docker build --platform linux/amd64 -f Dockerfile.recovery -t tdarr-recovery:smoke .
+bash tools/docker-smoke.sh
+```
+
+The smoke script creates uniquely named disposable containers and volumes and removes only those resources afterward. Review is tested with a new writable `/data` volume and a read-only container root, including login and the configured Host header. Recovery runs a single disabled pass with empty fixture tables and a loopback-only mock. Its repair and original decoding policies are covered by unit tests, not by live downloads in the smoke test.
 
 ## Source provenance
 
@@ -28,7 +38,7 @@ The public pending-evidence worker retains strict identity/history/evidence chec
 ## Known limitations
 
 - Czech UI; no language selector yet.
-- No selected open-source license, prebuilt image or Community Applications entry yet.
+- First public packaging is marked beta. Community Applications inclusion requires separate submission and catalog acceptance; see [packaging status](COMMUNITY-APPS.md).
 - Review and optional Recovery run as separate single processes/containers. No shared supervisor or multiple-writer deployment support.
 - Tdarr API authentication support is not implemented; changed future API/schema versions require testing.
 - Recovery configuration is a private JSON file, not part of Review's settings UI.

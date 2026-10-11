@@ -1,14 +1,84 @@
-name: Tests
-on: [push, pull_request]
+name: Tests and Docker images
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   unit:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
       - run: npm run check
       - run: npm test
+  docker-test:
+    if: github.event_name == 'pull_request'
+    needs: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - name: Build both Linux amd64 images
+        run: |
+          docker build --platform linux/amd64 -t tdarr-review:smoke .
+          docker build --platform linux/amd64 -f Dockerfile.recovery -t tdarr-recovery:smoke .
+      - name: Test images without production data or external network
+        run: bash tools/docker-smoke.sh
+  publish:
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    needs: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - name: Build both Linux amd64 images
+        run: |
+          version=$(node -p "require('./package.json').version")
+          docker build --platform linux/amd64 --build-arg APP_VERSION="$version" --build-arg VCS_REF="$GITHUB_SHA" -t tdarr-review:smoke .
+          docker build --platform linux/amd64 --build-arg APP_VERSION="$version" --build-arg VCS_REF="$GITHUB_SHA" -f Dockerfile.recovery -t tdarr-recovery:smoke .
+      - name: Test exact images before publication
+        run: bash tools/docker-smoke.sh
+      - name: Log in to GitHub Container Registry
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Publish tested images
+        run: |
+          owner=${GITHUB_REPOSITORY_OWNER,,}
+          for app in tdarr-review tdarr-recovery; do
+            image="ghcr.io/$owner/$app"
+            docker tag "$app:smoke" "$image:sha-$GITHUB_SHA"
+            docker push "$image:sha-$GITHUB_SHA"
+            if [[ "$GITHUB_REF" == refs/heads/main ]]; then
+              docker tag "$app:smoke" "$image:latest"
+              docker push "$image:latest"
+            elif [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              version=$(node -p "require('./package.json').version")
+              [[ "$GITHUB_REF_NAME" == "v$version" ]] || { echo 'Release tag does not match package.json'; exit 1; }
+              docker tag "$app:smoke" "$image:$version"
+              docker push "$image:$version"
+            fi
+            printf '%s\n' "Published $image:sha-$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          done
+      - name: Log out of GHCR
+        if: always()
+        run: docker logout ghcr.io

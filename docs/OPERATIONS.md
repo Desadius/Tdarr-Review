@@ -19,12 +19,12 @@ With the supplied Compose example, after the idle checks and backup:
 ```bash
 docker compose stop review
 git pull --ff-only
-docker compose build review
-docker compose up -d review
+docker compose pull review
+docker compose up -d --no-build review
 docker compose logs --tail 40 review
 ```
 
-Use the equivalent Unraid stop/build/start process for a Docker template installation. Do not run an additional container against the same `/data` as a workaround. Rollback uses the previous image/source, with existing transaction evidence retained; verify schema compatibility before restoring old state.
+For a source build, replace `pull` with `build` and omit `--no-build`. For a Docker template installation, use Unraid's normal update flow after the idle/backup checks. An immutable `sha-<commit>` tag can be recorded in Repository (or `REVIEW_IMAGE_TAG` for Compose) to pin or roll back the application. Do not run an additional container against the same `/data` as a workaround. Rollback uses the previous image/source, with existing transaction evidence retained; verify schema compatibility before restoring old state.
 
 ## Web UI unavailable after restart
 

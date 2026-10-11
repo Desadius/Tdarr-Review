@@ -1,8 +1,20 @@
 ARG TDARR_RUNTIME_IMAGE=ghcr.io/haveagitgat/tdarr@sha256:45742f00e51a58553844c8b13d97e7ae9b2ee9a056bd8e5993d9a8282a45a23f
 FROM ${TDARR_RUNTIME_IMAGE}
+ARG APP_VERSION=1.10.0
+ARG VCS_REF=unknown
+LABEL org.opencontainers.image.title="Tdarr Review Recovery" \
+      org.opencontainers.image.description="Optional recovery worker for Tdarr Review" \
+      org.opencontainers.image.source="https://github.com/Desadius/Tdarr-Review" \
+      org.opencontainers.image.documentation="https://github.com/Desadius/Tdarr-Review/tree/main/docs" \
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}"
+USER root
+RUN mkdir -p /data && chown 99:100 /data
 WORKDIR /app-recovery
 COPY recovery/ /app-recovery/
+COPY LICENSE NOTICE /app-recovery/
 ENV DATA_ROOT=/data
 USER 99:100
+HEALTHCHECK NONE
 ENTRYPOINT ["/usr/bin/ionice"]
 CMD ["-c", "2", "-n", "7", "/usr/bin/nice", "-n", "19", "/usr/bin/node", "/app-recovery/worker.mjs"]

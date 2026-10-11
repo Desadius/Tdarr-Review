@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Tdarr Review</title>
+  <desc id="desc">A video clapperboard with a check mark indicating a reviewed transcode.</desc>
+  <rect width="512" height="512" rx="112" fill="#10251f"/>
+  <rect x="76" y="172" width="360" height="250" rx="32" fill="#65d5bb"/>
+  <path d="M76 159v-24a28 28 0 0 1 28-28h304a28 28 0 0 1 28 28v24H76z" fill="#e8f7f2"/>
+  <path d="m122 107 38 52h48l-38-52zm114 0 38 52h48l-38-52zm114 0 38 52h48l-38-52z" fill="#65d5bb"/>
+  <path d="m178 297 52 52 109-109" fill="none" stroke="#10251f" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

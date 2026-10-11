@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Container version="2">
+  <Name>tdarr-review</Name>
+  <Repository>ghcr.io/desadius/tdarr-review:latest</Repository>
+  <Registry>https://github.com/Desadius/Tdarr-Review/pkgs/container/tdarr-review</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/Desadius/Tdarr-Review/issues</Support>
+  <Project>https://github.com/Desadius/Tdarr-Review</Project>
+  <ReadMe>https://github.com/Desadius/Tdarr-Review/blob/main/docs/INSTALL-UNRAID.md</ReadMe>
+  <License>https://github.com/Desadius/Tdarr-Review/blob/main/LICENSE</License>
+  <Overview>Review Tdarr transcodes before replacing originals. Compare image and audio samples, approve individually or in batches, record rejection reasons and track savings. Optional manual Radarr replacement requests preserve the original in quarantine. Czech interface. Linux amd64. Requires a separately installed Tdarr server, its DB2 directory and a separate folder containing completed results. Set PUBLIC_ORIGIN and TDARR_URL for your server before installing. Recovery is an optional separate worker; this template installs only Review. Approval writes to your media library.</Overview>
+  <Category>Tools:Utilities MediaApp:Video</Category>
+  <WebUI>http://[IP]:[PORT:8270]</WebUI>
+  <Icon>https://raw.githubusercontent.com/Desadius/Tdarr-Review/main/assets/icon.svg</Icon>
+  <TemplateURL>https://raw.githubusercontent.com/Desadius/Tdarr-Review/main/templates/tdarr-review.xml</TemplateURL>
+  <Beta>true</Beta>
+  <Requires>Linux amd64; Tdarr server; readable DB2 directory; completed transcodes in a separate writable review directory. UID 99 / GID 100 must have access to the selected host mappings.</Requires>
+  <ExtraSearchTerms>tdarr review transcode approval radarr quarantine</ExtraSearchTerms>
+  <ExtraParams>--user=99:100 --read-only --cap-drop=ALL --security-opt=no-new-privileges --cpus=1 --memory=1g --pids-limit=128 --tmpfs=/tmp:rw,noexec,nosuid,size=128m --restart=unless-stopped --log-opt=max-size=10m --log-opt=max-file=3</ExtraParams>
+  <Config Name="WebUI port" Target="8270" Default="8270" Mode="tcp" Description="Host port for Review. If changed, update PUBLIC_ORIGIN to the exact browser URL." Type="Port" Display="always" Required="true" Mask="false">8270</Config>
+  <Config Name="Browser origin (required)" Target="PUBLIC_ORIGIN" Default="" Mode="" Description="Enter the exact origin used in your browser, for example http://YOUR_UNRAID_IP:8270. Include the selected host port; no trailing path." Type="Variable" Display="always" Required="true" Mask="false"/>
+  <Config Name="Tdarr server URL (required)" Target="TDARR_URL" Default="" Mode="" Description="Enter the Tdarr server API URL reachable from this container, for example http://YOUR_UNRAID_IP:8266. This is the server API port, not its WebUI port." Type="Variable" Display="always" Required="true" Mask="false"/>
+  <Config Name="Application state" Target="/data" Default="/mnt/cache/appdata/tdarr-review/data" Mode="rw" Description="Persistent Review settings, access key, history and journals. Use one Review container per state directory. Must be writable by UID 99 / GID 100." Type="Path" Display="always" Required="true" Mask="false">/mnt/cache/appdata/tdarr-review/data</Config>
+  <Config Name="Media parent" Target="/media" Default="/mnt/user/media" Mode="rw" Description="Parent of your movie library. The default expects films in media/movies. Review needs write access for approval and quarantine outside the Plex library. Configure MEDIA_ROOT if your folder name differs." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/media</Config>
+  <Config Name="Results awaiting review" Target="/review" Default="/mnt/cache/tdarr-review-output" Mode="rw" Description="Separate host folder containing completed Tdarr results awaiting approval. Never select the original movie library. Use your existing results folder if already configured." Type="Path" Display="always" Required="true" Mask="false">/mnt/cache/tdarr-review-output</Config>
+  <Config Name="Tdarr DB2 directory" Target="/tdarr" Default="/mnt/cache/appdata/tdarr/server/Tdarr/DB2" Mode="ro" Description="Directory containing SQL/database.db and its WAL/SHM files, mounted read-only. Locate your actual Tdarr DB2 directory; do not map only the database file." Type="Path" Display="always" Required="true" Mask="false">/mnt/cache/appdata/tdarr/server/Tdarr/DB2</Config>
+  <Config Name="Movie root inside Review" Target="MEDIA_ROOT" Default="/media/movies" Mode="" Description="Container path to your movie library inside the Media parent mapping. Configure the matching source roots used by Tdarr in Review Settings after login." Type="Variable" Display="advanced" Required="true" Mask="false">/media/movies</Config>
+  <Config Name="Result root inside Review" Target="REVIEW_ROOT" Default="/review" Mode="" Description="Container path to completed results, matching the Results awaiting review mapping." Type="Variable" Display="advanced" Required="true" Mask="false">/review</Config>
+</Container>

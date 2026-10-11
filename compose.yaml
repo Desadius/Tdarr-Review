@@ -1,7 +1,7 @@
 services:
   review:
     build: .
-    image: tdarr-review:local
+    image: "ghcr.io/desadius/tdarr-review:${REVIEW_IMAGE_TAG:-latest}"
     user: "${PUID:-99}:${PGID:-100}"
     ports:
       - "${REVIEW_BIND_IP:-127.0.0.1}:${REVIEW_PORT:-8270}:8270"
@@ -33,7 +33,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.recovery
-    image: tdarr-recovery:local
+    image: "ghcr.io/desadius/tdarr-recovery:${RECOVERY_IMAGE_TAG:-latest}"
     user: "${PUID:-99}:${PGID:-100}"
     volumes:
       - "${RECOVERY_DATA_HOST:?Set RECOVERY_DATA_HOST}:/data"
