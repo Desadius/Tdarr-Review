@@ -229,11 +229,13 @@ async function tick(){
  const jobs=rows('jobsjsondb').filter(j=>j.DB===cfg.libraryId&&j.end&&/error/i.test(j.status)&&j.end>=cfg.since).sort((a,b)=>b.end-a.end);
  const all=rows('jobsjsondb');
  for(const j of jobs){
-  if(state.jobs[j._id]&&state.jobs[j._id]!=='not_structural_decode_error')continue;
+  // Reconsider previously unrecognized reports once after extending the
+  // decoder allowlist. Never reopen an existing case or a manual decision.
+  if(state.jobs[j._id]&&!['not_structural_decode_error','not_confirmed_decode_error_v2'].includes(state.jobs[j._id]))continue;
   if(all.some(k=>k.file===j.file&&k.start>j.start)){state.jobs[j._id]='superseded';continue;}
   let report;
   try{report=await fs.readFile(within(cfg.reports,j.job.footprintId+'/'+j.job.fileId),'utf8');}catch{continue;}
-  if(classify({code:1,stderr:report}).kind!=='corrupt'){state.jobs[j._id]='not_confirmed_decode_error_v2';continue;}
+  if(classify({code:1,stderr:report}).kind!=='corrupt'){state.jobs[j._id]='not_confirmed_decode_error_v3';continue;}
   let c;
   try{
    const rel=relative(j.file,cfg.sourceRoot),s=await safeSource(rel),id=identity(j.file,s.fp);

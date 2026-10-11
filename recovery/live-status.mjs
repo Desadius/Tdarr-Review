@@ -1,5 +1,6 @@
+import {projectReplacementFollowups} from './replacement-followup.mjs';
 // Public status is a projection of the private journal, never a repair decision.
-const PUBLIC_FIELDS = ['id', 'title', 'phase', 'pipelineLabel', 'source', 'message', 'reason', 'created', 'updated', 'lastSearchAt', 'nextSearchAt', 'nextRetryAt', 'sourceRetained', 'originalCheckKind', 'tmdbId', 'titleSlug', 'edition', 'error', 'tdarrStatus', 'replacementTitle', 'quarantineRetained', 'cleanupComplete', 'deleteAfter', 'canRestore'];
+const PUBLIC_FIELDS = ['replacementFollowupId', 'replacementFollowupBinding', 'id', 'title', 'phase', 'pipelineLabel', 'source', 'message', 'reason', 'created', 'updated', 'lastSearchAt', 'nextSearchAt', 'nextRetryAt', 'sourceRetained', 'originalCheckKind', 'tmdbId', 'titleSlug', 'edition', 'error', 'tdarrStatus', 'replacementTitle', 'quarantineRetained', 'cleanupComplete', 'deleteAfter', 'canRestore'];
 const PUBLIC_TEXT = ['message', 'reason', 'error'];
 const iso = value => new Date(value).toISOString();
 const timestamp = value => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? Date.parse(value) : null;
@@ -50,7 +51,7 @@ export function createLiveStatusPublisher({getState, publish, readTdarrFiles, cl
 
   function decorate(snapshot) {
     const now = clock(), state = getState();
-    return {version: snapshot.version, updated: iso(now), cases: (snapshot.cases || []).map(entry => {
+    return projectReplacementFollowups({version: snapshot.version, updated: iso(now), cases: (snapshot.cases || []).map(entry => {
       const c = state.cases?.[entry.id] || {}, phase = phases.get(entry.id), decode = decodes.get(entry.id);
       const previous = retention.get(entry.id), retentionKey = JSON.stringify([c.cleanup?.approvedAt, c.cleanup?.deleteAfter, c.cleanup?.complete, c.cleanup?.completedAt, c.retentionError]);
       if (!previous) retention.set(entry.id, {key: retentionKey, changedAt: Math.max(timestamp(c.cleanup?.approvedAt) ?? 0, timestamp(c.cleanup?.completedAt) ?? 0)});
@@ -73,7 +74,7 @@ export function createLiveStatusPublisher({getState, publish, readTdarrFiles, cl
           etaSeconds: decode.running && elapsed >= 5 && duration !== null && done !== null && positive(rate) ? Math.max(0, (duration - done) / rate) : null, ended: decode.recordEnded};
       }
       return result;
-    })};
+    })});
   }
 
   function requestPublication(refresh = false) {

@@ -88,7 +88,7 @@ export function classifyRecovery(record, now = Date.now()) {
   const stampValue = sourceRecovery ? r.statusUpdated : (r.statusUpdated || r.updated);
   const stamp = finiteTime(stampValue);
   const unknownTime = stamp === null || stamp > clock + 120000;
-  const stale = !unknownTime && clock - stamp > RECOVERY_STALE_MS;
+  let stale = !unknownTime && clock - stamp > RECOVERY_STALE_MS;
   const queue = list(r.queue);
   const searchStatus = normalize(r.search?.status);
   const tdarrStatus = normalize(r.tdarrStatus);
@@ -128,7 +128,16 @@ export function classifyRecovery(record, now = Date.now()) {
   } else if (r.phase === 'waiting_source_kept') {
     category = 'waiting'; label = 'Náhrada zatím nenalezena'; nextStep = 'Film zůstává v knihovně; vadné vydání se znovu nepřevádí.';
   } else if (r.phase === 'replacement_imported' || r.phase === 'imported') {
-    if (tdarrStatus === 'queued') {
+    const followup=r.replacementFollowup;
+    if(sourceRecovery&&itemId(followup?.id)&&followup.id===r.replacementFollowupId&&followup.id!==r.id&&followup.source==='recovery'){
+      // A later case concerns this exact replacement, not the preserved parent.
+      // Do not inherit its completion/approval or use the parent's DB freshness.
+      const next=classifyRecovery({source:'recovery',phase:followup.phase,statusUpdated:followup.statusUpdated,originalCheckKind:followup.originalCheckKind,nextSearchAt:followup.nextSearchAt,tdarrStatus:followup.tdarrStatus,error:followup.hasError?'Navazující obnova vyžaduje kontrolu.':null},clock);
+      category=next.category==='done'?'attention':next.category;
+      label='Kontrola náhrady: '+next.label;
+      nextStep=next.category==='done'?'Otevři navazující případ; dokončení diagnostiky není schválením náhrady.':next.nextStep;
+      warnings.push(...next.warnings);unknown=next.unknown;stale ||= next.stale;
+    } else if (tdarrStatus === 'queued') {
       category = 'running'; label = 'Čeká ve frontě Tdarru'; nextStep = 'Vyčkej na převod náhrady.';
     } else if (tdarrStatus === 'transcoding') {
       category = 'running'; label = 'Tdarr převádí náhradu'; nextStep = 'Výsledek se objeví v Review po dokončení převodu.';

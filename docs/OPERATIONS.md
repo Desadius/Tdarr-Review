@@ -76,3 +76,13 @@ Check that the exact replacement was approved through Review and that its approv
 ## Thread and resource limits
 
 Review comparison extraction and Recovery decoding use conservative decoder thread settings. CPU limits do not guarantee an exact OS thread count: FFmpeg may create auxiliary threads. The supplied optional worker uses two CPU quota units plus low scheduler/I/O priority. Encoding worker/pool choices remain in your Tdarr flow and node configuration; do not apply powerful-PC settings to a smaller Unraid server indiscriminately.
+
+## A newly imported replacement also fails
+
+The prepared 1.10.1 worker recognizes `Read past end of XLL band data` as a decoder candidate. A failed Tdarr report is only a trigger: Recovery independently checks the unchanged original twice and verifies its current Radarr import/grab binding before any external repair. Operational errors or a clean/ambiguous original check never authorize a download. Full audio is retained; the worker does not bypass DTS-HD validation by decoding only its DTS core.
+
+Reports previously recorded as `not_confirmed_decode_error_v2` are reconsidered once under the expanded classifier. Existing case IDs, manual decisions, newer superseding jobs and preserved-source Holds are respected. Remaining unrecognized reports are recorded as `not_confirmed_decode_error_v3`. Do not erase job cursors to force a retry.
+
+Review links the imported parent to a follow-up case only when source path/size and Radarr movie/file identities match exactly and uniquely. The fingerprint must match completely, or differ only in ctime while device/inode/size/mtime remain identical. A ctime difference is explicitly shown as a display-only association; it never rewrites identity or permits reuse of old repair evidence. Open **Navazující kontrola náhrady** to see the next case, its own observed time, per-pass progress and next attempt. A parent's fresh Tdarr snapshot cannot make a stale child observation fresh. Missing historical binding evidence leaves the cases separate. The link is read-only; it grants no new authorization and does not transfer approval or cleanup evidence between quarantines.
+
+A confirmed bad replacement remains held in Plex during the movie cooldown; the daily quota still applies. Only after those limits clear and the frozen evidence/history/source remain valid can its own repair continue. Older originals remain preserved until their applicable approval evidence permits cleanup.

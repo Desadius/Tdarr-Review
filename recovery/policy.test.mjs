@@ -2,6 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {classify,confirmed,relative,bindHistory,blocked,within} from './policy.mjs';
 const corrupt={code:183,stderr:'[hevc @ 0x123] Invalid NAL unit size (-12 > 42).\nError submitting packet to decoder: Invalid data found when processing input'};
+test('DTS XLL requires matching original decoder evidence and rejects operational failures',()=>{
+ const a={code:183,stderr:'[dca @ 0x123] Read past end of XLL band data\nError submitting packet to decoder: Invalid data found when processing input'};
+ assert.equal(confirmed(a,{...a,stderr:a.stderr.replace('0x123','0x456')}),true);
+ assert.equal(confirmed(a,corrupt),false);
+ assert.equal(confirmed(a,{code:0,stderr:''}),false);
+ for(const x of [{timeout:true},{signal:'SIGKILL'},{error:'ENOENT'},{stderr:a.stderr+'\nInput/output error'},{stderr:a.stderr+'\nPermission denied'}])assert.equal(confirmed(a,{...a,...x}),false);
+});
 test('only repeated structural decoding errors are eligible',()=>{assert.equal(confirmed(corrupt,{...corrupt,stderr:corrupt.stderr.replace('0x123','0x999')}),true);assert.equal(confirmed(corrupt,{code:1,stderr:'Invalid NAL unit size (-10 > 42).'}),false);});
 test('operational failures override any decoder symptom',()=>{for(const stderr of ['Permission denied','Input/output error','Connection reset','No such file or directory','No space left on device','Cannot allocate memory'])assert.equal(classify({...corrupt,stderr:corrupt.stderr+'\n'+stderr}).kind,'operational');for(const x of [{timeout:true},{signal:'SIGKILL'},{error:'ENOENT'}])assert.equal(classify({...corrupt,...x}).kind,'operational');});
 test('encoder and generic failures never qualify',()=>{for(const stderr of ['Error initializing output stream','Conversion failed!','Invalid data found when processing input','Unknown encoder libx265','Could not find ref with POC 1'])assert.equal(classify({code:1,stderr}).kind,'unconfirmed');assert.equal(classify({...corrupt,code:0}).kind,'corrupt');});

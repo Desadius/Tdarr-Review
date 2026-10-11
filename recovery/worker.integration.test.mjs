@@ -64,6 +64,43 @@ async function fixture({terminalHeader=false}={}){
  return {cfg,state,parent,row,requests,file,relative,source,sourceFP,size,sourceBytes,data,write,run,result,unchanged,cleanup,id:identity(file,sourceFP),binding:bindHistory(movie,history,movie.movieFile.path,size),allowRepair:()=>{allowRepair=true;},setDecoder:script=>fs.writeFile(cfg.ffmpeg,script,{mode:0o755})};
 }
 
+test('actual worker retries an old unrecognized XLL report, links its exact parent and preserves cooldown',{skip:process.platform!=='linux'},async()=>{
+ const f=await fixture();try{
+  f.state.jobs['fixture-job']='not_confirmed_decode_error_v2';Object.assign(f.parent,{status:'replacement_imported',replacement:{movieFileId:11,size:f.size}});
+  await fs.writeFile(path.join(f.data,'../reports/fixture/report'),'[dca] Read past end of XLL band data');
+  await f.setDecoder((await fs.readFile(f.cfg.ffmpeg,'utf8')).replace('quant_step_size larger than huff_lsbs','Read past end of XLL band data'));
+  const parent=structuredClone(f.parent);await f.write();await f.run();let result=await f.result();
+  assert.equal(result.state.cases[f.id].status,'deferred_cooldown');assert.equal(result.state.jobs['fixture-job'],f.id);assert.deepEqual(result.state.cases[f.parent.id],parent);
+  const published=result.public.cases.find(c=>c.id===f.parent.id);assert.equal(published.replacementFollowupId,f.id);assert.equal(published.replacementFollowup.phase,'deferred_cooldown');assert.equal(published.replacementFollowup.sourceRetained,true);assert.ok(published.replacementFollowup.nextRetryAt);
+  assert.equal(await fs.readFile(f.data+'/decode-calls','utf8'),'1\n1\n');await f.run();result=await f.result();assert.equal(result.state.cases[f.id].status,'deferred_cooldown');assert.equal(await fs.readFile(f.data+'/decode-calls','utf8'),'1\n1\n');await f.unchanged();
+ }finally{await f.cleanup();}
+});
+
+test('XLL in a job report cannot authorize repairs when the unchanged original decodes cleanly',{skip:process.platform!=='linux'},async()=>{
+ const f=await fixture();try{
+  f.state.jobs['fixture-job']='not_confirmed_decode_error_v2';await fs.writeFile(path.join(f.data,'../reports/fixture/report'),'Read past end of XLL band data');await f.setDecoder('console.log("out_time_us=100000000\\nprogress=end");process.exit(0);');
+  await f.write();await f.run();const result=await f.result();assert.equal(result.state.cases[f.id].status,'no_action');assert.equal(result.state.cases[f.id].originalCheckKind,'healthy');assert.equal(f.requests.filter(r=>r.method!=='GET').length,0);await f.unchanged();
+ }finally{await f.cleanup();}
+});
+test('a changed historical ctime affects display linkage only; fresh original evidence still controls the repair',{skip:process.platform!=='linux'},async()=>{
+ const f=await fixture();try{
+  Object.assign(f.parent,{status:'replacement_imported',replacement:{movieFileId:11,size:f.size}});
+  const old=f.parent.replacementSourceFP.split(':');old[4]=String(Number(old[4])+1);f.parent.replacementSourceFP=old.join(':');const parent=structuredClone(f.parent);
+  await f.write();await f.run();const result=await f.result(),c=result.state.cases[f.id],p=result.public.cases.find(c=>c.id===f.parent.id);
+  assert.equal(c.status,'deferred_cooldown');assert.equal(c.evidence.sourceFP,f.sourceFP);assert.equal(c.fp,f.sourceFP);assert.equal(c.evidence.checks.length,2);assert.deepEqual(result.state.cases[f.parent.id],parent);
+  assert.equal(p.replacementFollowupId,f.id);assert.equal(p.replacementFollowupBinding,'ctime_changed');assert.equal(p.replacementFollowup.phase,'deferred_cooldown');await f.unchanged();
+ }finally{await f.cleanup();}
+});
+
+test('unrecognized old reports are reconsidered once, without reopening manual cursors',{skip:process.platform!=='linux'},async()=>{
+ for(const cursor of ['not_confirmed_decode_error_v2','manual: operator review']){
+  const f=await fixture();try{
+   f.state.jobs['fixture-job']=cursor;await fs.writeFile(path.join(f.data,'../reports/fixture/report'),'Conversion failed!');await f.write();await f.run();let result=await f.result();assert.equal(result.state.jobs['fixture-job'],cursor.startsWith('manual:')?cursor:'not_confirmed_decode_error_v3');
+   await fs.writeFile(path.join(f.data,'../reports/fixture/report'),'Read past end of XLL band data');await f.run();result=await f.result();assert.equal(result.state.cases[f.id],undefined);await assert.rejects(fs.stat(f.data+'/decode-calls'),{code:'ENOENT'});await f.unchanged();
+  }finally{await f.cleanup();}
+ }
+});
+
 test('actual worker confirms a bad replacement during cooldown, holds it and never downloads or repeats its decode',{skip:process.platform!=='linux'},async()=>{
  const f=await fixture();try{
   const parent=structuredClone(f.parent);await f.write();await f.run();let result=await f.result(),c=result.state.cases[f.id];

@@ -204,6 +204,12 @@ function detailReview(item,tab){
 function detailRequest(r,tab){
  const box=$('detailBody'),cl=classifyRecovery(r,Date.now());box.replaceChildren();
  if(tab==='overview'){box.append(el('h3','',cl.label),el('p','',cl.nextStep));for(const warning of cl.warnings||[])box.append(el('p','alert inline-warning',warning));const progress=recoveryProgress(r);if(progress)box.append(decodeProgressView(progress));box.append(detailsFacts([['Poslední potvrzený stav',date(r.statusUpdated||r.updated)],['Původní kopie',r.quarantineRetained?'Zachovaná v karanténě':r.sourceRetained||r.phase==='waiting_source_kept'?'Zůstává v Plexu; vydání vyloučeno z převodů':'Viz aktuální protokol obnovy'],['Další hledání',r.nextSearchAt?date(r.nextSearchAt):'Termín není doložen'],['Další pokus obnovy',r.nextRetryAt?date(r.nextRetryAt):'Termín není doložen']]));if(r.message)box.append(el('p','details',r.message));
+  const next=r.replacementFollowup;
+  if(next?.id===r.replacementFollowupId&&requests.some(x=>x.id===next.id&&x.source==='recovery')){
+   if(r.replacementFollowupBinding==='ctime_changed')box.append(el('p','details','Změnil se čas změny metadat náhrady. Navazující případ používá vlastní aktuální identitu a důkazy; historická schválení se nepřenášejí.'));
+   box.append(el('h4','','Navazující kontrola náhrady'),detailsFacts([['Stav náhrady ověřen',date(next.statusUpdated)],['Další pokus obnovy náhrady',next.nextRetryAt?date(next.nextRetryAt):'Termín není doložen'],['Další hledání náhrady',next.nextSearchAt?date(next.nextSearchAt):'Termín není doložen']]),button('Otevřít navazující případ',()=>openDetail('request','recovery:'+next.id)));
+   const nextProgress=recoveryProgress(next);if(nextProgress)box.append(decodeProgressView(nextProgress));
+  }
  }else if(tab==='comparison'){
   const item=latest?.items.find(x=>x.id===r.itemId);box.append(el('h3','','Ověření nové kopie'));
   if(item)box.append(el('p','','Výsledek je v Review a má přesně přiřazené ID.'),button('Posoudit výsledek v Review',()=>openDetail('review',item.id)));

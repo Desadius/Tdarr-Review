@@ -11,6 +11,7 @@ const damage = [
   /invalid residual[^\r\n]*/i,
   /EBML header parsing failed/i,
   /quant_step_size larger than huff_lsbs/i,
+  /Read past end of XLL band data/i,
 ];
 const operational = /Permission denied|Operation not permitted|Input\/output error|I\/O error|Stale file handle|No such file or directory|No space left|Connection (?:reset|refused|timed out)|Network is unreachable|Cannot allocate memory|Out of memory|Resource temporarily unavailable|Decoder .* not found|Unknown decoder|Unsupported codec/i;
 export function classify(result) {
