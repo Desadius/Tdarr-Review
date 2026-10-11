@@ -13,6 +13,7 @@ Source publication, Docker image publication and updating a running deployment a
 1. Inspect authenticated `/api/items` or the UI. Wait for `active`, `batchRunning`, `restorePending` and unresolved exchange transactions (`recovery`) to clear. These exchange transactions are distinct from the background movie-replacement list.
 2. Check that the background worker is not in a mutating phase. A long decode is read-only but restarting it leaves an interrupted case requiring deliberate inspection.
 3. Back up code/images and private persistent data. Record the previous Git commit.
+   If an older Recovery installation stores a private pending registry in its application directory, [migrate that registry](MIGRATE-RECOVERY-REGISTRY.md) with the worker stopped before replacing its source/image. Preserving state alone does not preserve authorization.
 4. Stop only the affected service, pull/build the chosen commit, and start it with the same data/mappings.
 5. Verify login, API state, expected results and replacement records. Do not approve a real film simply to test an update.
 
@@ -61,6 +62,12 @@ The movie cooldown no longer prevents read-only diagnosis of the new edition. Re
 `defer_cooldown_intent` after interruption is reconciled only if the exact acknowledged Hold and original binding are still present; unknown results are not replayed. Changed source/history, a released Hold or incomplete historical evidence goes to `manual`. Existing manual cases are not automatically migrated or reactivated by installing this version.
 
 `no_action` with a healthy result means a full original decode completed cleanly; it is a diagnostic completion, not Review approval. Operational/ambiguous results remain visible for inspection and never trigger replacement downloads. `dry_run` means decoding confirmed an error but external repair changes are disabled.
+
+## Daily-limit cases do not continue
+
+New automatic `deferred_limit` cases record the exact confirmed evidence, source/history/mapping and permanent Hold. The next allowed attempt is shown in Review. Each pass checks the quota and frozen identity; after capacity clears it continues the existing repair without another full decode. Terminal-header cases use the same path. Interrupted accepted Hold writes are reconciled through reads; unknown results or changed identities require manual inspection.
+
+Older automatic deferrals without the new frozen journal become `manual` rather than being decoded repeatedly or restarted from an inferred identity. Explicitly authorized historical pending cases keep their independent registry-driven behavior. Do not edit `state.jobs` or erase evidence to force a retry.
 
 ## Quarantine keeps growing
 

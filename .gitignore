@@ -17,6 +17,8 @@ radarr.json
 state.json
 config.json
 approvals.json
+pending-approvals.json
+**/registry-migration-*/
 **/transactions/
 **/radarr-replacements/
 **/language-repairs/

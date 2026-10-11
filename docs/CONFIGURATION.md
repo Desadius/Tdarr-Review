@@ -69,7 +69,11 @@ The worker reads `/data/config.json`. Unlike Review, it currently has no configu
 | `detectTerminalHeaders` | Recognize the narrow terminal-overwritten MKV header case |
 | `approvedCaseIds`, `approvedImportRepairs` | Advanced historical exceptions; shipped empty |
 
-`recovery/pending-approvals.json` is a separate frozen-evidence registry, shipped empty. It is not populated from UI clicks. Do not use the synthetic test fixture as real authorization. Normal future errors use two live original decodes and do not require this registry.
+`/data/pending-approvals.json` is the private, versioned frozen-evidence registry. It is separate from source and images and is not populated from UI clicks. A fresh installation with no stored approvals may omit it or use the empty [example](../examples/recovery-approval-registry.example.json). Normal future errors use two live original decodes and do not require frozen authorization. Do not use synthetic fixtures as real authorization.
+
+Existing private registries must be [migrated offline before an update](MIGRATE-RECOVERY-REGISTRY.md). Invalid, unreadable, symlinked, changed or missing historical authority stops the worker before APIs. Nonempty registries bind the library, worker/source/Radarr/quarantine/review roots and review prefixes to the current configuration. Every explicitly frozen setting, including limits or `enabled` if present, must still match. Change authorization deliberately with the worker stopped, then restart; the registry is loaded once and frozen in memory.
+
+Completed imported legacy approval metadata can remain in state without being a current registry member only when its original source/movie/import/binding tuple and frozen mappings remain consistent. It never becomes current authorization and is not activated by the pending repair loop. A changed current member or legacy record in another phase fails validation.
 
 ## Shared files
 

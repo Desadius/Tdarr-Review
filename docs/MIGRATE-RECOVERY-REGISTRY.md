@@ -1,0 +1,45 @@
+# Preserve private Recovery authorization during updates
+
+The candidate worker reads `/data/pending-approvals.json`; private approvals are no longer bundled with code. The currently published 1.10.0 image does not include this migration utility. Select an explicitly approved new image/source version that includes it before following these steps. Source publication, image publication and deployment remain separate decisions.
+
+A fresh installation with no historical approvals can omit the registry or copy the empty [example](../examples/recovery-approval-registry.example.json). This guide is for an existing private registry. Never replace it with an empty example or reconstruct authority from the copies in `state.json`.
+
+## Before migration
+
+Stop the Recovery worker and keep it stopped until migration and update verification finish. Wait for its current original decode to finish; uncertain mutating phases require inspection before update. Back up private data, configuration and existing application source/image. Identify the exact old registry and the persistent Recovery data directory. Both must be regular local files/directories with appropriate ownership; no symlinks or group/other-writable evidence files are accepted.
+
+Migration validates the old registry, current config and stored approvals without contacting Tdarr/Radarr or opening movie files. It accepts the legacy `{config,cases}` shape or `version:1`. Frozen roots/library/review prefixes and every explicitly frozen setting must match. Completed imported legacy records with strong matching original identities stay historical metadata; they never become active authority.
+
+## Offline command
+
+From a source checkout on Linux with Node 24, use explicit absolute paths:
+
+```bash
+node tools/migrate-recovery-registry.mjs \
+  --source /absolute/old-app/pending-approvals.json \
+  --data /absolute/recovery/data
+```
+
+The new Recovery image includes the same utility at `/tools/migrate-recovery-registry.mjs`. If the host has no Node runtime, a disposable container can run it with only data and the old registry mounted. Substitute the approved image and actual host paths; the worker must already be stopped:
+
+```bash
+docker run --rm --network none --read-only --cap-drop ALL \
+  --security-opt no-new-privileges --cpus 1 --memory 256m --pids-limit 64 \
+  --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+  --mount type=bind,source=/absolute/recovery/data,target=/data \
+  --mount type=bind,source=/absolute/old-app/pending-approvals.json,target=/legacy/pending-approvals.json,readonly \
+  --entrypoint /usr/bin/node \
+  ghcr.io/desadius/tdarr-recovery:sha-APPROVED_FULL_COMMIT \
+  /tools/migrate-recovery-registry.mjs \
+  --source /legacy/pending-approvals.json --data /data
+```
+
+The image runs as UID 99/GID 100. Its data mapping must permit that user to read config/state/source and create private backup/registry files. This container has no media/database mounts or external network and is removed when the command ends.
+
+## Result and recovery
+
+The first successful installation stores exact old registry/state backups and a checksum manifest in a unique private `registry-migration-*` directory under `/data` (directory `0700`, files `0600`). It installs the versioned registry atomically and exclusively, verifies it and reports counts/checksums/backup directory name without printing private evidence. Source/state content remains unchanged.
+
+An identical valid existing registry is accepted as an idempotent retry. A different target, changed state/source during migration, unsupported evidence or a concurrently appearing target is rejected; no overwrite fallback is used. Failed attempts can leave their private backups for inspection. Preserve those backups and the original source until update verification succeeds. Do not reset state or copy an empty registry to work around a failure.
+
+After migration, update the already stopped worker using the same persistent `/data` and mappings, then verify logs, expected pending cases and Review status. A registry error must be resolved before repairs proceed. Registry changes require a stopped worker and restart; no hot reload is performed.

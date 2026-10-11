@@ -11,6 +11,8 @@ Tests cover path containment, source changes, copy/exchange recovery, metadata/p
 
 Recovery status tests cover fragmented/nonfinite progress, per-pass ETA, heartbeat versus cached Tdarr freshness, serialized/coalesced publication, timer cleanup and write failure recovery. Linux worker integration fixtures execute the actual worker/journal with loopback-only Radarr/Tdarr mocks, temporary SQLite and a synthetic decoder. They verify two-pass cooldown diagnosis, one exact Hold, unchanged media/parent quarantine, no repeated decoding after restart, preserved active handoffs and manual handling of a changed movie-file identity. The synthetic decoder tests worker wiring; actual decoding behavior remains covered by the bundled FFmpeg tests and media integration checks.
 
+Quota fixtures cover ranked capacity expiry, immutable evidence, exact Hold acknowledgement and read-only intent reconciliation. The actual worker resumes a job-based quota case using its original two decodes, while a header case remains held without re-decoding. Missing/malformed authorization stops before any API. Registry tests cover private file/mapping/evidence validation, semantic membership, completed non-authorizing legacy history, exact backups, exclusive/idempotent migration and races. The actual Recovery image smoke invokes its packaged migration utility with fictional data and confirms unchanged state and no API calls.
+
 The integration test generates short media using FFmpeg and runs a local mock Tdarr API and isolated SQLite database:
 
 ```bash
@@ -33,7 +35,7 @@ The smoke script creates uniquely named disposable containers and volumes and re
 
 ## Source provenance
 
-The application and worker were copied from the live installation on 11 October 2026. Runtime data, backups, SSH material, movie files and one-off historical repair runners were omitted. Public installation defaults are placeholders. The pending repair registry is empty; synthetic fixtures are only for tests.
+The application and worker were copied from the live installation on 11 October 2026. Runtime data, backups, SSH material, movie files and one-off historical repair runners were omitted. Public installation defaults are placeholders. No private pending registry is included in source/images; the persistent registry example is empty and synthetic fixtures are only for tests.
 
 The public pending-evidence worker retains strict identity/history/evidence checks but uses membership in the explicitly configured frozen registry instead of the original installation's four hardcoded movie IDs. This packaging change is not deployed to the existing server by publishing the repository.
 

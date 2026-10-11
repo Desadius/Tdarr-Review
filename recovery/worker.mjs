@@ -6,6 +6,8 @@ import {createLiveStatusPublisher,createDecodeProgressParser} from './live-statu
 import {probeDuration,runOriginalDecode} from './original-decode.mjs';
 import {ensureHandoff} from './replacement-handoff.mjs';
 import {cooldownFor,deferConfirmedReplacement,inspectDeferredReplacement,reconcileDeferredIntent} from './replacement-gate.mjs';
+import {quotaFor,deferConfirmedLimit,inspectDeferredLimit,reconcileDeferredLimitIntent} from './deferred-limit.mjs';
+import {loadApprovalRegistry,registryHasApproval} from './approval-registry.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -17,6 +19,9 @@ const DATA=process.env.DATA_ROOT||'/data';
 const cfg=JSON.parse(await fs.readFile(path.join(DATA,'config.json'),'utf8'));
 const stateFile=path.join(DATA,'state.json');
 let state=JSON.parse(await fs.readFile(stateFile,'utf8').catch(e=>{if(e.code!=='ENOENT')throw e;return '{"version":1,"jobs":{},"cases":{}}'}));
+// Validate persistent authorization before DB reads, APIs or restart recovery.
+const pendingApprovals=await loadApprovalRegistry({data:DATA,cfg,state});
+const isApprovedCase=c=>registryHasApproval(pendingApprovals,c);
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 async function atomic(file,value){const t=file+'.tmp';const h=await fs.open(t,'w',0o600);try{await h.writeFile(JSON.stringify(value,null,2)+'\n');await h.sync();}finally{await h.close();}await fs.rename(t,file);const d=await fs.open(path.dirname(file),'r');try{await d.sync();}finally{await d.close();}}
 async function save(){state.updated=new Date().toISOString();await atomic(stateFile,state);}
@@ -66,7 +71,8 @@ async function repair(c,{reuseConfirmedEvidence=false}={}){
   await idle(c);const before=await safeSource(c.relative);if(before.fp!==c.fp)throw Error('Source changed before verification');
   const {movie,target}=await movieFor(c);
   c.movieId=movie.id;c.binding=bind(c,movie,await rad('/history/movie?movieId='+movie.id),target);await save();
-  if(reuseConfirmedEvidence&&JSON.stringify(c.binding)!==JSON.stringify(c.deferredCooldown?.binding))throw Error('Deferred replacement Radarr binding changed');
+  const frozen= c.status==='deferred_limit'?c.deferredLimit:c.deferredCooldown;
+  if(reuseConfirmedEvidence&&JSON.stringify(c.binding)!==JSON.stringify(frozen?.binding))throw Error('Deferred source Radarr binding changed');
   if(c.binding.mode==='exact_title_exclusion')await verifyExclusion(c);
   let hash;if(reuseConfirmedEvidence){
    if(c.evidence?.sourceFP!==c.fp||c.evidence.checks?.length!==2||!confirmed(...c.evidence.checks)||classify(c.evidence.checks[0]).signature!==c.evidence.signature)throw Error('Deferred source evidence no longer confirmed');
@@ -93,8 +99,12 @@ async function repair(c,{reuseConfirmedEvidence=false}={}){
   const fresh=await rad('/movie/'+c.movieId);
   const binding=bind(c,fresh,await rad('/history/movie?movieId='+c.movieId),target);
   if(JSON.stringify(binding)!==JSON.stringify(c.binding))throw Error('Radarr history changed');
-  const recent=Object.values(state.cases).filter(x=>x.mutationStarted&&Date.now()-x.mutationStarted<86400000);
-  if(recent.length>=cfg.maxRepairsPerDay&&!(cfg.approvedCaseIds||[]).includes(c.id)){await phase(c,'deferred_limit','Daily circuit breaker reached; retry after cooldown');return;}
+  const quota=quotaFor({cfg,state});
+  if(quota&&!(cfg.approvedCaseIds||[]).includes(c.id)){
+   if(isApprovedCase(c)){c.nextRetryAt=quota.retryAt;await phase(c,'deferred_limit','Daily circuit breaker reached; frozen approval waits for capacity');return;}
+   if(await deferConfirmedLimit({cfg,state,c,phase,idle,safeSource,sample,readBinding,td}))return;
+   throw Error('Daily recovery limit changed before deferral; source preserved for inspection');
+  }
   await idle(c);
   if(isApprovedCase(c))await ensureApprovedFloor(c,movie);
   c.skipCurrentEdition=false;delete c.nextRetryAt;c.mutationStarted=Date.now();await phase(c,'holding','Preventing another Tdarr dispatch');
@@ -140,7 +150,7 @@ async function observe(){
    await phase(c,'replacement_queue_intent','Replacement imported; refreshing Tdarr entry');
    // A newer case may already have held this exact imported source after its
    // own confirmed failure. An older handoff must not release that protection.
-   const preserveHold=Object.values(state.cases).some(other=>other.id!==c.id&&other.file===file&&((other.skipCurrentEdition===true&&other.preservedSourceFP===s.fp)||(other.deferredCooldown?.file===file&&other.deferredCooldown.sourceFP===s.fp&&other.deferredCooldown.libraryId===cfg.libraryId)));
+   const preserveHold=Object.values(state.cases).some(other=>other.id!==c.id&&other.file===file&&((other.skipCurrentEdition===true&&other.preservedSourceFP===s.fp)||[other.deferredCooldown,other.deferredLimit].some(journal=>journal?.file===file&&journal.sourceFP===s.fp&&journal.libraryId===cfg.libraryId)));
    c.handoffStatus=await ensureHandoff({tdarr:td,file,libraryId:cfg.libraryId,preserveHold});
    await phase(c,'replacement_imported','Replacement submitted to Tdarr; quarantine retained until quality is verified');
   }
@@ -164,6 +174,18 @@ async function resumeDeferred(){
   }catch(e){await phase(c,'manual',e.message);}
  }
 }
+async function resumeDailyLimit(){
+ for(const c of Object.values(state.cases).filter(c=>['deferred_limit','defer_limit_intent'].includes(c.status)&&c.approval==null)){
+  try{
+   const deps={cfg,state,c,td,phase,idle,safeSource,sample,readBinding};
+   if(c.status==='defer_limit_intent')await reconcileDeferredLimitIntent(deps);
+   const result=await inspectDeferredLimit(deps);
+   if(result.retryAt)c.nextRetryAt=result.retryAt;
+   if(result.status==='ready'){await repair(c,{reuseConfirmedEvidence:true});return;}
+   delete c.observationError;
+  }catch(e){await phase(c,'manual',e.message);}
+ }
+}
 async function ensureApprovedFloor(c,movie){
  if(c.profileId)throw Error('Previous profile mutation requires manual check');
  const original=await rad('/qualityprofile/'+movie.qualityProfileId),p=structuredClone(original);delete p.id;
@@ -179,14 +201,13 @@ async function ensureApprovedFloor(c,movie){
  const fresh=await rad('/movie/'+movie.id);if(fresh.movieFileId!==c.approval.movieFileId||fresh.movieFile.size!==c.size)throw Error('Movie changed before profile update');fresh.qualityProfileId=profile.id;
  const r=await fetch(cfg.radarrUrl+'/api/v3/movie/'+movie.id,{method:'PUT',headers:{'Content-Type':'application/json','X-Api-Key':cfg.radarrApiKey},body:JSON.stringify(fresh),signal:AbortSignal.timeout(30000)});if(!r.ok||(await rad('/movie/'+movie.id)).qualityProfileId!==profile.id)throw Error('Profile update uncertain');
 }
-const pendingApprovals=JSON.parse(await fs.readFile(new URL('./pending-approvals.json',import.meta.url),'utf8'));
-const isApprovedCase=c=>!!c.approval&&pendingApprovals.cases.some(a=>a.id===c.id&&JSON.stringify(a)===JSON.stringify(c.approval));
 async function tick(){
  await publishNow(()=>liveStatus.refresh());
  try{await refreshOriginalLanguages({cfg,rad,atomic});delete state.languageMetadataError;}catch(e){state.languageMetadataError=e.message;}
  await maintainWaitingSources({cfg,state,rad,td,phase,save,command,idle,safeSource,sample});
  await observe();
  await resumeDeferred();
+ await resumeDailyLimit();
  await processPending({approvals:pendingApprovals,cfg,state,safeSource,identity,phase,repair});
  await publishNow(()=>liveStatus.refresh());
  for(const c of Object.values(state.cases).filter(c=>c.status==='replacement_imported')){try{await retainCase(c,{mediaRoot:cfg.mediaRoot,quarantineRoot:cfg.quarantineRoot,atomicCase:save});delete c.retentionError;}catch(e){c.retentionError=e.message;}}
@@ -197,7 +218,7 @@ async function tick(){
    try{
     const rel=relative(f._id,cfg.sourceRoot),s=await safeSource(rel),id=identity(f._id,s.fp);
    if(Object.values(state.cases).some(c=>c.skipCurrentEdition&&c.file===f._id&&c.preservedSourceFP===s.fp))continue;
-    if(state.cases[id]&&state.cases[id].status!=='deferred_limit')continue;
+    if(state.cases[id])continue;
     if(await readHeader(s.p)!=='terminal_overwrite')continue;
     c=state.cases[id]||{id,file:f._id,relative:rel,source:s.p,size:s.size,fp:s.fp,headerDamage:true,created:new Date().toISOString()};state.cases[id]=c;
     await phase(c,'candidate','Terminal control bytes overwrite original MKV header');await repair(c);
@@ -227,7 +248,7 @@ async function tick(){
  await save();
 }
 // Never replay uncertain API mutations after restart. The journal stays reviewable.
-for(const c of Object.values(state.cases))if(!['manual','no_action','dry_run','waiting_replacement','waiting_source_kept','replacement_imported','replacement_queue_intent','deferred_limit','deferred_cooldown','defer_cooldown_intent'].includes(c.status))await phase(c,'manual','Interrupted '+c.status+'; inspect journal before any retry');
+for(const c of Object.values(state.cases))if(!['manual','no_action','dry_run','waiting_replacement','waiting_source_kept','replacement_imported','replacement_queue_intent','deferred_limit','defer_limit_intent','deferred_cooldown','defer_cooldown_intent'].includes(c.status))await phase(c,'manual','Interrupted '+c.status+'; inspect journal before any retry');
 console.log('Tdarr recovery started; enabled='+cfg.enabled);
 do {try{await tick();state.lastError=null;}catch(e){state.lastError=e.message;console.error('Recovery: '+e.message);}await publishNow(()=>liveStatus.refresh());await save();if(process.argv.includes('--once'))break;await delay(cfg.pollSeconds*1000);}while(true);
 await publishNow(()=>liveStatus.close());

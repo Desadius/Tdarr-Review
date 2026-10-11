@@ -135,4 +135,6 @@ docker compose logs --tail 40 recovery
 
 The example starts with `enabled:false`. This allows verification but disables automatic external repairs. Dry-run cases are not automatically replayed when you later enable it; inspect them deliberately. Do not enable repairs until the mappings and Radarr history are confirmed.
 
+A fresh installation needs no frozen pending approvals. The empty `examples/recovery-approval-registry.example.json` may be copied privately to Recovery `/data/pending-approvals.json`; it does not authorize repairs. Existing installations with historical approvals must follow [the registry migration guide](MIGRATE-RECOVERY-REGISTRY.md) before replacing Recovery source/image.
+
 For a local worker build, use `docker compose --profile recovery build recovery` first. The optional worker runs in a second container, with no HTTP port. Combining both processes in one container is not implemented in this release. Without this worker, normal Review approval and its manual Radarr integration still work.

@@ -63,6 +63,7 @@ const RECOVERY_RUNNING = {
   blocked: ['Vadné vydání vyřazeno', 'Obnova připraví hledání náhrady.'],
   search_intent: ['Spouští se hledání náhrady', 'Vyčkej na výsledek hledání.'],
   defer_cooldown_intent: ['Pozastavuje se vadná náhrada', 'Vyčkej na potvrzení pozastavení přesného vydání.'],
+  defer_limit_intent: ['Pozastavuje se vadné vydání', 'Vyčkej na potvrzení pozastavení během denního limitu.'],
   replacement_queue_intent: ['Náhrada se předává Tdarru', 'Vyčkej na potvrzení předání.'],
   restore_source_intent: ['Vrací se zachovaná kopie', 'Vyčkej na dokončení návratu.'],
   remove_kept_source_intent: ['Připravuje se stažení náhrady', 'Vyčkej na dokončení přípravy.'],

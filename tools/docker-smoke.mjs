@@ -88,6 +88,16 @@ async function recovery(){
     assert.equal(state.lastError,null);assert.equal(state.languageMetadataError,undefined);
     assert.deepEqual(state.cases,{});assert.deepEqual(state.jobs,{});
     assert.deepEqual(requests,[{method:'GET',url:'/api/v3/movie'}]);
+    // Exercise the migration utility shipped in the actual Recovery image.
+    // Worker has exited; evidence is fictional, APIs remain loopback-only.
+    const legacy='/tmp/recovery-registry-fixture.json';await fs.writeFile(legacy,JSON.stringify({config:{},cases:[]}),{mode:0o600});
+    const beforeMigration=await fs.readFile('/data/state.json');
+    const migration=JSON.parse(await run(process.execPath,['/tools/migrate-recovery-registry.mjs','--source',legacy,'--data','/data'],{quiet:true}));
+    assert.equal(migration.caseCount,0);assert.equal(migration.alreadyInstalled,false);
+    const again=JSON.parse(await run(process.execPath,['/tools/migrate-recovery-registry.mjs','--source',legacy,'--data','/data'],{quiet:true}));assert.equal(again.alreadyInstalled,true);
+    assert.deepEqual(await fs.readFile('/data/state.json'),beforeMigration);assert.deepEqual(requests,[{method:'GET',url:'/api/v3/movie'}]);
+    assert.equal((await fs.stat('/data/pending-approvals.json')).mode&0o777,0o600);
+    console.log('Recovery: packaged offline registry migration, private persistent evidence and idempotent retry passed.');
     const after=await fs.stat(sentinel);assert.deepEqual(await fs.readFile(sentinel),contents);
     for(const k of ['dev','ino','size','mtimeMs','ctimeMs'])assert.equal(after[k],before[k],`Sentinel changed: ${k}`);
     assert.deepEqual(await fs.readdir(path.dirname(sentinel)),['fixture.mkv']);

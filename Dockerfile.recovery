@@ -12,6 +12,8 @@ USER root
 RUN mkdir -p /data && chown 99:100 /data
 WORKDIR /app-recovery
 COPY recovery/ /app-recovery/
+COPY recovery/approval-registry.mjs recovery/pending-approved.mjs recovery/policy.mjs /recovery/
+COPY tools/migrate-recovery-registry.mjs /tools/
 COPY LICENSE NOTICE /app-recovery/
 ENV DATA_ROOT=/data
 USER 99:100
