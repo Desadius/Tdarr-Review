@@ -1,0 +1,80 @@
+# Configuration reference
+
+Review settings are editable in the UI and stored in `/data/settings.json`. The server validates origins, absolute paths and non-overlapping original/result roots. Files must remain regular files within the configured roots, without symlinks.
+
+## Review settings
+
+| Setting | Meaning |
+| --- | --- |
+| `label` | Name displayed for this installation |
+| `publicOrigin` | Exact `http(s)://host:port` used by the browser; required for origin checks |
+| `tdarrUrl` | Tdarr API origin, reachable from the Review container |
+| `mediaRoot` | Film root inside Review, usually `/media/movies` |
+| `reviewRoot` | Separate result root inside Review, usually `/review` |
+| `database` | SQLite path inside Review, usually `/tdarr/SQL/database.db` |
+| `ffprobe`, `ffmpeg` | Absolute executable paths inside Review |
+| `sourceRoots` | Tdarr server source roots; first is the production library, others may be aliases of the same files |
+| `tdarrReviewRoot` | Result root as seen by Tdarr, for active-worker checks |
+| `reviewPrefixes` | Top-level result directory names stripped for matching, e.g. `PROD-Movies` |
+| `libraryId` | Tdarr library ID; explicit ID is needed for automated replacement handoff |
+
+The provided image uses `/app/Tdarr_Node/assets/app/ffmpeg/linux_x64/ffmpeg` and its sibling `ffprobe`. The application requires `node:sqlite`; use Node 24, not an older Node runtime.
+
+`PORT` and `DATA_ROOT` are startup environment variables. `PUBLIC_ORIGIN`, `TDARR_URL`, `MEDIA_ROOT`, `REVIEW_ROOT`, `TDARR_DB`, `FFMPEG` and `FFPROBE` provide initial defaults. They do not override a saved settings file.
+
+Example path correspondence for **one physical source**:
+
+| Consumer | Source path |
+| --- | --- |
+| Host | `/mnt/user/media/movies/Film/Film.mkv` |
+| Tdarr server | `/media/movies/Film/Film.mkv` |
+| Review | `/media/movies/Film/Film.mkv` |
+| Recovery | `/storage/movies/Film/Film.mkv` |
+| Radarr | `/media/Film/Film.mkv` |
+
+These paths differ because of container mappings. Do not copy one consumer's root into another consumer's setting without checking its mapping. For Windows nodes, configure Tdarr path translators separately; Review itself runs on Linux.
+
+## Radarr settings in Review
+
+| Setting | Meaning |
+| --- | --- |
+| `url` | Radarr URL, including an optional base path |
+| `apiKey` | Stored server-side in `/data/radarr.json`; not returned to the UI |
+| `mediaRoot` | Film root **inside Radarr**, e.g. `/media` |
+| `quarantineRoot` | Original quarantine **inside Review**, outside `mediaRoot` |
+| `preferCzechEnglish` | Add CZ+EN preference without weakening existing release exclusions |
+
+The manual replacement workflow clones the quality profile for that movie, retains existing rules and excludes the exact original release title. Availability is still determined by Radarr and its indexers; the preference does not guarantee the downloaded file actually contains both languages.
+
+## Recovery configuration
+
+The worker reads `/data/config.json`. Unlike Review, it currently has no configuration UI or general schema validator; use the supplied complete example and verify values before enabling it.
+
+| Setting | Default example / purpose |
+| --- | --- |
+| `enabled` | `false`: verify only; `true`: allow confirmed repairs |
+| `tdarrUrl`, `radarrUrl`, `radarrApiKey` | API connections; keep the key private |
+| `libraryId`, `sourceRoot` | Production Tdarr library and server path |
+| `mediaRoot`, `radarrRoot`, `reviewRoot` | Roots in the worker, Radarr and worker respectively |
+| `reviewPrefixes` | Result prefixes to check before taking away a source |
+| `quarantineRoot` | Worker path outside the media library, on the same mounted tree |
+| `database`, `reports`, `ffmpeg` | Read-only Tdarr SQLite/reports and decoder executable |
+| `stableMinutes` | `10`: minimum time since source modification |
+| `decodeTimeoutHours` | `12`: timeout is an operational failure, never corruption proof |
+| `confirmDelaySeconds` | `30`: delay between independent original checks |
+| `maxRepairsPerDay` | `3`: rolling 24-hour circuit breaker |
+| `movieCooldownDays` | `30`: prevent repeated repairs for the same movie |
+| `pollSeconds` | `300`: delay after each worker pass |
+| `since` | Earliest eligible completed error time, Unix milliseconds |
+| `detectTerminalHeaders` | Recognize the narrow terminal-overwritten MKV header case |
+| `approvedCaseIds`, `approvedImportRepairs` | Advanced historical exceptions; shipped empty |
+
+`recovery/pending-approvals.json` is a separate frozen-evidence registry, shipped empty. It is not populated from UI clicks. Do not use the synthetic test fixture as real authorization. Normal future errors use two live original decodes and do not require this registry.
+
+## Shared files
+
+Recovery writes `.tdarr-recovery-status.json` in the **parent** of its media root. Review reads it from the parent of its media root. Both paths must map to the same host file. Review needs configured Radarr connection details to build links for the shared records.
+
+Recovery also writes `.tdarr-original-languages.json` inside the film root using Radarr's TMDB-linked original-language metadata. This repository does not install the complete transcode/language-selection flow; make that flow explicitly consume the cache if required.
+
+Approval evidence is stored in `.tdarr-approvals` beside the library. Mount the media parent in both containers if using recovery/quarantine. Keep quarantine outside Plex's movie root.

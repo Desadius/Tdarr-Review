@@ -1,0 +1,55 @@
+services:
+  review:
+    build: .
+    image: tdarr-review:local
+    user: "${PUID:-99}:${PGID:-100}"
+    ports:
+      - "${REVIEW_BIND_IP:-127.0.0.1}:${REVIEW_PORT:-8270}:8270"
+    environment:
+      PUBLIC_ORIGIN: "${PUBLIC_ORIGIN:-http://localhost:8270}"
+      TDARR_URL: "${TDARR_URL:?Set TDARR_URL in .env}"
+      MEDIA_ROOT: /media/movies
+      REVIEW_ROOT: /review
+    volumes:
+      - "${REVIEW_DATA_HOST:?Set REVIEW_DATA_HOST}:/data"
+      - "${MEDIA_HOST:?Set MEDIA_HOST}:/media"
+      - "${REVIEW_HOST:?Set REVIEW_HOST}:/review"
+      - "${TDARR_DB_HOST:?Set TDARR_DB_HOST}:/tdarr:ro"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1g
+    cpus: 1
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+
+  recovery:
+    profiles: [recovery]
+    build:
+      context: .
+      dockerfile: Dockerfile.recovery
+    image: tdarr-recovery:local
+    user: "${PUID:-99}:${PGID:-100}"
+    volumes:
+      - "${RECOVERY_DATA_HOST:?Set RECOVERY_DATA_HOST}:/data"
+      - "${MEDIA_HOST:?Set MEDIA_HOST}:/storage"
+      - "${REVIEW_HOST:?Set REVIEW_HOST}:/review:ro"
+      - "${TDARR_DB_HOST:?Set TDARR_DB_HOST}:/tdarr:ro"
+      - "${TDARR_REPORTS_HOST:?Set TDARR_REPORTS_HOST}:/reports:ro"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1g
+    cpus: 2
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: "3"}

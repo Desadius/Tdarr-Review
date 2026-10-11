@@ -1,0 +1,195 @@
+import {approvedBind,validatePending,processPending} from './pending-approved.mjs';
+import {maintainWaitingSources,publishRecoveryStatus} from './waiting-source.mjs';
+import {refreshOriginalLanguages} from './original-language-cache.mjs';
+import {retainCase} from './quarantine-retention.mjs';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import {spawn} from 'node:child_process';
+import {DatabaseSync} from 'node:sqlite';
+import {classify,confirmed,relative,bindHistory,bindApprovedImport,blocked,identity,within} from './policy.mjs';
+import {readHeader} from './container-header.mjs';
+
+const DATA=process.env.DATA_ROOT||'/data';
+const cfg=JSON.parse(await fs.readFile(path.join(DATA,'config.json'),'utf8'));
+const stateFile=path.join(DATA,'state.json');
+let state=JSON.parse(await fs.readFile(stateFile,'utf8').catch(e=>{if(e.code!=='ENOENT')throw e;return '{"version":1,"jobs":{},"cases":{}}'}));
+const delay=ms=>new Promise(r=>setTimeout(r,ms));
+async function atomic(file,value){const t=file+'.tmp';const h=await fs.open(t,'w',0o600);try{await h.writeFile(JSON.stringify(value,null,2)+'\n');await h.sync();}finally{await h.close();}await fs.rename(t,file);const d=await fs.open(path.dirname(file),'r');try{await d.sync();}finally{await d.close();}}
+async function save(){state.updated=new Date().toISOString();await atomic(stateFile,state);}
+async function phase(c,status,message){Object.assign(c,{status,message,updated:new Date().toISOString()});await save();console.log(JSON.stringify({time:c.updated,id:c.id,title:c.relative?.split('/')[0],status,message}));}
+async function api(base,route,body,key){const r=await fetch(base.replace(/\/$/,'')+route,{method:body===undefined?'GET':'POST',headers:{'content-type':'application/json',...(key?{'X-Api-Key':key}:{})},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(30000)});if(!r.ok)throw Error('API '+route.split('?')[0]+' HTTP '+r.status);const t=await r.text();try{return JSON.parse(t)}catch{return t}}
+const rad=(p,b)=>api(cfg.radarrUrl+'/api/v3',p,b,cfg.radarrApiKey);
+const td=(p,b)=>api(cfg.tdarrUrl,p,b===undefined?undefined:{data:b});
+function rows(table){const db=new DatabaseSync(cfg.database,{readOnly:true});try{return db.prepare('SELECT json_data FROM '+table).all().map(r=>JSON.parse(r.json_data));}finally{db.close();}}
+async function safeSource(rel){const p=within(cfg.mediaRoot,rel);const real=await fs.realpath(p);if(real!==p)throw Error('Symlink source is not eligible');const s=await fs.stat(p);if(!s.isFile()||s.size===0||Date.now()-s.mtimeMs<cfg.stableMinutes*60000)throw Error('Source is not a stable regular file');return {p,size:s.size,fp:[s.dev,s.ino,s.size,s.mtimeMs,s.ctimeMs].join(':')};}
+async function sample(file){const h=await fs.open(file,'r');try{const s=await h.stat();const sum=crypto.createHash('sha256');for(const position of [0,Math.max(0,Math.floor(s.size/2)-524288),Math.max(0,s.size-1048576)]){const b=Buffer.alloc(Math.min(s.size,1048576));const n=await h.read(b,0,b.length,position);if(n.bytesRead!==b.length)throw Error('Short source read');sum.update(b);}return sum.digest('hex');}finally{await h.close();}}
+async function decode(c,pass){
+  await phase(c,'verifying','Independent original decode '+pass+'/2');
+  if(c.headerDamage&&await readHeader(c.source)!=='terminal_overwrite')throw Error('Header signature changed');
+  const args=['-hide_banner','-nostdin','-v','error','-xerror','-err_detect','explode','-threads','2',...(c.headerDamage?['-f','matroska']:[]),'-i',c.source,'-map','0:v:0','-map','0:a?','-threads','2','-f','null','-'];
+  const result=await new Promise(resolve=>{let stderr='',error=null,timeout=false;const child=spawn(cfg.ffmpeg,args,{stdio:['ignore','ignore','pipe']});const timer=setTimeout(()=>{timeout=true;child.kill('SIGKILL');},cfg.decodeTimeoutHours*3600000);child.stderr.on('data',b=>{stderr=(stderr+b.toString()).slice(-131072)});child.on('error',e=>{error=e.code||'spawn failure'});child.on('close',(code,signal)=>{clearTimeout(timer);resolve({code,signal,error,timeout,stderr});});});
+  await atomic(path.join(DATA,c.id+'-decode-'+pass+'.json'),result);return result;
+}
+async function idle(c){
+  const nodes=await td('/api/v2/get-nodes');
+  if(!nodes||typeof nodes!=='object')throw Error('Cannot verify Tdarr workers');
+  for(const n of Object.values(nodes))for(const w of Object.values(n.workers||{})){
+    if(w.idle||!w.file)continue;
+    let p=String(w.file).replaceAll('\\','/');
+    for(const t of n.config?.pathTranslators||[]){const a=t.node.replaceAll('\\','/').replace(/\/$/,'');if(p.startsWith(a+'/')){p=t.server+p.slice(a.length);break;}}
+    if(p===c.file)throw Error('Tdarr is still processing source');
+  }
+  // Never take a source away from an existing review result.
+  for(const prefix of cfg.reviewPrefixes){const p=within(cfg.reviewRoot,prefix+'/'+c.relative);try{await fs.stat(p);throw Error('A review result exists; manual review required');}catch(e){if(e.code!=='ENOENT')throw e;}}
+}
+async function command(body){const x=await rad('/command',body);if(!x?.id)throw Error('Command receipt missing');for(let i=0;i<60;i++){const s=await rad('/command/'+x.id);if(s.status==='completed')return x.id;if(['failed','aborted','cancelled'].includes(s.status))throw Error('Radarr command failed');await delay(2000);}throw Error('Radarr command result uncertain');}
+async function movieFor(c){const movies=await rad('/movie');const target=cfg.radarrRoot.replace(/\/$/,'')+'/'+c.relative;const matches=movies.filter(m=>m.movieFile?.path===target);if(matches.length!==1)throw Error('Source does not map to exactly one Radarr movie');return {movie:matches[0],target};}
+function bind(c,m,h,target){if(isApprovedCase(c))return approvedBind(m,h,target,c.size,c.approval);const approval=cfg.approvedImportRepairs?.[c.id];return approval?bindApprovedImport(m,h,target,c.size,approval):bindHistory(m,h,target,c.size);}
+async function verifyExclusion(c){
+ const b=c.binding,m=await rad('/movie/'+c.movieId),p=await rad('/qualityprofile/'+m.qualityProfileId),f=await rad('/customformat/'+b.customFormatId);
+ const score=p.formatItems.find(x=>x.format===f.id)?.score;
+ const otherPositive=p.formatItems.filter(x=>x.format!==f.id).reduce((sum,x)=>sum+Math.max(0,x.score),0);
+ const specs=f.specifications||[];
+ if(specs.length!==1||specs[0].implementation!=='ReleaseTitleSpecification'||specs[0].negate||!specs[0].required||specs[0].fields?.find(x=>x.name==='value')?.value!==b.regex||!new RegExp(b.regex,'i').test(b.sourceTitle)||!Number.isFinite(score)||score+otherPositive>=p.minFormatScore)throw Error('Exact bad release exclusion is not enforced by the current profile');
+}
+async function repair(c){
+  await idle(c);const before=await safeSource(c.relative);if(before.fp!==c.fp)throw Error('Source changed before verification');
+  const {movie,target}=await movieFor(c);
+  c.movieId=movie.id;c.binding=bind(c,movie,await rad('/history/movie?movieId='+movie.id),target);await save();
+  if(c.binding.mode==='exact_title_exclusion')await verifyExclusion(c);
+  if(Object.values(state.cases).some(x=>x.id!==c.id&&x.movieId===c.movieId&&x.mutationStarted&&Date.now()-x.mutationStarted<cfg.movieCooldownDays*86400000))throw Error('Movie repair cooldown; manual review required');
+  let hash;if(isApprovedCase(c)){validatePending(c.approval);hash=await sample(c.source);if((await safeSource(c.relative)).fp!==c.fp)throw Error('Source changed');c.evidence={signature:c.approval.signature,independentChecks:c.approval.checks,sampleSHA256:hash,confirmed:new Date().toISOString()};}else{
+  hash=await sample(c.source);const a=await decode(c,1);
+  if(classify(a).kind!=='corrupt'){await phase(c,'no_action','Original check: '+classify(a).kind+'; no Radarr action');return;}
+  await delay(cfg.confirmDelaySeconds*1000);
+  const b=await decode(c,2);
+  if(!confirmed(a,b)){await phase(c,'manual','Repeated checks did not confirm the same structural corruption');return;}
+  if((await safeSource(c.relative)).fp!==c.fp||await sample(c.source)!==hash)throw Error('Source changed or repeated reads differ');
+  c.evidence={signature:classify(a).signature,sampleSHA256:hash,confirmed:new Date().toISOString()};
+}
+  await phase(c,'confirmed','Same structural decoding error reproduced twice in unchanged original');
+  if(!cfg.enabled){await phase(c,'dry_run','Confirmed; external changes disabled');return;}
+  // Rebind immediately before any mutation; never rely on stale import history.
+  const fresh=await rad('/movie/'+c.movieId);
+  const binding=bind(c,fresh,await rad('/history/movie?movieId='+c.movieId),target);
+  if(JSON.stringify(binding)!==JSON.stringify(c.binding))throw Error('Radarr history changed');
+  const recent=Object.values(state.cases).filter(x=>x.mutationStarted&&Date.now()-x.mutationStarted<86400000);
+  if(recent.length>=cfg.maxRepairsPerDay&&!(cfg.approvedCaseIds||[]).includes(c.id)){await phase(c,'deferred_limit','Daily circuit breaker reached; retry after cooldown');return;}
+  await idle(c);
+  if(isApprovedCase(c))await ensureApprovedFloor(c,movie);
+  c.mutationStarted=Date.now();await phase(c,'holding','Preventing another Tdarr dispatch');
+  await td('/api/v2/bulk-update-files',{fileIds:[c.file],updatedObj:{TranscodeDecisionMaker:'Hold',holdUntil:Date.now()+30*86400000}});
+  await delay(3000);await idle(c);
+  if((await safeSource(c.relative)).fp!==c.fp||await sample(c.source)!==hash)throw Error('Source changed before quarantine');
+  // Same-mounted-volume rename only. No copy/delete fallback and no overwrites.
+  const qdir=within(cfg.quarantineRoot,c.id);await fs.mkdir(qdir,{recursive:false,mode:0o770});
+  c.quarantine=path.join(qdir,path.basename(c.relative));
+  await phase(c,'quarantine_intent','Preserving original outside the media library');
+  await fs.rename(c.source,c.quarantine);
+  if((await fs.stat(c.quarantine)).size!==c.size)throw Error('Quarantine size mismatch');
+  await phase(c,'quarantined','Original preserved in quarantine');
+  await command({name:'RescanMovie',movieId:c.movieId});
+  if((await rad('/movie/'+c.movieId)).movieFileId)throw Error('Radarr still sees a current movie file');
+  if(c.binding.mode==='exact_title_exclusion')await verifyExclusion(c);
+  else if(!blocked(await rad('/blocklist/movie?movieId='+c.movieId),c.binding)){
+    await phase(c,'blocklist_intent','Marking the exact historical download as failed');
+    await rad('/history/failed/'+c.binding.historyId,{});
+  }
+  if(c.binding.mode!=='exact_title_exclusion'&&!blocked(await rad('/blocklist/movie?movieId='+c.movieId),c.binding))throw Error('Exact release blocklist was not confirmed');
+  await phase(c,'blocked',c.binding.mode==='exact_title_exclusion'?'Exact original release excluded by Radarr custom format':'Exact original release confirmed in Radarr blocklist');
+  // MarkAsFailed can trigger Radarr's own search. Avoid duplicating it.
+  await delay(3000);
+  const commands=await rad('/command');
+  const existing=commands.find(x=>x.name==='MoviesSearch'&&(x.body?.movieIds||[]).includes(c.movieId)&&Date.parse(x.queued||x.started||0)>=c.mutationStarted-1000);
+  if(existing)c.searchCommand=existing.id;
+  else {await phase(c,'search_intent','Requesting replacement search');const r=await rad('/command',{name:'MoviesSearch',movieIds:[c.movieId]});if(!r?.id)throw Error('Search result uncertain');c.searchCommand=r.id;}
+  await phase(c,'waiting_replacement','Release blocked; replacement search requested; original retained in quarantine');
+}
+async function observe(){
+ for(const c of Object.values(state.cases).filter(x=>x.status==='waiting_replacement')){
+  try {
+  const m=await rad('/movie/'+c.movieId);
+  if(m.movieFileId&&m.movieFileId!==(c.keptMovieFileId||c.binding.movieFileId)){
+   const rel=relative(m.movieFile.path,cfg.radarrRoot),s=await safeSource(rel);
+   if(s.size!==m.movieFile.size)throw Error('Replacement file size does not match Radarr');
+   c.replacement={movieFileId:m.movieFileId,path:m.movieFile.path,size:m.movieFile.size};
+   c.replacementRelative=rel;c.replacementSourceFP=s.fp;
+   const file=cfg.sourceRoot+'/'+rel;
+   await phase(c,'replacement_queue_intent','Replacement imported; refreshing Tdarr entry');
+   await td('/api/v2/rescan-file',{_id:file,DB:cfg.libraryId});
+   await td('/api/v2/bulk-update-files',{fileIds:[file],updatedObj:{TranscodeDecisionMaker:'Queued',holdUntil:0}});
+   await phase(c,'replacement_imported','Replacement submitted to Tdarr; quarantine retained until quality is verified');
+  }
+  delete c.observationError;
+  } catch(e) {
+   c.observationError=e.message;
+   if(c.status==='replacement_queue_intent')await phase(c,'manual','Replacement queue result uncertain; inspect before retry');
+   // A temporarily unavailable replacement must not stop checks for other films.
+  }
+ }
+}
+async function ensureApprovedFloor(c,movie){
+ if(c.profileId)throw Error('Previous profile mutation requires manual check');
+ const original=await rad('/qualityprofile/'+movie.qualityProfileId),p=structuredClone(original);delete p.id;
+ const quality=movie.movieFile.quality.quality,index=p.items.findIndex(v=>v.quality?.id===quality.id||v.items?.some(w=>w.quality?.id===quality.id));
+ if(index<0||!p.items[index].allowed)throw Error('Current quality is not allowed in profile');
+ for(let i=0;i<p.items.length;i++){const v=p.items[i];v.allowed=v.allowed&&i>=index;if(v.items?.length){for(const w of v.items)w.allowed=v.allowed&&w.allowed!==false&&w.quality.resolution>=quality.resolution;v.allowed=v.allowed&&v.items.some(w=>w.allowed);}else if(v.quality.resolution<quality.resolution)v.allowed=false;}
+ if(!p.items.some(v=>v.allowed))throw Error('No equal or higher quality allowed');
+ const formats=await rad('/customformat');for(const f of formats)if(!p.formatItems.some(v=>v.format===f.id))p.formatItems.push({format:f.id,name:f.name,score:0});
+ const dual=formats.find(f=>f.name==='Review: Czech + English'&&f.specifications.length===2&&[1,25].every(id=>f.specifications.some(s=>s.implementation==='LanguageSpecification'&&s.required&&!s.negate&&s.fields.some(v=>v.name==='value'&&v.value===id))));
+ if(dual){if(p.formatItems.reduce((sum,v)=>sum+Math.max(0,v.score),0)+100>=9000)throw Error('Language score could weaken exclusions');p.formatItems.find(v=>v.format===dual.id).score=100;}
+ if(!p.items.some(v=>v.allowed&&(v.id===p.cutoff||v.quality?.id===p.cutoff)))p.cutoff=p.items[index].id||p.items[index].quality.id;
+ p.name='Recovery same-or-higher '+movie.id+' '+Date.now();c.originalProfile=original;c.originalProfileId=original.id;await phase(c,'profile_intent','Restricting replacement to current quality or higher');const profile=await rad('/qualityprofile',p);if(!Number.isInteger(profile.id))throw Error('Profile creation uncertain');c.profileId=profile.id;await save();
+ const fresh=await rad('/movie/'+movie.id);if(fresh.movieFileId!==c.approval.movieFileId||fresh.movieFile.size!==c.size)throw Error('Movie changed before profile update');fresh.qualityProfileId=profile.id;
+ const r=await fetch(cfg.radarrUrl+'/api/v3/movie/'+movie.id,{method:'PUT',headers:{'Content-Type':'application/json','X-Api-Key':cfg.radarrApiKey},body:JSON.stringify(fresh),signal:AbortSignal.timeout(30000)});if(!r.ok||(await rad('/movie/'+movie.id)).qualityProfileId!==profile.id)throw Error('Profile update uncertain');
+}
+const pendingApprovals=JSON.parse(await fs.readFile(new URL('./pending-approvals.json',import.meta.url),'utf8'));
+const isApprovedCase=c=>!!c.approval&&pendingApprovals.cases.some(a=>a.id===c.id&&JSON.stringify(a)===JSON.stringify(c.approval));
+async function tick(){
+ try{await refreshOriginalLanguages({cfg,rad,atomic});delete state.languageMetadataError;}catch(e){state.languageMetadataError=e.message;}
+ await maintainWaitingSources({cfg,state,rad,td,phase,save,command,idle,safeSource,sample});
+ await observe();
+ await processPending({approvals:pendingApprovals,cfg,state,safeSource,identity,phase,repair});
+ await publishRecoveryStatus({cfg,state,atomic,tdarrFiles:rows('filejsondb')});
+ for(const c of Object.values(state.cases).filter(c=>c.status==='replacement_imported')){try{await retainCase(c,{mediaRoot:cfg.mediaRoot,quarantineRoot:cfg.quarantineRoot,atomicCase:save});delete c.retentionError;}catch(e){c.retentionError=e.message;}}
+ // Catch these files even when Tdarr has silently classified them Not required.
+ if(cfg.detectTerminalHeaders){
+  for(const f of rows('filejsondb').filter(f=>f.DB===cfg.libraryId&&['Queued','Not required','Transcode error','Hold'].includes(f.TranscodeDecisionMaker)&&String(f._id).toLowerCase().endsWith('.mkv'))){
+   let c;
+   try{
+    const rel=relative(f._id,cfg.sourceRoot),s=await safeSource(rel),id=identity(f._id,s.fp);
+   if(Object.values(state.cases).some(c=>c.skipCurrentEdition&&c.file===f._id&&c.preservedSourceFP===s.fp))continue;
+    if(state.cases[id]&&state.cases[id].status!=='deferred_limit')continue;
+    if(await readHeader(s.p)!=='terminal_overwrite')continue;
+    c=state.cases[id]||{id,file:f._id,relative:rel,source:s.p,size:s.size,fp:s.fp,headerDamage:true,created:new Date().toISOString()};state.cases[id]=c;
+    await phase(c,'candidate','Terminal control bytes overwrite original MKV header');await repair(c);
+   }catch(e){if(c)await phase(c,'manual',e.message);}
+   if(c){await save();return;}
+  }
+ }
+ const jobs=rows('jobsjsondb').filter(j=>j.DB===cfg.libraryId&&j.end&&/error/i.test(j.status)&&j.end>=cfg.since).sort((a,b)=>b.end-a.end);
+ const all=rows('jobsjsondb');
+ for(const j of jobs){
+  if(state.jobs[j._id]&&state.jobs[j._id]!=='not_structural_decode_error')continue;
+  if(all.some(k=>k.file===j.file&&k.start>j.start)){state.jobs[j._id]='superseded';continue;}
+  let report;
+  try{report=await fs.readFile(within(cfg.reports,j.job.footprintId+'/'+j.job.fileId),'utf8');}catch{continue;}
+  if(classify({code:1,stderr:report}).kind!=='corrupt'){state.jobs[j._id]='not_confirmed_decode_error_v2';continue;}
+  let c;
+  try{
+   const rel=relative(j.file,cfg.sourceRoot),s=await safeSource(rel),id=identity(j.file,s.fp);
+   if(Object.values(state.cases).some(c=>c.skipCurrentEdition&&c.file===j.file&&c.preservedSourceFP===s.fp))continue;
+   state.jobs[j._id]=id;
+   if(state.cases[id])continue;
+   c=state.cases[id]={id,jobId:j._id,file:j.file,relative:rel,source:s.p,size:s.size,fp:s.fp,created:new Date().toISOString()};
+   await phase(c,'candidate','Tdarr decoder error candidate');await repair(c);
+  }catch(e){if(c)await phase(c,'manual',e.message);else state.jobs[j._id]='manual: '+e.message;}
+  await save();return; // One heavy original check at a time.
+ }
+ await save();
+}
+// Never replay uncertain API mutations after restart. The journal stays reviewable.
+for(const c of Object.values(state.cases))if(!['manual','no_action','dry_run','waiting_replacement','waiting_source_kept','replacement_imported','deferred_limit'].includes(c.status))await phase(c,'manual','Interrupted '+c.status+'; inspect journal before any retry');
+console.log('Tdarr recovery started; enabled='+cfg.enabled);
+do {try{await tick();state.lastError=null;}catch(e){state.lastError=e.message;console.error('Recovery: '+e.message);}await save();if(process.argv.includes('--once'))break;await delay(cfg.pollSeconds*1000);}while(true);

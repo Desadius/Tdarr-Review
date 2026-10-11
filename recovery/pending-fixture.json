@@ -1,0 +1,155 @@
+{
+  "config": {
+    "enabled": true,
+    "libraryId": "fixture-library",
+    "sourceRoot": "/media/movies",
+    "mediaRoot": "/storage/movies",
+    "maxRepairsPerDay": 3
+  },
+  "cases": [
+    {
+      "id": "fixture-1",
+      "movieId": 1,
+      "file": "/media/movies/Fixture 1/file.mkv",
+      "relative": "Fixture 1/file.mkv",
+      "fp": "fixture-fingerprint-1",
+      "size": 101,
+      "signature": "quant_step_size larger than huff_lsbs",
+      "authorization": "Synthetic test evidence; never use on real media",
+      "checks": [
+        {
+          "version": "7.1.4",
+          "file": "/media/movies/Fixture 1/file.mkv",
+          "bytes": 101,
+          "sourceUnchanged": true,
+          "hostIdentityUnchanged": true,
+          "timeout": false,
+          "stderrTail": "quant_step_size larger than huff_lsbs",
+          "decodeMarkers": [
+            "quant_step_size larger than huff_lsbs"
+          ]
+        },
+        {
+          "version": "9.0.2",
+          "file": "/media/movies/Fixture 1/file.mkv",
+          "bytes": 101,
+          "sourceUnchanged": true,
+          "hostIdentityUnchanged": true,
+          "timeout": false,
+          "stderrTail": "quant_step_size larger than huff_lsbs",
+          "decodeMarkers": [
+            "quant_step_size larger than huff_lsbs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fixture-2",
+      "movieId": 2,
+      "file": "/media/movies/Fixture 2/file.mkv",
+      "relative": "Fixture 2/file.mkv",
+      "fp": "fixture-fingerprint-2",
+      "size": 102,
+      "signature": "quant_step_size larger than huff_lsbs",
+      "authorization": "Synthetic test evidence; never use on real media",
+      "checks": [
+        {
+          "version": "7.1.4",
+          "file": "/media/movies/Fixture 2/file.mkv",
+          "bytes": 102,
+          "sourceUnchanged": true,
+          "hostIdentityUnchanged": true,
+          "timeout": false,
+          "stderrTail": "quant_step_size larger than huff_lsbs",
+          "decodeMarkers": [
+            "quant_step_size larger than huff_lsbs"
+          ]
+        },
+        {
+          "version": "9.0.2",
+          "file": "/media/movies/Fixture 2/file.mkv",
+          "bytes": 102,
+          "sourceUnchanged": true,
+          "hostIdentityUnchanged": true,
+          "timeout": false,
+          "stderrTail": "quant_step_size larger than huff_lsbs",
+          "decodeMarkers": [
+            "quant_step_size larger than huff_lsbs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fixture-3",
+      "movieId": 3,
+      "file": "/media/movies/Fixture 3/file.mkv",
+      "relative": "Fixture 3/file.mkv",
+      "fp": "fixture-fingerprint-3",
+      "size": 103,
+      "signature": "quant_step_size larger than huff_lsbs",
+      "authorization": "Synthetic test evidence; never use on real media",
+      "checks": [
+        {
+          "version": "7.1.4",
+          "file": "/media/movies/Fixture 3/file.mkv",
+          "bytes": 103,
+          "sourceUnchanged": true,
+          "hostIdentityUnchanged": true,
+          "timeout": false,
+          "stderrTail": "quant_step_size larger than huff_lsbs",
+          "decodeMarkers": [
+            "quant_step_size larger than huff_lsbs"
+          ]
+        },
+        {
+          "version": "9.0.2",
+          "file": "/media/movies/Fixture 3/file.mkv",
+          "bytes": 103,
+          "sourceUnchanged": true,
+          "hostIdentityUnchanged": true,
+          "timeout": false,
+          "stderrTail": "quant_step_size larger than huff_lsbs",
+          "decodeMarkers": [
+            "quant_step_size larger than huff_lsbs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fixture-4",
+      "movieId": 4,
+      "file": "/media/movies/Fixture 4/file.mkv",
+      "relative": "Fixture 4/file.mkv",
+      "fp": "fixture-fingerprint-4",
+      "size": 104,
+      "signature": "quant_step_size larger than huff_lsbs",
+      "authorization": "Synthetic test evidence; never use on real media",
+      "checks": [
+        {
+          "version": "7.1.4",
+          "file": "/media/movies/Fixture 4/file.mkv",
+          "bytes": 104,
+          "sourceUnchanged": true,
+          "hostIdentityUnchanged": true,
+          "timeout": false,
+          "stderrTail": "quant_step_size larger than huff_lsbs",
+          "decodeMarkers": [
+            "quant_step_size larger than huff_lsbs"
+          ]
+        },
+        {
+          "version": "9.0.2",
+          "file": "/media/movies/Fixture 4/file.mkv",
+          "bytes": 104,
+          "sourceUnchanged": true,
+          "hostIdentityUnchanged": true,
+          "timeout": false,
+          "stderrTail": "quant_step_size larger than huff_lsbs",
+          "decodeMarkers": [
+            "quant_step_size larger than huff_lsbs"
+          ]
+        }
+      ]
+    }
+  ]
+}

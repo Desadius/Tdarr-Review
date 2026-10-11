@@ -1,0 +1,12 @@
+{
+  "name": "tdarr-review-project",
+  "version": "1.10.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "test": "node tools/test.mjs",
+    "test:integration": "cd review && node integration.mjs",
+    "check": "node tools/check.mjs"
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "history": [
+    {
+      "id": "111111111111111111111111",
+      "title": "Fixture film 1",
+      "action": "approve",
+      "status": "error",
+      "time": "2026-10-11T10:00:00Z",
+      "message": "Synthetic prior failure"
+    },
+    {
+      "id": "111111111111111111111111",
+      "title": "Fixture film 1",
+      "action": "approve",
+      "status": "success",
+      "time": "2026-10-11T10:01:00Z",
+      "message": "Synthetic prior failure"
+    },
+    {
+      "id": "222222222222222222222222",
+      "title": "Fixture film 2",
+      "action": "approve",
+      "status": "error",
+      "time": "2026-10-11T10:00:00Z",
+      "message": "Synthetic prior failure"
+    },
+    {
+      "id": "222222222222222222222222",
+      "title": "Fixture film 2",
+      "action": "approve",
+      "status": "success",
+      "time": "2026-10-11T10:01:00Z",
+      "message": "Synthetic prior failure"
+    },
+    {
+      "id": "333333333333333333333333",
+      "title": "Fixture film 3",
+      "action": "approve",
+      "status": "error",
+      "time": "2026-10-11T10:00:00Z",
+      "message": "Synthetic prior failure"
+    },
+    {
+      "id": "333333333333333333333333",
+      "title": "Fixture film 3",
+      "action": "approve",
+      "status": "success",
+      "time": "2026-10-11T10:01:00Z",
+      "message": "Synthetic prior failure"
+    },
+    {
+      "id": "444444444444444444444444",
+      "title": "Fixture film 4",
+      "action": "approve",
+      "status": "success",
+      "time": "2026-10-11T10:01:00Z",
+      "warning": "Synthetic unresolved warning"
+    }
+  ],
+  "items": [
+    {
+      "id": "555555555555555555555555",
+      "snapshot": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "status": "ready",
+      "durationA": 600,
+      "durationB": 600
+    }
+  ],
+  "active": null,
+  "batchRunning": false,
+  "recovery": [],
+  "restorePending": 0
+}

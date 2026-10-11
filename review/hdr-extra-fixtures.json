@@ -1,0 +1,1177 @@
+[
+  {
+    "file": "Fixture Plus",
+    "p": {
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "hevc",
+          "width": 3840,
+          "height": 2160,
+          "pix_fmt": "yuv420p10le",
+          "color_space": "bt2020nc",
+          "color_transfer": "smpte2084",
+          "color_primaries": "bt2020",
+          "color_range": "tv",
+          "r_frame_rate": "24000/1001",
+          "avg_frame_rate": "24000/1001",
+          "disposition": {
+            "default": 1,
+            "dub": 0,
+            "original": 0,
+            "comment": 0,
+            "lyrics": 0,
+            "karaoke": 0,
+            "forced": 0,
+            "hearing_impaired": 0,
+            "visual_impaired": 0,
+            "clean_effects": 0,
+            "attached_pic": 0,
+            "timed_thumbnails": 0,
+            "non_diegetic": 0,
+            "captions": 0,
+            "descriptions": 0,
+            "metadata": 0,
+            "dependent": 0,
+            "still_image": 0,
+            "multilayer": 0
+          }
+        }
+      ],
+      "format": {
+        "duration": "7903.104000"
+      },
+      "frames": [
+        {
+          "media_type": "video",
+          "stream_index": 0,
+          "key_frame": 1,
+          "pts": 0,
+          "pts_time": "0.000000",
+          "pkt_dts": 0,
+          "pkt_dts_time": "0.000000",
+          "best_effort_timestamp": 0,
+          "best_effort_timestamp_time": "0.000000",
+          "duration": 41,
+          "duration_time": "0.041000",
+          "pkt_pos": "7324",
+          "pkt_size": "3566",
+          "width": 3840,
+          "height": 2160,
+          "crop_top": 0,
+          "crop_bottom": 0,
+          "crop_left": 0,
+          "crop_right": 0,
+          "pix_fmt": "yuv420p10le",
+          "sample_aspect_ratio": "1:1",
+          "pict_type": "I",
+          "interlaced_frame": 0,
+          "top_field_first": 0,
+          "repeat_pict": 0,
+          "color_range": "tv",
+          "color_space": "bt2020nc",
+          "color_primaries": "bt2020",
+          "color_transfer": "smpte2084",
+          "chroma_location": "topleft",
+          "side_data_list": [
+            {
+              "side_data_type": "Mastering display metadata",
+              "red_x": "34000/50000",
+              "red_y": "16000/50000",
+              "green_x": "13250/50000",
+              "green_y": "34500/50000",
+              "blue_x": "7500/50000",
+              "blue_y": "3000/50000",
+              "white_point_x": "15635/50000",
+              "white_point_y": "16450/50000",
+              "min_luminance": "50/10000",
+              "max_luminance": "40000000/10000"
+            },
+            {
+              "side_data_type": "Content light level metadata",
+              "max_content": 1998,
+              "max_average": 414
+            },
+            {
+              "side_data_type": "HDR Dynamic Metadata SMPTE2094-40 (HDR10+)",
+              "application version": 1,
+              "num_windows": 1,
+              "targeted_system_display_maximum_luminance": "500/1",
+              "maxscl": "37/100000",
+              "average_maxrgb": "21/100000",
+              "num_distribution_maxrgb_percentiles": 9,
+              "distribution_maxrgb_percentage": 99,
+              "distribution_maxrgb_percentile": "662/100000",
+              "fraction_bright_pixels": "0/1000",
+              "knee_point_x": "0/4095",
+              "knee_point_y": "0/4095",
+              "num_bezier_curve_anchors": 9,
+              "bezier_curve_anchors": "922/1023"
+            }
+          ]
+        },
+        {
+          "media_type": "video",
+          "stream_index": 0,
+          "key_frame": 0,
+          "pts": 42,
+          "pts_time": "0.042000",
+          "pkt_dts": 42,
+          "pkt_dts_time": "0.042000",
+          "best_effort_timestamp": 42,
+          "best_effort_timestamp_time": "0.042000",
+          "duration": 41,
+          "duration_time": "0.041000",
+          "pkt_pos": "40497",
+          "pkt_size": "336",
+          "width": 3840,
+          "height": 2160,
+          "crop_top": 0,
+          "crop_bottom": 0,
+          "crop_left": 0,
+          "crop_right": 0,
+          "pix_fmt": "yuv420p10le",
+          "sample_aspect_ratio": "1:1",
+          "pict_type": "B",
+          "interlaced_frame": 0,
+          "top_field_first": 0,
+          "repeat_pict": 0,
+          "color_range": "tv",
+          "color_space": "bt2020nc",
+          "color_primaries": "bt2020",
+          "color_transfer": "smpte2084",
+          "chroma_location": "topleft",
+          "side_data_list": [
+            {
+              "side_data_type": "Mastering display metadata",
+              "red_x": "34000/50000",
+              "red_y": "16000/50000",
+              "green_x": "13250/50000",
+              "green_y": "34500/50000",
+              "blue_x": "7500/50000",
+              "blue_y": "3000/50000",
+              "white_point_x": "15635/50000",
+              "white_point_y": "16450/50000",
+              "min_luminance": "50/10000",
+              "max_luminance": "40000000/10000"
+            },
+            {
+              "side_data_type": "Content light level metadata",
+              "max_content": 1998,
+              "max_average": 414
+            },
+            {
+              "side_data_type": "HDR Dynamic Metadata SMPTE2094-40 (HDR10+)",
+              "application version": 1,
+              "num_windows": 1,
+              "targeted_system_display_maximum_luminance": "500/1",
+              "maxscl": "37/100000",
+              "average_maxrgb": "21/100000",
+              "num_distribution_maxrgb_percentiles": 9,
+              "distribution_maxrgb_percentage": 99,
+              "distribution_maxrgb_percentile": "662/100000",
+              "fraction_bright_pixels": "0/1000",
+              "knee_point_x": "0/4095",
+              "knee_point_y": "0/4095",
+              "num_bezier_curve_anchors": 9,
+              "bezier_curve_anchors": "922/1023"
+            }
+          ]
+        },
+        {
+          "media_type": "video",
+          "stream_index": 0,
+          "key_frame": 0,
+          "pts": 125,
+          "pts_time": "0.125000",
+          "best_effort_timestamp": 125,
+          "best_effort_timestamp_time": "0.125000",
+          "duration": 41,
+          "duration_time": "0.041000",
+          "pkt_pos": "40079",
+          "pkt_size": "411",
+          "width": 3840,
+          "height": 2160,
+          "crop_top": 0,
+          "crop_bottom": 0,
+          "crop_left": 0,
+          "crop_right": 0,
+          "pix_fmt": "yuv420p10le",
+          "sample_aspect_ratio": "1:1",
+          "pict_type": "P",
+          "interlaced_frame": 0,
+          "top_field_first": 0,
+          "repeat_pict": 0,
+          "color_range": "tv",
+          "color_space": "bt2020nc",
+          "color_primaries": "bt2020",
+          "color_transfer": "smpte2084",
+          "chroma_location": "topleft",
+          "side_data_list": [
+            {
+              "side_data_type": "Mastering display metadata",
+              "red_x": "34000/50000",
+              "red_y": "16000/50000",
+              "green_x": "13250/50000",
+              "green_y": "34500/50000",
+              "blue_x": "7500/50000",
+              "blue_y": "3000/50000",
+              "white_point_x": "15635/50000",
+              "white_point_y": "16450/50000",
+              "min_luminance": "50/10000",
+              "max_luminance": "40000000/10000"
+            },
+            {
+              "side_data_type": "Content light level metadata",
+              "max_content": 1998,
+              "max_average": 414
+            },
+            {
+              "side_data_type": "HDR Dynamic Metadata SMPTE2094-40 (HDR10+)",
+              "application version": 1,
+              "num_windows": 1,
+              "targeted_system_display_maximum_luminance": "500/1",
+              "maxscl": "37/100000",
+              "average_maxrgb": "21/100000",
+              "num_distribution_maxrgb_percentiles": 9,
+              "distribution_maxrgb_percentage": 99,
+              "distribution_maxrgb_percentile": "662/100000",
+              "fraction_bright_pixels": "0/1000",
+              "knee_point_x": "0/4095",
+              "knee_point_y": "0/4095",
+              "num_bezier_curve_anchors": 9,
+              "bezier_curve_anchors": "922/1023"
+            }
+          ]
+        }
+      ],
+      "chapters": []
+    }
+  },
+  {
+    "file": "Fixture DV7",
+    "p": {
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "hevc",
+          "width": 3840,
+          "height": 2160,
+          "pix_fmt": "yuv420p10le",
+          "color_space": "bt2020nc",
+          "color_transfer": "smpte2084",
+          "color_primaries": "bt2020",
+          "color_range": "tv",
+          "r_frame_rate": "24000/1001",
+          "avg_frame_rate": "24000/1001",
+          "side_data_list": [
+            {
+              "side_data_type": "DOVI configuration record",
+              "dv_version_major": 1,
+              "dv_version_minor": 0,
+              "dv_profile": 7,
+              "dv_level": 6,
+              "rpu_present_flag": 1,
+              "el_present_flag": 1,
+              "bl_present_flag": 1,
+              "dv_bl_signal_compatibility_id": 6,
+              "dv_md_compression": "none"
+            }
+          ],
+          "disposition": {
+            "default": 1,
+            "dub": 0,
+            "original": 0,
+            "comment": 0,
+            "lyrics": 0,
+            "karaoke": 0,
+            "forced": 0,
+            "hearing_impaired": 0,
+            "visual_impaired": 0,
+            "clean_effects": 0,
+            "attached_pic": 0,
+            "timed_thumbnails": 0,
+            "non_diegetic": 0,
+            "captions": 0,
+            "descriptions": 0,
+            "metadata": 0,
+            "dependent": 0,
+            "still_image": 0,
+            "multilayer": 0
+          }
+        }
+      ],
+      "format": {
+        "duration": "8002.912000"
+      },
+      "frames": [
+        {
+          "media_type": "video",
+          "stream_index": 0,
+          "key_frame": 1,
+          "pts": 0,
+          "pts_time": "0.000000",
+          "best_effort_timestamp": 0,
+          "best_effort_timestamp_time": "0.000000",
+          "duration": 41,
+          "duration_time": "0.041000",
+          "pkt_pos": "13101",
+          "pkt_size": "4617",
+          "width": 3840,
+          "height": 2160,
+          "crop_top": 0,
+          "crop_bottom": 0,
+          "crop_left": 0,
+          "crop_right": 0,
+          "pix_fmt": "yuv420p10le",
+          "sample_aspect_ratio": "1:1",
+          "pict_type": "I",
+          "interlaced_frame": 0,
+          "top_field_first": 0,
+          "repeat_pict": 0,
+          "color_range": "tv",
+          "color_space": "bt2020nc",
+          "color_primaries": "bt2020",
+          "color_transfer": "smpte2084",
+          "chroma_location": "topleft",
+          "side_data_list": [
+            {
+              "side_data_type": "Mastering display metadata",
+              "red_x": "35400/50000",
+              "red_y": "14600/50000",
+              "green_x": "8500/50000",
+              "green_y": "39850/50000",
+              "blue_x": "6550/50000",
+              "blue_y": "2300/50000",
+              "white_point_x": "15635/50000",
+              "white_point_y": "16450/50000",
+              "min_luminance": "1/10000",
+              "max_luminance": "10000000/10000"
+            },
+            {
+              "side_data_type": "Content light level metadata",
+              "max_content": 301,
+              "max_average": 207
+            },
+            {
+              "side_data_type": "Dolby Vision RPU Data"
+            },
+            {
+              "side_data_type": "Dolby Vision Metadata",
+              "rpu_type": 2,
+              "rpu_format": 18,
+              "vdr_rpu_profile": 1,
+              "vdr_rpu_level": 0,
+              "chroma_resampling_explicit_filter_flag": 0,
+              "coef_data_type": 0,
+              "coef_log2_denom": 23,
+              "vdr_rpu_normalized_idc": 1,
+              "bl_video_full_range_flag": 0,
+              "bl_bit_depth": 10,
+              "el_bit_depth": 10,
+              "vdr_bit_depth": 12,
+              "spatial_resampling_filter_flag": 0,
+              "el_spatial_resampling_filter_flag": 1,
+              "disable_residual_flag": 0,
+              "vdr_rpu_id": 0,
+              "mapping_color_space": 0,
+              "mapping_chroma_format_idc": 0,
+              "nlq_method_idc": 0,
+              "nlq_method_idc_name": "linear_dz",
+              "num_x_partitions": 1,
+              "num_y_partitions": 1,
+              "components": [
+                {
+                  "pivots": "0 1023",
+                  "pieces": [
+                    {
+                      "mapping_idc": 0,
+                      "mapping_idc_name": "polynomial",
+                      "poly_order": 1,
+                      "poly_coef": "0 8388608"
+                    }
+                  ],
+                  "nlq_offset": 512,
+                  "vdr_in_max": 1048576,
+                  "linear_deadzone_slope": 2048,
+                  "linear_deadzone_threshold": 0
+                },
+                {
+                  "pivots": "0 1023",
+                  "pieces": [
+                    {
+                      "mapping_idc": 0,
+                      "mapping_idc_name": "polynomial",
+                      "poly_order": 1,
+                      "poly_coef": "0 8388608"
+                    }
+                  ],
+                  "nlq_offset": 512,
+                  "vdr_in_max": 1048576,
+                  "linear_deadzone_slope": 2048,
+                  "linear_deadzone_threshold": 0
+                },
+                {
+                  "pivots": "0 1023",
+                  "pieces": [
+                    {
+                      "mapping_idc": 0,
+                      "mapping_idc_name": "polynomial",
+                      "poly_order": 1,
+                      "poly_coef": "0 8388608"
+                    }
+                  ],
+                  "nlq_offset": 512,
+                  "vdr_in_max": 1048576,
+                  "linear_deadzone_slope": 2048,
+                  "linear_deadzone_threshold": 0
+                }
+              ],
+              "dm_metadata_id": 0,
+              "scene_refresh_flag": 1,
+              "ycc_to_rgb_matrix": "9574/8192 0/8192 13802/8192 9574/8192 -1540/8192 -5348/8192 9574/8192 17610/8192 0/8192",
+              "ycc_to_rgb_offset": "16777216/268435456 134217728/268435456 134217728/268435456",
+              "rgb_to_lms_matrix": "7222/16384 8771/16384 390/16384 2654/16384 12430/16384 1300/16384 0/16384 422/16384 15962/16384",
+              "signal_eotf": 65535,
+              "signal_eotf_param0": 0,
+              "signal_eotf_param1": 0,
+              "signal_eotf_param2": 0,
+              "signal_bit_depth": 12,
+              "signal_color_space": 0,
+              "signal_chroma_format": 0,
+              "signal_full_range_flag": 1,
+              "source_min_pq": 7,
+              "source_max_pq": 3079,
+              "source_diagonal": 42
+            }
+          ]
+        },
+        {
+          "media_type": "video",
+          "stream_index": 0,
+          "key_frame": 0,
+          "pts": 42,
+          "pts_time": "0.042000",
+          "best_effort_timestamp": 42,
+          "best_effort_timestamp_time": "0.042000",
+          "duration": 41,
+          "duration_time": "0.041000",
+          "pkt_pos": "56960",
+          "pkt_size": "1013",
+          "width": 3840,
+          "height": 2160,
+          "crop_top": 0,
+          "crop_bottom": 0,
+          "crop_left": 0,
+          "crop_right": 0,
+          "pix_fmt": "yuv420p10le",
+          "sample_aspect_ratio": "1:1",
+          "pict_type": "P",
+          "interlaced_frame": 0,
+          "top_field_first": 0,
+          "repeat_pict": 0,
+          "color_range": "tv",
+          "color_space": "bt2020nc",
+          "color_primaries": "bt2020",
+          "color_transfer": "smpte2084",
+          "chroma_location": "topleft",
+          "side_data_list": [
+            {
+              "side_data_type": "Mastering display metadata",
+              "red_x": "35400/50000",
+              "red_y": "14600/50000",
+              "green_x": "8500/50000",
+              "green_y": "39850/50000",
+              "blue_x": "6550/50000",
+              "blue_y": "2300/50000",
+              "white_point_x": "15635/50000",
+              "white_point_y": "16450/50000",
+              "min_luminance": "1/10000",
+              "max_luminance": "10000000/10000"
+            },
+            {
+              "side_data_type": "Content light level metadata",
+              "max_content": 301,
+              "max_average": 207
+            },
+            {
+              "side_data_type": "Dolby Vision RPU Data"
+            },
+            {
+              "side_data_type": "Dolby Vision Metadata",
+              "rpu_type": 2,
+              "rpu_format": 18,
+              "vdr_rpu_profile": 1,
+              "vdr_rpu_level": 0,
+              "chroma_resampling_explicit_filter_flag": 0,
+              "coef_data_type": 0,
+              "coef_log2_denom": 23,
+              "vdr_rpu_normalized_idc": 1,
+              "bl_video_full_range_flag": 0,
+              "bl_bit_depth": 10,
+              "el_bit_depth": 10,
+              "vdr_bit_depth": 12,
+              "spatial_resampling_filter_flag": 0,
+              "el_spatial_resampling_filter_flag": 1,
+              "disable_residual_flag": 0,
+              "vdr_rpu_id": 0,
+              "mapping_color_space": 0,
+              "mapping_chroma_format_idc": 0,
+              "nlq_method_idc": 0,
+              "nlq_method_idc_name": "linear_dz",
+              "num_x_partitions": 1,
+              "num_y_partitions": 1,
+              "components": [
+                {
+                  "pivots": "0 1023",
+                  "pieces": [
+                    {
+                      "mapping_idc": 0,
+                      "mapping_idc_name": "polynomial",
+                      "poly_order": 1,
+                      "poly_coef": "0 8388608"
+                    }
+                  ],
+                  "nlq_offset": 512,
+                  "vdr_in_max": 1048576,
+                  "linear_deadzone_slope": 2048,
+                  "linear_deadzone_threshold": 0
+                },
+                {
+                  "pivots": "0 1023",
+                  "pieces": [
+                    {
+                      "mapping_idc": 0,
+                      "mapping_idc_name": "polynomial",
+                      "poly_order": 1,
+                      "poly_coef": "0 8388608"
+                    }
+                  ],
+                  "nlq_offset": 512,
+                  "vdr_in_max": 1048576,
+                  "linear_deadzone_slope": 2048,
+                  "linear_deadzone_threshold": 0
+                },
+                {
+                  "pivots": "0 1023",
+                  "pieces": [
+                    {
+                      "mapping_idc": 0,
+                      "mapping_idc_name": "polynomial",
+                      "poly_order": 1,
+                      "poly_coef": "0 8388608"
+                    }
+                  ],
+                  "nlq_offset": 512,
+                  "vdr_in_max": 1048576,
+                  "linear_deadzone_slope": 2048,
+                  "linear_deadzone_threshold": 0
+                }
+              ],
+              "dm_metadata_id": 0,
+              "scene_refresh_flag": 0,
+              "ycc_to_rgb_matrix": "9574/8192 0/8192 13802/8192 9574/8192 -1540/8192 -5348/8192 9574/8192 17610/8192 0/8192",
+              "ycc_to_rgb_offset": "16777216/268435456 134217728/268435456 134217728/268435456",
+              "rgb_to_lms_matrix": "7222/16384 8771/16384 390/16384 2654/16384 12430/16384 1300/16384 0/16384 422/16384 15962/16384",
+              "signal_eotf": 65535,
+              "signal_eotf_param0": 0,
+              "signal_eotf_param1": 0,
+              "signal_eotf_param2": 0,
+              "signal_bit_depth": 12,
+              "signal_color_space": 0,
+              "signal_chroma_format": 0,
+              "signal_full_range_flag": 1,
+              "source_min_pq": 7,
+              "source_max_pq": 3079,
+              "source_diagonal": 42
+            }
+          ]
+        },
+        {
+          "media_type": "video",
+          "stream_index": 0,
+          "key_frame": 0,
+          "pts": 125,
+          "pts_time": "0.125000",
+          "best_effort_timestamp": 125,
+          "best_effort_timestamp_time": "0.125000",
+          "duration": 41,
+          "duration_time": "0.041000",
+          "pkt_pos": "78718",
+          "pkt_size": "1021",
+          "width": 3840,
+          "height": 2160,
+          "crop_top": 0,
+          "crop_bottom": 0,
+          "crop_left": 0,
+          "crop_right": 0,
+          "pix_fmt": "yuv420p10le",
+          "sample_aspect_ratio": "1:1",
+          "pict_type": "P",
+          "interlaced_frame": 0,
+          "top_field_first": 0,
+          "repeat_pict": 0,
+          "color_range": "tv",
+          "color_space": "bt2020nc",
+          "color_primaries": "bt2020",
+          "color_transfer": "smpte2084",
+          "chroma_location": "topleft",
+          "side_data_list": [
+            {
+              "side_data_type": "Mastering display metadata",
+              "red_x": "35400/50000",
+              "red_y": "14600/50000",
+              "green_x": "8500/50000",
+              "green_y": "39850/50000",
+              "blue_x": "6550/50000",
+              "blue_y": "2300/50000",
+              "white_point_x": "15635/50000",
+              "white_point_y": "16450/50000",
+              "min_luminance": "1/10000",
+              "max_luminance": "10000000/10000"
+            },
+            {
+              "side_data_type": "Content light level metadata",
+              "max_content": 301,
+              "max_average": 207
+            },
+            {
+              "side_data_type": "Dolby Vision RPU Data"
+            },
+            {
+              "side_data_type": "Dolby Vision Metadata",
+              "rpu_type": 2,
+              "rpu_format": 18,
+              "vdr_rpu_profile": 1,
+              "vdr_rpu_level": 0,
+              "chroma_resampling_explicit_filter_flag": 0,
+              "coef_data_type": 0,
+              "coef_log2_denom": 23,
+              "vdr_rpu_normalized_idc": 1,
+              "bl_video_full_range_flag": 0,
+              "bl_bit_depth": 10,
+              "el_bit_depth": 10,
+              "vdr_bit_depth": 12,
+              "spatial_resampling_filter_flag": 0,
+              "el_spatial_resampling_filter_flag": 1,
+              "disable_residual_flag": 0,
+              "vdr_rpu_id": 0,
+              "mapping_color_space": 0,
+              "mapping_chroma_format_idc": 0,
+              "nlq_method_idc": 0,
+              "nlq_method_idc_name": "linear_dz",
+              "num_x_partitions": 1,
+              "num_y_partitions": 1,
+              "components": [
+                {
+                  "pivots": "0 1023",
+                  "pieces": [
+                    {
+                      "mapping_idc": 0,
+                      "mapping_idc_name": "polynomial",
+                      "poly_order": 1,
+                      "poly_coef": "0 8388608"
+                    }
+                  ],
+                  "nlq_offset": 512,
+                  "vdr_in_max": 1048576,
+                  "linear_deadzone_slope": 2048,
+                  "linear_deadzone_threshold": 0
+                },
+                {
+                  "pivots": "0 1023",
+                  "pieces": [
+                    {
+                      "mapping_idc": 0,
+                      "mapping_idc_name": "polynomial",
+                      "poly_order": 1,
+                      "poly_coef": "0 8388608"
+                    }
+                  ],
+                  "nlq_offset": 512,
+                  "vdr_in_max": 1048576,
+                  "linear_deadzone_slope": 2048,
+                  "linear_deadzone_threshold": 0
+                },
+                {
+                  "pivots": "0 1023",
+                  "pieces": [
+                    {
+                      "mapping_idc": 0,
+                      "mapping_idc_name": "polynomial",
+                      "poly_order": 1,
+                      "poly_coef": "0 8388608"
+                    }
+                  ],
+                  "nlq_offset": 512,
+                  "vdr_in_max": 1048576,
+                  "linear_deadzone_slope": 2048,
+                  "linear_deadzone_threshold": 0
+                }
+              ],
+              "dm_metadata_id": 0,
+              "scene_refresh_flag": 0,
+              "ycc_to_rgb_matrix": "9574/8192 0/8192 13802/8192 9574/8192 -1540/8192 -5348/8192 9574/8192 17610/8192 0/8192",
+              "ycc_to_rgb_offset": "16777216/268435456 134217728/268435456 134217728/268435456",
+              "rgb_to_lms_matrix": "7222/16384 8771/16384 390/16384 2654/16384 12430/16384 1300/16384 0/16384 422/16384 15962/16384",
+              "signal_eotf": 65535,
+              "signal_eotf_param0": 0,
+              "signal_eotf_param1": 0,
+              "signal_eotf_param2": 0,
+              "signal_bit_depth": 12,
+              "signal_color_space": 0,
+              "signal_chroma_format": 0,
+              "signal_full_range_flag": 1,
+              "source_min_pq": 7,
+              "source_max_pq": 3079,
+              "source_diagonal": 42
+            }
+          ]
+        }
+      ],
+      "chapters": []
+    }
+  },
+  {
+    "file": "Fixture DV81",
+    "p": {
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "hevc",
+          "width": 3840,
+          "height": 2160,
+          "pix_fmt": "yuv420p10le",
+          "color_range": "tv",
+          "r_frame_rate": "24/1",
+          "avg_frame_rate": "24/1",
+          "side_data_list": [
+            {
+              "side_data_type": "DOVI configuration record",
+              "dv_version_major": 1,
+              "dv_version_minor": 0,
+              "dv_profile": 8,
+              "dv_level": 6,
+              "rpu_present_flag": 1,
+              "el_present_flag": 0,
+              "bl_present_flag": 1,
+              "dv_bl_signal_compatibility_id": 1,
+              "dv_md_compression": "none"
+            }
+          ],
+          "disposition": {
+            "default": 1,
+            "dub": 0,
+            "original": 0,
+            "comment": 0,
+            "lyrics": 0,
+            "karaoke": 0,
+            "forced": 0,
+            "hearing_impaired": 0,
+            "visual_impaired": 0,
+            "clean_effects": 0,
+            "attached_pic": 0,
+            "timed_thumbnails": 0,
+            "non_diegetic": 0,
+            "captions": 0,
+            "descriptions": 0,
+            "metadata": 0,
+            "dependent": 0,
+            "still_image": 0,
+            "multilayer": 0
+          }
+        }
+      ],
+      "format": {
+        "duration": "9382.458000"
+      },
+      "frames": [
+        {
+          "media_type": "video",
+          "stream_index": 0,
+          "key_frame": 1,
+          "pts": 0,
+          "pts_time": "0.000000",
+          "pkt_dts": 0,
+          "pkt_dts_time": "0.000000",
+          "best_effort_timestamp": 0,
+          "best_effort_timestamp_time": "0.000000",
+          "duration": 41,
+          "duration_time": "0.041000",
+          "pkt_pos": "321695",
+          "pkt_size": "2290",
+          "width": 3840,
+          "height": 2160,
+          "crop_top": 0,
+          "crop_bottom": 0,
+          "crop_left": 0,
+          "crop_right": 0,
+          "pix_fmt": "yuv420p10le",
+          "sample_aspect_ratio": "1:1",
+          "pict_type": "I",
+          "interlaced_frame": 0,
+          "top_field_first": 0,
+          "repeat_pict": 0,
+          "color_range": "tv",
+          "chroma_location": "left",
+          "side_data_list": [
+            {
+              "side_data_type": "Mastering display metadata",
+              "red_x": "34000/50000",
+              "red_y": "16000/50000",
+              "green_x": "13250/50000",
+              "green_y": "34500/50000",
+              "blue_x": "7500/50000",
+              "blue_y": "3000/50000",
+              "white_point_x": "15635/50000",
+              "white_point_y": "16450/50000",
+              "min_luminance": "50/10000",
+              "max_luminance": "40000000/10000"
+            },
+            {
+              "side_data_type": "Content light level metadata",
+              "max_content": 0,
+              "max_average": 0
+            },
+            {
+              "side_data_type": "Dolby Vision RPU Data"
+            },
+            {
+              "side_data_type": "Dolby Vision Metadata",
+              "rpu_type": 2,
+              "rpu_format": 18,
+              "vdr_rpu_profile": 1,
+              "vdr_rpu_level": 0,
+              "chroma_resampling_explicit_filter_flag": 0,
+              "coef_data_type": 0,
+              "coef_log2_denom": 23,
+              "vdr_rpu_normalized_idc": 1,
+              "bl_video_full_range_flag": 0,
+              "bl_bit_depth": 10,
+              "el_bit_depth": 10,
+              "vdr_bit_depth": 12,
+              "spatial_resampling_filter_flag": 0,
+              "el_spatial_resampling_filter_flag": 0,
+              "disable_residual_flag": 1,
+              "vdr_rpu_id": 0,
+              "mapping_color_space": 0,
+              "mapping_chroma_format_idc": 0,
+              "nlq_method_idc": -1,
+              "nlq_method_idc_name": "none",
+              "num_x_partitions": 1,
+              "num_y_partitions": 1,
+              "components": [
+                {
+                  "pivots": "0 1023",
+                  "pieces": [
+                    {
+                      "mapping_idc": 0,
+                      "mapping_idc_name": "polynomial",
+                      "poly_order": 1,
+                      "poly_coef": "0 8388608"
+                    }
+                  ]
+                },
+                {
+                  "pivots": "0 1023",
+                  "pieces": [
+                    {
+                      "mapping_idc": 0,
+                      "mapping_idc_name": "polynomial",
+                      "poly_order": 1,
+                      "poly_coef": "0 8388608"
+                    }
+                  ]
+                },
+                {
+                  "pivots": "0 1023",
+                  "pieces": [
+                    {
+                      "mapping_idc": 0,
+                      "mapping_idc_name": "polynomial",
+                      "poly_order": 1,
+                      "poly_coef": "0 8388608"
+                    }
+                  ]
+                }
+              ],
+              "dm_metadata_id": 0,
+              "scene_refresh_flag": 1,
+              "ycc_to_rgb_matrix": "9574/8192 0/8192 13802/8192 9574/8192 -1540/8192 -5348/8192 9574/8192 17610/8192 0/8192",
+              "ycc_to_rgb_offset": "16777216/268435456 134217728/268435456 134217728/268435456",
+              "rgb_to_lms_matrix": "7222/16384 8771/16384 390/16384 2654/16384 12430/16384 1300/16384 0/16384 422/16384 15962/16384",
+              "signal_eotf": 65535,
+              "signal_eotf_param0": 0,
+              "signal_eotf_param1": 0,
+              "signal_eotf_param2": 0,
+              "signal_bit_depth": 12,
+              "signal_color_space": 0,
+              "signal_chroma_format": 0,
+              "signal_full_range_flag": 1,
+              "source_min_pq": 62,
+              "source_max_pq": 3696,
+              "source_diagonal": 42
+            }
+          ]
+        },
+        {
+          "media_type": "video",
+          "stream_index": 0,
+          "key_frame": 0,
+          "pts": 41,
+          "pts_time": "0.041000",
+          "pkt_dts": 41,
+          "pkt_dts_time": "0.041000",
+          "best_effort_timestamp": 41,
+          "best_effort_timestamp_time": "0.041000",
+          "duration": 41,
+          "duration_time": "0.041000",
+          "pkt_pos": "393650",
+          "pkt_size": "437",
+          "width": 3840,
+          "height": 2160,
+          "crop_top": 0,
+          "crop_bottom": 0,
+          "crop_left": 0,
+          "crop_right": 0,
+          "pix_fmt": "yuv420p10le",
+          "sample_aspect_ratio": "1:1",
+          "pict_type": "P",
+          "interlaced_frame": 0,
+          "top_field_first": 0,
+          "repeat_pict": 0,
+          "color_range": "tv",
+          "chroma_location": "left",
+          "side_data_list": [
+            {
+              "side_data_type": "Mastering display metadata",
+              "red_x": "34000/50000",
+              "red_y": "16000/50000",
+              "green_x": "13250/50000",
+              "green_y": "34500/50000",
+              "blue_x": "7500/50000",
+              "blue_y": "3000/50000",
+              "white_point_x": "15635/50000",
+              "white_point_y": "16450/50000",
+              "min_luminance": "50/10000",
+              "max_luminance": "40000000/10000"
+            },
+            {
+              "side_data_type": "Content light level metadata",
+              "max_content": 0,
+              "max_average": 0
+            },
+            {
+              "side_data_type": "Dolby Vision RPU Data"
+            },
+            {
+              "side_data_type": "Dolby Vision Metadata",
+              "rpu_type": 2,
+              "rpu_format": 18,
+              "vdr_rpu_profile": 1,
+              "vdr_rpu_level": 0,
+              "chroma_resampling_explicit_filter_flag": 0,
+              "coef_data_type": 0,
+              "coef_log2_denom": 23,
+              "vdr_rpu_normalized_idc": 1,
+              "bl_video_full_range_flag": 0,
+              "bl_bit_depth": 10,
+              "el_bit_depth": 10,
+              "vdr_bit_depth": 12,
+              "spatial_resampling_filter_flag": 0,
+              "el_spatial_resampling_filter_flag": 0,
+              "disable_residual_flag": 1,
+              "vdr_rpu_id": 0,
+              "mapping_color_space": 0,
+              "mapping_chroma_format_idc": 0,
+              "nlq_method_idc": -1,
+              "nlq_method_idc_name": "none",
+              "num_x_partitions": 1,
+              "num_y_partitions": 1,
+              "components": [
+                {
+                  "pivots": "0 1023",
+                  "pieces": [
+                    {
+                      "mapping_idc": 0,
+                      "mapping_idc_name": "polynomial",
+                      "poly_order": 1,
+                      "poly_coef": "0 8388608"
+                    }
+                  ]
+                },
+                {
+                  "pivots": "0 1023",
+                  "pieces": [
+                    {
+                      "mapping_idc": 0,
+                      "mapping_idc_name": "polynomial",
+                      "poly_order": 1,
+                      "poly_coef": "0 8388608"
+                    }
+                  ]
+                },
+                {
+                  "pivots": "0 1023",
+                  "pieces": [
+                    {
+                      "mapping_idc": 0,
+                      "mapping_idc_name": "polynomial",
+                      "poly_order": 1,
+                      "poly_coef": "0 8388608"
+                    }
+                  ]
+                }
+              ],
+              "dm_metadata_id": 0,
+              "scene_refresh_flag": 1,
+              "ycc_to_rgb_matrix": "9574/8192 0/8192 13802/8192 9574/8192 -1540/8192 -5348/8192 9574/8192 17610/8192 0/8192",
+              "ycc_to_rgb_offset": "16777216/268435456 134217728/268435456 134217728/268435456",
+              "rgb_to_lms_matrix": "7222/16384 8771/16384 390/16384 2654/16384 12430/16384 1300/16384 0/16384 422/16384 15962/16384",
+              "signal_eotf": 65535,
+              "signal_eotf_param0": 0,
+              "signal_eotf_param1": 0,
+              "signal_eotf_param2": 0,
+              "signal_bit_depth": 12,
+              "signal_color_space": 0,
+              "signal_chroma_format": 0,
+              "signal_full_range_flag": 1,
+              "source_min_pq": 62,
+              "source_max_pq": 3696,
+              "source_diagonal": 42
+            }
+          ]
+        },
+        {
+          "media_type": "video",
+          "stream_index": 0,
+          "key_frame": 0,
+          "pts": 83,
+          "pts_time": "0.083000",
+          "pkt_dts": 83,
+          "pkt_dts_time": "0.083000",
+          "best_effort_timestamp": 83,
+          "best_effort_timestamp_time": "0.083000",
+          "duration": 41,
+          "duration_time": "0.041000",
+          "pkt_pos": "394094",
+          "pkt_size": "439",
+          "width": 3840,
+          "height": 2160,
+          "crop_top": 0,
+          "crop_bottom": 0,
+          "crop_left": 0,
+          "crop_right": 0,
+          "pix_fmt": "yuv420p10le",
+          "sample_aspect_ratio": "1:1",
+          "pict_type": "P",
+          "interlaced_frame": 0,
+          "top_field_first": 0,
+          "repeat_pict": 0,
+          "color_range": "tv",
+          "chroma_location": "left",
+          "side_data_list": [
+            {
+              "side_data_type": "Mastering display metadata",
+              "red_x": "34000/50000",
+              "red_y": "16000/50000",
+              "green_x": "13250/50000",
+              "green_y": "34500/50000",
+              "blue_x": "7500/50000",
+              "blue_y": "3000/50000",
+              "white_point_x": "15635/50000",
+              "white_point_y": "16450/50000",
+              "min_luminance": "50/10000",
+              "max_luminance": "40000000/10000"
+            },
+            {
+              "side_data_type": "Content light level metadata",
+              "max_content": 0,
+              "max_average": 0
+            },
+            {
+              "side_data_type": "Dolby Vision RPU Data"
+            },
+            {
+              "side_data_type": "Dolby Vision Metadata",
+              "rpu_type": 2,
+              "rpu_format": 18,
+              "vdr_rpu_profile": 1,
+              "vdr_rpu_level": 0,
+              "chroma_resampling_explicit_filter_flag": 0,
+              "coef_data_type": 0,
+              "coef_log2_denom": 23,
+              "vdr_rpu_normalized_idc": 1,
+              "bl_video_full_range_flag": 0,
+              "bl_bit_depth": 10,
+              "el_bit_depth": 10,
+              "vdr_bit_depth": 12,
+              "spatial_resampling_filter_flag": 0,
+              "el_spatial_resampling_filter_flag": 0,
+              "disable_residual_flag": 1,
+              "vdr_rpu_id": 0,
+              "mapping_color_space": 0,
+              "mapping_chroma_format_idc": 0,
+              "nlq_method_idc": -1,
+              "nlq_method_idc_name": "none",
+              "num_x_partitions": 1,
+              "num_y_partitions": 1,
+              "components": [
+                {
+                  "pivots": "0 1023",
+                  "pieces": [
+                    {
+                      "mapping_idc": 0,
+                      "mapping_idc_name": "polynomial",
+                      "poly_order": 1,
+                      "poly_coef": "0 8388608"
+                    }
+                  ]
+                },
+                {
+                  "pivots": "0 1023",
+                  "pieces": [
+                    {
+                      "mapping_idc": 0,
+                      "mapping_idc_name": "polynomial",
+                      "poly_order": 1,
+                      "poly_coef": "0 8388608"
+                    }
+                  ]
+                },
+                {
+                  "pivots": "0 1023",
+                  "pieces": [
+                    {
+                      "mapping_idc": 0,
+                      "mapping_idc_name": "polynomial",
+                      "poly_order": 1,
+                      "poly_coef": "0 8388608"
+                    }
+                  ]
+                }
+              ],
+              "dm_metadata_id": 0,
+              "scene_refresh_flag": 1,
+              "ycc_to_rgb_matrix": "9574/8192 0/8192 13802/8192 9574/8192 -1540/8192 -5348/8192 9574/8192 17610/8192 0/8192",
+              "ycc_to_rgb_offset": "16777216/268435456 134217728/268435456 134217728/268435456",
+              "rgb_to_lms_matrix": "7222/16384 8771/16384 390/16384 2654/16384 12430/16384 1300/16384 0/16384 422/16384 15962/16384",
+              "signal_eotf": 65535,
+              "signal_eotf_param0": 0,
+              "signal_eotf_param1": 0,
+              "signal_eotf_param2": 0,
+              "signal_bit_depth": 12,
+              "signal_color_space": 0,
+              "signal_chroma_format": 0,
+              "signal_full_range_flag": 1,
+              "source_min_pq": 62,
+              "source_max_pq": 3696,
+              "source_diagonal": 42
+            }
+          ]
+        }
+      ],
+      "chapters": []
+    }
+  }
+]
