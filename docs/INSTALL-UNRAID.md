@@ -1,6 +1,6 @@
 # Install on Unraid
 
-Use the Linux amd64 image `ghcr.io/desadius/tdarr-review:latest` or build it from source. A Community Applications template is supplied in [`templates/tdarr-review.xml`](../templates/tdarr-review.xml); inclusion in the catalog requires separate submission and acceptance. See [publication status](COMMUNITY-APPS.md) before attempting an anonymous image pull. Existing production containers are not changed by cloning this repository.
+Use the Linux amd64 image `ghcr.io/desadius/tdarr-review:1.10.1` or build it from source. A Community Applications template is supplied in [`templates/tdarr-review.xml`](../templates/tdarr-review.xml); inclusion in the catalog requires separate submission and acceptance. See [publication status](COMMUNITY-APPS.md) before attempting an anonymous image pull. Existing production containers are not changed by cloning this repository.
 
 ## 1. Prepare paths and permissions
 
@@ -67,7 +67,7 @@ In **Docker → Add Container**, configure:
 | Field | Value |
 | --- | --- |
 | Name | `tdarr-review` |
-| Repository | `ghcr.io/desadius/tdarr-review:latest` |
+| Repository | `ghcr.io/desadius/tdarr-review:1.10.1` |
 | Network | `bridge` |
 | WebUI | `http://[IP]:[PORT:8270]` |
 | Port | Host `8270` → container `8270/TCP` |

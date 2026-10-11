@@ -4,7 +4,7 @@ Review and approve Tdarr transcodes before replacing the files in your media lib
 
 The application currently uses a **Czech interface**. It is a community project, independent of Tdarr, Radarr and Plex.
 
-Current source version: **1.10.1**. The published Docker images and existing deployment remain at **1.10.0** until a separate release/update is approved. The initial source was collected from the deployed installation on 11 October 2026. Personal configuration, credentials, journals, film files and one-off repair approvals are excluded.
+Release version: **1.10.1**. Use the explicit `1.10.1` image tag for this release; source/image publication and installation are separate operations. The initial source was collected from the deployed installation on 11 October 2026. Personal configuration, credentials, journals, film files and one-off repair approvals are excluded.
 
 ## What is included
 
@@ -47,7 +47,7 @@ docker compose pull review
 docker compose up -d --no-build review
 ```
 
-Follow [the installation guide](docs/INSTALL-UNRAID.md) before enabling file replacement. The public image is `ghcr.io/desadius/tdarr-review:latest` for Linux amd64; optional Recovery uses `ghcr.io/desadius/tdarr-recovery:latest`. Builds and isolated image tests passed, and anonymous registry access was verified; [packaging status](docs/COMMUNITY-APPS.md) records the remaining catalog steps. You can also build from source with `docker compose build review`. The default bind address is localhost. Set it to your server's LAN address and set `PUBLIC_ORIGIN` to the exact address used in your browser.
+Follow [the installation guide](docs/INSTALL-UNRAID.md) before enabling file replacement. The public image is `ghcr.io/desadius/tdarr-review:1.10.1` for Linux amd64; optional Recovery uses `ghcr.io/desadius/tdarr-recovery:1.10.1`. Builds and isolated image tests passed, and anonymous registry access was verified; [packaging status](docs/COMMUNITY-APPS.md) records the remaining catalog steps. You can also build from source with `docker compose build review`. The default bind address is localhost. Set it to your server's LAN address and set `PUBLIC_ORIGIN` to the exact address used in your browser.
 
 ## Project layout
 

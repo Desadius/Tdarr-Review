@@ -2,7 +2,7 @@
 
 This records the implemented application features. Versions before 1.10.0 were deployed snapshots and are not published Git tags.
 
-## 1.10.1 — prepared, not yet published or deployed
+## 1.10.1 — 2026-10-12
 
 - Continue observing manual Review replacement requests after Radarr import, using the exact replacement path and original Tdarr library binding.
 - Expose current Tdarr state, observation time, separate observation/retention errors and approval-based quarantine cleanup state without publishing private paths.
