@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import {rejectionReason,recordRejection} from './rejection-audit.mjs';
+import {createTranslator} from './public/i18n.js';
 const server=await fs.readFile(new URL('./server.mjs',import.meta.url),'utf8');
 const code=server.slice(server.indexOf('async function perform('),server.indexOf('async function performBatch('));
 for(const value of [undefined,null,42,{},'', '   ','a'.repeat(1001),'bad\u0000value'])test('Reject invalid reason '+JSON.stringify(value)?.slice(0,30),()=>assert.throws(()=>rejectionReason(value)));
@@ -29,4 +30,18 @@ test('Failed durable archive prevents destructive action',async()=>{
 });
 test('Missing reason cannot start a rejection',async()=>{const {box,events,item}=context();await assert.rejects(box.performTest('reject',item));assert.deepEqual(events,[]);assert.equal(box.active,null)});
 test('API validates reason before file scan and passes it into handler',()=>{const route=server.slice(server.indexOf("const action=/^\\/api\\/items"),server.indexOf('const audio=/'));assert.ok(route.indexOf('rejectionReason(b.reason)')<route.indexOf('await scan(true)'));assert.ok(route.includes('respond(res,400'));assert.ok(route.includes('perform(action[2],item,acceptDuration,reason)'))});
-test('History reasons are rendered as text and action requests include the entered reason',async()=>{const ui=await fs.readFile(new URL('./public/app.js',import.meta.url),'utf8');assert.ok(ui.includes("'Důvod: '+h.rejectionReason"));assert.ok(ui.includes("reason:['reject','replace'].includes(request.action)?reason:undefined"));const line=ui.split('\n').find(x=>x.startsWith('const el='));const context={document:{createElement:()=>({})},value:'<img src=x onerror=alert(1)>'};vm.runInNewContext(line+";this.node=el('p','',value)",context);assert.equal(context.node.textContent,context.value);assert.equal(context.node.innerHTML,undefined);});
+test('History reasons are rendered as text and action requests include the entered reason',async()=>{
+ const ui=await fs.readFile(new URL('./public/app.js',import.meta.url),'utf8');
+ assert.ok(ui.includes("reason:['reject','replace'].includes(request.action)?reason:undefined"));
+ const helper=ui.split('\n').find(line=>line.startsWith('const el='));
+ const renderReason=ui.split('\n').find(line=>line.includes('if(h.rejectionReason)'));
+ assert.ok(helper&&renderReason,'Exercise the actual element helper and history reason renderer');
+ for(const reason of ['Zavřít','<img src=x onerror=alert(1)>\n"Zavřít"']){
+  const nodes=[];
+  const context={document:{createElement:()=>({})},tr:createTranslator('en'),h:{rejectionReason:reason},row:{append:node=>nodes.push(node)}};
+  vm.runInNewContext(helper+'\n'+renderReason,context);
+  assert.equal(nodes.length,1);
+  assert.equal(nodes[0].textContent,'Reason: '+reason,'Translate the label, not the user-authored reason');
+  assert.equal(nodes[0].innerHTML,undefined,'Hostile markup must never be assigned to innerHTML');
+ }
+});

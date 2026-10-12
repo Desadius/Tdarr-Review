@@ -348,7 +348,7 @@ const server=http.createServer(async(req,res)=>{
     }
     if(url.pathname==='/api/items'&&req.method==='GET'){
       if(state.pauses.length&&!recovery.length&&!active&&!batchRunning)await resume();
-      return respond(res,200,{version:'1.10.1',label:config.label,serverTime:Date.now(),items:await scan(),active,batch:state.batch||null,batchRunning,history:state.history,recovery,restorePending:state.pauses.length});
+      return respond(res,200,{version:'1.10.2',label:config.label,serverTime:Date.now(),items:await scan(),active,batch:state.batch||null,batchRunning,history:state.history,recovery,restorePending:state.pauses.length});
     }
     if(url.pathname==='/api/approve-batch'&&req.method==='POST'){
       if(active||batchRunning||resumeTask||previewBusy||settingsBusy)return respond(res,409,{error:'Jiná akce nebo dávka právě probíhá.'});
@@ -448,7 +448,7 @@ const server=http.createServer(async(req,res)=>{
       res.writeHead(200,{'content-type':'video/x-matroska','content-length':f.stat.size,'content-disposition':"attachment; filename*=UTF-8''"+encodeURIComponent(path.basename(f.path)),'cache-control':'no-store','x-content-type-options':'nosniff'});
       const stream=createReadStream(f.path);res.on('close',()=>stream.destroy());stream.on('error',()=>res.destroy());stream.pipe(res);return;
     }
-    const assets={'/':['index.html','text/html; charset=utf-8'],'/app.js':['app.js','text/javascript; charset=utf-8'],'/review-model.js':['review-model.js','text/javascript; charset=utf-8'],'/style.css':['style.css','text/css; charset=utf-8'],'/favicon.svg':['favicon.svg','image/svg+xml']};
+    const assets={'/':['index.html','text/html; charset=utf-8'],'/app.js':['app.js','text/javascript; charset=utf-8'],'/review-model.js':['review-model.js','text/javascript; charset=utf-8'],'/i18n.js':['i18n.js','text/javascript; charset=utf-8'],'/messages.en.js':['messages.en.js','text/javascript; charset=utf-8'],'/style.css':['style.css','text/css; charset=utf-8'],'/favicon.svg':['favicon.svg','image/svg+xml']};
     if(req.method==='GET'&&assets[url.pathname]){
       const [file,mime]=assets[url.pathname];res.writeHead(200,{'content-type':mime,'cache-control':'no-store','x-content-type-options':'nosniff','content-security-policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",'referrer-policy':'no-referrer'});res.end(await fs.readFile(path.join(ROOT,'public',file)));return;
     }

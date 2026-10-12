@@ -1,0 +1,1418 @@
+export default {
+  "exact": {
+    "Nedoloženo": "Not confirmed",
+    "Čas není doložen": "Time not confirmed",
+    "méně než minuta": "less than a minute",
+    "Porovnání nyní není dostupné. Obnov údaje a ověř stav filmu.": "Comparison is currently unavailable. Refresh the data and check the movie's status.",
+    "Nastavení nyní nelze měnit. Ověř přihlášení, aktuální údaje a probíhající operace.": "Settings cannot be changed right now. Check your sign-in, current data and active operations.",
+    "Server nevrátil platnou odpověď. Obnov údaje a ověř výsledek akce.": "The server did not return a valid response. Refresh the data and verify the operation's outcome.",
+    "Přihlášení vypršelo. Poslední načtené údaje nejsou aktuální.": "Your session has expired. The last loaded data is no longer current.",
+    "Požadavek selhal.": "The request failed.",
+    "Soubory nebo položka se změnily. Zavři detail, obnov údaje a posuď aktuální výsledek.": "The files or item have changed. Close the details, refresh the data and review the current output.",
+    "Tato akce nyní není dostupná. Obnov údaje.": "This action is currently unavailable. Refresh the data.",
+    "Odstraní se pouze překódovaný soubor z review. Originál v knihovně médií zůstane zachovaný.": "Only the transcoded file in Review will be deleted. The original in your media library will be preserved.",
+    "SCHVÁLENÍ VÝSLEDKU": "APPROVE OUTPUT",
+    "ZAMÍTNUTÍ VÝSLEDKU": "REJECT OUTPUT",
+    "Přijmout rozdíl a nahradit originál": "Accept the difference and replace the original",
+    "Schválit a nahradit": "Approve and replace",
+    "Zamítnout a odstranit": "Reject and delete",
+    "NÁHRADA PŘES RADARR": "REPLACEMENT VIA RADARR",
+    "Originál i tento převod se zachovají v karanténě a dočasně zmizí z knihovny. Radarr dostane vlastní profil se stejnou nebo vyšší kvalitou a zákazem původního vydání. České + anglické audio se upřednostní, pokud jsou jazyky ve vydání správně označené; dostupnost obou není zaručená. Po importu novou kopii zpracuje Tdarr. Uveď vlastní důvod; jde o tvé rozhodnutí, nikoli automatický důkaz poškození originálu.": "The original and this transcode will be preserved in quarantine and temporarily removed from the library. Radarr will receive a dedicated profile with the same or higher quality and a block on the original release. Czech and English audio will be preferred when the release languages are correctly labelled; availability of both is not guaranteed. Tdarr will process the new copy after import. Give your own reason; this is your decision, not automatic evidence that the original is damaged.",
+    "Zachovat v karanténě a hledat náhradu": "Preserve in quarantine and search for a replacement",
+    "Obnovení není dostupné.": "Restoration is unavailable.",
+    "OBNOVENÍ Z KARANTÉNY": "RESTORE FROM QUARANTINE",
+    "Vrátit originál i převod z karantény? Radarr nesmí mít aktivní stažení ani novou importovanou kopii. Server znovu ověří identitu souborů a stav Radarru.": "Restore the original and transcode from quarantine? Radarr must have no active download or newly imported copy. The server will recheck file identity and Radarr's status.",
+    "Vrátit zachované kopie": "Restore preserved copies",
+    "Uveď důvod rozhodnutí.": "Give a reason for your decision.",
+    "Počkej na výsledek předchozího požadavku.": "Wait for the previous request's outcome.",
+    "Stav obnovy se změnil. Obnov údaje.": "The recovery status has changed. Refresh the data.",
+    "Výběr zapnutý": "Selection enabled",
+    "Vybrat více": "Select",
+    "HROMADNÉ SCHVÁLENÍ": "BATCH APPROVAL",
+    "Vybrat ": "Select ",
+    "K posouzení": "Ready to review",
+    "Zvláštní kontrola": "Extra checks",
+    "Další krok: porovnej obraz a zvuk.": "Next step: compare the picture and audio.",
+    "Ověř technické údaje a dostupnost souborů.": "Check the technical details and file availability.",
+    "Posoudit": "Review",
+    "Posoudit ": "Review ",
+    "Tomuto hledání neodpovídá žádný výsledek.": "No outputs match this search.",
+    "Všechny výsledky jsou vyřízené. Nové se objeví automaticky po dokončení převodu.": "All outputs have been handled. New outputs appear automatically when transcoding finishes.",
+    "Historie": "History",
+    "Obnovy": "Recovery",
+    "Recovery · Radarr · Tdarr": "Recovery · Radarr · Tdarr",
+    "Náhrada přes Radarr": "Replacement via Radarr",
+    "Stav starší než 12 minut": "Status older than 12 minutes",
+    "Prohlédnout": "View details",
+    "Prohlédnout obnovu ": "View recovery for ",
+    "Probíhá": "In progress",
+    "Čeká": "Waiting",
+    "Vyžaduje zásah": "Needs attention",
+    "Dokončeno": "Completed",
+    "Stav obnov není dostupný. Poslední údaje zůstávají zobrazené: ": "Recovery status is unavailable. The last loaded data remains visible: ",
+    "dosud nepotvrzeno": "not yet confirmed",
+    "V tomto výběru není žádná obnova.": "There are no recovery cases in this selection.",
+    "Načítám případy obnovy…": "Loading recovery cases…",
+    "Akce tehdy selhala: ": "The operation failed at the time: ",
+    "Důvod není doložen": "Reason not confirmed",
+    "Nahrazeno · logická úspora ": "Replaced · logical savings ",
+    "Žádost o náhradu předaná; kopie v karanténě": "Replacement request submitted; copies in quarantine",
+    "Review kopie odstraněna": "Review copy deleted",
+    "Pozdější úspěšné rozhodnutí pro stejnou položku: ": "Later successful decision for the same item: ",
+    "Důvod: ": "Reason: ",
+    "Technické údaje události": "Event technical details",
+    "Žádné události v tomto výběru.": "No events in this selection.",
+    "Poslední dávka dokončena": "Last batch completed",
+    "Poslední dávka přerušena": "Last batch interrupted",
+    "Akce není dostupná.": "This action is unavailable.",
+    "Výsledek čeká na posouzení": "Output awaiting review",
+    "Originál": "Original",
+    "Výsledek": "Output",
+    "Možná úspora": "Potential savings",
+    "Obraz": "Picture",
+    "Zvuk": "Audio",
+    "Titulky": "Subtitles",
+    "Technické kontroly podporují rozhodnutí. Kvalitu komprese a soulad řeči s obrazem ověř při přehrávání.": "Technical checks support your decision. Check compression quality and lip sync during playback.",
+    "Přejít k porovnání": "Go to comparison",
+    "Originál a výsledek ve stejném čase": "Original and output at the same time",
+    "Otevři pár snímků a potom porovnej odpovídající zvukové stopy. Celý výsledek můžeš přehrát po stažení.": "Open a pair of frames, then compare the matching audio tracks. You can play the full output after downloading it.",
+    "Porovnat obraz": "Compare picture",
+    "Porovnat zvuk": "Compare audio",
+    "Stáhnout výsledek": "Download output",
+    "Review MKV pro místní přehrávač": "Review MKV for a local player",
+    "Délka originálu": "Original duration",
+    "Délka výsledku": "Output duration",
+    "Rozdíl délky": "Duration difference",
+    "Statické snímky nejsou zkouškou plynulosti a věrnost HDR posuď také na TV. Zvukové grafy ukazují hlasitost a odhad posunu; nerozhodují o kvalitě nebo synchronizaci rtů.": "Static frames do not test smooth playback; check HDR fidelity on your TV as well. Audio graphs show loudness and an estimated offset; they do not determine quality or lip sync.",
+    "Když převod nevyhovuje": "When the transcode is unsuitable",
+    "Zamítnutí odstraní pouze review kopii. Pokud potřebuješ jiné vydání, podej samostatnou žádost Radarru; obě kopie se nejprve zachovají v karanténě.": "Rejecting deletes only the Review copy. If you need another release, submit a separate request to Radarr; both copies will first be preserved in quarantine.",
+    "Požádat Radarr o jinou kopii": "Request another copy from Radarr",
+    "Prohlédnout související obnovu": "View related recovery",
+    "Prohlédnout karanténu": "View quarantine",
+    "Doložené kontroly": "Verified checks",
+    "Doloženo": "Confirmed",
+    "Odchylka": "Mismatch",
+    "Neověřeno": "Not verified",
+    "Identita a cesty souborů": "File identity and paths",
+    "Review ID": "Review ID",
+    "Úloha Tdarr": "Tdarr job",
+    "Snapshot": "Snapshot",
+    "Chybí": "Missing",
+    "Před zápisem server znovu ověří snapshot a soubory. Health check z Tdarru se při schválení neopakuje.": "Before making changes, the server will recheck the snapshot and files. Tdarr's health check is not repeated during approval.",
+    "Znovu ověřit soubory": "Recheck files",
+    "Poslední potvrzený stav": "Last confirmed status",
+    "Původní kopie": "Original copy",
+    "Zachovaná v karanténě": "Preserved in quarantine",
+    "Zůstává v Plexu; vydání vyloučeno z převodů": "Remains in Plex; release excluded from transcoding",
+    "Viz aktuální protokol obnovy": "See the current recovery log",
+    "Další hledání": "Next search",
+    "Termín není doložen": "Time not confirmed",
+    "Ověření nové kopie": "Verify the new copy",
+    "Výsledek je v Review a má přesně přiřazené ID.": "The output is in Review and has an exact ID match.",
+    "Posoudit výsledek v Review": "Review the output in Review",
+    "Pro tento případ zatím není doložený přiřazený výsledek v Review. Dokončené stažení ani převod nejsou schválením.": "No matched output in Review is confirmed for this case yet. A completed download or transcode is not approval.",
+    "Nové vydání": "New release",
+    "Kvalita": "Quality",
+    "Jazyky": "Languages",
+    "Průběh obnovy": "Recovery progress",
+    "Vrátit originál i převod z karantény": "Restore the original and transcode from quarantine",
+    "Prohlédnout karanténu případu": "View this case's quarantine",
+    "Technické údaje obnovy": "Recovery technical details",
+    "ID případu": "Case ID",
+    "Zdroj": "Source",
+    "Fáze": "Phase",
+    "Neznámá": "Unknown",
+    "Tdarr": "Tdarr",
+    "Radarr": "Radarr",
+    "Stav není doložen": "Status not confirmed",
+    "Důvod": "Reason",
+    "Vyřazené vydání": "Excluded release",
+    "Neuvedeno": "Not specified",
+    "Přehled": "Overview",
+    "Porovnání": "Comparison",
+    "Obnova": "Recovery",
+    "Technické údaje": "Technical details",
+    "POSOUZENÍ VÝSLEDKU": "REVIEW OUTPUT",
+    "OBNOVA FILMU": "MOVIE RECOVERY",
+    "Zamítnout": "Reject",
+    "Posoudit rozdíl délky": "Review duration difference",
+    "Přihlášení vypršelo": "Session expired",
+    "Spojení přerušeno": "Connection lost",
+    "Připojeno": "Connected",
+    "Čekám na aktuální údaje": "Waiting for current data",
+    "Přihlas se znovu. Zobrazené údaje jsou poslední načtený stav; změny jsou zablokované.": "Sign in again. The displayed data is the last loaded state; changes are blocked.",
+    "Stav tohoto filmu se změnil. Zavři detail a otevři aktuální údaje.": "This movie's status has changed. Close the details and open the current data.",
+    "Akce čekají na nové posouzení aktuálního stavu.": "Actions are waiting for a new review of the current state.",
+    "Zapisující akce jsou dočasně zablokované.": "Actions that make changes are temporarily blocked.",
+    "Tdarr Review": "Tdarr Review",
+    "Nedokončená výměna vyžaduje kontrolu. Další změny jsou zablokované; soubory nepřesouvej ručně.": "An incomplete replacement requires review. Further changes are blocked; do not move files manually.",
+    "Obnova stavu nodů v Tdarru není dokončená. Změny jsou zablokované; ověř jejich pozastavení.": "Restoration of the Tdarr nodes' state is incomplete. Changes are blocked; check whether they are paused.",
+    "Dokončené filmy dávky": "Completed movies in the batch",
+    "Doložená logická úspora": "Confirmed logical savings",
+    "Z toho přes Review": "Of which via Review",
+    "Čeká na schválení": "Awaiting approval",
+    "Tdarr hlásí celkem": "Total reported by Tdarr",
+    "Nedostupné": "Unavailable",
+    "Všechny knihovny · může zahrnovat opakované převody": "All libraries · may include repeated transcodes",
+    "Jak se úspora počítá": "How savings are calculated",
+    "Jde o logické zmenšení souborů. Volné místo na disku se tímto neměří a zachované kopie v karanténě dál zabírají místo.": "This is the logical reduction in file sizes. Free disk space is not measured, and preserved copies in quarantine still take up space.",
+    "Poslední výpočet: ": "Last calculation: ",
+    "Statistiky nelze aktualizovat; poslední údaje mohou být zastaralé. ": "Statistics cannot be updated; the last loaded data may be stale. ",
+    "Přihlas se pro provedení akce.": "Sign in to perform this action.",
+    "Obnov aktuální stav před další akcí.": "Refresh the current status before another action.",
+    "Stav výměn nelze ověřit.": "Replacement transaction status could not be verified.",
+    "Jiná akce nebo dávka právě probíhá.": "Another operation or batch is running.",
+    "Nedokončená výměna vyžaduje kontrolu.": "An incomplete replacement requires review.",
+    "Nejprve je nutné obnovit původní stav nodů.": "The nodes' original state must be restored first.",
+    "Nejprve dokonči probíhající akci.": "Finish the active operation first.",
+    "Soubory se změnily. Obnov přehled.": "The files have changed. Refresh the overview.",
+    "Položka nemá ověřený aktuální otisk souborů.": "The item has no verified current file fingerprint.",
+    "Ověřuje se originál": "Verifying the original",
+    "Vyčkej na výsledek kontroly.": "Wait for the verification result.",
+    "Kontrola originálu": "Checking the original",
+    "Chyba originálu potvrzena": "Original file error confirmed",
+    "Obnova připraví náhradu.": "Recovery will prepare a replacement.",
+    "Připravuje se kvalita náhrady": "Preparing replacement quality settings",
+    "Vyčkej na dokončení přípravy.": "Wait for preparation to finish.",
+    "Pozastavuje se vadné vydání": "Pausing the faulty release",
+    "Vyčkej na bezpečné zastavení.": "Wait for a safe stop.",
+    "Přesun do karantény": "Moving to quarantine",
+    "Vyčkej na zachování kopií.": "Wait for the copies to be preserved.",
+    "Kopie je v karanténě": "Copy is in quarantine",
+    "Obnova připraví hledání náhrady.": "Recovery will prepare a replacement search.",
+    "Vyřazuje se vadné vydání": "Excluding the faulty release",
+    "Vyčkej na dokončení vyřazení.": "Wait for exclusion to finish.",
+    "Vadné vydání vyřazeno": "Faulty release excluded",
+    "Spouští se hledání náhrady": "Starting the replacement search",
+    "Vyčkej na výsledek hledání.": "Wait for the search result.",
+    "Náhrada se předává Tdarru": "Handing the replacement to Tdarr",
+    "Vyčkej na potvrzení předání.": "Wait for confirmation of the handoff.",
+    "Vrací se zachovaná kopie": "Restoring the preserved copy",
+    "Vyčkej na dokončení návratu.": "Wait for restoration to finish.",
+    "Připravuje se stažení náhrady": "Preparing the replacement download",
+    "Náhrada se předává ke stažení": "Submitting the replacement for download",
+    "Vyčkej na potvrzení stažení.": "Wait for the download to be confirmed.",
+    "Připravuje se náhrada": "Preparing the replacement",
+    "Zachovávají se obě kopie": "Preserving both copies",
+    "Vyčkej na přesun do karantény.": "Wait for the move to quarantine.",
+    "Review kopie je v karanténě": "Review copy is in quarantine",
+    "Vyčkej na zachování originálu.": "Wait for the original to be preserved.",
+    "Obě kopie jsou v karanténě": "Both copies are in quarantine",
+    "Vyčkej na hledání náhrady.": "Wait for the replacement search.",
+    "Obnovuje se evidence v Radarru": "Refreshing Radarr's records",
+    "Vyčkej na dokončení kontroly.": "Wait for the check to finish.",
+    "Vrací se originál a převod": "Restoring the original and transcode",
+    "Hledání v Radarru selhalo nebo bylo zrušené.": "The Radarr search failed or was cancelled.",
+    "Fronta Radarru vyžaduje kontrolu.": "The Radarr queue needs review.",
+    "Stav je starší než 12 minut; obnov aktuální údaje.": "The status is older than 12 minutes; refresh the current data.",
+    "Čas posledního ověření stavu není dostupný.": "The time of the last status check is unavailable.",
+    "Stav nelze ověřit": "Status could not be verified",
+    "Obnov stav a zkontroluj detail případu.": "Refresh the status and check the case details.",
+    "Náhrada schválena; karanténa uklizena": "Replacement approved; quarantine cleared",
+    "Obnova je dokončená.": "Recovery is complete.",
+    "Náhrada schválena": "Replacement approved",
+    "Karanténa zůstává do termínu automatického úklidu.": "Quarantine is preserved until the scheduled automatic cleanup.",
+    "Obě kopie byly vráceny": "Both copies have been restored",
+    "Vrácený převod před případným schválením znovu ověř v Review.": "Recheck the restored transcode in Review before approving it.",
+    "Obnova vyžaduje kontrolu": "Recovery needs review",
+    "Otevři detail a ověř zachované kopie před další akcí.": "Open the details and check the preserved copies before another action.",
+    "Čeká na denní limit obnov": "Waiting for the daily recovery limit",
+    "Obnova pokračuje po uvolnění limitu.": "Recovery will continue when the limit allows it.",
+    "Náhrada zatím nenalezena": "Replacement not found yet",
+    "Film zůstává v knihovně; vadné vydání se znovu nepřevádí.": "The movie remains in the library; the faulty release will not be transcoded again.",
+    "Čeká ve frontě Tdarru": "Waiting in the Tdarr queue",
+    "Vyčkej na převod náhrady.": "Wait for the replacement to be transcoded.",
+    "Tdarr převádí náhradu": "Tdarr is transcoding the replacement",
+    "Výsledek se objeví v Review po dokončení převodu.": "The output will appear in Review when transcoding finishes.",
+    "Převod dokončen; čeká na posouzení": "Transcode complete; awaiting review",
+    "Ověř výsledek v Review před schválením.": "Check the output in Review before approval.",
+    "Převod náhrady skončil chybou": "Replacement transcoding failed",
+    "Zkontroluj detail chyby a zachované kopie.": "Check the error details and preserved copies.",
+    "Tdarr náhradu vynechal": "Tdarr skipped the replacement",
+    "Posuď důvod vynechání a funkčnost náhrady.": "Review why the replacement was skipped and whether it works.",
+    "Náhrada předána; stav Tdarru není doložen": "Replacement handed off; Tdarr status not confirmed",
+    "Obnov stav a ověř, kde se náhrada nachází.": "Refresh the status and check where the replacement is.",
+    "Radarr stahuje nebo importuje náhradu": "Radarr is downloading or importing the replacement",
+    "Vyčkej na import náhrady.": "Wait for the replacement to be imported.",
+    "Radarr hledá náhradu": "Radarr is searching for a replacement",
+    "Čeká na dostupnou náhradu": "Waiting for an available replacement",
+    "Zkontroluj plán dalšího hledání v detailu.": "Check the next search schedule in the details.",
+    "Hledání nebo stažení není doložené": "Search or download not confirmed",
+    "Ověř stav hledání v Radarru.": "Check the search status in Radarr.",
+    "Zkontroluj upozornění v detailu případu.": "Check the warnings in the case details.",
+    "Obnov stav; aktuální průběh nelze spolehlivě ověřit.": "Refresh the status; current progress cannot be reliably verified.",
+    "Operace skončila chybou.": "The operation failed.",
+    "Čeká na měření": "Waiting for a measurement",
+    "Odhad času zatím není dostupný": "Time estimate not available yet",
+    "Zbývá ": "Remaining ",
+    "Rychlost ": "Speed ",
+    "Poslední měření dekodéru": "Last decoder measurement",
+    "Poslední odezva Recovery": "Last Recovery heartbeat",
+    "Další pokus obnovy": "Next recovery attempt",
+    "Další pokus obnovy náhrady": "Next replacement recovery attempt",
+    "Další hledání náhrady": "Next replacement search",
+    "Stav náhrady ověřen": "Replacement status checked",
+    "Navazující kontrola náhrady": "Follow-up replacement check",
+    "Otevřít navazující případ": "Open the follow-up case",
+    "Změnil se čas změny metadat náhrady. Navazující případ používá vlastní aktuální identitu a důkazy; historická schválení se nepřenášejí.": "The replacement's metadata change time has changed. The follow-up case uses its own current identity and evidence; historical approvals are not carried over.",
+    "Pozastavuje se vadná náhrada": "Pausing the faulty replacement",
+    "Vyčkej na potvrzení pozastavení přesného vydání.": "Wait for confirmation that the exact release has been paused.",
+    "Vyčkej na potvrzení pozastavení během denního limitu.": "Wait for confirmation that the release has been paused during the daily limit.",
+    "Vadná náhrada pozastavena": "Faulty replacement paused",
+    "Film zůstává v Plexu. Další obnova čeká na ochranný limit; toto vydání se znovu nepřevádí.": "The movie remains in Plex. Further recovery is waiting for the protective limit; this release will not be transcoded again.",
+    "Kontrola originálu bez chyby": "Original check completed without errors",
+    "Celý originál se dekódoval bez chyby. Jde o dokončení diagnostiky; výsledek převodu se schvaluje zvlášť v Review.": "The entire original decoded without errors. This completes the diagnostic check; the transcode output is approved separately in Review.",
+    "Kontrola originálu nepotvrdila poškození": "Original check did not confirm corruption",
+    "Prověř provozní nebo nejednoznačnou chybu v detailu. Náhrada se automaticky nestahuje.": "Investigate the operational or inconclusive error in the details. A replacement will not be downloaded automatically.",
+    "Chyba potvrzena; změny jsou vypnuté": "Error confirmed; changes are disabled",
+    "Zkontroluj nastavení Recovery před povolením obnovy.": "Check the Recovery settings before enabling recovery.",
+    "Navazující obnova vyžaduje kontrolu.": "The follow-up recovery requires review.",
+    "Kontrola náhrady: ": "Replacement check: ",
+    "Otevři navazující případ; dokončení diagnostiky není schválením náhrady.": "Open the follow-up case; completing diagnostics does not approve the replacement.",
+    "Náhrada je pozastavená v Tdarru": "Replacement is paused in Tdarr",
+    "Zkontroluj důvod pozastavení a navazující případ Recovery.": "Check why it was paused and the follow-up Recovery case.",
+    "Kontroluje se dekódování původního obrazu a všech zvukových stop. Každý průchod má vlastní postup.": "Checking decoding of the original picture and all audio tracks. Each pass has its own progress.",
+    "Průchod skončil; čeká se na vyhodnocení skutečného výsledku dekódování.": "The pass has ended; waiting for the actual decoding result to be evaluated.",
+    "Chybí čerstvé hlášení Recovery; obnovením ověř spojení. Samo o sobě to nedokazuje chybu filmu.": "A recent Recovery report is missing; refresh to check the connection. This alone does not prove a movie file error.",
+    "Recovery odpovídá, ale poloha kontroly se přes 90 sekund nezměnila. Může čekat na čtení dat; chyba filmu tím není potvrzená.": "Recovery is responding, but the check position has not changed for over 90 seconds. It may be waiting to read data; this does not confirm a movie file error.",
+    "Recovery odpovídá; čeká se na další měření z dekodéru.": "Recovery is responding; waiting for the next decoder measurement.",
+    "Čeká na měření · Odhad času zatím není dostupný": "Waiting for a measurement · Time estimate not available yet",
+    "Vybrat více filmů": "Select multiple movies",
+    "Ukončit výběr filmů": "Exit selection mode",
+    "Soubory": "Files",
+    "Kopírování": "Copying",
+    "Kontrolní součty": "Checksums",
+    "Výměna": "Replacement",
+    "Dokončení": "Finishing",
+    "Průběh aktuálního kroku": "Current step progress",
+    "Probíhá…": "In progress…",
+    " · obě kopie dohromady": " · both copies combined",
+    "Odhad času: čekám na aktuální měření": "Time estimate: waiting for a current measurement",
+    "Čas tohoto kroku nelze spolehlivě odhadnout": "The duration of this step cannot be estimated reliably",
+    "Data byla předána disku. Čekám, až systém potvrdí jejich zápis.": "The data has been sent to disk. Waiting for the system to confirm the write.",
+    "Čtu review i novou kopii a porovnávám SHA-256. Originál se zatím nemaže.": "Reading the Review file and the new copy to compare SHA-256 checksums. The original has not been deleted.",
+    "Stav schvalování filmů": "Movie review status",
+    "Zavřít": "Close",
+    "Snímky ve stejném čase, PNG bez další ztrátové komprese. Porovnání je statické, bez zvuku.": "Frames at the same timestamp, saved as PNG without additional lossy compression. This is a still-image comparison without audio.",
+    "Čas ve filmu (sekundy)": "Movie timestamp (seconds)",
+    "Načíst oba snímky": "Load both frames",
+    "Zvětšení 1 : 1": "View at 1:1",
+    "Vyber čas a načti snímky.": "Choose a timestamp and load the frames.",
+    "Přizpůsobit šířce": "Fit to width",
+    " % filmu": " % of the movie",
+    "Připravuji oba snímky na serveru… Obvykle několik sekund, nejvýše dvě minuty.": "Preparing both frames on the server… Usually a few seconds, up to two minutes.",
+    "Překódovaný výsledek": "Transcoded result",
+    " v čase ": " at ",
+    "Porovnání obrazu · ": "Image comparison · ",
+    "HDR převedeno shodně do SDR pro náhled. Věrnost HDR ověř na TV.": "Both HDR frames have been converted to SDR using the same preview settings. Check HDR fidelity on your TV.",
+    "Plné rozlišení snímků; detaily porovnej ve zvětšení 1 : 1.": "Full-resolution frames; compare details at 1:1.",
+    "Nastavení Review": "Review settings",
+    "Jedna knihovna na instalaci. Cesty vlevo v Docker mapování nejsou stejné jako cesty uvnitř kontejnerů. Zde zadávej cesty dostupné uvnitř Review, u polí Tdarr cesty viditelné jeho serverem.": "One library per installation. Host paths in Docker mappings differ from paths inside containers. Enter paths accessible inside Review here; for Tdarr fields, use paths visible to the Tdarr server.",
+    "Název instalace": "Installation name",
+    "Například Domácí knihovna": "For example, Home library",
+    "Veřejná adresa Review": "Public Review URL",
+    "Úplná adresa včetně http(s) a portu. Při změně se přepne adresa této stránky.": "Full URL, including http(s) and the port. Changing it redirects this page to the new URL.",
+    "Adresa API Tdarr": "Tdarr API URL",
+    "Například http://tdarr:8266; musí být dostupná z kontejneru Review.": "For example, http://tdarr:8266; it must be accessible from the Review container.",
+    "Originály v kontejneru Review": "Original files inside the Review container",
+    "Například /media; vyžaduje čtení a zápis.": "For example, /media; read and write access is required.",
+    "Výsledky v kontejneru Review": "Results inside the Review container",
+    "Například /review; oddělená složka s právem zápisu.": "For example, /review; a separate directory with write access.",
+    "Zdrojové cesty v Tdarru": "Source paths in Tdarr",
+    "Jedna cesta na řádek. První odpovídá knihovně, další jsou případné aliasy stejného obsahu.": "One path per line. The first identifies the library; additional paths are optional aliases for the same content.",
+    "Review cesta v Tdarru": "Review path in Tdarr",
+    "Například /pilot-review; slouží ke kontrole běžících úloh.": "For example, /pilot-review; used to check running jobs.",
+    "Podsložky Review určené k odebrání z cesty": "Review subdirectories to strip from the path",
+    "Jedno jméno na řádek, například PROD-Movies. Prázdné = stejná struktura jako originály.": "One name per line, for example PROD-Movies. Leave blank when the directory structure matches the originals.",
+    "ID knihovny Tdarr": "Tdarr library ID",
+    "Prázdné = automaticky podle zdrojové cesty.": "Leave blank to detect the library from the source path.",
+    "Databáze Tdarr v kontejneru Review": "Tdarr database inside the Review container",
+    "Připoj aktuální adresář SQL včetně WAL/SHM pouze pro čtení.": "Mount the current SQL directory, including WAL/SHM files, as read-only.",
+    "Program FFprobe": "FFprobe executable",
+    "Absolutní cesta v kontejneru Review.": "Absolute path inside the Review container.",
+    "Program FFmpeg": "FFmpeg executable",
+    "Absolutní cesta; používá se pro porovnání snímků.": "Absolute path; used for frame comparisons.",
+    "Otestovat": "Test",
+    "Ověřit a uložit": "Validate and save",
+    "Ověřuji spojení a cesty…": "Checking the connection and paths…",
+    "Nastavení uloženo. ": "Settings saved. ",
+    "Docker připojení složek, port a trvalý adresář /data se nastavují při instalaci kontejneru. Menu je samo nevytváří. Podporovaný profil: MKV, H.264 → HEVC 10bit, kopírované zvukové a titulkové stopy; HDR10, HDR10+, Dolby Vision 8.1 a zachování Dolby Vision 7/FEL podle kompatibilního profilu Review.": "Docker volume mappings, the port and the persistent /data directory are configured when the container is installed. This menu does not create them. Supported profile: MKV, H.264 → HEVC 10-bit, copied audio and subtitle tracks; HDR10, HDR10+, Dolby Vision 8.1 and preservation of Dolby Vision 7/FEL with a compatible Review profile.",
+    "Porovnej stejný jazyk i verzi zvuku (nikoli dabing s originálem nebo komentářem). Grafy ukazují hlasitost v krocích 10 ms na stejné časové ose, nikoli kvalitu zvuku. Odhad hledá posun do ±1 sekundy. Neověřuje soulad řeči s pohybem úst.": "Compare the same language and audio version, rather than dubbed audio with the original or commentary. The plots show loudness at 10 ms intervals on the same timeline; they do not measure audio quality. The estimate looks for an offset of up to ±1 second. It does not verify lip sync.",
+    " — porovnání zvuku": " — audio comparison",
+    "Porovnání zvuku · ": "Audio comparison · ",
+    "Stopa originálu": "Original audio track",
+    "Stopa převodu": "Transcoded audio track",
+    "Začátek úseku (sekundy)": "Clip start (seconds)",
+    "Porovnat 12 sekund": "Compare 12 seconds",
+    "Načítám seznam zvukových stop…": "Loading audio tracks…",
+    "Připravuji zvukové průběhy… Nejvýše dvě minuty.": "Preparing audio plots… Up to two minutes.",
+    "Zvukové průběhy originálu a převodu na společné časové ose": "Original and transcoded audio plots on a shared timeline",
+    "Převod": "Transcode",
+    "Přehrát A/B do sluchátek": "Play A/B through headphones",
+    "Zastavit": "Stop",
+    "Opakovat A/B": "Repeat A/B",
+    "Společná hlasitost obou ukázek": "Shared volume for both clips",
+    "Společná hlasitost": "Shared volume",
+    "Sluchátka: nejprve originál vlevo, potom stejný úsek převodu vpravo. Obě stopy se převedou na mono 48 kHz. Bez samostatné normalizace hlasitosti a bez automatického posunu; použij odpovídající dialogové stopy.": "Headphones: first the original in the left channel, then the same transcoded clip in the right channel. Both tracks are converted to 48 kHz mono, without separate loudness normalization or automatic alignment. Use matching dialogue tracks.",
+    "A/B dokončeno. Můžeš úsek opakovat.": "A/B playback finished. You can repeat the clip.",
+    "Poslech zastaven.": "Playback stopped.",
+    "Prohlížeč nepodporuje zvukové A/B.": "This browser does not support A/B audio playback.",
+    "Připravuji dvě 12sekundové ukázky; nejvýše dvě minuty.": "Preparing two 12-second clips; up to two minutes.",
+    "Znovu připravit a přehrát A/B": "Prepare and play A/B again",
+    "Vyber odpovídající stopy a klikni na Porovnat 12 sekund.": "Choose matching tracks and click Compare 12 seconds.",
+    "Radarr – náhrady filmů": "Radarr – movie replacements",
+    "Adresa Radarru": "Radarr URL",
+    "Cesta filmové knihovny uvnitř Radarru": "Movie library path inside Radarr",
+    "Karanténa originálů v Review (mimo filmovou knihovnu)": "Original-file quarantine in Review (outside the movie library)",
+    "API klíč (prázdné = zachovat uložený)": "API key (leave blank to keep the saved key)",
+    "Preferovat vydání s českým i anglickým audiem": "Prefer releases with both Czech and English audio",
+    "Radarr posuzuje jazyky podle označení vydání. Skutečné stopy se ověří až po stažení. Samotné zamítnutí převodu nové stahování nespouští.": "Radarr assesses languages from release labels. The actual tracks are checked only after download. Rejecting a transcode alone does not start a new download.",
+    "Otestovat spojení": "Test connection",
+    "Stavy filmů a žádostí najdeš v sekci Obnovy. Retence karantény běží 7 dní od doloženého schválení funkční náhrady.": "Movie and request statuses are in Recovery. Quarantine retention lasts 7 days after documented approval of a working replacement.",
+    "Nastavení Radarru": "Radarr settings",
+    "Neplatný poslechový úsek.": "Invalid playback clip.",
+    "Neplatný zvukový vzorek.": "Invalid audio sample.",
+    "Karanténa": "Quarantine",
+    "Originály se uchovávají do schválení funkční náhrady v Review. Schválená lhůta pro následný úklid je 7 dní. Automatický úklid je zapnutý pro náhrady s uloženým důkazem schválení a nezměněnou identitou obou souborů. Starší případy bez důkazu zůstávají zachované.": "Originals are kept until a working replacement is approved in Review. The approved retention period before cleanup is 7 days. Automatic cleanup is enabled for replacements with saved proof of approval and unchanged identities of both files. Older cases without proof are retained.",
+    "Pro tento výběr není v karanténě žádný soubor.": "There are no quarantined files for this selection.",
+    "Kopírovat cestu": "Copy path",
+    "Zkopírováno": "Copied",
+    "Označ a zkopíruj cestu výše": "Select and copy the path above",
+    "Zobrazit celou karanténu": "Show all quarantined files",
+    "Stav aktualizován: ": "Status updated: ",
+    "Stav je starší než 12 minut; spojení s Recovery může být přerušené.": "The status is more than 12 minutes old; the connection to Recovery may have been lost.",
+    "Náhrada: ": "Replacement: ",
+    "Původní kopie je zachovaná v karanténě.": "The original copy is retained in quarantine.",
+    "Úklid karantény po schválení: ": "Quarantine cleanup after approval: ",
+    " · odhad ": " · estimated ",
+    "Vydání vyřazeno z převodů — náhrada zatím nenalezena": "Release excluded from transcoding — no replacement found yet",
+    "Film zůstává v Plexu. Jeho původní zvuk má potvrzenou chybu; toto vydání se nebude znovu převádět.": "The movie remains in Plex. An error in its original audio has been confirmed; this release will not be transcoded again.",
+    "Vyřazené vydání: ": "Excluded release: ",
+    "Poslední hledání: ": "Last search: ",
+    "Další automatické hledání: ": "Next automatic search: ",
+    "Otevřít film v Radarru — ruční hledání": "Open movie in Radarr — manual search",
+    "Můžeš nezávisle hledat jiné vydání přes interaktivní hledání v Radarru. Vybírej stejnou nebo vyšší kvalitu; vyřazené vydání znovu nestahuj. Před nahrazením ověř stav obnovy; původní kopie se uchová podle pravidel karantény.": "You can independently search for another release using interactive search in Radarr. Choose the same or higher quality and do not download the excluded release again. Check the recovery status before replacing it; the original copy is retained under the quarantine rules.",
+    "Tdarr · Review": "Tdarr · Review",
+    "Přejít k obsahu": "Skip to content",
+    "Načítám…": "Loading…",
+    "Obnovit": "Refresh",
+    "Přihlášení do Review": "Sign in to Review",
+    "Použij přístupový klíč pro tuto knihovnu.": "Use the access key for this library.",
+    "Přístupový klíč": "Access key",
+    "Přihlásit": "Sign in",
+    "Hlavní sekce": "Main sections",
+    "Pozornost": "Attention",
+    "Úspory": "Savings",
+    "Nastavení": "Settings",
+    "Jazyk": "Language",
+    "Průběh aktuální operace": "Current operation progress",
+    "Průběh dávky": "Batch progress",
+    "PRACOVNÍ PŘEHLED": "WORK OVERVIEW",
+    "Co potřebuje tvoje rozhodnutí": "What needs your decision",
+    "Prohlédni obraz a zvuk, pak rozhodni o nahrazení originálu.": "Review the picture and audio, then decide whether to replace the original.",
+    "Najít film": "Find a movie",
+    "Název filmu": "Movie title",
+    "Zobrazení": "Layout",
+    "Knihovna": "Library",
+    "Vybrat všechny zobrazené vhodné filmy": "Select all eligible movies shown",
+    "Schválit vybrané (0)": "Approve selected (0)",
+    "Zrušit výběr": "Clear selection",
+    "Načítám výsledky…": "Loading results…",
+    "RADARR · RECOVERY · TDARR": "RADARR · RECOVERY · TDARR",
+    "Obnovy filmů": "Movie recovery",
+    "Stažení, převod a schválení jsou samostatné kroky. Neověřený stav zůstává viditelný.": "Downloading, transcoding and approval are separate steps. Unverified status stays visible.",
+    "Obnovit seznam": "Refresh list",
+    "Stav obnovy": "Recovery status",
+    "Najít obnovu": "Find a recovery case",
+    "UDÁLOSTI": "EVENTS",
+    "Historie rozhodnutí": "Decision history",
+    "Dokončená rozhodnutí a navazující upozornění. Schválený film se znovu neposílá ke schválení.": "Completed decisions and follow-up warnings. An approved movie is not sent for approval again.",
+    "Najít událost": "Find an event",
+    "Typ události": "Event type",
+    "Všechny": "All",
+    "Upozornění a chyby": "Warnings and errors",
+    "Schválené": "Approved",
+    "Zamítnuté": "Rejected",
+    "Náhrady": "Replacements",
+    "Předchozí": "Previous",
+    "Další": "Next",
+    "KNIHOVNA": "LIBRARY",
+    "Doložené zmenšení souborů a potenciál čekající na rozhodnutí.": "Verified file size reductions and potential savings awaiting a decision.",
+    "Obnovit statistiky": "Refresh statistics",
+    "SPRÁVA": "ADMINISTRATION",
+    "Konfigurace je oddělená od každodenního posuzování filmů.": "Configuration is separate from everyday movie review.",
+    "Cesty knihovny, spojení s Tdarrem a název instalace.": "Library paths, Tdarr connection and installation name.",
+    "Nastavit Review": "Configure Review",
+    "Spojení, profil náhrad a jazykové preference.": "Connection, replacement profile and language preferences.",
+    "Nastavit Radarr": "Configure Radarr",
+    "Zachované kopie a podmínky úklidu po ověřeném schválení.": "Retained copies and cleanup conditions after verified approval.",
+    "Vzhled a plakáty": "Appearance and posters",
+    "Výchozí je pracovní přehled. Volba knihovny se uloží v tomto prohlížeči.": "The work overview is the default. The library layout preference is saved in this browser.",
+    "Plakáty načítá server ze správně přiřazených filmů v Radarru. Při chybě spojení se použije uložený obrázek nebo náhradní symbol.": "The server loads posters from precisely matched movies in Radarr. If the connection fails, it uses a cached image or a placeholder.",
+    "Používat pracovní přehled": "Use work overview",
+    "Jak funguje schválení a uchování souborů": "How approval and file retention work",
+    "Schválení ověří identitu souborů, zkopíruje výsledek a porovná SHA-256. Poté nahradí původní verzi. Health check z Tdarru se neopakuje. Zamítnutí odstraní pouze review kopii.": "Approval verifies file identity, copies the result and compares SHA-256 checksums. It then replaces the original version. The Tdarr health check is not repeated. Rejection deletes only the review copy.",
+    "U náhrad v karanténě běží 7denní lhůta až od doloženého schválení funkční náhrady a vyžaduje nezměněnou identitu souborů. Čas stažení lhůtu nespouští.": "For quarantined replacements, the 7-day retention period starts only after verified approval of a working replacement and requires unchanged file identity. Download time does not start this period.",
+    "Poslední údaje:": "Latest data:",
+    "· automatická obnova Review každé 2 s": "· Review refreshes automatically every 2 s",
+    "Detail filmu": "Movie details",
+    "Důvod rozhodnutí": "Decision reason",
+    "Co je potřeba ověřit nebo opravit?": "What needs to be checked or corrected?",
+    "Důvod se uloží do historie.": "The reason will be saved in history.",
+    "Zpět": "Back",
+    "Potvrdit": "Confirm",
+    "Tdarr vrátil neplatný seznam nodů.": "Tdarr returned an invalid node list.",
+    "Tento film právě zpracovává Tdarr. Schválení počká na dokončení úlohy; zkus ho poté znovu.": "Tdarr is processing this movie. Approval must wait until the job finishes; try again afterwards.",
+    "Během výměny se změnil stav nodů. Originál nebyl vyměněn.": "Node state changed during replacement. The original was not replaced.",
+    "Připravuji žádost Radarru": "Preparing the Radarr request",
+    "Aplikace byla restartována. Zbývající filmy nebyly automaticky schválené; vyber je znovu.": "The application restarted. The remaining movies were not automatically approved; select them again.",
+    "Soubor je čerstvě vytvořený. Čekám na dokončení zápisu.": "The file was just created. Waiting for writing to finish.",
+    "Soubory se od zařazení do review změnily. Vyžadují kontrolu.": "Files have changed since entering review. They require checking.",
+    "Rozdílná délka — vyžaduje zvláštní kontrolu, automatické schválení je zablokované.": "Duration mismatch — special review required; automatic approval is blocked.",
+    "Výsledek není menší než originál.": "The result is not smaller than the original.",
+    "Výrazné zmenšení: porovnej detaily obrazu, zrno a tmavé scény.": "Large size reduction: compare picture detail, grain and dark scenes.",
+    "Před schválením posuď obraz a zvuk při přehrávání.": "Review the picture and audio during playback before approving.",
+    "Ověřuji soubory": "Verifying files",
+    "Ověřuji soubory, délku a zachované stopy": "Verifying files, duration and retained tracks",
+    "Je nutné dokončit obnovu předchozí výměny.": "Recovery of the previous replacement must finish first.",
+    "Tento film právě zpracovává Tdarr. Zkus akci po dokončení.": "Tdarr is processing this movie. Try the action when it finishes.",
+    "Odstraňuji pouze review kopii": "Deleting only the review copy",
+    "Review soubor se změnil.": "The review file has changed.",
+    "Rozdílnou délku nelze schválit bez zvláštní kontroly.": "A duration mismatch cannot be approved without special review.",
+    "Pozastavuji přijímání nových úloh v Tdarru": "Pausing new job intake in Tdarr",
+    "Kopíruji výsledek do složky filmu": "Copying the result to the movie folder",
+    "Čekám na dokončení zápisu na disk": "Waiting for disk writing to finish",
+    "Porovnávám kontrolní součty obou kopií": "Comparing checksums of both copies",
+    "Připravuji výměnu": "Preparing replacement",
+    "Nahrazuji originál": "Replacing the original",
+    "Dokončuji výměnu": "Finishing replacement",
+    "Odstraňuji hotovou review kopii": "Deleting the completed review copy",
+    "Soubor je nahrazený": "The file has been replaced",
+    "Obnovuji údaje filmu v Tdarru": "Updating movie metadata in Tdarr",
+    "Uklízím prázdné složky review": "Cleaning up empty review folders",
+    "Obnovuji původní stav nodů": "Restoring the original node state",
+    "Dávka je zastavená kvůli nedokončené výměně nebo obnovení nodů.": "The batch stopped because replacement or node restoration is incomplete.",
+    "Požadavek je příliš velký.": "The request is too large.",
+    "Nepovolená adresa serveru.": "Server address not allowed.",
+    "Nepovolený původ požadavku.": "Request origin not allowed.",
+    "Vyžadován JSON.": "JSON required.",
+    "Zkus přihlášení za minutu.": "Try signing in again in a minute.",
+    "Nesprávný přístupový klíč.": "Incorrect access key.",
+    "Přihlas se přístupovým klíčem.": "Sign in with the access key.",
+    "Plakát není dostupný.": "Poster unavailable.",
+    "Probíhá změna nastavení.": "Settings are being changed.",
+    "Karanténa nesmí být symlink.": "Quarantine must not be a symbolic link.",
+    "Právě probíhá jiná akce.": "Another operation is in progress.",
+    "Nejprve dokonči probíhající akci nebo obnovu.": "Finish the active operation or recovery first.",
+    "Položka se změnila. Obnov přehled.": "The item has changed. Refresh the overview.",
+    "Potvrď obnovení zachovaných kopií.": "Confirm restoration of the retained copies.",
+    "Obnovení karantény": "Quarantine restoration",
+    "Nejprve dokonči probíhající akce, náhled nebo obnovu.": "Finish active operations, previews or recovery first.",
+    "Nastavení se mezitím změnilo. Otevři ho znovu.": "Settings have changed. Open them again.",
+    "Neplatná odpověď Tdarru.": "Invalid Tdarr response.",
+    "Vyber jednoznačnou knihovnu a její zdrojovou cestu v Tdarru.": "Select an unambiguous Tdarr library and its source path.",
+    "Připojení, databáze a cesty jsou dostupné.": "The connection, database and paths are accessible.",
+    "Nejprve je nutné dokončit obnovu výměny nebo nodů.": "Finish replacement or node recovery first.",
+    "Vyber 1 až 100 filmů.": "Select 1 to 100 movies.",
+    "Stejný film je v dávce vícekrát.": "The batch contains the same movie more than once.",
+    "Některý vybraný film se změnil nebo ho nelze schválit. Obnov přehled.": "A selected movie has changed or cannot be approved. Refresh the overview.",
+    "Tuto změnu nelze bezpečně znovu ověřit. Obnov přehled.": "This change cannot be safely rechecked. Refresh the overview.",
+    "Jiná akce právě probíhá.": "Another operation is in progress.",
+    "Jiná akce nebo dávka právě probíhá. Počkej na dokončení.": "Another operation or batch is in progress. Wait for it to finish.",
+    "Před další akcí je nutné dokončit obnovu výměny nebo nodů.": "Finish replacement or node recovery before another operation.",
+    "Soubor nelze bezpečně přiřadit k originálu.": "The file cannot be safely matched to the original.",
+    "Obnov přehled, soubory se změnily.": "Refresh the overview; the files have changed.",
+    "Právě probíhá jiná akce. Zkus to za chvíli.": "Another operation is in progress. Try again shortly.",
+    "Vyber úsek alespoň 12 sekund před koncem filmu.": "Choose a segment starting at least 12 seconds before the movie ends.",
+    "Vyber platné zvukové stopy.": "Select valid audio tracks.",
+    "Soubory se během přípravy změnily.": "Files changed during preparation.",
+    "48 kHz PCM; FFmpeg mono downmix; časová osa kontejneru; žádná normalizace hlasitosti ani automatické dorovnání posunu.": "48 kHz PCM; FFmpeg mono downmix; container timeline; no loudness normalization or automatic offset correction.",
+    "Čas je mimo délku filmu.": "The time is outside the movie duration.",
+    "Právě probíhá jiná akce nebo příprava snímků. Zkus to za chvíli.": "Another operation or frame preparation is in progress. Try again shortly.",
+    "Soubor nenalezen.": "File not found.",
+    "Nenalezeno.": "Not found.",
+    "Neúplná nebo neznámá pole nastavení.": "Settings contain missing or unknown fields.",
+    "Vyplň název instalace.": "Enter the installation name.",
+    "Vyplň alespoň jednu zdrojovou cestu Tdarru.": "Enter at least one Tdarr source path.",
+    "Originály a review musí být oddělené složky.": "Originals and review must use separate folders.",
+    "Složky se fyzicky překrývají.": "The folders overlap physically.",
+    "Neplatná cesta souboru.": "Invalid file path.",
+    "Symbolické odkazy nejsou povolené.": "Symbolic links are not allowed.",
+    "Soubor je mimo povolenou složku.": "The file is outside the allowed folder.",
+    "Soubor není běžný soubor nebo má více pevných odkazů.": "The file is not a regular file or has multiple hard links.",
+    "Neplatné cesty v záznamu výměny.": "Invalid paths in the replacement journal.",
+    "Originál je zachovaný; nedokončená výměna nebyla opakována.": "The original is retained; the incomplete replacement was not repeated.",
+    "Kontrola překročila časový limit.": "The check exceeded its time limit.",
+    "Příliš velký výstup kontroly.": "The check output is too large.",
+    "Obrazové parametry neodpovídají schvalovanému převodu.": "Video parameters do not match the transcode being approved.",
+    "Originál již má značku dokončeného HDR převodu.": "The original already carries a completed HDR transcode marker.",
+    "HEVC výsledek nepochází z povoleného HDR profilu.": "The HEVC result was not produced by an allowed HDR profile.",
+    "Výsledek neobsahuje zvuk.": "The result contains no audio.",
+    "Nelze ověřit délku filmu.": "The movie duration cannot be verified.",
+    "Zvuk nebo titulky neodpovídají originálu.": "Audio or subtitles do not match the original.",
+    "Nesouhlasí počet kapitol.": "The chapter count does not match.",
+    "neoznačeno": "untagged",
+    "žádné": "none",
+    "Nepovolená cílová cesta převodu.": "Transcode destination path not allowed.",
+    "Soubor se od kontroly změnil. Obnov přehled.": "The file has changed since verification. Refresh the overview.",
+    "Cílový MKV již existuje; nebude přepsán.": "The destination MKV already exists and will not be overwritten.",
+    "Kontrolní součet kopie nesouhlasí.": "The copy checksum does not match.",
+    "Originál nahrazen; review se změnilo a nebylo odstraněno.": "The original was replaced; the review file changed and was not deleted.",
+    "Neplatný úsek nebo stopa.": "Invalid segment or track.",
+    "Neúplný zvukový úsek.": "Incomplete audio segment.",
+    "Neplatné zvukové vzorky.": "Invalid audio samples.",
+    "Příprava poslechu překročila 60 sekund.": "Listening preparation exceeded 60 seconds.",
+    "Příliš dlouhý zvukový úsek.": "The audio segment is too long.",
+    "Příprava snímku překročila 60 sekund. Zkus jiný čas.": "Frame preparation exceeded 60 seconds. Try another time.",
+    "Snímek je příliš velký.": "The frame is too large.",
+    "Příliš krátký úsek.": "The segment is too short.",
+    "Odhad ze zvukové obálky; kladně = výstup má zvuk později.": "Estimate from the audio envelope; positive means the output audio is later.",
+    "Ticho, odlišná stopa nebo nejednoznačný průběh — posun nelze spolehlivě určit.": "Silence, a different track or an ambiguous waveform — the offset cannot be determined reliably.",
+    "Neplatné parametry zvuku.": "Invalid audio parameters.",
+    "Příprava zvuku překročila 60 sekund.": "Audio preparation exceeded 60 seconds.",
+    "Příliš velký zvukový úsek.": "The audio segment is too large.",
+    "Statistika Tdarru není dostupná.": "Tdarr statistics are unavailable.",
+    "Některý protokol Review nelze přečíst.": "A Review journal cannot be read.",
+    "Přiřazení úlohy": "Job matching",
+    "Úspěšná úloha odpovídá cestě a velikostem obou souborů.": "The successful job matches the path and sizes of both files.",
+    "Chybí potvrzená odpovídající úloha.": "No matching job has been confirmed.",
+    "Úplný health check Tdarru": "Full Tdarr health check",
+    "Log potvrzuje dekódování hlavního videa a všech zvukových stop.": "The log confirms decoding of the main video and all audio tracks.",
+    "Log hlásí chybu health checku.": "The log reports a health check error.",
+    "Průkazný výsledek v logu není dostupný.": "Conclusive evidence is unavailable in the log.",
+    "Parametry obrazu": "Video parameters",
+    "Parametry zatím nejsou doložené.": "Parameters have not yet been verified.",
+    "Délka": "Duration",
+    "Délka zatím není ověřena.": "Duration has not yet been verified.",
+    "Zvukové a titulkové stopy": "Audio and subtitle tracks",
+    "Shoda stop zatím není ověřena.": "Track matching has not yet been verified.",
+    "Kapitoly": "Chapters",
+    "Počet kapitol zatím není ověřen.": "The chapter count has not yet been verified.",
+    "Vzorky synchronizace": "Synchronization samples",
+    "Alespoň jeden porovnaný úsek hlásí posun nad 20 ms. Ověř výběr stejných stop.": "At least one compared segment reports an offset above 20 ms. Check that matching tracks were selected.",
+    "Stejný pár stop: vzorky u začátku, uprostřed a u konce mají posun nejvýše 20 ms. Netestuje ostatní stopy ani pohyb úst.": "For the same track pair, samples near the beginning, middle and end have an offset of at most 20 ms. This does not test other tracks or lip synchronization.",
+    "Schválení blokované — vyřeš uvedený důvod": "Approval blocked — resolve the stated reason",
+    "Zjištěná odchylka — vyžaduje kontrolu": "Deviation detected — review required",
+    "Doložené kontroly bez zjištěné odchylky": "Verified checks with no detected deviation",
+    "Body jsou vážený součet doložených kontrol, nikoli procentní pravděpodobnost bezvadnosti. Neznámé kontroly mají 0 bodů. Vizuální kvalita komprese a soulad řeči s pohybem úst vyžadují posouzení při přehrávání.": "The score is a weighted total of verified checks, not a percentage probability of being flawless. Unknown checks receive 0 points. Compression quality and lip synchronization require review during playback.",
+    "Vyplň adresu Radarru, API klíč a cestu knihovny v Radarru.": "Enter the Radarr address, API key and library path in Radarr.",
+    "Neplatná adresa Radarru.": "Invalid Radarr address.",
+    "Karanténa musí být absolutní cesta v kontejneru Review.": "Quarantine must use an absolute path inside the Review container.",
+    "Neplatná cesta originálu.": "Invalid original file path.",
+    "Originál nelze jednoznačně spojit se sledovaným filmem v Radarru.": "The original cannot be unambiguously matched to a monitored movie in Radarr.",
+    "Radarr nezná název původního vydání; nelze ho bezpečně zakázat.": "Radarr does not know the original release name; it cannot be safely blocked.",
+    "Neplatný název vydání.": "Invalid release name.",
+    "Současná kvalita není povolena v profilu. Náhradu nelze bezpečně omezit.": "The current quality is not allowed by the profile. Replacement quality cannot be safely constrained.",
+    "Profil nepovoluje stejnou nebo vyšší kvalitu.": "The profile does not allow equal or higher quality.",
+    "Skóre profilu nelze bezpečně doplnit bez oslabení zákazů.": "The profile score cannot be safely extended without weakening exclusions.",
+    "Review: původní vydání zakázáno": "Review: original release blocked",
+    "Radarr neodpovídá. Stav operace ověř před opakováním.": "Radarr is not responding. Check the operation status before retrying.",
+    "Radarr vrátil neplatnou odpověď.": "Radarr returned an invalid response.",
+    "Nastavení Radarru je neplatné.": "Radarr settings are invalid.",
+    "Probíhá kontrola náhrad, zkus to za chvíli.": "Replacements are being checked. Try again shortly.",
+    "Nejprve dokonči nebo obnov otevřené žádosti o náhradu.": "Finish or restore open replacement requests first.",
+    "Cesta knihovny neodpovídá filmům Radarru.": "The library path does not match Radarr movie paths.",
+    "Spojení s Radarrem a cesta knihovny ověřeny.": "The Radarr connection and library path were verified.",
+    "Uveď důvod žádosti o jinou kopii (nejvýše 1000 znaků).": "Provide a reason for requesting another copy (up to 1000 characters).",
+    "Karanténa originálů musí ležet mimo filmovou knihovnu.": "Original-file quarantine must be outside the movie library.",
+    "Rodič karantény nesmí být symlink.": "The quarantine parent must not be a symbolic link.",
+    "Karanténa musí ležet na stejném souborovém systému jako originál.": "Quarantine must be on the same filesystem as the original.",
+    "Originál a karanténu připoj jedním společným Docker mountem. Přesun mezi mounty není bezpečně možný.": "Mount the original and quarantine through one shared Docker mount. Moving between mounts is not safe.",
+    "Pro tento film už existuje neuzavřená žádost o náhradu.": "This movie already has an open replacement request.",
+    "Radarr už má pro tento film stažení ve frontě.": "Radarr already has a queued download for this movie.",
+    "Ověřuji vazbu filmu na Radarr": "Verifying the movie's Radarr match",
+    "Připravuji profil náhrady a zákaz původního vydání.": "Preparing the replacement profile and exclusion of the original release.",
+    "Radarr mezitím změnil originál.": "Radarr has changed the original.",
+    "Chybí potvrzení vytvoření zákazu.": "Creation of the exclusion has not been confirmed.",
+    "Chybí potvrzení preference CZ/EN.": "The Czech/English preference has not been confirmed.",
+    "Chybí potvrzení profilu náhrady.": "The replacement profile has not been confirmed.",
+    "Profil náhrady nebyl potvrzen.": "The replacement profile was not confirmed.",
+    "Zachovávám originál i převod v karanténě.": "Retaining the original and transcode in quarantine.",
+    "Výsledek je zachovaný v karanténě.": "The result is retained in quarantine.",
+    "Originál i výsledek jsou zachované v karanténě.": "The original and result are retained in quarantine.",
+    "Výsledek obnovení evidence je nejistý.": "The metadata refresh result is uncertain.",
+    "Radarr nedokončil obnovu evidence.": "Radarr did not complete the metadata refresh.",
+    "Radarr stále eviduje původní soubor.": "Radarr still lists the original file.",
+    "Žádám Radarr o stejné nebo vyšší vydání.": "Asking Radarr for an equal or higher quality release.",
+    "Výsledek hledání je nejistý.": "The search result is uncertain.",
+    "Hledání bylo předáno Radarru. Originál i převod zůstávají v karanténě.": "The search was submitted to Radarr. The original and transcode remain in quarantine.",
+    "Změnilo se mapování. Náhrada vyžaduje ruční kontrolu.": "Mapping has changed. The replacement requires manual review.",
+    "Importovaná kopie je původní vydání nebo má neplatnou cestu.": "The imported copy is the original release or has an invalid path.",
+    "Velikost importu se neshoduje.": "The imported file size does not match.",
+    "Identita náhrady se po přerušeném předání změnila.": "Replacement identity changed after an interrupted handoff.",
+    "Nová kopie je importovaná; čekám 10 minut na stabilní soubor.": "The new copy has been imported; waiting 10 minutes for the file to stabilize.",
+    "Náhrada nemá označený norský dialog; karanténa zůstává zachovaná.": "The replacement has no tagged Norwegian dialogue track; quarantine is retained.",
+    "Import se během kontroly zvuku změnil.": "The imported file changed during audio verification.",
+    "Pro automatické předání vyplň ID knihovny Tdarr.": "Enter the Tdarr library ID for automatic handoff.",
+    "Novou kopii už zpracovává Tdarr. Karanténa je zachovaná.": "Tdarr is already processing the new copy. Quarantine is retained.",
+    "Předávám novou kopii Tdarru.": "Submitting the new copy to Tdarr.",
+    "Náhrada je předaná Tdarru. Obě původní kopie zůstávají v karanténě; kvalitu náhrady ještě ověř.": "The replacement was submitted to Tdarr. Both original copies remain in quarantine; review the replacement quality.",
+    "Radarr stahuje náhradu podle profilu.": "Radarr is downloading a replacement according to the profile.",
+    "Hledání v Radarru selhalo nebo bylo zrušené. Obě kopie jsou zachované v karanténě.": "The Radarr search failed or was cancelled. Both copies are retained in quarantine.",
+    "Hledání dokončeno; ve frontě není náhrada. Žádné vhodné vydání nemusí být dostupné.": "Search completed; no replacement is queued. A suitable release may be unavailable.",
+    "Radarr hledá náhradu.": "Radarr is searching for a replacement.",
+    "Tuto žádost nelze obnovit.": "This request cannot be restored.",
+    "Mapování se změnilo.": "Mapping has changed.",
+    "Radarr již eviduje novou kopii nebo stahování. Nejprve ho vyřeš v Radarru.": "Radarr already lists a new copy or download. Resolve it in Radarr first.",
+    "Původní soubor se změnil.": "The original file has changed.",
+    "Karanténa se změnila.": "Quarantine has changed.",
+    "Cílový soubor už existuje.": "The destination file already exists.",
+    "Cílová cesta se změnila.": "The destination path has changed.",
+    "Obnovuji obě zachované kopie.": "Restoring both retained copies.",
+    "Originál i převod byly vráceny. Před schválením znovu ověř položku Review.": "The original and transcode were restored. Recheck the Review item before approving.",
+    "Uveď důvod zamítnutí.": "Provide a rejection reason.",
+    "Důvod zamítnutí může mít nejvýše 1000 znaků.": "The rejection reason may contain at most 1000 characters.",
+    "Důvod obsahuje nepovolené řídicí znaky.": "The reason contains disallowed control characters.",
+    "Příliš velký záznam převodu.": "The transcode receipt is too large.",
+    "Záznam převodu neodpovídá změně přípony.": "The transcode receipt does not match the extension change.",
+    "Zdroj nebo výsledek neodpovídá záznamu převodu.": "The source or result does not match the transcode receipt.",
+    "Tdarr vrátil neplatný seznam úloh.": "Tdarr returned an invalid job list.",
+    "Chybí zdrojové cesty pro přiřazení úlohy.": "Source paths for job matching are missing.",
+    "Neplatná relativní cesta filmu.": "Invalid relative movie path.",
+    "Neplatná velikost originálu nebo výsledku.": "Invalid original or result file size.",
+    "Neplatná knihovna Tdarr.": "Invalid Tdarr library.",
+    "Záznam převodu neodpovídá tomuto originálu.": "The transcode receipt does not match this original.",
+    "Záznam převodu má neplatné ID úlohy Tdarr.": "The transcode receipt contains an invalid Tdarr job ID.",
+    "Záznam převodu nemá odpovídající úspěšnou úlohu Tdarr se stejným ID, knihovnou, cestou a velikostmi.": "The transcode receipt has no matching successful Tdarr job with the same ID, library, path and sizes.",
+    "Starší výsledek odpovídá více úlohám Tdarr. Jednoznačné přiřazení vyžaduje kontrolu.": "The older result matches multiple Tdarr jobs. Unambiguous matching requires review.",
+    "Chybí odpovídající úspěšná úloha Tdarr nebo se originál změnil.": "No matching successful Tdarr job was found, or the original has changed.",
+    "Norská náhrada ověřena a předána do fronty Tdarru po obnovení předání, které skončilo timeoutem. Karanténa zůstává zachovaná.": "The Norwegian replacement was verified and queued in Tdarr after recovering a timed-out handoff. Quarantine is retained.",
+    "Náhrada předána Tdarru": "Replacement submitted to Tdarr",
+    "Náhrada čeká ve frontě Tdarru": "Replacement queued in Tdarr",
+    "Potvrzená chyba originálu; obnova čeká na uvolnění denního limitu. Originál zachován.": "Confirmed original-file fault; recovery is waiting for the daily limit to clear. The original is retained.",
+    "Čeká na uvolnění denního limitu obnov": "Waiting for the daily recovery limit to clear",
+    "[soukromá cesta]": "[private path]",
+    "Převod dokončen; ověř výsledek v Review": "Transcode completed; check the result in Review",
+    "Tdarr náhradu vynechal; vyžaduje posouzení": "Tdarr skipped the replacement; review required",
+    "Náhrada schválena; čeká na úklid karantény": "Replacement approved; awaiting quarantine cleanup",
+    "Nelze ověřit přesnou vazbu náhrady na knihovnu Tdarr.": "The exact match between the replacement and the Tdarr library cannot be verified.",
+    "Tdarr nepotvrdil přesný soubor náhrady ve správné knihovně.": "Tdarr did not confirm the exact replacement file in the correct library.",
+    "Tdarr vrátil neznámý stav náhrady.": "Tdarr returned an unknown replacement status.",
+    "Náhrada nenalezena; vracím vydání do knihovny a ponechávám zálohu v karanténě.": "No replacement found; restoring the release to the library and keeping a backup in quarantine.",
+    "Vydání vyřazeno z převodů — náhrada zatím nenalezena. Film zůstává v knihovně; automatika hledá dál.": "Release excluded from transcoding — no replacement found yet. The movie remains in the library; automatic searching continues.",
+    "Importována nová kopie; původní vydání je zachované v karanténě.": "A new copy was imported; the original release is retained in quarantine.",
+    "Vydání vyřazeno z převodů — náhrada zatím nenalezena. Film zůstává v knihovně; další automatické hledání za 6 hodin.": "Release excluded from transcoding — no replacement found yet. The movie remains in the library; the next automatic search is in 6 hours.",
+    "Nalezena vhodná náhrada; originál zůstává v karanténě.": "A suitable replacement was found; the original remains in quarantine.",
+    "Předávám vhodnou náhradu ke stažení.": "Submitting a suitable replacement for download.",
+    "Radarr stahuje jinou kopii; původní vydání zůstává v karanténě.": "Radarr is downloading another copy; the original release remains in quarantine.",
+    "Nastavuje se kvalita náhrady": "Configuring replacement quality",
+    "Přesun originálu do karantény": "Moving the original to quarantine",
+    "Originál uložen v karanténě": "Original retained in quarantine",
+    "Náhrada zatím nenalezena; film zůstává v knihovně": "No replacement found yet; the movie remains in the library",
+    "Hledání nebo stahování náhrady": "Searching for or downloading a replacement",
+    "Nová kopie se předává Tdarru": "Submitting the new copy to Tdarr",
+    "Vrací se zachovaná kopie do knihovny": "Restoring the retained copy to the library",
+    "Předává se náhrada ke stažení": "Submitting the replacement for download",
+    "Pozastavuje se vadné vydání během denního limitu": "Pausing the faulty release while the daily limit applies",
+    "Pozastavuje se potvrzené vadné vydání": "Pausing the confirmed faulty release",
+    "Vadné vydání pozastavené; čeká na limit obnov": "Faulty release paused; waiting for the recovery limit",
+    "Kontrola originálu dokončena": "Original file check completed",
+    "Chyba potvrzena; automatické změny vypnuté": "Fault confirmed; automatic changes disabled",
+    "Náhrada je pozastavená v Tdarru; zkontroluj důvod": "The replacement is on hold in Tdarr; check the reason",
+    "Úplná kontrola originálu bez chyby": "Full original file check found no errors",
+    "Schválit 1 filmů?": "Approve 1 movie?",
+    "Schválit 1 filmů": "Approve 1 movie",
+    "1 upozornění v historii": "1 warning in history",
+    "1 obnov k ověření": "1 recovery to check"
+  },
+  "patterns": [
+    [
+      "Po ověření identity souborů a kontrolního součtu kopie se původní film ({0}) nahradí výsledkem ({1}). Původní verze bude odstraněna. Plex bude používat nový soubor. Health check z Tdarru se neopakuje. Akce může trvat několik minut. Výslovně přijímáš rozdíl délky: originál {2} s, výstup {3} s, rozdíl {4} s. Potvrď pouze po kontrole začátku, konce a synchronizace zvuku.",
+      "After file identity and the copy's checksum are verified, the original movie ({0}) will be replaced with the output ({1}). The original version will be deleted. Plex will use the new file. Tdarr's health check is not repeated. The operation may take several minutes. You explicitly accept the duration difference: original {2} s, output {3} s, difference {4} s. Confirm only after checking the beginning, end and audio synchronisation."
+    ],
+    [
+      "Vybrané filmy: {0}. Postupně se ověří identita souborů a kontrolní součet kopie, pak se nahradí originály. Původní verze budou odstraněny. Health check z Tdarru se neopakuje. Možná úspora {1}. Dávka běží na serveru i po zavření stránky. Při chybě jednoho filmu zachová jeho soubory a pokračuje dalším.",
+      "Selected movies: {0}. File identity and the copy's checksum will be verified for each movie, then the originals will be replaced. The original versions will be deleted. Tdarr's health check is not repeated. Potential savings: {1}. The batch runs on the server even after you close this page. If one movie fails, its files are preserved and the batch continues with the next movie.",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "Po ověření identity souborů a kontrolního součtu kopie se původní film ({0}) nahradí výsledkem ({1}). Původní verze bude odstraněna. Plex bude používat nový soubor. Health check z Tdarru se neopakuje. Akce může trvat několik minut.",
+      "After file identity and the copy's checksum are verified, the original movie ({0}) will be replaced with the output ({1}). The original version will be deleted. Plex will use the new file. Tdarr's health check is not repeated. The operation may take several minutes."
+    ],
+    [
+      "Porovnání aktuální velikosti souborů s dostupnou historií převodů a dokončenými protokoly Review. Každý soubor se počítá jednou. {0} souborů nebylo možné potvrdit; smazaná historie Tdarru může v součtu chybět.",
+      "Comparison of current file sizes with available transcode history and completed Review records. Each file is counted once. {0} files could not be confirmed; deleted Tdarr history may be missing from the total."
+    ],
+    [
+      "Odhad posunu: {0}{1} ms (krok 10 ms). Kladný posun = zvuk převodu je později. Shoda obálek: {2} %. Platí jen pro tento úsek; porovnej také začátek a konec filmu.",
+      "Estimated offset: {0}{1} ms (10 ms steps). A positive offset means the transcoded audio is later. Envelope correlation: {2} %. This applies only to this clip; also compare the start and end of the movie."
+    ],
+    [
+      " Výslovně přijímáš rozdíl délky: originál {0} s, výstup {1} s, rozdíl {2} s. Potvrď pouze po kontrole začátku, konce a synchronizace zvuku.",
+      " You explicitly accept the duration difference: original {0} s, output {1} s, difference {2} s. Confirm only after checking the beginning, end and audio synchronisation."
+    ],
+    [
+      "Čas {0} · HDR převedeno shodně do SDR pro náhled. Věrnost HDR ověř na TV. Stejný čas nezaručuje shodu při posunutém střihu.",
+      "Timestamp {0} · Both HDR frames have been converted to SDR using the same preview settings. Check HDR fidelity on your TV. The same timestamp does not guarantee matching content when edits are offset."
+    ],
+    [
+      "Čas {0} · Plné rozlišení snímků; detaily porovnej ve zvětšení 1 : 1. Stejný čas nezaručuje shodu při posunutém střihu.",
+      "Timestamp {0} · Full-resolution frames; compare details at 1:1. The same timestamp does not guarantee matching content when edits are offset."
+    ],
+    [
+      "Zvuk {0} → {1}; titulky {2} → {3}. Výstupní kodeky, jazyky a kanály odpovídají zdroji. Odebrané stopy: {4}.",
+      "Audio {0} → {1}; subtitles {2} → {3}. Output codecs, languages and channels match the source. Removed tracks: {4}.",
+      {
+        "raw": [
+          0,
+          1,
+          2,
+          3
+        ]
+      }
+    ],
+    [
+      "Chybí průkazné vzorky stejného páru stop na začátku, uprostřed a na konci. Uloženo měření: {0}.",
+      "Conclusive samples of the same track pair at the beginning, middle and end are missing. Saved measurements: {0}.",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "Operace byla přerušená ve fázi {0}. Neopakuj ji bez kontroly; zachované kopie nebyly smazané.",
+      "The operation was interrupted at phase {0}. Do not repeat it without checking; retained copies were not deleted.",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "Statistiky nelze aktualizovat; poslední údaje mohou být zastaralé. {0}",
+      "Statistics cannot be updated; the last loaded data may be stale. {0}"
+    ],
+    [
+      "Údaje nejsou aktuální. Poslední načtení {0}. Změny jsou zablokované.{1}",
+      "The data is not current. Last loaded {0}. Changes are blocked.{1}"
+    ],
+    [
+      "Stav obnov není dostupný. Poslední údaje zůstávají zobrazené: {0}",
+      "Recovery status is unavailable. The last loaded data remains visible: {0}"
+    ],
+    [
+      "Film je schválený, ale důkaz pro úklid karantény se neuložil: {0}",
+      "The movie was approved, but evidence for quarantine cleanup could not be saved: {0}"
+    ],
+    [
+      "Originál vlevo ({0} s), pak převod vpravo ({1} s). Úsek od {2} s. {3} → {4}.",
+      "Original in the left channel ({0} s), then the transcode in the right channel ({1} s). Clip starts at {2} s. {3} → {4}.",
+      {
+        "raw": [
+          3,
+          4
+        ]
+      }
+    ],
+    [
+      "Film je nahrazený, ale aktualizace údajů v Tdarru selhala: {0}",
+      "The movie was replaced, but its Tdarr metadata update failed: {0}"
+    ],
+    [
+      "Čas {0} · {1} Stejný čas nezaručuje shodu při posunutém střihu.",
+      "Timestamp {0} · {1} The same timestamp does not guarantee matching content when edits are offset."
+    ],
+    [
+      "Zkontrolováno {0} z {1} · Odhad času zatím není dostupný",
+      "Checked {0} of {1} · Time estimate not available yet"
+    ],
+    [
+      "{0}. Shoda rozlišení a kontrol podporovaného profilu.",
+      "{0}. Matching resolution and supported profile checks.",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "Pozdější úspěšné rozhodnutí pro stejnou položku: {0}",
+      "Later successful decision for the same item: {0}"
+    ],
+    [
+      "Čekám na další údaj o průběhu · poslední před {0} s",
+      "Waiting for the next progress update · last update {0} s ago"
+    ],
+    [
+      "Shodný počet: {0}. Časy kapitol se tímto nehodnotí.",
+      "Matching count: {0}. Chapter timestamps are not assessed here.",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "Zkontrolováno {0} · Odhad času zatím není dostupný",
+      "Checked {0} · Time estimate not available yet"
+    ],
+    [
+      "Uložení výsledku do archivu zamítnutí selhalo: {0}",
+      "Saving the result to the rejection archive failed: {0}"
+    ],
+    [
+      "Film je vyřízený, ale úklid review selhal: {0}",
+      "The movie was handled, but review cleanup failed: {0}"
+    ],
+    [
+      "Vyžadována absolutní cesta v kontejneru: {0}",
+      "An absolute container path is required: {0}",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "Aktualizováno {0} · obnova každé 2 sekundy",
+      "Updated {0} · refreshes every 2 seconds"
+    ],
+    [
+      "{0}: použij pouze http(s) adresu a port.",
+      "{0}: use only an HTTP(S) address and port.",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "Kontrola originálu · průchod {0}/2 · {1} %",
+      "Original check · pass {0}/2 · {1} %"
+    ],
+    [
+      "Dřívější chyba · opraveno ve verzi {0}",
+      "Earlier error · fixed in version {0}"
+    ],
+    [
+      "Originál {0} s; výstup {1} s; rozdíl {2} s.",
+      "Original {0} s; output {1} s; difference {2} s.",
+      {
+        "raw": [
+          0,
+          1,
+          2
+        ]
+      }
+    ],
+    [
+      "{0} souborů · součást celkové úspory",
+      "{0} files · included in total savings"
+    ],
+    [
+      "Kontrola originálu, průchod {0} ze 2",
+      "Original check, pass {0} of 2"
+    ],
+    [
+      "Tento průchod běží {0} · Rychlost {1}×",
+      "This pass has been running for {0} · Speed {1}×"
+    ],
+    [
+      "Kontrola originálu · průchod {0}/2",
+      "Original check · pass {0}/2"
+    ],
+    [
+      "Kontrola originálu · průchod {0}/2{1}",
+      "Original check · pass {0}/2{1}"
+    ],
+    [
+      "Rychlost {0}× přehrávání · {1} sn./s",
+      "Speed {0}× playback · {1} fps"
+    ],
+    [
+      "Úklid karantény po schválení: {0}",
+      "Quarantine cleanup after approval: {0}"
+    ],
+    [
+      "{0} případů · poslední načtení {1}",
+      "{0} cases · last loaded {1}"
+    ],
+    [
+      "{0} výsledků · zatím neuvolněno",
+      "{0} outputs · not yet released"
+    ],
+    [
+      "Překódovaný výsledek v čase {0}",
+      "Transcoded result at {0}"
+    ],
+    [
+      "Úspora {0} %; rozdíl délky {1} s. {2}",
+      "Savings {0}%; duration difference {1} s. {2}",
+      {
+        "raw": [
+          0,
+          1
+        ]
+      }
+    ],
+    [
+      "Připojení k Tdarru selhalo: {0}",
+      "The Tdarr connection failed: {0}",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "Nahrazeno · logická úspora {0}",
+      "Replaced · logical savings {0}"
+    ],
+    [
+      "Další automatické hledání: {0}",
+      "Next automatic search: {0}"
+    ],
+    [
+      "Zkontrolováno {0} z {1} · Zbývá {2}",
+      "Checked {0} of {1} · Remaining {2}"
+    ],
+    [
+      "Technická shoda {0}/{1} bodů · {2}",
+      "Technical match {0}/{1} points · {2}"
+    ],
+    [
+      "{0} / {1} · obě kopie dohromady",
+      "{0} / {1} · both copies combined"
+    ],
+    [
+      "Poslech nelze připravit: {0}",
+      "Cannot prepare listening samples: {0}"
+    ],
+    [
+      "Hromadné schválení · {0} z {1}",
+      "Batch approval · {0} of {1}"
+    ],
+    [
+      "Zkontrolováno {0} · Zbývá {1}",
+      "Checked {0} · Remaining {1}"
+    ],
+    [
+      "Čeká na měření · Zbývá {0}",
+      "Waiting for a measurement · Remaining {0}"
+    ],
+    [
+      "Zkontrolováno {0} / {1} filmu",
+      "Checked {0} / {1} of the movie"
+    ],
+    [
+      "Do konce tohoto kroku: {0}",
+      "Time remaining in this step: {0}"
+    ],
+    [
+      "Nelze vytvořit snímek: {0}",
+      "Cannot create a frame: {0}"
+    ],
+    [
+      "{0} upozornění v historii",
+      "{0} history warnings"
+    ],
+    [
+      "Strana {0} z {1} · {2} událostí",
+      "Page {0} of {1} · {2} events"
+    ],
+    [
+      "Tento průchod běží {0} · ",
+      "This pass has been running for {0} · "
+    ],
+    [
+      "Nelze připravit zvuk: {0}",
+      "Cannot prepare audio: {0}"
+    ],
+    [
+      "Tento průchod běží {0} ·",
+      "This pass has been running for {0} ·"
+    ],
+    [
+      "Rychlost {0}× přehrávání",
+      "Speed {0}× playback"
+    ],
+    [
+      "Akce tehdy selhala: {0}",
+      "The operation failed at the time: {0}"
+    ],
+    [
+      "{0} souborů · průměr {1} %",
+      "{0} files · average {1} %"
+    ],
+    [
+      "Schválit vybrané ({0})",
+      "Approve selected ({0})",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "Prohlédnout obnovu {0}",
+      "View recovery for {0}",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "Tento průchod běží {0}",
+      "This pass has been running for {0}"
+    ],
+    [
+      "Porovnání obrazu · {0}",
+      "Image comparison · {0}",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "Nastavení uloženo. {0}",
+      "Settings saved. {0}"
+    ],
+    [
+      "Stav aktualizován: {0}",
+      "Status updated: {0}"
+    ],
+    [
+      "Nedoloženo · {0} stop",
+      "Not confirmed · {0} tracks"
+    ],
+    [
+      "Poslední výpočet: {0}",
+      "Last calculation: {0}"
+    ],
+    [
+      "Kontrola náhrady: {0}",
+      "Replacement check: {0}"
+    ],
+    [
+      "{0}. Kontrolní součty",
+      "{0}. Checksums"
+    ],
+    [
+      "{0} — porovnání zvuku",
+      "{0} — audio comparison",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "Porovnání zvuku · {0}",
+      "Audio comparison · {0}",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "Poslední hledání: {0}",
+      "Last search: {0}"
+    ],
+    [
+      "Tdarr neodpovídá: {0}",
+      "Tdarr is not responding: {0}",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "Vyžaduje zásah ({0})",
+      "Needs attention ({0})"
+    ],
+    [
+      "Zkontrolováno {0} z {1}",
+      "Checked {0} of {1}"
+    ],
+    [
+      "Film zpracovávám {0}",
+      "Movie processing time: {0}"
+    ],
+    [
+      "{0} · {1} · {2} % · odhad {3}",
+      "{0} · {1} · {2} % · estimated {3}",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "Vyřazené vydání: {0}",
+      "Excluded release: {0}",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "Schválit {0} filmů?",
+      "Approve {0} movies?"
+    ],
+    [
+      "{0} obnov k ověření",
+      "{0} recoveries to check"
+    ],
+    [
+      "{0} z {1} · chyby: {2} · {3}",
+      "{0} of {1} · errors: {2} · {3}"
+    ],
+    [
+      "Originál v čase {0}",
+      "Original at {0}"
+    ],
+    [
+      "{0}: {1} · {2} · {3} kan. · {4}",
+      "{0}: {1} · {2} · {3} ch. · {4}",
+      {
+        "raw": [
+          1,
+          2,
+          4
+        ]
+      }
+    ],
+    [
+      "Neplatný seznam {0}",
+      "Invalid list {0}",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "Schválit {0} filmů",
+      "Approve {0} movies"
+    ],
+    [
+      "Rychlost {0} MiB/s",
+      "Speed {0} MiB/s"
+    ],
+    [
+      "Nelze načíst {0}: {1}",
+      "Cannot read {0}: {1}",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "zvuk {0}, titulky {1}",
+      "audio {0}, subtitles {1}",
+      {
+        "raw": [
+          0,
+          1
+        ]
+      }
+    ],
+    [
+      "Zkontrolováno {0}",
+      "Checked {0}"
+    ],
+    [
+      "Zkontrolováno {0}{1}",
+      "Checked {0}{1}"
+    ],
+    [
+      "Neplatné pole {0}",
+      "Invalid field {0}",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "Možná úspora {0}",
+      "Potential savings {0}"
+    ],
+    [
+      "{0} z {1} · chyby: {2}",
+      "{0} of {1} · errors: {2}"
+    ],
+    [
+      "{0} z {1} · chyby: {2}{3}",
+      "{0} of {1} · errors: {2}{3}"
+    ],
+    [
+      "Dokončeno ({0})",
+      "Completed ({0})"
+    ],
+    [
+      "{0}. Kopírování",
+      "{0}. Copying"
+    ],
+    [
+      "Karanténa · {0}",
+      "Quarantine · {0}",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "{0} · {1} · odhad {2}",
+      "{0} · {1} · estimated {2}",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "{0} není složka",
+      "{0} is not a folder",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "{0} není soubor",
+      "{0} is not a file",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "asi {0} h {1} min",
+      "about {0} h {1} min"
+    ],
+    [
+      "{0}. Dokončení",
+      "{0}. Finishing"
+    ],
+    [
+      "Probíhá ({0})",
+      "In progress ({0})"
+    ],
+    [
+      "Chyby: {0} · {1}",
+      "Errors: {0} · {1}"
+    ],
+    [
+      "Rychlost {0}×",
+      "Speed {0}×"
+    ],
+    [
+      "Krok {0} ze 6",
+      "Step {0} of 6"
+    ],
+    [
+      "Posoudit {0}",
+      "Review {0}",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "{0}. Soubory",
+      "{0}. Files"
+    ],
+    [
+      "Náhrada: {0}",
+      "Replacement: {0}",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "{0} · {1} stop",
+      "{0} · {1} tracks",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "asi {0} min",
+      "about {0} min"
+    ],
+    [
+      "{0}. Výměna",
+      "{0}. Replacement"
+    ],
+    [
+      "{0} % filmu",
+      "{0} % of the movie"
+    ],
+    [
+      "{0} v čase {1}",
+      "{0} at {1}"
+    ],
+    [
+      "titulky {0}",
+      "subtitles {0}",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "Vybrat {0}",
+      "Select {0}",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "Čeká ({0})",
+      "Waiting ({0})"
+    ],
+    [
+      "Důvod: {0}",
+      "Reason: {0}",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ],
+    [
+      "Chyby: {0}",
+      "Errors: {0}"
+    ],
+    [
+      "Chyby: {0}{1}",
+      "Errors: {0}{1}"
+    ],
+    [
+      "Zbývá {0}",
+      "Remaining {0}"
+    ],
+    [
+      "zvuk {0}",
+      "audio {0}",
+      {
+        "raw": [
+          0
+        ]
+      }
+    ]
+  ]
+};
