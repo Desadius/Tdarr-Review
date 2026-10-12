@@ -71,6 +71,7 @@ try{
  assert.equal((await postJSON(route,{...request,snapshot:'changed'})).status,409);
  assert.equal((await postJSON(route,{...request,seconds:13})).status,400);
  assert.equal((await postJSON(route,{...request,originalIndex:0})).status,400);
- const r=await postJSON(route,request);assert.equal(r.status,200,await r.clone().text());const d=await r.json();for(const key of ['original','review'])assert.equal(Buffer.from(d[key],'base64').toString('ascii',4,8),'ftyp');assert(d.originalWave.length>1100);assert(d.reviewWave.length>1100);assert.equal(d.duration,12);
+ assert.equal((await postJSON(route,{...request,previewProfile:'unbounded'})).status,400);
+ const r=await postJSON(route,{...request,previewProfile:'detail'});assert.equal(r.status,200,await r.clone().text());const d=await r.json();for(const key of ['original','review'])assert.equal(Buffer.from(d[key],'base64').toString('ascii',4,8),'ftyp');assert(d.originalWave.length>1100);assert(d.reviewWave.length>1100);assert.equal(d.duration,12);assert.equal(d.previewProfile,'detail');assert.equal(d.previewMaxWidth,1920);assert.equal(d.previewMaxHeight,1080);
  assert.equal(await sha256(original),originalHash);assert.equal(await sha256(review),reviewHash);assert.deepEqual(changes,[]);assert.deepEqual(rescans,[]);console.log('AV HTTP: authentication, stale identity, invalid time/track, playable pair, waveforms and untouched originals passed.');
 }finally{if(child){child.kill('SIGTERM');await new Promise(r=>child.once('close',r))}await new Promise(r=>mock.close(r));await fs.rm(root,{recursive:true,force:true})}

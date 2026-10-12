@@ -1,4 +1,12 @@
-# Repository verification — 2026-10-12
+# Repository verification — 2026-10-13
+
+## 1.10.4 — shared picture and movable divider
+
+The candidate passed 329 Linux regression tests without failures or skips, the real FFmpeg timing/geometry fixtures, AV HTTP checks and packaged single/batch approval integration. New fixtures cover anamorphic sample aspect ratios, bounded portrait previews and 1920×1080 detail output. The original five-second container origin and deliberate 300 ms audio delay remain covered.
+
+Browser checks exercised pointer dragging, keyboard movement, an automatic 25%→75%→25% sweep, pause freezing, switching back to side-by-side and video playback. Both video elements retained identical full-stage coordinates and sizes in the wipe view; no console errors were observed. Manual movement disables the sweep, and neither playback nor the sweep confirms an assessment.
+
+The candidate was installed on the existing Linux deployment and its served modules matched the local source. Health, environment, mounts, user and resource restrictions matched the previous container. The disposable demo and stopped rollback container were removed, with private backups and the prior image retained. No production film was approved or replaced as a test. Native HDR/surround quality and a fresh Unraid installation remain outside these preview checks.
 
 ## 1.10.2 — guided review and video comparison
 

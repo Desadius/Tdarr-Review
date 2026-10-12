@@ -4,7 +4,7 @@ Review and approve Tdarr transcodes before replacing the files in your media lib
 
 Choose **English** or **Čeština** in the interface; Czech is the initial default. This is a community project, independent of Tdarr, Radarr and Plex.
 
-Release version: **[1.10.3](https://github.com/Desadius/Tdarr-Review/releases/tag/v1.10.3)**. Use the explicit Linux amd64 `1.10.3` image tags for this source release. Moving `latest` is a separate publication choice. Source publication, image publication and updating a running installation remain separate operations. Personal configuration, credentials, journals, film files and one-off repair approvals are excluded from the repository and images.
+Release version: **[1.10.4](https://github.com/Desadius/Tdarr-Review/releases/tag/v1.10.4)**. Use the explicit Linux amd64 `1.10.4` image tags for this source release. Moving `latest` is a separate publication choice. Source publication, image publication and updating a running installation remain separate operations. Personal configuration, credentials, journals, film files and one-off repair approvals are excluded from the repository and images.
 
 ## What is included
 
@@ -12,14 +12,14 @@ Release version: **[1.10.3](https://github.com/Desadius/Tdarr-Review/releases/ta
 - One review workspace: **Preparation → Picture → Audio → Synchronisation → Decision**, with manual confirmations beside the comparison tools in each step.
 - Server-saved progress and deferral with a note; individual start, middle and end synchronisation observations retain their selected tracks and times.
 - External player/TV review and a separate HDR/Dolby Vision confirmation on a named suitable device.
-- PNG frames with 1:1 viewing, waveforms/alignment, 12-second headphone A/B and playable side-by-side AV clips with shared controls.
+- PNG frames with 1:1 viewing, waveforms/alignment, 12-second headphone A/B and playable AV clips with a movable wipe or side-by-side view.
 - Server-enforced completed review, current file snapshot and review revision for individual and batch approval; persistent replacement journals and file identity checks.
 - Technical assessment that distinguishes verified, failed and unknown evidence. It is not a probability that a film is flawless.
 - Optional Radarr replacement request, preserving originals in quarantine and restricting the replacement profile to the same or higher quality.
 - Optional Recovery worker: repeated confirmation of known original decoding errors, precise release exclusion, replacement tracking and shared status in Review.
 - Quarantine retention: seven days **after explicit Review approval of the identified replacement**, with identity checks before deletion.
 
-Loading or playing a preview never checks a review box. Browser AV clips use H.264, mono AAC and at most 960 px, with supported HDR converted to SDR; native HDR and surround playback require a suitable external device. Review does not automatically approve films or repeat a complete video/audio decode during normal approval. Tdarr performs the health check; the viewer judges the result.
+Loading or playing a preview never checks a review box. Browser AV clips use H.264 and mono AAC, with Detail previews bounded to 1920 × 1080 and Compact previews to 960 × 540. Supported HDR is converted to SDR; native quality, HDR and surround playback require a suitable external device. Review does not automatically approve films or repeat a complete video/audio decode during normal approval. Tdarr performs the health check; the viewer judges the result.
 
 ## Documentation
 
@@ -48,14 +48,14 @@ git clone https://github.com/Desadius/Tdarr-Review.git
 cd Tdarr-Review
 cp .env.example .env
 # Edit .env, create its host directories and set write permissions first.
-# Set REVIEW_IMAGE_TAG=1.10.3 for this release.
+# Set REVIEW_IMAGE_TAG=1.10.4 for this release.
 docker compose pull review
 docker compose up -d --no-build review
 ```
 
-Follow [the installation guide](docs/INSTALL-UNRAID.md) before enabling file replacement. The Linux amd64 image is `ghcr.io/desadius/tdarr-review:1.10.3`; optional Recovery is `ghcr.io/desadius/tdarr-recovery:1.10.3`, selected separately with `RECOVERY_IMAGE_TAG`. To build locally instead, use `docker compose build review` and `docker compose up -d review`. The default bind address is localhost. Set it to your server's LAN address and set `PUBLIC_ORIGIN` to the exact address used in your browser.
+Follow [the installation guide](docs/INSTALL-UNRAID.md) before enabling file replacement. The Linux amd64 image is `ghcr.io/desadius/tdarr-review:1.10.4`; optional Recovery is `ghcr.io/desadius/tdarr-recovery:1.10.4`, selected separately with `RECOVERY_IMAGE_TAG`. To build locally instead, use `docker compose build review` and `docker compose up -d review`. The default bind address is localhost. Set it to your server's LAN address and set `PUBLIC_ORIGIN` to the exact address used in your browser.
 
-The 1.10.3 changes cover recovery status, blocked imports and quarantine explanations. Regression tests and isolated image/HTTP checks are recorded in [verification](docs/VERIFICATION.md). These checks do not themselves publish an image or update another installation.
+The 1.10.4 changes add a larger shared video comparison with a draggable divider, optional automatic movement and bounded detail/compact preview profiles. Manual assessment and approval protections remain unchanged. Regression tests and isolated image/HTTP checks are recorded in [verification](docs/VERIFICATION.md). These checks do not themselves publish an image or update another installation.
 
 ## Project layout
 

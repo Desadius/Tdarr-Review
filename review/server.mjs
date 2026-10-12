@@ -1,4 +1,4 @@
-import {extractPreview} from './av-preview.mjs';
+import {extractPreview,PREVIEW_PROFILES} from './av-preview.mjs';
 import {publishApproval} from './quarantine-retention.mjs';
 import {extractListeningAudio} from './audio-listen.mjs';
 import {assessment} from './assessment.mjs';
@@ -373,7 +373,7 @@ const server=http.createServer(async(req,res)=>{
     if(url.pathname==='/api/items'&&req.method==='GET'){
       if(state.pauses.length&&!recovery.length&&!active&&!batchRunning&&!reviewSessions.busy)await resume();
       const items=await scan();
-      return respond(res,200,{version:'1.10.3',label:config.label,serverTime:Date.now(),items,reviewSessions:reviewSessions.list(items),active,batch:state.batch||null,batchRunning,history:state.history,recovery,restorePending:state.pauses.length});
+      return respond(res,200,{version:'1.10.4',label:config.label,serverTime:Date.now(),items,reviewSessions:reviewSessions.list(items),active,batch:state.batch||null,batchRunning,history:state.history,recovery,restorePending:state.pauses.length});
     }
     const reviewSession=/^\/api\/items\/([a-f0-9]{24})\/review-session$/.exec(url.pathname);
     if(reviewSession&&req.method==='GET'){
@@ -445,13 +445,15 @@ const server=http.createServer(async(req,res)=>{
         if(request.mode==='av'){
           const va=pa.streams.find(s=>s.codec_type==='video'&&!s.disposition?.attached_pic),vb=pb.streams.find(s=>s.codec_type==='video'&&!s.disposition?.attached_pic);
           if(!va||!vb||va.color_transfer!==vb.color_transfer)throw Error('Obrazové profily náhledu se neshodují.');
-          const original=await extractPreview(config.ffmpeg,a.path,request.originalIndex,seconds,Number(pa.format.start_time||0),va);
-          const review=await extractPreview(config.ffmpeg,b.path,request.reviewIndex,seconds,Number(pb.format.start_time||0),vb);
+          const previewProfile=request.previewProfile??'compact';
+          if(!Object.hasOwn(PREVIEW_PROFILES,previewProfile))return respond(res,400,{error:'Neplatný profil videonáhledu.'});
+          const original=await extractPreview(config.ffmpeg,a.path,request.originalIndex,seconds,Number(pa.format.start_time||0),va,previewProfile);
+          const review=await extractPreview(config.ffmpeg,b.path,request.reviewIndex,seconds,Number(pb.format.start_time||0),vb,previewProfile);
           const originalWave=await extractAudio(config.ffmpeg,a.path,request.originalIndex,seconds,Number(pa.format.start_time||0));
           const reviewWave=await extractAudio(config.ffmpeg,b.path,request.reviewIndex,seconds,Number(pb.format.start_time||0));
           if((await safeFile(MEDIA,item.relative)).fp!==a.fp||(await safeFile(REVIEW,item.reviewRelative)).fp!==b.fp)throw Error('Soubory se během přípravy změnily.');
           const rates=[va,vb].map(v=>{const [n,d]=String(v.avg_frame_rate||'0/1').split('/').map(Number);return n/d});
-          return respond(res,200,{seconds,duration:12,original,review,originalWave,reviewWave,alignment:alignment(originalWave,reviewWave),frameRates:rates.map(x=>Number.isFinite(x)&&x>0?x:null),hdr:va.color_transfer==='smpte2084'});
+          return respond(res,200,{seconds,duration:12,original,review,originalWave,reviewWave,alignment:alignment(originalWave,reviewWave),frameRates:rates.map(x=>Number.isFinite(x)&&x>0?x:null),hdr:va.color_transfer==='smpte2084',previewProfile,previewMaxWidth:PREVIEW_PROFILES[previewProfile].width,previewMaxHeight:PREVIEW_PROFILES[previewProfile].height});
         }
         if(request.mode==='listen'){
           const original=await extractListeningAudio(config.ffmpeg,a.path,request.originalIndex,seconds,Number(pa.format.start_time||0));

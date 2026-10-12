@@ -2,6 +2,13 @@
 
 This records the implemented application features. Versions before 1.10.0 were deployed snapshots and are not published Git tags.
 
+## 1.10.4 — 2026-10-13
+
+- Compare synchronized videos in one larger picture with a draggable divider; retain the side-by-side option.
+- Add optional playback-only movement between 25% and 75%, keyboard/touch control, and pause-safe cleanup. Manual movement disables automatic movement.
+- Offer bounded 960×540 and 1920×1080 preview profiles, preserving display aspect ratio and existing audio timing. These remain SDR/mono previews; native frames and external HDR/surround checks are still available.
+- Keep manual review confirmations separate from playback and preserve the existing approval and source-identity checks.
+
 ## 1.10.3 — 2026-10-12
 
 - Handle absent historical follow-up fields safely when opening recovery details and quarantine links.
