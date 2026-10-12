@@ -1,6 +1,12 @@
 # Install on Unraid
 
-Use the Linux amd64 image `ghcr.io/desadius/tdarr-review:1.10.1` or build it from source. A Community Applications template is supplied in [`templates/tdarr-review.xml`](../templates/tdarr-review.xml); inclusion in the catalog requires separate submission and acceptance. See [publication status](COMMUNITY-APPS.md) before attempting an anonymous image pull. Existing production containers are not changed by cloning this repository.
+This guide describes **1.10.2**, prepared and tested from source. The target Linux amd64 image is `ghcr.io/desadius/tdarr-review:1.10.2`; use it after registry publication, or build this source locally. A Community Applications template is supplied in [`templates/tdarr-review.xml`](../templates/tdarr-review.xml). Registry availability and catalog visibility are separate; see [publication status](COMMUNITY-APPS.md). Cloning this repository does not update an existing container.
+
+## Updating to 1.10.2
+
+Back up the persistent `/data` directory and update Review only while no approval, batch or transaction recovery is running. Keep its existing mappings, access key and settings. The new `reviewSessions` state is added automatically; older pending films have an empty manual checklist and previous history is retained. Reload the browser after the update. Films already inspected on TV can use the external-player method and explicitly record those checks against the current review copy.
+
+Approval API clients must now send the current `reviewRevision` with the file snapshot; requests without a completed current assessment are rejected with HTTP 409. Rolling back to 1.10.1 or older preserves the prior application behavior but does not retain the new checklist enforcement.
 
 ## 1. Prepare paths and permissions
 
@@ -30,11 +36,11 @@ cd Tdarr-Review
 cp .env.example .env
 ```
 
-Edit `.env` in a text editor. Set your real paths and API address. Set `REVIEW_BIND_IP` to the server's LAN IP if you want LAN access. Set `PUBLIC_ORIGIN` to exactly the browser origin, for example `http://YOUR_UNRAID_IP:8270` (with your actual IP).
+Edit `.env` in a text editor. Set `REVIEW_IMAGE_TAG=1.10.2` for this source release, your real paths and API address. Set `REVIEW_BIND_IP` to the server's LAN IP if you want LAN access. Set `PUBLIC_ORIGIN` to exactly the browser origin, for example `http://YOUR_UNRAID_IP:8270` (with your actual IP).
 
 `TDARR_DB_HOST` must be the **directory** containing `SQL/database.db`, not just the database file. Its WAL/SHM sidecars must be available through the same read-only mapping. Locate this directory in your Tdarr server appdata before starting.
 
-If Docker Compose is available on your Unraid installation:
+After the `1.10.2` image has been published, if Docker Compose is available on your Unraid installation:
 
 ```bash
 docker compose pull review
@@ -42,7 +48,7 @@ docker compose up -d --no-build review
 docker compose logs --tail 40 review
 ```
 
-For a local source build instead, use `docker compose build review` and `docker compose up -d review`.
+For the prepared source before image publication, or a local build at any time, use `docker compose build review` and `docker compose up -d review`. A locally built image does not establish that the same registry tag is public.
 
 ## 3. Unraid Docker template
 
@@ -67,7 +73,7 @@ In **Docker → Add Container**, configure:
 | Field | Value |
 | --- | --- |
 | Name | `tdarr-review` |
-| Repository | `ghcr.io/desadius/tdarr-review:1.10.1` |
+| Repository | `ghcr.io/desadius/tdarr-review:1.10.2` after publication, or `tdarr-review:local` |
 | Network | `bridge` |
 | WebUI | `http://[IP]:[PORT:8270]` |
 | Port | Host `8270` → container `8270/TCP` |
@@ -92,7 +98,7 @@ Enable Unraid Autostart for this container. Do not start a second Compose instan
 
 On first start, Review creates `/data/access-key` with restricted permissions. Read it privately from the mapped data directory and enter it on the login page. Do not paste it into an issue or commit it. Sessions last 30 days.
 
-Open **Nastavení** (Settings). Fill in the source roots **as seen by the Tdarr server**, the Review path **as seen by Tdarr**, the library ID and optional prefixes. Use the connection/path test before saving. A saved `/data/settings.json` takes precedence over environment defaults on subsequent starts.
+Choose **English** or **Čeština** in the header; the choice is saved in this browser. Open **Settings** (**Nastavení**). Fill in the source roots **as seen by the Tdarr server**, the Review path **as seen by Tdarr**, the library ID and optional prefixes. Use the connection/path test before saving. A saved `/data/settings.json` takes precedence over environment defaults on subsequent starts.
 
 For the example layout:
 
@@ -109,7 +115,9 @@ See [Configuration](CONFIGURATION.md) for aliases and extension-changing flows.
 
 ## 5. Verify before approval
 
-Check that expected results are listed and match their originals. Compare a disposable test film first. Confirm Tdarr health checks, audio/subtitle policy and paths. Approval copies a result back to the original library and removes the replaced original after a verified transaction; it is a real media modification.
+Check that expected results match their originals. Use a disposable test film to complete **Preparation → Picture → Audio → Synchronisation → Decision**, confirming each check beside its tool and saving start/middle/end sync checks separately. Save a partial review, close it and reopen it to verify persistent progress. Confirm Tdarr health checks, audio/subtitle policy and paths. Approval requires the current completed server-saved review, snapshot and revision, including for every film in a batch. The final approval dialog copies a result back to the library and removes the replaced original after a verified transaction; it is a real media modification.
+
+For external player/TV checks, name a device/player with at least two characters after trimming surrounding whitespace. HDR/Dolby Vision also requires its own confirmation on a suitable named device. Browser AV previews use H.264/mono AAC at up to 960 px and supported HDR is converted to SDR; they do not test native HDR or surround playback. Use **Defer review** with a note when more checks remain. See [the user guide](USER-GUIDE.md).
 
 Plex sees the replacement at the original film path (or the verified MKV destination for a TS/M2TS source). Review does not call Plex's API. Use Plex's normal automatic/periodic scan or trigger a library scan yourself.
 
@@ -138,3 +146,11 @@ The example starts with `enabled:false`. This allows verification but disables a
 A fresh installation needs no frozen pending approvals. The empty `examples/recovery-approval-registry.example.json` may be copied privately to Recovery `/data/pending-approvals.json`; it does not authorize repairs. Existing installations with historical approvals must follow [the registry migration guide](MIGRATE-RECOVERY-REGISTRY.md) before replacing Recovery source/image.
 
 For a local worker build, use `docker compose --profile recovery build recovery` first. The optional worker runs in a second container, with no HTTP port. Combining both processes in one container is not implemented in this release. Without this worker, normal Review approval and its manual Radarr integration still work.
+
+## 7. Update an existing installation to 1.10.2
+
+Keep the existing state, media, Review output and read-only Tdarr database mappings. Back up the mapped `/data` directory privately before the update; it contains access settings, history, journals and now server-saved review progress. Do not replace it with a fresh example directory. Run only one Review writer against those mappings.
+
+After registry publication, pin `REVIEW_IMAGE_TAG=1.10.2` in the existing `.env`, or the explicit `ghcr.io/desadius/tdarr-review:1.10.2` Repository value in Unraid, then pull/recreate that same Review service. A source build can be installed independently. Optional Recovery uses its own image tag and update procedure.
+
+Existing pending films start with an unfinished manual review when no matching version-1 session is saved. Past successful transcodes, technical scores and historical approvals do not fabricate new checklist confirmations. Verify container health, login, the five-step workspace and reopening saved/deferred progress before approving a real film. A local installation passed these checks for this release; that does not update your own installation automatically.

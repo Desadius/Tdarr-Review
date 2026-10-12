@@ -2,6 +2,18 @@
 
 This records the implemented application features. Versions before 1.10.0 were deployed snapshots and are not published Git tags.
 
+## 1.10.2 — 2026-10-12
+
+Release prepared and tested; source publication, registry image publication and installation are separate operations.
+
+- Add a five-step review workspace with manual confirmations beside the picture, audio and AV tools; preview playback never completes a check.
+- Save review progress and deferral on the server. Record the selected track pair and server-timed observations for picture, audio and separate start/middle/end synchronisation checks.
+- Require the completed current-snapshot review and its current revision for approval, including whole-batch preflight. Concurrent saves use revision checks; changed files, devices or track pairs invalidate the affected confirmations.
+- Support reviews already performed in an external player/TV, with a named device and separate HDR/Dolby Vision confirmation.
+- Add playable 12-second H.264/mono AAC AV comparisons with shared seek, sound switching and frame stepping; native HDR and surround playback remain external checks.
+- Add English/Czech interface selection, including workflow controls, confirmation dialogs and known status messages.
+- Validate with 297 Linux tests, AV fixture/HTTP checks, approval HTTP integration and reopening a saved review on a healthy local deployment.
+
 ## 1.10.1 — 2026-10-12
 
 - Continue observing manual Review replacement requests after Radarr import, using the exact replacement path and original Tdarr library binding.

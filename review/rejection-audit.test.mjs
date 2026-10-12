@@ -16,7 +16,7 @@ test('Archive survives reopen and safely escapes hostile strings',async()=>{
  finally{await fs.rm(dir,{recursive:true,force:true})}
 });
 function context(failArchive=false){
- const events=[],state={items:{film:{jobId:'job17'}},history:[],pauses:[]};
+ const events=[],state={items:{film:{jobId:'job17'}},reviewSessions:{},history:[],pauses:[]};
  const item={id:'film',title:'Film',relative:'Film.mkv',reviewRelative:'PROD/Film.mkv',snapshot:'snapshot',originalBytes:900,reviewBytes:400,assessment:{score:90}};
  const box={state,active:null,cache:null,statsCache:null,recovery:[],DATA:'/data',MEDIA:'/media',REVIEW:'/review',config:{reviewPrefixes:['PROD']},hash:()=> 'snapshot',safeFile:async(root)=>({path:root+'/Film.mkv',fp:'fp',stat:{size:root==='/media'?900:400}}),tdarr:async()=>({}),workerBusy:()=>false,captureReceipt:async()=>({}),cleanupReviewed:async()=>events.push('cleanup'),progress:()=>{},resume:async()=>{},save:async()=>events.push('save'),fs:{unlink:async p=>events.push('unlink:'+p)},rejectionReason,recordRejection:async(_data,row)=>{events.push(row.event);if(failArchive&&row.event==='requested')throw Error('archive unavailable');events.push(row)},path,crypto:{},console};
  vm.createContext(box);vm.runInContext(code+';globalThis.performTest=perform;',box);
@@ -29,7 +29,7 @@ test('Failed durable archive prevents destructive action',async()=>{
  const {box,events,state,item}=context(true);await box.performTest('reject',item,false,'Nesedí obraz');assert.equal(state.history[0].status,'error');assert.equal(state.history[0].rejectionReason,'Nesedí obraz');assert.ok(state.items.film);assert.ok(!events.some(e=>String(e).startsWith('unlink:')));
 });
 test('Missing reason cannot start a rejection',async()=>{const {box,events,item}=context();await assert.rejects(box.performTest('reject',item));assert.deepEqual(events,[]);assert.equal(box.active,null)});
-test('API validates reason before file scan and passes it into handler',()=>{const route=server.slice(server.indexOf("const action=/^\\/api\\/items"),server.indexOf('const audio=/'));assert.ok(route.indexOf('rejectionReason(b.reason)')<route.indexOf('await scan(true)'));assert.ok(route.includes('respond(res,400'));assert.ok(route.includes('perform(action[2],item,acceptDuration,reason)'))});
+test('API validates reason before file scan and passes it into handler',()=>{const route=server.slice(server.indexOf("const action=/^\\/api\\/items"),server.indexOf('const audio=/'));assert.ok(route.indexOf('rejectionReason(b.reason)')<route.indexOf('await scan(true)'));assert.ok(route.includes('respond(res,400'));assert.match(route,/perform\(action\[2\],[\s\S]*acceptDuration,reason\)/)});
 test('History reasons are rendered as text and action requests include the entered reason',async()=>{
  const ui=await fs.readFile(new URL('./public/app.js',import.meta.url),'utf8');
  assert.ok(ui.includes("reason:['reject','replace'].includes(request.action)?reason:undefined"));

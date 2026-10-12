@@ -1,3 +1,5 @@
+import {mountAVComparison} from '/av-player.js?v=20261012-av1';
+import {mountReviewWorkflow} from '/review-workflow.js?v=20261012-workflow1';
 import {capabilities, classifyRecovery, recoveryProgress, liveRecoveryRecord, projectRequests, historyWarnings, historyFollowup} from '/review-model.js?v=20261011-ui2';
 import {tr,locale,initializeLocale,translateAudioTrackLabel as audioTrackLabel} from '/i18n.js?v=20261012-en1';
 initializeLocale();
@@ -12,7 +14,8 @@ const busy=d=>!!d?.active||!!d?.batchRunning;
 let latest=null,pending=null,loading=false,lastRender='',receivedAt=0,serverAt=Date.now();
 let authenticated=false,actionInFlight=false,requests=[],requestsReceived=0,requestsLoading=false,requestsError='',dataError='',confirmOrigin=null;
 const selected=new Set();
-const ui={view:'attention',filter:'running',tab:'overview',detail:null,selection:false,layout:'work',historyPage:0};
+const ui={view:'attention',filter:'running',tab:'review',detail:null,selection:false,layout:'work',historyPage:0};
+let reviewWorkspace=null;
 try{ui.layout=localStorage.getItem('tdarr-review-layout')==='gallery'?'gallery':'work'}catch{}
 const context=()=>({authenticated,fresh:!!receivedAt&&!dataError&&Date.now()-receivedAt<15000,requests,requestsFresh:!!requestsReceived&&!requestsError&&Date.now()-requestsReceived<90000,settingsBusy:actionInFlight});
 const caps=item=>capabilities(item,latest||{items:[],recovery:[]},context());
@@ -26,7 +29,7 @@ async function api(route,body){
  const r=await fetch(route,{method:body===undefined?'GET':'POST',headers:body===undefined?{}:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
  let d;try{d=await r.json()}catch{throw Error('Server nevrátil platnou odpověď. Obnov údaje a ověř výsledek akce.')}
  if(r.status===401){authenticated=false;$('login').hidden=false;$('workspace').hidden=!latest;updateGuards();throw Error(d.error||'Přihlášení vypršelo. Poslední načtené údaje nejsou aktuální.')}
- if(!r.ok)throw Error(d.error||'Požadavek selhal.');
+ if(!r.ok)throw Object.assign(Error(d.error||'Požadavek selhal.'),{status:r.status,data:d});
  return d;
 }
 function error(e){$('error').textContent=tr(e.message);$('error').hidden=false;const active=[...document.querySelectorAll('dialog[open]')].at(-1);if(active){let alert=active.querySelector('.dialog-error');if(!alert){alert=el('p','alert dialog-error');alert.setAttribute('role','alert');active.prepend(alert)}alert.textContent=tr(e.message);alert.tabIndex=-1;alert.focus();}}
@@ -52,7 +55,7 @@ function ask(item,action){
  try{writeItem(item,action)}catch(e){error(e);return}
  const approve=action==='approve';
  let text=approve?`Po ověření identity souborů a kontrolního součtu kopie se původní film (${fmt(item.originalBytes)}) nahradí výsledkem (${fmt(item.reviewBytes)}). Původní verze bude odstraněna. Plex bude používat nový soubor. Health check z Tdarru se neopakuje. Akce může trvat několik minut.`:'Odstraní se pouze překódovaný soubor z review. Originál v knihovně médií zůstane zachovaný.';
- pending={item,action};
+ pending={item,action};if(approve)pending.reviewRevision=latest?.reviewSessions?.[item.id]?.revision;
  if(approve&&item.canApproveDuration){pending.acceptDuration=true;text+=` Výslovně přijímáš rozdíl délky: originál ${item.durationA.toFixed(3)} s, výstup ${item.durationB.toFixed(3)} s, rozdíl ${(item.durationB-item.durationA).toFixed(3)} s. Potvrď pouze po kontrole začátku, konce a synchronizace zvuku.`}
  confirmSetup(approve?'SCHVÁLENÍ VÝSLEDKU':'ZAMÍTNUTÍ VÝSLEDKU',item.title,text,approve?(pending.acceptDuration?'Přijmout rozdíl a nahradit originál':'Schválit a nahradit'):'Zamítnout a odstranit',!approve);
  $('rejectReason').value=drafts.get(item.id+':'+action)||'';$('confirm').showModal();
@@ -77,10 +80,12 @@ $('confirm').addEventListener('close',async()=>{
   if(request.action==='batch')for(const item of request.items)writeItem(item,'approveBatch');
   else if(request.action==='restore'){const current=requests.find(r=>r.id===request.record.id&&r.source===request.record.source);if(!current||!caps(current).restore)throw Error('Stav obnovy se změnil. Obnov údaje.');}
   else writeItem(request.item,request.action);
+  if(request.action==='approve'&&latest?.reviewSessions?.[request.item.id]?.revision!==request.reviewRevision)throw Error('Posouzení se od otevření potvrzení změnilo. Znovu ověř uložené kontroly.');
+  if(request.action==='batch'&&request.items.some(item=>latest?.reviewSessions?.[item.id]?.revision!==request.reviewRevisions[item.id]))throw Error('Posouzení vybraných filmů se změnilo. Znovu ověř uložené kontroly.');
   actionInFlight=true;updateGuards();
-  if(request.action==='batch'){await api('/api/approve-batch',{items:request.items.map(x=>({id:x.id,snapshot:x.snapshot}))});selected.clear()}
+  if(request.action==='batch'){await api('/api/approve-batch',{items:request.items.map(x=>({id:x.id,snapshot:x.snapshot,reviewRevision:request.reviewRevisions[x.id]}))});selected.clear()}
   else if(request.action==='restore')await api('/api/radarr/requests/'+request.record.id+'/restore',{confirm:true});
-  else await api(`/api/items/${request.item.id}/${request.action}`,{snapshot:request.item.snapshot,acceptDuration:request.acceptDuration===true,reason:['reject','replace'].includes(request.action)?reason:undefined});
+  else await api(`/api/items/${request.item.id}/${request.action}`,{snapshot:request.item.snapshot,reviewRevision:request.action==='approve'?request.reviewRevision:undefined,acceptDuration:request.acceptDuration===true,reason:['reject','replace'].includes(request.action)?reason:undefined});
   if(request.item)drafts.delete(request.item.id+':'+request.action);
   $('filmDetail').close();lastRender='';await load();await loadRequests(true);
  }catch(e){error(e)}finally{actionInFlight=false;updateGuards()}
@@ -102,7 +107,7 @@ $('selectionCancel').onclick=()=>{ui.selection=false;selected.clear();updateSele
 $('selectAll').onchange=e=>{for(const item of filteredItems().filter(x=>caps(x).select)){e.target.checked?selected.add(item.id):selected.delete(item.id)}updateSelection()};
 $('approveSelected').onclick=()=>{
  const items=(latest?.items||[]).filter(x=>selected.has(x.id));if(!items.length||items.some(x=>!caps(x).approveBatch))return;
- pending={action:'batch',items};confirmSetup('HROMADNÉ SCHVÁLENÍ',`Schválit ${items.length} filmů?`,`Vybrané filmy: ${items.map(x=>x.title).join('; ')}. Postupně se ověří identita souborů a kontrolní součet kopie, pak se nahradí originály. Původní verze budou odstraněny. Health check z Tdarru se neopakuje. Možná úspora ${fmt(items.reduce((s,x)=>s+x.originalBytes-x.reviewBytes,0))}. Dávka běží na serveru i po zavření stránky. Při chybě jednoho filmu zachová jeho soubory a pokračuje dalším.`,`Schválit ${items.length} filmů`);$('confirm').showModal();
+ pending={action:'batch',items,reviewRevisions:Object.fromEntries(items.map(item=>[item.id,latest?.reviewSessions?.[item.id]?.revision]))};confirmSetup('HROMADNÉ SCHVÁLENÍ',`Schválit ${items.length} filmů?`,`Vybrané filmy: ${items.map(x=>x.title).join('; ')}. Postupně se ověří identita souborů a kontrolní součet kopie, pak se nahradí originály. Původní verze budou odstraněny. Health check z Tdarru se neopakuje. Možná úspora ${fmt(items.reduce((s,x)=>s+x.originalBytes-x.reviewBytes,0))}. Dávka běží na serveru i po zavření stránky. Při chybě jednoho filmu zachová jeho soubory a pokračuje dalším.`,`Schválit ${items.length} filmů`);$('confirm').showModal();
 };
 
 function poster(kind,id,title){
@@ -120,14 +125,15 @@ function keyed(container,records,keyOf,build){
 }
 function reviewRow(item){
  const row=el('article','review-row'),pick=el('label','selection'),checkbox=el('input');checkbox.type='checkbox';checkbox.setAttribute('aria-label',tr('Vybrat '+item.title));checkbox.dataset.focus='pick:'+item.id;checkbox.onchange=e=>{e.target.checked?selected.add(item.id):selected.delete(item.id);updateSelection()};pick.append(checkbox);
- const info=el('div','row-info');info.append(badge(item.status==='ready'?'K posouzení':'Zvláštní kontrola',item.status==='ready'?'ready':'warning'),el('h2','',item.title,true),el('p','details',item.status==='ready'?'Další krok: porovnej obraz a zvuk.':item.reason||'Ověř technické údaje a dostupnost souborů.'));
+ const session=latest?.reviewSessions?.[item.id],deferred=session?.snapshot===item.snapshot&&session.session?.deferred;
+ const info=el('div','row-info');info.append(badge(deferred?'Posouzení odloženo':item.status==='ready'?'K posouzení':'Zvláštní kontrola',deferred?'warning':item.status==='ready'?'ready':'warning'),el('h2','',item.title,true),el('p','details',deferred?session.session.note:item.status==='ready'?'Další krok: porovnej obraz a zvuk.':item.reason||'Ověř technické údaje a dostupnost souborů.'));
  const metric=el('div','row-metric');metric.append(el('strong','saved',fmt(item.originalBytes-item.reviewBytes)),el('span','details',`${fmt(item.originalBytes)} → ${fmt(item.reviewBytes)}`));
  const inspect=button('Posoudit',()=>openDetail('review',item.id),'primary');inspect.dataset.focus='inspect:'+item.id;inspect.setAttribute('aria-label',tr('Posoudit '+item.title));row.append(pick,poster('review',item.id,item.title),info,metric,inspect);return row;
 }
 function renderAttention(){
  const items=filteredItems();$('readyCount').textContent=tr((latest?.items||[]).filter(x=>x.status==='ready').length);$('blockedCount').textContent=tr((latest?.items||[]).filter(x=>x.status!=='ready').length);
  $('saving').textContent=tr(fmt((latest?.items||[]).filter(x=>x.status==='ready').reduce((s,x)=>s+x.originalBytes-x.reviewBytes,0)));
- $('list').classList.toggle('gallery',ui.layout==='gallery');keyed($('list'),items,x=>x.id,reviewRow);$('reviewEmpty').hidden=!!items.length;$('reviewEmpty').textContent=tr(latest?.items.length?'Tomuto hledání neodpovídá žádný výsledek.':'Všechny výsledky jsou vyřízené. Nové se objeví automaticky po dokončení převodu.');
+ $('list').classList.toggle('gallery',ui.layout==='gallery');keyed($('list'),items.map(item=>({...item,reviewSession:latest?.reviewSessions?.[item.id]})),x=>x.id,reviewRow);$('reviewEmpty').hidden=!!items.length;$('reviewEmpty').textContent=tr(latest?.items.length?'Tomuto hledání neodpovídá žádný výsledek.':'Všechny výsledky jsou vyřízené. Nové se objeví automaticky po dokončení převodu.');
  for(const radio of document.querySelectorAll('input[name=layout]'))radio.checked=radio.value===ui.layout;
  const warnings=historyWarnings(latest?.history||[]),attention=projectRequests(requests,latest?.items||[],Date.now()).filter(x=>x.classification.category==='attention');
  $('events').hidden=!warnings.length&&!attention.length;
@@ -184,10 +190,19 @@ function detailsFacts(facts){const dl=el('dl','facts');for(const [key,value,raw=
 function guardedButton(item,cap,text,fn,cls='secondary'){const b=button(text,()=>{if(!caps(item)[cap]){error(Error(caps(item).reason||'Akce není dostupná.'));return}fn()},cls);b.dataset.cap=cap;b.disabled=!caps(item)[cap];return b}
 
 function detailReview(item,tab){
- const box=$('detailBody');box.replaceChildren();
+ const box=$('detailBody');
+ if(tab==='review'){
+  if(reviewWorkspace)return;
+  reviewWorkspace=mountReviewWorkflow(box,item,{api,tr,formatBytes:fmt,openComparison,openAudioComparison,
+   canWrite:()=>{const current=latest?.items.find(x=>x.id===item.id);return !!current&&current.snapshot===item.snapshot&&!caps(current).writeBlocked},
+   canApprove:()=>{const current=latest?.items.find(x=>x.id===item.id);return !!current&&current.snapshot===item.snapshot&&caps(current).approve},
+   onSession:record=>{if(!latest)return;latest.reviewSessions||={};latest.reviewSessions[item.id]=record;updateGuards()},
+   onApprove:()=>ask(item,'approve'),onReject:()=>ask(item,'reject'),onDeferred:()=>{$('filmDetail').close();renderAttention()}});return;
+ }
+ box.replaceChildren();
  if(tab==='overview'){
   box.append(el('h3','','Výsledek čeká na posouzení'),el('p','',item.reason),detailsFacts([['Originál',fmt(item.originalBytes)],['Výsledek',fmt(item.reviewBytes)],['Možná úspora',fmt(item.originalBytes-item.reviewBytes)],['Obraz',item.videoSummary||'Nedoloženo'],['Zvuk',`${(item.audio||[]).join(', ')||'Nedoloženo'} · ${(item.audio||[]).length} stop`],['Titulky',String((item.subtitles||[]).length)]]),el('p','details','Technické kontroly podporují rozhodnutí. Kvalitu komprese a soulad řeči s obrazem ověř při přehrávání.'));
-  const b=button('Přejít k porovnání',()=>changeDetailTab('comparison'));box.append(b);
+  const b=button('Přejít k posouzení',()=>changeDetailTab('review'));box.append(b);
  }else if(tab==='comparison'){
   box.append(el('h3','','Originál a výsledek ve stejném čase'),el('p','','Otevři pár snímků a potom porovnej odpovídající zvukové stopy. Celý výsledek můžeš přehrát po stažení.'));
   const pair=el('div','comparison-options');pair.append(guardedButton(item,'compareImage','Porovnat obraz',()=>openComparison(item)),guardedButton(item,'compareAudio','Porovnat zvuk',()=>openAudioComparison(item)));
@@ -229,19 +244,20 @@ function detailRequest(r,tab){
  }
 }
 function changeDetailTab(tab){ui.tab=tab;const params={tab};params[ui.detail.kind==='review'?'film':'case']=ui.detail.id;navigate(ui.view,params);renderDetailTab();$('detailTabs-'+tab)?.focus({preventScroll:true})}
-function renderDetailTab(){if(!ui.detail)return;makeTabs($('detailTabs'),[['overview','Přehled'],['comparison','Porovnání'],['recovery','Obnova'],['technical','Technické údaje']],ui.tab,changeDetailTab);$('detailBody').setAttribute('aria-labelledby','detailTabs-'+ui.tab);ui.detail.kind==='review'?detailReview(ui.detail.record,ui.tab):detailRequest(ui.detail.record,ui.tab);updateGuards()}
+function renderDetailTab(){if(!ui.detail)return;const reviewing=ui.detail.kind==='review';if(!reviewing||ui.tab!=='review'){reviewWorkspace?.destroy();reviewWorkspace=null}const tabs=reviewing?[['review','Posouzení'],['overview','Podklady a metadata'],['recovery','Obnova'],['technical','Technické údaje']]:[['overview','Přehled'],['comparison','Porovnání'],['recovery','Obnova'],['technical','Technické údaje']];makeTabs($('detailTabs'),tabs,ui.tab,changeDetailTab);$('filmDetail').classList.toggle('reviewing',reviewing&&ui.tab==='review');$('detailBody').setAttribute('aria-labelledby','detailTabs-'+ui.tab);reviewing?detailReview(ui.detail.record,ui.tab):detailRequest(ui.detail.record,ui.tab);updateGuards()}
 function openDetail(kind,id,fromHash=false){
  const projected=kind==='request'?projectRequests(requests,latest?.items||[],Date.now()).find(p=>p.key===id):null;
  let record=kind==='review'?latest?.items.find(x=>x.id===id):requests.find(r=>r.id===projected?.id&&r.source===projected?.source);
  if(!record)return;
  if(ui.detail?.kind===kind&&ui.detail.id===id){renderDetailTab();return}
+ reviewWorkspace?.destroy();reviewWorkspace=null;if(!fromHash||!parseHash().params.has('tab'))ui.tab=kind==='review'?'review':'overview';if(kind==='review'&&ui.tab==='comparison')ui.tab='review';if(kind==='request'&&ui.tab==='review')ui.tab='overview';
  $('filmDetail').querySelector('.dialog-error')?.remove();ui.detail={kind,id,record};$('detailTitle').textContent=record.title;$('detailLabel').textContent=tr(kind==='review'?'POSOUZENÍ VÝSLEDKU':'OBNOVA FILMU');$('detailSubtitle').textContent=tr(kind==='review'?(record.status==='ready'?'K posouzení':'Zvláštní kontrola'):classifyRecovery(record,Date.now()).label);
  $('detailPoster').replaceChildren(poster(kind,record.id,record.title));$('detailActions').replaceChildren();
- if(kind==='review')$('detailActions').append(guardedButton(record,'reject','Zamítnout',()=>ask(record,'reject'),'reject'),guardedButton(record,'approve',record.canApproveDuration?'Posoudit rozdíl délky':'Schválit a nahradit',()=>ask(record,'approve'),'primary'));
+ if(kind==='review')$('detailActions').append(guardedButton(record,'reject','Zamítnout',()=>ask(record,'reject'),'reject'));
  renderDetailTab();if(!$('filmDetail').open)$('filmDetail').showModal();else $('detailTabs-'+ui.tab)?.focus({preventScroll:true});if(!fromHash)navigate(ui.view,{[kind==='review'?'film':'case']:id,tab:ui.tab});
 }
 $('detailClose').onclick=()=>$('filmDetail').close();
-$('filmDetail').addEventListener('close',()=>{ui.detail=null;ui.tab='overview';const parsed=parseHash();if(parsed.params.has('film')||parsed.params.has('case'))navigate(ui.view,ui.view==='recovery'?{filter:ui.filter}:{})});
+$('filmDetail').addEventListener('close',()=>{reviewWorkspace?.destroy();reviewWorkspace=null;ui.detail=null;ui.tab='review';const parsed=parseHash();if(parsed.params.has('film')||parsed.params.has('case'))navigate(ui.view,ui.view==='recovery'?{filter:ui.filter}:{})});
 
 function updateGuards(){
  if(!latest)return;const c=context();
@@ -250,12 +266,14 @@ function updateGuards(){
  updateSelection();
  if(ui.detail){const item=ui.detail.record,current=ui.detail.kind==='review'?latest.items.find(x=>x.id===item.id):requests.find(x=>x.id===item.id&&x.source===item.source),changed=!current||(ui.detail.kind==='review'?current.snapshot!==item.snapshot:JSON.stringify(current)!==JSON.stringify(item));
   $('detailChanged').hidden=!changed;$('detailChanged').textContent=tr('Stav tohoto filmu se změnil. Zavři detail a otevři aktuální údaje.');
-  for(const b of $('filmDetail').querySelectorAll('[data-cap]'))b.disabled=changed||!caps(item)[b.dataset.cap];
+  for(const b of $('filmDetail').querySelectorAll('[data-cap]'))b.disabled=changed||!caps(current||item)[b.dataset.cap];
+  if(ui.detail.kind==='review'&&changed)reviewWorkspace?.invalidate();else{reviewWorkspace?.refreshGuard();if(ui.detail.kind==='review')reviewWorkspace?.observe(latest.reviewSessions?.[item.id])}
   const guard=caps(item);$('detailGuard').hidden=!guard.writeBlocked&&!changed;$('detailGuard').textContent=tr(changed?'Akce čekají na nové posouzení aktuálního stavu.':guard.reason||'Zapisující akce jsou dočasně zablokované.');
  }
- if(pending){let enabled=!actionInFlight;if(pending.action==='batch')enabled&&=pending.items.every(x=>latest.items.some(i=>i.id===x.id&&i.snapshot===x.snapshot)&&caps(x).approveBatch);else if(pending.action==='restore'){const current=requests.find(r=>r.id===pending.record.id&&r.source===pending.record.source);enabled&&=!!current&&caps(current).restore;}else enabled&&=latest.items.some(x=>x.id===pending.item.id&&x.snapshot===pending.item.snapshot)&&caps(pending.item)[pending.action];$('commit').disabled=!enabled;}
+ if(pending){let enabled=!actionInFlight;if(pending.action==='batch')enabled&&=pending.items.every(x=>{const current=latest.items.find(i=>i.id===x.id&&i.snapshot===x.snapshot);return current&&caps(current).approveBatch&&latest.reviewSessions?.[x.id]?.revision===pending.reviewRevisions[x.id]});else if(pending.action==='restore'){const current=requests.find(r=>r.id===pending.record.id&&r.source===pending.record.source);enabled&&=!!current&&caps(current).restore;}else{const current=latest.items.find(x=>x.id===pending.item.id&&x.snapshot===pending.item.snapshot);enabled&&=!!current&&caps(current)[pending.action]&&(pending.action!=='approve'||latest.reviewSessions?.[pending.item.id]?.revision===pending.reviewRevision)}$('commit').disabled=!enabled;}
 }
 function render(d){
+ const priorSessions=latest?.reviewSessions||{};d.reviewSessions||={};for(const [id,record]of Object.entries(priorSessions)){const current=d.items.find(x=>x.id===id);if(current?.snapshot===record.snapshot&&record.revision>(d.reviewSessions[id]?.revision??-1))d.reviewSessions[id]=record}
  latest=d;authenticated=true;document.querySelector('.server').textContent=d.label||'Tdarr Review';$('login').hidden=true;$('workspace').hidden=false;
  for(const id of selected)if(!d.items.some(x=>x.id===id&&caps(x).select))selected.delete(id);
  $('attentionCount').textContent=tr(d.items.length);$('recoveryCount').textContent=tr(projectRequests(requests,d.items,Date.now()).filter(x=>x.classification.category!=='done').length);
@@ -286,7 +304,7 @@ function handleHash(){
  if(view==='recovery'){const filter=params.get('filter');if(['running','waiting','attention','done'].includes(filter)&&filter!==ui.filter){ui.filter=filter;renderRecovery()}}
  if(view==='history'&&params.get('filter')==='warning'&&$('historyFilter').value!=='warning'){$('historyFilter').value='warning';ui.historyPage=0;renderHistory()}
  if(view==='savings'&&Date.now()-statsLoaded>15000)loadStatistics();
- const tab=params.get('tab');if(['overview','comparison','recovery','technical'].includes(tab))ui.tab=tab;
+ const tab=params.get('tab');if(['review','overview','comparison','recovery','technical'].includes(tab))ui.tab=params.has('film')&&tab==='comparison'?'review':tab;
  const kind=params.has('film')?'review':params.has('case')?'request':null,id=params.get(kind==='review'?'film':'case');
  if(kind){if(ui.detail?.kind!==kind||ui.detail.id!==id){const exists=kind==='review'?latest?.items.some(x=>x.id===id):projectRequests(requests,latest?.items||[],Date.now()).some(p=>p.key===id);if(exists)openDetail(kind,id,true);else if($('filmDetail').open)$('filmDetail').close()}else if($('detailTabs').querySelector('[aria-selected=true]')?.id!=='detailTabs-'+ui.tab)renderDetailTab()}
  else if($('filmDetail').open)$('filmDetail').close();
@@ -332,26 +350,31 @@ if(document.modelContext?.registerTool){
  addEventListener('pagehide',()=>lifecycle.abort(),{once:true});
 }
 const compareDialog=el('dialog','comparison');document.body.append(compareDialog);
-let compareGeneration=0;
-compareDialog.addEventListener('close',()=>{compareGeneration++;compareDialog.replaceChildren()});
-function openComparison(item){
- compareDialog.replaceChildren();const generation=++compareGeneration;
+let compareCleanup=null;
+compareDialog.addEventListener('close',()=>{compareCleanup?.();compareCleanup=null;compareDialog.replaceChildren()});
+function openComparison(item,options={}){
+ const host=options.host||compareDialog;let dead=false,request=0;host.replaceChildren();
+ const current=()=>!dead&&host.isConnected&&latest?.items.some(x=>x.id===item.id&&x.snapshot===item.snapshot);
+ const cleanup=()=>{dead=true;request++;host.replaceChildren()};if(!options.host){compareCleanup?.();compareCleanup=cleanup}
  const heading=el('div','comparison-head'),close=el('button','secondary','Zavřít');close.onclick=()=>compareDialog.close();heading.append(el('h2','',item.title,true),close);
  const note=el('p','','Snímky ve stejném čase, PNG bez další ztrátové komprese. Porovnání je statické, bez zvuku.');
- const controls=el('form','comparison-controls'),label=el('label','','Čas ve filmu (sekundy)'),time=el('input');time.type='number';time.min='0';time.step='0.001';time.max=String(Math.max(0,Math.min(item.durationA,item.durationB)-1));time.value=String(Math.min(300,Math.floor(Number(time.max)/2)));label.append(time);
+ const controls=el('form','comparison-controls'),label=el('label','','Čas ve filmu (sekundy)'),time=el('input');time.type='number';time.min='0';time.step='0.001';time.max=String(Math.max(0,Math.min(item.durationA,item.durationB)-1));time.value=String(Math.min(Number(time.max),options.scope?.seconds??Math.min(300,Math.floor(Number(time.max)/2))));label.append(time);
  const go=el('button','','Načíst oba snímky'),zoom=el('button','secondary','Zvětšení 1 : 1');zoom.type='button';
  const status=el('p','comparison-status','Vyber čas a načti snímky.');status.setAttribute('role','status');
  const pair=el('div','comparison-pair');let enlarged=false;
  zoom.onclick=()=>{enlarged=!enlarged;pair.classList.toggle('actual-size',enlarged);zoom.textContent=tr(enlarged?'Přizpůsobit šířce':'Zvětšení 1 : 1')};
  controls.append(label,go,zoom);
- const presets=el('div','comparison-controls');for(const percent of [10,30,50,70,90]){const button=el('button','secondary',percent+' % filmu');button.onclick=()=>{time.value=String(Math.floor(Number(time.max)*percent/100));controls.requestSubmit()};presets.append(button)}
- controls.onsubmit=async e=>{e.preventDefault();if(go.disabled)return;go.disabled=true;pair.replaceChildren();status.textContent=tr('Připravuji oba snímky na serveru… Obvykle několik sekund, nejvýše dvě minuty.');
- try{const d=await api(`/api/items/${item.id}/frames`,{snapshot:item.snapshot,seconds:Number(time.value)});if(generation!==compareGeneration)return;
+ const canInteract=()=>current()&&(options.canInteract?.()??true),validTime=()=>time.value.trim()!==''&&time.validity.valid&&Number.isFinite(Number(time.value))&&Number(time.value)>=0&&Number(time.value)<=Number(time.max);
+ const scopeChanged=()=>{if(!canInteract())return;const valid=validTime();options.onScopeValidityChange?.(valid);if(valid)options.onScopeChange?.({...options.scope,seconds:Number(time.value)});request++;pair.replaceChildren();status.textContent=tr('Vyber čas a načti snímky.');go.dataset.previewInvalid=String(!valid);go.disabled=!valid};time.oninput=time.onchange=scopeChanged;
+ const presets=el('div','comparison-controls');for(const percent of [10,30,50,70,90]){const button=el('button','secondary',percent+' % filmu');button.onclick=()=>{time.value=String(Math.floor(Number(time.max)*percent/100));scopeChanged();controls.requestSubmit()};presets.append(button)}
+ for(const control of [time,go,...presets.querySelectorAll('button')])control.dataset.previewControl='';const setBusy=value=>{controls.dataset.previewBusy=String(value);for(const control of [time,go,...presets.querySelectorAll('button')]){control.dataset.previewBusy=String(value);control.disabled=value||!canInteract()||control.dataset.previewInvalid==='true'}};
+ controls.onsubmit=async e=>{e.preventDefault();if(go.disabled||!canInteract()||!validTime())return;scopeChanged();const generation=++request;setBusy(true);pair.replaceChildren();status.textContent=tr('Připravuji oba snímky na serveru… Obvykle několik sekund, nejvýše dvě minuty.');
+ try{await options.beforePreview?.();if(!current())return;const d=await api(`/api/items/${item.id}/frames`,{snapshot:item.snapshot,seconds:Number(time.value)});if(!current()||generation!==request)return;
  const panes=[];for(const [key,title] of [['original','Originál'],['review','Překódovaný výsledek']]){const figure=el('figure'),pane=el('div','frame-scroll'),img=el('img');img.alt=tr(title+' v čase '+elapsedText(d.seconds));img.src='data:image/png;base64,'+d[key];pane.append(img);figure.append(el('figcaption','',title),pane);pair.append(figure);panes.push(pane)}
  let sync=false;for(const [i,pane] of panes.entries())pane.onscroll=()=>{if(sync)return;sync=true;panes[1-i].scrollLeft=pane.scrollLeft;panes[1-i].scrollTop=pane.scrollTop;requestAnimationFrame(()=>{sync=false})};
  status.textContent=tr(`Čas ${elapsedText(d.seconds)} · ${d.hdr?'HDR převedeno shodně do SDR pro náhled. Věrnost HDR ověř na TV.':'Plné rozlišení snímků; detaily porovnej ve zvětšení 1 : 1.'} Stejný čas nezaručuje shodu při posunutém střihu.`);
- }catch(e){if(generation===compareGeneration)status.textContent=tr(e.message)}finally{go.disabled=false}};
- compareDialog.append(heading,note,controls,presets,status,pair);compareDialog.setAttribute('aria-label',tr('Porovnání obrazu · '+item.title));compareDialog.showModal();controls.requestSubmit();
+ }catch(e){if(current()&&generation===request)status.textContent=tr(e.message)}finally{if(current()&&generation===request)setBusy(false)}};
+ host.append(...(options.host?[]:[heading]),note,controls,presets,status,pair);if(!options.host){compareDialog.setAttribute('aria-label',tr('Porovnání obrazu · '+item.title));compareDialog.showModal()}if(options.autoLoad!==false)controls.requestSubmit();return cleanup;
 }
 const settingsDialog=el('dialog','settings-dialog');document.body.append(settingsDialog);
 const settingsButton=$('settingsReview');
@@ -366,30 +389,49 @@ settingsButton.onclick=async()=>{
  test.onclick=()=>submit(true);form.onsubmit=e=>{e.preventDefault();submit(false)};form.append(status,actions);settingsDialog.append(title,help,el('p','','Docker připojení složek, port a trvalý adresář /data se nastavují při instalaci kontejneru. Menu je samo nevytváří. Podporovaný profil: MKV, H.264 → HEVC 10bit, kopírované zvukové a titulkové stopy; HDR10, HDR10+, Dolby Vision 8.1 a zachování Dolby Vision 7/FEL podle kompatibilního profilu Review.'),form);settingsDialog.setAttribute('aria-label',tr('Nastavení Review'));settingsDialog.showModal();
  }catch(e){error(e)}
 };
-const audioDialog=el('dialog','comparison');document.body.append(audioDialog);let audioGeneration=0;let abPlayer=null;
-audioDialog.addEventListener('close',()=>{audioGeneration++;abPlayer?.close();abPlayer=null;audioDialog.replaceChildren()});
-async function openAudioComparison(item){
- const generation=++audioGeneration;abPlayer?.close();abPlayer=null;audioDialog.replaceChildren();const head=el('div','comparison-head'),close=el('button','secondary','Zavřít');close.onclick=()=>audioDialog.close();head.append(el('h2','',item.title+' — porovnání zvuku'),close);
- const note=el('p','','Porovnej stejný jazyk i verzi zvuku (nikoli dabing s originálem nebo komentářem). Grafy ukazují hlasitost v krocích 10 ms na stejné časové ose, nikoli kvalitu zvuku. Odhad hledá posun do ±1 sekundy. Neověřuje soulad řeči s pohybem úst.');
- const form=el('form','comparison-controls'),a=el('select'),b=el('select'),time=el('input');time.type='number';time.min='0';time.max=String(Math.max(0,Math.min(item.durationA,item.durationB)-12));time.step='0.01';time.value=String(Math.min(300,Math.floor(Number(time.max)/2)));
+const audioDialog=el('dialog','comparison');document.body.append(audioDialog);let audioCleanup=null;
+audioDialog.addEventListener('close',()=>{audioCleanup?.();audioCleanup=null;audioDialog.replaceChildren()});
+function openAudioComparison(item,options={}){
+ const host=options.host||audioDialog;let dead=false,generation=0,working=false,abPlayer=null,avCleanup=null,prepared=null,trackReady=false;host.replaceChildren();
+ const current=()=>!dead&&host.isConnected&&latest?.items.some(x=>x.id===item.id&&x.snapshot===item.snapshot);
+ const cleanup=()=>{dead=true;generation++;abPlayer?.close();abPlayer=null;avCleanup?.();avCleanup=null;host.replaceChildren()};if(!options.host){audioCleanup?.();audioCleanup=cleanup}
+ const head=el('div','comparison-head'),close=button('Zavřít',()=>audioDialog.close());head.append(el('h2','',item.title+' — porovnání zvuku'),close);
+ const note=el('p','details','Porovnej stejný jazyk i verzi zvuku (nikoli dabing s originálem nebo komentářem). Grafy ukazují hlasitost v krocích 10 ms na stejné časové ose, nikoli kvalitu zvuku. Odhad hledá posun do ±1 sekundy. Neověřuje soulad řeči s pohybem úst.');
+ const form=el('form','comparison-controls'),a=el('select'),b=el('select'),time=el('input');time.type='number';time.min='0';time.max=String(Math.max(0,Math.min(item.durationA,item.durationB)-12));time.step='0.01';time.value=String(Math.min(Number(time.max),options.scope?.seconds??Math.min(300,Math.floor(Number(time.max)/2))));
  for(const [title,input] of [['Stopa originálu',a],['Stopa převodu',b],['Začátek úseku (sekundy)',time]]){const label=el('label','',title);label.append(input);form.append(label)}
- const go=el('button','','Porovnat 12 sekund');go.disabled=true;form.append(go);const status=el('p','','Načítám seznam zvukových stop…');status.setAttribute('role','status');const plot=el('div');
- const presets=el('div','comparison-controls');for(const percent of [10,50,90]){const button=el('button','secondary',percent+' % filmu');button.onclick=()=>{time.value=String(Math.floor(Number(time.max)*percent/100))};presets.append(button)}
- form.onsubmit=async e=>{e.preventDefault();if(go.disabled)return;go.disabled=true;abPlayer?.stop();plot.replaceChildren();status.textContent=tr('Připravuji zvukové průběhy… Nejvýše dvě minuty.');try{const d=await api(`/api/items/${item.id}/audio-compare`,{snapshot:item.snapshot,seconds:Number(time.value),originalIndex:Number(a.value),reviewIndex:Number(b.value)});if(generation!==audioGeneration)return;
- const canvas=el('canvas');canvas.width=1100;canvas.height=310;canvas.style.width='100%';canvas.setAttribute('role','img');canvas.setAttribute('aria-label',tr('Zvukové průběhy originálu a převodu na společné časové ose'));plot.append(canvas);const ctx=canvas.getContext('2d');ctx.fillStyle='#111827';ctx.fillRect(0,0,1100,310);const max=Math.max(.001,...d.original,...d.review);
- for(const [values,title,color,base] of [[d.original,'Originál','#38bdf8',120],[d.review,'Převod','#fbbf24',250]]){ctx.fillStyle=color;ctx.font='16px sans-serif';ctx.fillText(tr(title),12,base-80);ctx.strokeStyle=color;ctx.beginPath();values.forEach((v,i)=>{const x=85+i/1200*990,y=base-v/max*65;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke()}
- ctx.fillStyle='#d1d5db';ctx.font='13px sans-serif';for(let i=0;i<=12;i+=2){const x=85+i/12*990;ctx.strokeStyle='#374151';ctx.beginPath();ctx.moveTo(x,45);ctx.lineTo(x,260);ctx.stroke();ctx.fillText(tr((d.seconds+i).toFixed(1)+' s'),x-20,285)}
- const captured={snapshot:item.snapshot,seconds:Number(time.value),originalIndex:Number(a.value),reviewIndex:Number(b.value)};
- const listen=el('button','','Přehrát A/B do sluchátek'),stop=el('button','secondary','Zastavit'),repeat=el('button','secondary','Opakovat A/B'),volume=el('input'),listenStatus=el('p','');let prepared=null,listenRun=0;repeat.disabled=true;
- volume.type='range';volume.min='0';volume.max='1';volume.step='.05';volume.value='.5';volume.setAttribute('aria-label',tr('Společná hlasitost obou ukázek'));
- const controls=el('div','comparison-controls'),volumeLabel=el('label','','Společná hlasitost');volumeLabel.append(volume);controls.append(listen,repeat,stop,volumeLabel);plot.append(el('p','','Sluchátka: nejprve originál vlevo, potom stejný úsek převodu vpravo. Obě stopy se převedou na mono 48 kHz. Bez samostatné normalizace hlasitosti a bez automatického posunu; použij odpovídající dialogové stopy.'),controls,listenStatus);
- const play=async()=>{await abPlayer.context.resume();const durations=abPlayer.play(prepared.original,prepared.review,()=>{if(generation===audioGeneration)listenStatus.textContent=tr('A/B dokončeno. Můžeš úsek opakovat.')});listenStatus.textContent=tr(`Originál vlevo (${durations.originalSeconds.toFixed(1)} s), pak převod vpravo (${durations.reviewSeconds.toFixed(1)} s). Úsek od ${prepared.seconds} s. ${audioTrackLabel(prepared.originalTrack.label)} → ${audioTrackLabel(prepared.reviewTrack.label)}.`);};
+ const go=button('Porovnat 12 sekund',()=>prepare('wave')),avButton=button('Porovnat video a zvuk',()=>prepare('av'),'primary'),listen=button('Přehrát A/B do sluchátek',()=>prepare('listen'),'primary'),stop=button('Zastavit',()=>{generation++;abPlayer?.stop();setWorking(false);status.textContent=tr('Poslech zastaven.')}),repeat=button('Opakovat A/B',()=>play().catch(e=>status.textContent=tr(e.message))),volume=el('input');
+ const status=el('p','comparison-status','Načítám seznam zvukových stop…');status.setAttribute('role','status');const plot=el('div'),avHost=el('div','av-host');
+ const audioControls=el('div','comparison-controls'),volumeLabel=el('label','','Společná hlasitost');volume.type='range';volume.min='0';volume.max='1';volume.step='.05';volume.value='.5';volume.setAttribute('aria-label',tr('Společná hlasitost obou ukázek'));volumeLabel.append(volume);audioControls.append(listen,repeat,stop,volumeLabel);
  volume.oninput=()=>{if(abPlayer)abPlayer.gain.gain.value=Number(volume.value)};
- stop.onclick=()=>{listenRun++;abPlayer?.stop();listenStatus.textContent=tr('Poslech zastaven.')};repeat.onclick=()=>play().catch(e=>{listenStatus.textContent=tr(e.message)});
- listen.onclick=async()=>{const attempt=++listenRun;listen.disabled=true;repeat.disabled=true;go.disabled=true;try{const AudioCtor=window.AudioContext||window.webkitAudioContext;if(!AudioCtor)throw Error('Prohlížeč nepodporuje zvukové A/B.');abPlayer?.close();abPlayer=new AudioABPlayer(new AudioCtor());abPlayer.gain.gain.value=Number(volume.value);await abPlayer.context.resume();listenStatus.textContent=tr('Připravuji dvě 12sekundové ukázky; nejvýše dvě minuty.');prepared=await api(`/api/items/${item.id}/audio-compare`,{...captured,mode:'listen'});if(generation!==audioGeneration||attempt!==listenRun)return;repeat.disabled=false;await play();listen.textContent=tr('Znovu připravit a přehrát A/B');}catch(e){if(generation===audioGeneration)listenStatus.textContent=tr(e.message)}finally{if(generation===audioGeneration){listen.disabled=false;go.disabled=false;repeat.disabled=!prepared;}}};
- const r=d.alignment;status.textContent=tr(r.reliable?`Odhad posunu: ${r.offsetMs>0?'+':''}${r.offsetMs} ms (krok 10 ms). Kladný posun = zvuk převodu je později. Shoda obálek: ${(r.correlation*100).toFixed(1)} %. Platí jen pro tento úsek; porovnej také začátek a konec filmu.`:r.reason);
- }catch(e){if(generation===audioGeneration)status.textContent=tr(e.message)}finally{if(generation===audioGeneration)go.disabled=false}};
- audioDialog.append(head,note,form,presets,status,plot);audioDialog.setAttribute('aria-label',tr('Porovnání zvuku · '+item.title));audioDialog.showModal();try{const d=await api(`/api/items/${item.id}/audio-compare`,{snapshot:item.snapshot,mode:'tracks'});if(generation!==audioGeneration)return;for(const [select,tracks] of [[a,d.original],[b,d.review]])for(const track of tracks){const option=el('option','',audioTrackLabel(track.label),true);option.value=String(track.index);select.append(option)}go.disabled=!a.options.length||!b.options.length;status.textContent=tr('Vyber odpovídající stopy a klikni na Porovnat 12 sekund.')}catch(e){if(generation===audioGeneration)status.textContent=tr(e.message)}
+ const selectedScope=()=>({...options.scope,seconds:Number(time.value),originalIndex:a.value===''?null:Number(a.value),reviewIndex:b.value===''?null:Number(b.value)});
+ const canInteract=()=>current()&&(options.canInteract?.()??true),validTime=()=>time.value.trim()!==''&&time.validity.valid&&Number.isFinite(Number(time.value))&&Number(time.value)>=0&&Number(time.value)<=Number(time.max);let lastScope=null;
+ const presets=el('div','comparison-controls');
+ const setWorking=value=>{working=value;form.dataset.previewBusy=String(value);for(const x of [go,avButton,listen,repeat,a,b,time,...presets.querySelectorAll('button')]){x.dataset.previewControl='';x.dataset.previewBusy=String(value);x.dataset.previewInvalid=String([go,avButton,listen].includes(x)?!trackReady||!validTime():x===repeat?!prepared:false);x.disabled=value||!canInteract()||x.dataset.previewInvalid==='true'}};
+ const invalidate=()=>{if(working||!canInteract())return;const valid=validTime();options.onScopeValidityChange?.(valid);const scope=valid?selectedScope():null,key=scope?JSON.stringify(scope):null;if(valid&&key===lastScope)return;lastScope=key;generation++;abPlayer?.stop();prepared=null;avCleanup?.();avCleanup=null;avHost.replaceChildren();plot.replaceChildren();status.textContent=tr('Vyber odpovídající stopy a připrav ukázku.');if(valid)options.onScopeChange?.(scope);setWorking(false)};
+ time.addEventListener('input',invalidate);for(const input of [time,a,b])input.addEventListener('change',invalidate);
+ for(const [name,percent]of [['Začátek filmu',2],['Střed filmu',50],['Konec filmu',95]])presets.append(button(name,()=>{if(working||!canInteract())return;time.value=String(Math.floor(Number(time.max)*percent/100));invalidate()}));
+ const play=async()=>{if(!current()||!prepared||!abPlayer)return;await abPlayer.context.resume();if(!current())return;const durations=abPlayer.play(prepared.original,prepared.review,()=>{if(current())status.textContent=tr('A/B dokončeno. Můžeš úsek opakovat.')});status.textContent=tr(`Originál vlevo (${durations.originalSeconds.toFixed(1)} s), pak převod vpravo (${durations.reviewSeconds.toFixed(1)} s). Úsek od ${prepared.seconds} s. ${audioTrackLabel(prepared.originalTrack.label)} → ${audioTrackLabel(prepared.reviewTrack.label)}.`)};
+ async function prepare(mode){
+  if(working||!trackReady||!canInteract()||!validTime())return;const attempt=++generation;lastScope=JSON.stringify(selectedScope());options.onScopeValidityChange?.(true);options.onScopeChange?.(selectedScope());setWorking(true);abPlayer?.stop();avCleanup?.();avCleanup=null;plot.replaceChildren();avHost.replaceChildren();
+  try{if(mode==='listen'){const AudioCtor=window.AudioContext||window.webkitAudioContext;if(!AudioCtor)throw Error('Prohlížeč nepodporuje zvukové A/B.');abPlayer?.close();abPlayer=new AudioABPlayer(new AudioCtor());abPlayer.gain.gain.value=Number(volume.value);await abPlayer.context.resume()}
+   status.textContent=tr(mode==='av'?'Připravuji dvě videa a zvukové průběhy. Příprava může trvat až čtyři minuty.':mode==='listen'?'Připravuji dvě 12sekundové ukázky; nejvýše dvě minuty.':'Připravuji zvukové průběhy… Nejvýše dvě minuty.');
+   await options.beforePreview?.();if(!current()||attempt!==generation)return;const capture={snapshot:item.snapshot,...selectedScope()};const d=await api(`/api/items/${item.id}/audio-compare`,{...capture,...(mode==='wave'?{}:{mode})});if(!current()||attempt!==generation)return;
+   if(mode==='av'){avHost.append(el('p','',audioTrackLabel(a.selectedOptions[0]?.textContent||'')+' → '+audioTrackLabel(b.selectedOptions[0]?.textContent||''),true));avCleanup=mountAVComparison(avHost,d,{tr});status.textContent=tr('Video i zvuk jsou připravené. Vybrané stopy a čas jsou pevné pro tuto ukázku.')}
+   else if(mode==='listen'){prepared=d;await play()}
+   else{const canvas=el('canvas');canvas.width=1100;canvas.height=310;canvas.style.width='100%';canvas.setAttribute('role','img');canvas.setAttribute('aria-label',tr('Zvukové průběhy originálu a převodu na společné časové ose'));plot.append(canvas);const ctx=canvas.getContext('2d');ctx.fillStyle='#111827';ctx.fillRect(0,0,1100,310);const max=Math.max(.001,...d.original,...d.review);
+    for(const [values,title,color,base]of [[d.original,'Originál','#38bdf8',120],[d.review,'Převod','#fbbf24',250]]){ctx.fillStyle=color;ctx.font='16px sans-serif';ctx.fillText(tr(title),12,base-80);ctx.strokeStyle=color;ctx.beginPath();values.forEach((v,i)=>{const x=85+i/1200*990,y=base-v/max*65;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke()}
+    ctx.fillStyle='#d1d5db';ctx.font='13px sans-serif';for(let i=0;i<=12;i+=2){const x=85+i/12*990;ctx.strokeStyle='#374151';ctx.beginPath();ctx.moveTo(x,45);ctx.lineTo(x,260);ctx.stroke();ctx.fillText((d.seconds+i).toFixed(1)+' s',x-20,285)}
+    const r=d.alignment;status.textContent=tr(r.reliable?`Odhad posunu: ${r.offsetMs>0?'+':''}${r.offsetMs} ms (krok 10 ms). Kladný posun = zvuk převodu je později. Shoda obálek: ${(r.correlation*100).toFixed(1)} %. Platí jen pro tento úsek; porovnej také začátek a konec filmu.`:r.reason);
+   }
+  }catch(e){if(current()&&attempt===generation)status.textContent=tr(e.message)}finally{if(current()&&attempt===generation)setWorking(false)}
+ }
+ form.onsubmit=e=>{e.preventDefault();prepare(options.mode==='av'?'av':'wave')};
+ const showAV=options.mode!=='audio',showAudio=options.mode!=='av';if(showAV)form.append(avButton);if(showAudio)form.append(go);
+ host.append(...(options.host?[]:[head]),note,form,presets,status);if(showAudio)host.append(el('p','details','Sluchátka: nejprve originál vlevo, potom stejný úsek převodu vpravo. Obě stopy se převedou na mono 48 kHz. Bez samostatné normalizace hlasitosti a bez automatického posunu; použij odpovídající dialogové stopy.'),audioControls);host.append(avHost,plot);
+ if(!options.host){audioDialog.setAttribute('aria-label',tr('Porovnání zvuku · '+item.title));audioDialog.showModal()}
+ setWorking(false);
+ (async()=>{try{await Promise.resolve();const data=options.tracks||await api(`/api/items/${item.id}/audio-compare`,{snapshot:item.snapshot,mode:'tracks'});if(!current())return;for(const [select,tracks,key]of [[a,data.original,'originalIndex'],[b,data.review,'reviewIndex']]){select.append(new Option(tr('Vyber zvukovou stopu'),''));for(const track of tracks){const option=el('option','',audioTrackLabel(track.label),true);option.value=String(track.index);select.append(option)}select.value=options.scope?.[key]===null||options.scope?.[key]===undefined?'':String(options.scope[key])}trackReady=!!a.options.length&&!!b.options.length&&a.value!==''&&b.value!=='';lastScope=JSON.stringify(selectedScope());const ready=()=>{trackReady=a.value!==''&&b.value!=='';setWorking(false)};a.addEventListener('change',ready);b.addEventListener('change',ready);setWorking(false);status.textContent=tr('Vyber odpovídající stopy a připrav ukázku.')}catch(e){if(current())status.textContent=tr(e.message)}})();
+ return cleanup;
 }
 
 const radarrDialog=el('dialog','settings-dialog');document.body.append(radarrDialog);

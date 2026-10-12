@@ -1,3 +1,4 @@
+import {extractPreview} from './av-preview.mjs';
 import {publishApproval} from './quarantine-retention.mjs';
 import {extractListeningAudio} from './audio-listen.mjs';
 import {assessment} from './assessment.mjs';
@@ -19,6 +20,7 @@ import {captureReceipt,cleanupReviewed} from './cleanup.mjs';
 import {resolveReviewSource} from './source-mapping.mjs';
 import {matchReviewJob} from './job-matching.mjs';
 import {createArtwork,requestArtworkIdentity} from './artwork.mjs';
+import {createReviewSessionStore,ReviewSessionError,reviewRequirements} from './review-session.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 const DATA=process.env.DATA_ROOT||'/data',PORT=Number(process.env.PORT||8270);
@@ -38,11 +40,31 @@ const statefile=path.join(DATA,'state.json');
 import { rejectionReason, recordRejection } from './rejection-audit.mjs';
 import {createReplacement} from './radarr-replacement.mjs';
 let state=JSON.parse(await fs.readFile(statefile,'utf8').catch(()=>'{"items":{},"history":[],"sessions":{},"pauses":[]}'));
+if(!state.reviewSessions||typeof state.reviewSessions!=='object'||Array.isArray(state.reviewSessions))state.reviewSessions={};
 for(const h of state.history||[])if(h.status==='error'&&h.message?.includes('Unexpected token')&&h.message.includes('OK'))h.fixedIn='1.1.0';
 let previewBusy=false;
 let active=null,scanPromise=null,cache=null,cacheAt=0,batchRunning=false;
 let saveChain=Promise.resolve();
 const save=()=>{const snapshot=structuredClone(state);saveChain=saveChain.catch(()=>{}).then(()=>atomicJSON(statefile,snapshot));return saveChain};
+const reviewSessions=createReviewSessionStore({getState:()=>state,save,verify:verifyReviewItem});
+function reviewMutationBlocked(){return active||batchRunning||resumeTask||previewBusy||settingsBusy||scanPromise||recovery.length||state.pauses.length}
+async function verifyReviewItem(item,{id,snapshot},guard=true){
+ if(guard&&reviewMutationBlocked())throw new ReviewSessionError('Nejprve dokonči probíhající akci nebo obnovu.',409);
+ if(typeof item.reviewRelative!=='string'||hash(item.reviewRelative).slice(0,24)!==id||state.items[id]!==item||item.snapshot!==snapshot)throw new ReviewSessionError('Položku nelze bezpečně přiřadit k revizi. Obnov přehled.',409);
+ let a,b;
+ try{a=await safeFile(MEDIA,item.relative);b=await safeFile(REVIEW,item.reviewRelative)}catch{throw new ReviewSessionError('Soubory nejsou dostupné nebo se změnily. Obnov přehled.',409)}
+ if(hash(a.fp+'|'+b.fp)!==snapshot)throw new ReviewSessionError('Soubory se změnily. Obnov přehled.',409);
+ const read=async file=>JSON.parse(await command(FFPROBE,['-v','error','-show_streams','-show_format','-of','json',file],{timeout:30000}));
+ const [original,review]=await Promise.all([read(a.path),read(b.path)]);
+ let unchanged=false;try{unchanged=(await safeFile(MEDIA,item.relative)).fp===a.fp&&(await safeFile(REVIEW,item.reviewRelative)).fp===b.fp}catch{}
+ if(!unchanged)throw new ReviewSessionError('Soubory se během kontroly změnily. Obnov přehled.',409);
+ if(guard&&reviewMutationBlocked())throw new ReviewSessionError('Během ukládání začala jiná akce. Zkus revizi znovu.',409);
+ if(state.items[id]!==item||item.snapshot!==snapshot)throw new ReviewSessionError('Položka se během kontroly změnila. Obnov přehled.',409);
+ const duration=Math.min(Number(original.format?.duration),Number(review.format?.duration));
+ if(!Number.isFinite(duration)||duration<=0)throw new ReviewSessionError('Nelze ověřit délku kontrolovaných souborů.',409);
+ const indexes=probe=>(probe.streams||[]).filter(stream=>stream.codec_type==='audio').map(stream=>stream.index);
+ return {duration,originalIndexes:indexes(original),reviewIndexes:indexes(review),requirements:reviewRequirements(original,review)};
+}
 const sessions=new Map(Object.entries(state.sessions||{}));
 async function readRows(table,cfg=config){
  const collections={jobsjsondb:'JobsJSONDB',librarysettingsjsondb:'LibrarySettingsJSONDB',statisticsjsondb:'StatisticsJSONDB'};
@@ -94,11 +116,11 @@ await replacements.recover();
 async function replacementAction(item,reason){
  active={id:item.id,title:item.title,action:'replace',stage:'Připravuji žádost Radarru',started:Date.now()};
  let outcome;
- try{const request=await replacements.run(item,reason);outcome={id:item.id,title:item.title,action:'replace',status:'success',requestId:request.id,rejectionReason:reason,time:new Date().toISOString(),savedBytes:0};delete state.items[item.id];}
+ try{const request=await replacements.run(item,reason);outcome={id:item.id,title:item.title,action:'replace',status:'success',requestId:request.id,rejectionReason:reason,time:new Date().toISOString(),savedBytes:0};delete state.items[item.id];delete state.reviewSessions[item.id];}
  catch(e){outcome={id:item.id,title:item.title,action:'replace',status:'error',message:e.message,rejectionReason:reason,time:new Date().toISOString()};}
  finally{state.history.unshift(outcome);state.history=state.history.slice(0,150);await save();active=null;cache=null;}
 }
-const replacementTimer=setInterval(()=>{if(!active&&!batchRunning&&!previewBusy&&!settingsBusy&&!scanPromise&&!recovery.length&&!state.pauses.length)void replacements.observe().then(()=>replacements.cleanup()).catch(e=>console.error('Radarr status: '+e.message));},60000);replacementTimer.unref();
+const replacementTimer=setInterval(()=>{if(!active&&!batchRunning&&!previewBusy&&!settingsBusy&&!scanPromise&&!reviewSessions.busy&&!recovery.length&&!state.pauses.length)void replacements.observe().then(()=>replacements.cleanup()).catch(e=>console.error('Radarr status: '+e.message));},60000);replacementTimer.unref();
 
 // Recover/inspect transactions before restarting dispatch; never replay approvals after restart.
 const recovery=await recoverTransactions(path.join(DATA,'transactions'));
@@ -130,6 +152,7 @@ async function jobHealth(job){
  }catch{return 'unknown'}
 }
 async function scan(force=false,recheckId=null){
+  if(reviewSessions.busy){if(cache)return cache;await reviewSessions.idle()}
   if(settingsBusy)return cache||[];
   if((active||previewBusy)&&cache)return cache;
   if(scanPromise)return scanPromise;
@@ -159,8 +182,8 @@ async function scan(force=false,recheckId=null){
         const rechecked=remounted&&recheckId===id;
         if(changed&&!refreshed&&!rechecked)throw new Error('Soubory se od zařazení do review změnily. Vyžadují kontrolu.');
         let info=(refreshed||rechecked)?null:prior?.info;
-        if(info?.evidenceVersion!==1)info=null;
-        if(!info)info=inspect(await probe(FFPROBE,a.path),await probe(FFPROBE,b.path));
+        if(info?.evidenceVersion!==1||typeof info.reviewRequirements?.hdr!=='boolean')info=null;
+        if(!info){const pa=await probe(FFPROBE,a.path),pb=await probe(FFPROBE,b.path);info={...inspect(pa,pb),reviewRequirements:reviewRequirements(pa,pb)}}
         Object.assign(item,info);
         item.canApproveDuration=durationException(info)&&b.stat.size<a.stat.size;
         if(info.durationMismatch){item.status='blocked';item.reason='Rozdílná délka — vyžaduje zvláštní kontrolu, automatické schválení je zablokované.'}
@@ -189,8 +212,9 @@ async function perform(action,item,acceptDuration=false,reason){
   const previous=state.items[item.id];
   active={id:item.id,title:item.title,action,stage:'Ověřuji soubory',started:Date.now()};
   progress('Ověřuji soubory, délku a zachované stopy');
-  let journal,warning,outcome;
+  let journal,warning,outcome,reviewEvidence;
   try {
+    if(action==='approve')reviewEvidence=reviewSessions.approval(item.id,item.snapshot,item.reviewRevision);
     if(recovery.length)throw new Error('Je nutné dokončit obnovu předchozí výměny.');
     const a=await safeFile(MEDIA,item.relative),b=await safeFile(REVIEW,item.reviewRelative);
     if(hash(a.fp+'|'+b.fp)!==item.snapshot)throw new Error('Soubory se změnily. Obnov přehled.');
@@ -219,10 +243,10 @@ async function perform(action,item,acceptDuration=false,reason){
     }
     progress('Uklízím prázdné složky review',6,'cleanup');
     try{await cleanupReviewed(REVIEW,item.reviewRelative,receipt,config.reviewPrefixes)}catch(e){warning=[warning,'Film je vyřízený, ale úklid review selhal: '+e.message].filter(Boolean).join(' ')}
-    outcome={id:item.id,title:item.title,action,rejectionReason:action==='reject'?reason:undefined,jobId:item.jobId||previous?.jobId,acceptedDurationDifference:acceptDuration?item.durationA-item.durationB:undefined,status:'success',warning,time:new Date().toISOString(),elapsedSeconds:Math.round((Date.now()-active.started)/1000),savedBytes:action==='approve'?item.originalBytes-item.reviewBytes:0};state.history.unshift(outcome);
-    delete state.items[item.id];statsCache=null;
+    outcome={id:item.id,title:item.title,action,rejectionReason:action==='reject'?reason:undefined,jobId:item.jobId||previous?.jobId,reviewSession:reviewEvidence,acceptedDurationDifference:acceptDuration?item.durationA-item.durationB:undefined,status:'success',warning,time:new Date().toISOString(),elapsedSeconds:Math.round((Date.now()-active.started)/1000),savedBytes:action==='approve'?item.originalBytes-item.reviewBytes:0};state.history.unshift(outcome);
+    delete state.items[item.id];delete state.reviewSessions[item.id];statsCache=null;
   }catch(e){
-    outcome={id:item.id,title:item.title,action,rejectionReason:action==='reject'?reason:undefined,jobId:item.jobId||previous?.jobId,status:'error',message:e.message,time:new Date().toISOString()};state.history.unshift(outcome);
+    outcome={id:item.id,title:item.title,action,rejectionReason:action==='reject'?reason:undefined,jobId:item.jobId||previous?.jobId,reviewSession:reviewEvidence,status:'error',message:e.message,time:new Date().toISOString()};state.history.unshift(outcome);
     if(journal){const t=JSON.parse(await fs.readFile(journal,'utf8').catch(()=>'{"phase":"unknown"}'));if(!['aborted','complete'].includes(t.phase))recovery.push(t.id||'unknown');}
   }finally{if(action==='reject'){try{await recordRejection(DATA,{event:'completed',...outcome})}catch(e){outcome.warning=[outcome.warning,'Uložení výsledku do archivu zamítnutí selhalo: '+e.message].filter(Boolean).join(' ');}}if(!recovery.length){progress('Obnovuji původní stav nodů',6,'resume');await resume()}state.history=state.history.slice(0,150);await save();active=null;cache=null;}
   return outcome;
@@ -306,30 +330,30 @@ const server=http.createServer(async(req,res)=>{
     }
     if(url.pathname==='/api/radarr/settings'&&req.method==='GET')return respond(res,200,await replacements.publicSettings());
     if(['/api/radarr/settings','/api/radarr/settings/test'].includes(url.pathname)&&req.method==='POST'){
-      if(active||batchRunning||previewBusy||settingsBusy||scanPromise)return respond(res,409,{error:'Právě probíhá jiná akce.'});
-      const b=await body(req);settingsBusy=true;try{return respond(res,200,await replacements.settings(b,url.pathname.endsWith('/test')))}finally{settingsBusy=false}
+      if(active||batchRunning||previewBusy||settingsBusy||reviewSessions.busy||scanPromise)return respond(res,409,{error:'Právě probíhá jiná akce.'});
+      const b=await body(req);if(active||batchRunning||previewBusy||settingsBusy||reviewSessions.busy||scanPromise)return respond(res,409,{error:'Právě probíhá jiná akce.'});settingsBusy=true;try{return respond(res,200,await replacements.settings(b,url.pathname.endsWith('/test')))}finally{settingsBusy=false}
     }
     if(url.pathname==='/api/radarr/requests'&&req.method==='GET')return respond(res,200,{requests:await replacements.list()});
     const replaceRequest=/^\/api\/items\/([a-f0-9]{24})\/replace$/.exec(url.pathname);
     if(replaceRequest&&req.method==='POST'){
-      if(active||batchRunning||resumeTask||previewBusy||settingsBusy||recovery.length||state.pauses.length)return respond(res,409,{error:'Nejprve dokonči probíhající akci nebo obnovu.'});
+      if(active||batchRunning||resumeTask||previewBusy||settingsBusy||reviewSessions.busy||recovery.length||state.pauses.length)return respond(res,409,{error:'Nejprve dokonči probíhající akci nebo obnovu.'});
       const b=await body(req);let reason;try{reason=rejectionReason(b.reason)}catch(e){return respond(res,400,{error:e.message})}
       const item=(await scan(true)).find(v=>v.id===replaceRequest[1]);
       if(!item?.snapshot||item.snapshot!==b.snapshot)return respond(res,409,{error:'Položka se změnila. Obnov přehled.'});
-      if(active||batchRunning||resumeTask||previewBusy||settingsBusy)return respond(res,409,{error:'Právě probíhá jiná akce.'});
+      if(active||batchRunning||resumeTask||previewBusy||settingsBusy||reviewSessions.busy)return respond(res,409,{error:'Právě probíhá jiná akce.'});
       void replacementAction(item,reason);return respond(res,202,{ok:true});
     }
     const restoreRequest=/^\/api\/radarr\/requests\/([a-f0-9]{24})\/restore$/.exec(url.pathname);
     if(restoreRequest&&req.method==='POST'){
       const b=await body(req);if(b.confirm!==true)return respond(res,400,{error:'Potvrď obnovení zachovaných kopií.'});
-      if(active||batchRunning||resumeTask||previewBusy||settingsBusy||recovery.length||state.pauses.length)return respond(res,409,{error:'Právě probíhá jiná akce.'});
+      if(active||batchRunning||resumeTask||previewBusy||settingsBusy||reviewSessions.busy||recovery.length||state.pauses.length)return respond(res,409,{error:'Právě probíhá jiná akce.'});
       active={title:'Obnovení karantény',stage:'Ověřuji soubory',started:Date.now()};
-      try{const result=await replacements.restore(restoreRequest[1]);delete state.items[result.itemId];await save();return respond(res,200,result)}finally{active=null;cache=null}
+      try{const result=await replacements.restore(restoreRequest[1]);delete state.items[result.itemId];delete state.reviewSessions[result.itemId];await save();return respond(res,200,result)}finally{active=null;cache=null}
     }
     if(url.pathname==='/api/settings'&&req.method==='GET')return respond(res,200,{config,revision:hash(JSON.stringify(config))});
     if(['/api/settings/test','/api/settings'].includes(url.pathname)&&req.method==='POST'){
       const b=await body(req);
-      if(statsTask||settingsBusy||active||batchRunning||previewBusy||resumeTask||scanPromise||recovery.length||state.pauses.length)return respond(res,409,{error:'Nejprve dokonči probíhající akce, náhled nebo obnovu.'});
+      if(statsTask||settingsBusy||active||batchRunning||previewBusy||reviewSessions.busy||resumeTask||scanPromise||recovery.length||state.pauses.length)return respond(res,409,{error:'Nejprve dokonči probíhající akce, náhled nebo obnovu.'});
       if(b.revision!==hash(JSON.stringify(config)))return respond(res,409,{error:'Nastavení se mezitím změnilo. Otevři ho znovu.'});
       settingsBusy=true;
       try{
@@ -341,39 +365,53 @@ const server=http.createServer(async(req,res)=>{
         const matches=libraries.filter(l=>candidate.libraryId?l._id===candidate.libraryId:candidate.sourceRoots.includes(String(l.folder).replace(/\/$/,'')));
         if(matches.length!==1||!candidate.sourceRoots.includes(String(matches[0].folder).replace(/\/$/,'')))throw Error('Vyber jednoznačnou knihovnu a její zdrojovou cestu v Tdarru.');
         if(url.pathname==='/api/settings'){
-          await atomicJSON(configfile,candidate);config=candidate;applyConfig();statsCache=null;state.items={};cache=null;cacheAt=0;await save();
+          await atomicJSON(configfile,candidate);config=candidate;applyConfig();statsCache=null;state.items={};state.reviewSessions={};cache=null;cacheAt=0;await save();
         }
         return respond(res,200,{ok:true,message:'Připojení, databáze a cesty jsou dostupné.',publicOrigin:candidate.publicOrigin,revision:hash(JSON.stringify(config))});
       }finally{settingsBusy=false}
     }
     if(url.pathname==='/api/items'&&req.method==='GET'){
-      if(state.pauses.length&&!recovery.length&&!active&&!batchRunning)await resume();
-      return respond(res,200,{version:'1.10.2',label:config.label,serverTime:Date.now(),items:await scan(),active,batch:state.batch||null,batchRunning,history:state.history,recovery,restorePending:state.pauses.length});
+      if(state.pauses.length&&!recovery.length&&!active&&!batchRunning&&!reviewSessions.busy)await resume();
+      const items=await scan();
+      return respond(res,200,{version:'1.10.2',label:config.label,serverTime:Date.now(),items,reviewSessions:reviewSessions.list(items),active,batch:state.batch||null,batchRunning,history:state.history,recovery,restorePending:state.pauses.length});
+    }
+    const reviewSession=/^\/api\/items\/([a-f0-9]{24})\/review-session$/.exec(url.pathname);
+    if(reviewSession&&req.method==='GET'){
+      const id=reviewSession[1],snapshot=url.searchParams.get('snapshot'),item=state.items[id];
+      if(!item||item.snapshot!==snapshot)return respond(res,409,{error:'Položka se změnila. Obnov přehled.'});
+      const verified=await verifyReviewItem(item,{id,snapshot},false);
+      return respond(res,200,reviewSessions.get(id,snapshot,verified.requirements));
+    }
+    if(reviewSession&&req.method==='POST'){
+      if(reviewMutationBlocked())return respond(res,409,{error:'Nejprve dokonči probíhající akci nebo obnovu.'});
+      const request=await body(req);
+      if(reviewMutationBlocked())return respond(res,409,{error:'Nejprve dokonči probíhající akci nebo obnovu.'});
+      return respond(res,200,await reviewSessions.write(reviewSession[1],request));
     }
     if(url.pathname==='/api/approve-batch'&&req.method==='POST'){
-      if(active||batchRunning||resumeTask||previewBusy||settingsBusy)return respond(res,409,{error:'Jiná akce nebo dávka právě probíhá.'});
+      if(active||batchRunning||resumeTask||previewBusy||settingsBusy||reviewSessions.busy)return respond(res,409,{error:'Jiná akce nebo dávka právě probíhá.'});
       if(recovery.length||state.pauses.length)return respond(res,409,{error:'Nejprve je nutné dokončit obnovu výměny nebo nodů.'});
       const b=await body(req);
       if(!Array.isArray(b.items)||!b.items.length||b.items.length>100)return respond(res,400,{error:'Vyber 1 až 100 filmů.'});
       if(new Set(b.items.map(x=>x.id)).size!==b.items.length)return respond(res,400,{error:'Stejný film je v dávce vícekrát.'});
       const list=await scan(true),items=[];
-      for(const chosen of b.items){const item=list.find(x=>x.id===chosen.id);if(!item||item.status!=='ready'||item.snapshot!==chosen.snapshot)return respond(res,409,{error:'Některý vybraný film se změnil nebo ho nelze schválit. Obnov přehled.'});items.push(item)}
-      if(active||batchRunning||resumeTask||previewBusy||settingsBusy)return respond(res,409,{error:'Jiná akce nebo dávka právě probíhá.'});
+      for(const chosen of b.items){const item=list.find(x=>x.id===chosen.id);if(!item||item.status!=='ready'||item.snapshot!==chosen.snapshot)return respond(res,409,{error:'Některý vybraný film se změnil nebo ho nelze schválit. Obnov přehled.'});reviewSessions.approval(item.id,item.snapshot,chosen.reviewRevision);items.push({...item,reviewRevision:chosen.reviewRevision})}
+      if(active||batchRunning||resumeTask||previewBusy||settingsBusy||reviewSessions.busy)return respond(res,409,{error:'Jiná akce nebo dávka právě probíhá.'});
       void performBatch(items);
       return respond(res,202,{ok:true,count:items.length});
     }
     const recheck=/^\/api\/items\/([a-f0-9]{24})\/recheck$/.exec(url.pathname);
     if(recheck&&req.method==='POST'){
-      if(active||batchRunning||resumeTask||previewBusy||settingsBusy||scanPromise||recovery.length||state.pauses.length)return respond(res,409,{error:'Nejprve dokonči probíhající akci.'});
+      if(active||batchRunning||resumeTask||previewBusy||settingsBusy||reviewSessions.busy||scanPromise||recovery.length||state.pauses.length)return respond(res,409,{error:'Nejprve dokonči probíhající akci.'});
       const b=await body(req),list=await scan(true),item=list.find(x=>x.id===recheck[1]);
       if(!item?.canRecheck||item.snapshot!==b.snapshot)return respond(res,409,{error:'Tuto změnu nelze bezpečně znovu ověřit. Obnov přehled.'});
-      if(active||batchRunning||resumeTask||previewBusy||settingsBusy||scanPromise)return respond(res,409,{error:'Jiná akce právě probíhá.'});
+      if(active||batchRunning||resumeTask||previewBusy||settingsBusy||reviewSessions.busy||scanPromise)return respond(res,409,{error:'Jiná akce právě probíhá.'});
       const refreshed=(await scan(true,item.id)).find(x=>x.id===item.id);
       return respond(res,200,{ok:true,item:refreshed});
     }
     const action=/^\/api\/items\/([a-f0-9]{24})\/(approve|reject)$/.exec(url.pathname);
     if(action&&req.method==='POST'){
-      if(active||batchRunning||resumeTask||previewBusy||settingsBusy)return respond(res,409,{error:'Jiná akce nebo dávka právě probíhá. Počkej na dokončení.'});
+      if(active||batchRunning||resumeTask||previewBusy||settingsBusy||reviewSessions.busy)return respond(res,409,{error:'Jiná akce nebo dávka právě probíhá. Počkej na dokončení.'});
       if(recovery.length||state.pauses.length)return respond(res,409,{error:'Před další akcí je nutné dokončit obnovu výměny nebo nodů.'});
       const b=await body(req);
       let reason;if(action[2]==='reject'){try{reason=rejectionReason(b.reason)}catch(e){return respond(res,400,{error:e.message})}}
@@ -382,16 +420,17 @@ const server=http.createServer(async(req,res)=>{
       const acceptDuration=action[2]==='approve'&&b.acceptDuration===true&&item.canApproveDuration===true;
       if(action[2]==='approve'&&item.status!=='ready'&&!acceptDuration)return respond(res,409,{error:item.reason});
       if(!state.items[item.id])return respond(res,409,{error:'Soubor nelze bezpečně přiřadit k originálu.'});
+      if(action[2]==='approve')reviewSessions.approval(item.id,item.snapshot,b.reviewRevision);
       // Claim before yielding so two simultaneous clicks cannot start two transactions.
-      if(active||batchRunning||resumeTask||previewBusy||settingsBusy)return respond(res,409,{error:'Jiná akce nebo dávka právě probíhá.'});
-      void perform(action[2],item,acceptDuration,reason);
+      if(active||batchRunning||resumeTask||previewBusy||settingsBusy||reviewSessions.busy)return respond(res,409,{error:'Jiná akce nebo dávka právě probíhá.'});
+      void perform(action[2],{...item,reviewRevision:b.reviewRevision},acceptDuration,reason);
       return respond(res,202,{ok:true});
     }
     const audio=/^\/api\/items\/([a-f0-9]{24})\/audio-compare$/.exec(url.pathname);
     if(audio&&req.method==='POST'){
       const request=await body(req),item=state.items[audio[1]];
       if(!item||item.snapshot!==request.snapshot)return respond(res,409,{error:'Obnov přehled, soubory se změnily.'});
-      if(active||batchRunning||previewBusy||settingsBusy||scanPromise)return respond(res,409,{error:'Právě probíhá jiná akce. Zkus to za chvíli.'});
+      if(active||batchRunning||previewBusy||settingsBusy||reviewSessions.busy||scanPromise)return respond(res,409,{error:'Právě probíhá jiná akce. Zkus to za chvíli.'});
       previewBusy=true;
       try{
         const a=await safeFile(MEDIA,item.relative),b=await safeFile(REVIEW,item.reviewRelative);
@@ -403,6 +442,17 @@ const server=http.createServer(async(req,res)=>{
         const seconds=Number(request.seconds),duration=Math.min(Number(pa.format.duration),Number(pb.format.duration));
         if(!Number.isFinite(seconds)||seconds<0||seconds+12>duration)return respond(res,400,{error:'Vyber úsek alespoň 12 sekund před koncem filmu.'});
         if(!tracks(pa).some(s=>s.index===request.originalIndex)||!tracks(pb).some(s=>s.index===request.reviewIndex))return respond(res,400,{error:'Vyber platné zvukové stopy.'});
+        if(request.mode==='av'){
+          const va=pa.streams.find(s=>s.codec_type==='video'&&!s.disposition?.attached_pic),vb=pb.streams.find(s=>s.codec_type==='video'&&!s.disposition?.attached_pic);
+          if(!va||!vb||va.color_transfer!==vb.color_transfer)throw Error('Obrazové profily náhledu se neshodují.');
+          const original=await extractPreview(config.ffmpeg,a.path,request.originalIndex,seconds,Number(pa.format.start_time||0),va);
+          const review=await extractPreview(config.ffmpeg,b.path,request.reviewIndex,seconds,Number(pb.format.start_time||0),vb);
+          const originalWave=await extractAudio(config.ffmpeg,a.path,request.originalIndex,seconds,Number(pa.format.start_time||0));
+          const reviewWave=await extractAudio(config.ffmpeg,b.path,request.reviewIndex,seconds,Number(pb.format.start_time||0));
+          if((await safeFile(MEDIA,item.relative)).fp!==a.fp||(await safeFile(REVIEW,item.reviewRelative)).fp!==b.fp)throw Error('Soubory se během přípravy změnily.');
+          const rates=[va,vb].map(v=>{const [n,d]=String(v.avg_frame_rate||'0/1').split('/').map(Number);return n/d});
+          return respond(res,200,{seconds,duration:12,original,review,originalWave,reviewWave,alignment:alignment(originalWave,reviewWave),frameRates:rates.map(x=>Number.isFinite(x)&&x>0?x:null),hdr:va.color_transfer==='smpte2084'});
+        }
         if(request.mode==='listen'){
           const original=await extractListeningAudio(config.ffmpeg,a.path,request.originalIndex,seconds,Number(pa.format.start_time||0));
           const review=await extractListeningAudio(config.ffmpeg,b.path,request.reviewIndex,seconds,Number(pb.format.start_time||0));
@@ -425,7 +475,7 @@ const server=http.createServer(async(req,res)=>{
       const seconds=Number(request.seconds);
       if(!item||item.snapshot!==request.snapshot)return respond(res,409,{error:'Obnov přehled, soubory se změnily.'});
       if(!Number.isFinite(seconds)||seconds<0||seconds>=Math.min(item.info.durationA,item.info.durationB))return respond(res,400,{error:'Čas je mimo délku filmu.'});
-      if(active||batchRunning||previewBusy||settingsBusy)return respond(res,409,{error:'Právě probíhá jiná akce nebo příprava snímků. Zkus to za chvíli.'});
+      if(active||batchRunning||previewBusy||settingsBusy||reviewSessions.busy)return respond(res,409,{error:'Právě probíhá jiná akce nebo příprava snímků. Zkus to za chvíli.'});
       previewBusy=true;
       try{
         const a=await safeFile(MEDIA,item.relative),b=await safeFile(REVIEW,item.reviewRelative);
@@ -448,11 +498,11 @@ const server=http.createServer(async(req,res)=>{
       res.writeHead(200,{'content-type':'video/x-matroska','content-length':f.stat.size,'content-disposition':"attachment; filename*=UTF-8''"+encodeURIComponent(path.basename(f.path)),'cache-control':'no-store','x-content-type-options':'nosniff'});
       const stream=createReadStream(f.path);res.on('close',()=>stream.destroy());stream.on('error',()=>res.destroy());stream.pipe(res);return;
     }
-    const assets={'/':['index.html','text/html; charset=utf-8'],'/app.js':['app.js','text/javascript; charset=utf-8'],'/review-model.js':['review-model.js','text/javascript; charset=utf-8'],'/i18n.js':['i18n.js','text/javascript; charset=utf-8'],'/messages.en.js':['messages.en.js','text/javascript; charset=utf-8'],'/style.css':['style.css','text/css; charset=utf-8'],'/favicon.svg':['favicon.svg','image/svg+xml']};
+    const assets={'/review-workflow.js':['review-workflow.js','text/javascript; charset=utf-8'],'/av-player.js':['av-player.js','text/javascript; charset=utf-8'],'/':['index.html','text/html; charset=utf-8'],'/app.js':['app.js','text/javascript; charset=utf-8'],'/review-model.js':['review-model.js','text/javascript; charset=utf-8'],'/i18n.js':['i18n.js','text/javascript; charset=utf-8'],'/messages.en.js':['messages.en.js','text/javascript; charset=utf-8'],'/style.css':['style.css','text/css; charset=utf-8'],'/favicon.svg':['favicon.svg','image/svg+xml']};
     if(req.method==='GET'&&assets[url.pathname]){
-      const [file,mime]=assets[url.pathname];res.writeHead(200,{'content-type':mime,'cache-control':'no-store','x-content-type-options':'nosniff','content-security-policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",'referrer-policy':'no-referrer'});res.end(await fs.readFile(path.join(ROOT,'public',file)));return;
+      const [file,mime]=assets[url.pathname];res.writeHead(200,{'content-type':mime,'cache-control':'no-store','x-content-type-options':'nosniff','content-security-policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",'referrer-policy':'no-referrer'});res.end(await fs.readFile(path.join(ROOT,'public',file)));return;
     }
     respond(res,404,{error:'Nenalezeno.'});
-  }catch(e){console.error(e.message);if(!res.headersSent)respond(res,500,{error:e.message});else res.destroy()}
+  }catch(e){console.error(e.message);if(!res.headersSent)respond(res,e instanceof ReviewSessionError?e.status:500,{error:e.message});else res.destroy()}
 });
 server.listen(PORT,'0.0.0.0',()=>console.log('Tdarr Review listening on '+PORT));
