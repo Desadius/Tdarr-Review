@@ -10,7 +10,14 @@ Browser checks exercised embedded video playback, shared tracks, distinct saved 
 
 The candidate was installed on the existing Linux amd64 deployment and reported healthy. Its environment, mounts, user and resource restrictions matched the previous deployment. Temporary generated-media test containers and stopped rollback containers from this change were removed; private backups and prior images were retained. No production film was approved or replaced as a test. This is not a fresh Unraid installation test or proof that every playback device supports the previews.
 
-Publication and anonymous registry verification are separate final checks; see the release workflow for the selected source revision and results.
+The [manual publication workflow](https://github.com/Desadius/Tdarr-Review/actions/runs/38257884442) completed successfully for source `544f928f24b1e70c9cdf90450e064d6b82a84558`. It rebuilt and tested both exact images, including the AV fixtures, before publication. Anonymous manifest/config checks confirmed Linux amd64, version `1.10.2`, that source revision, and identical `1.10.2`, `latest` and `sha-<revision>` manifests for each app:
+
+| Image | Published manifest digest |
+| --- | --- |
+| `ghcr.io/desadius/tdarr-review:1.10.2` | `sha256:6db437173b22f34820705c2d565429c1e6660aaa4667d7827e6ffaf398540f43` |
+| `ghcr.io/desadius/tdarr-recovery:1.10.2` | `sha256:723b4a92b78526596d8ce42d01fecd5010a0151894fac3c928165ee1a799bff0` |
+
+The existing Review installation was then switched from the temporary local image to the published `1.10.2` image. Health, served modules, environment, mounts, user and resource restrictions were verified; Recovery was not restarted. The Community Apps validator confirms the repository is already enabled and needs no new submission. A later documentation-only commit may update this publication record without changing the tagged image source.
 
 ## 1.10.1 — verification before publication
 

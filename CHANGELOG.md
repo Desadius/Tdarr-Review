@@ -4,7 +4,7 @@ This records the implemented application features. Versions before 1.10.0 were d
 
 ## 1.10.2 — 2026-10-12
 
-Release prepared and tested; source publication, registry image publication and installation are separate operations.
+Published as [v1.10.2](https://github.com/Desadius/Tdarr-Review/releases/tag/v1.10.2), with tested public `1.10.2` and `latest` images. Source publication, registry image publication and installation are separate operations.
 
 - Add a five-step review workspace with manual confirmations beside the picture, audio and AV tools; preview playback never completes a check.
 - Save review progress and deferral on the server. Record the selected track pair and server-timed observations for picture, audio and separate start/middle/end synchronisation checks.

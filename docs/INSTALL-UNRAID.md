@@ -1,6 +1,6 @@
 # Install on Unraid
 
-This guide describes **1.10.2**, prepared and tested from source. The target Linux amd64 image is `ghcr.io/desadius/tdarr-review:1.10.2`; use it after registry publication, or build this source locally. A Community Applications template is supplied in [`templates/tdarr-review.xml`](../templates/tdarr-review.xml). Registry availability and catalog visibility are separate; see [publication status](COMMUNITY-APPS.md). Cloning this repository does not update an existing container.
+This guide describes **1.10.2**, published and anonymously pullable as the Linux amd64 image `ghcr.io/desadius/tdarr-review:1.10.2`. You can also build the source locally. The [Community Applications entry](https://ca.unraid.net/apps/tdarr-review-1qs5sdc0gn7hmk) uses the supplied [`templates/tdarr-review.xml`](../templates/tdarr-review.xml) with `latest`. Registry availability and catalog visibility are separate; see [publication status](COMMUNITY-APPS.md). Cloning this repository does not update an existing container.
 
 ## Updating to 1.10.2
 
