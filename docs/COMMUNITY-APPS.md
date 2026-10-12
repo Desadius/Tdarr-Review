@@ -1,6 +1,6 @@
 # Community Applications packaging
 
-**Submitted and auto-approved on 11 October 2026 as Desadius' Repository.** The portal states that the Docker app will appear after the next Community Applications build publishes. Approval does not mean the current catalog build already contains it.
+**Submitted and auto-approved on 11 October 2026 as Desadius' Repository.** The [tdarr-review catalog entry](https://ca.unraid.net/apps/tdarr-review-1qs5sdc0gn7hmk) was visible on 12 October 2026. Catalog description refreshes and Docker image publication are separate operations.
 
 Both Docker images were built, tested and published on 11 October 2026. Anonymous access to their manifests and image configurations was verified; their digests match the images tested and pushed by [CI](https://github.com/Desadius/Tdarr-Review/actions/runs/38158144901). The Community Applications scanner found one valid Docker app with no template warnings and confirmed that its image is publicly pullable. The repository owner authorized the final submission and acceptance of the portal's terms.
 
@@ -14,6 +14,8 @@ Both Docker images were built, tested and published on 11 October 2026. Anonymou
 | [`../LICENSE`](../LICENSE) | MIT license for the project's own code, templates and documentation |
 
 The template references the public `ghcr.io/desadius/tdarr-review:latest` image, for **Linux amd64**. It installs one Review container. Recovery remains an optional worker described in [Installation on Unraid](INSTALL-UNRAID.md); no separate Recovery catalog entry is provided. First public image revision: `cab3774c4f42b200da294ee9adc5ec06a39a05fc`; see [verification](VERIFICATION.md) for digests and test scope.
+
+For an existing listed application, publish tested source and Docker images and update `latest` when releasing to template users. The 1.10.2 changes keep the same image name, ports, paths and installation settings. The template/profile descriptions now mention guided assessment and Czech/English interfaces; they do not require a new application submission. Existing installations update their container image through Unraid. Updating a catalog description does not restart installed containers, and pushing Git source alone does not publish an image.
 
 The MIT license does not replace licenses belonging to the Tdarr runtime, Node.js, FFmpeg or other bundled third-party components.
 

@@ -31,7 +31,7 @@ docker build --platform linux/amd64 -f Dockerfile.recovery -t tdarr-recovery:smo
 bash tools/docker-smoke.sh
 ```
 
-The smoke script creates uniquely named disposable containers and volumes and removes only those resources afterward. Review is tested with a new writable `/data` volume and a read-only container root, including login and the configured Host header. Recovery runs a single disabled pass with empty fixture tables and a loopback-only mock. Its repair and original decoding policies are covered by unit tests, not by live downloads in the smoke test.
+The smoke script creates uniquely named disposable containers and volumes and removes only those resources afterward. Review is tested with a new writable `/data` volume and a read-only container root, including login and the configured Host header. Generated-media AV timing and HTTP fixtures then exercise modules from that exact image, using only writable temporary files and loopback API mocks. Recovery runs a single disabled pass with empty fixture tables and a loopback-only mock. Its repair and original decoding policies are covered by unit tests, not by live downloads in the smoke test.
 
 ## Source provenance
 

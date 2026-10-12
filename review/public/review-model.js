@@ -28,15 +28,18 @@ export function capabilities(item, d, context = {}) {
   const normalApproval = item?.status === 'ready' && item?.canApproveDuration !== true;
   const durationApproval = item?.canApproveDuration === true && hasDuration(item?.durationA) && hasDuration(item?.durationB);
   const requestConflict = list(context.requests).some(r => r?.itemId === item?.id && !['imported', 'restored'].includes(r.phase));
+  const review = d?.reviewSessions?.[item?.id];
+  const checks = review?.session?.checks;
+  const reviewComplete = review?.version === 1 && typeof review?.requirements?.hdr === 'boolean' && (!review.requirements.hdr || (checks?.hdr === true && typeof review?.session?.device === 'string' && review.session.device.trim().length > 1)) && review?.snapshot === item?.snapshot && review?.complete === true && review?.session?.step === 4 && review?.session?.deferred === false && ['preparation','image','audio','syncStart','syncMiddle','syncEnd'].every(k=>checks?.[k] === true);
   const allowed = !writeBlocked && validItem;
   // Comparison uses POST and audio comparison stores evidence. Apply write
   // guards conservatively to previews as well as explicit file operations.
   const previewAllowed = !writeBlocked && validItem;
   const restorePhase = ['waiting', 'manual'].includes(item?.phase);
   return {
-    approve: allowed && (normalApproval || durationApproval),
-    approveBatch: allowed && normalApproval,
-    select: allowed && normalApproval,
+    approve: allowed && reviewComplete && (normalApproval || durationApproval),
+    approveBatch: allowed && reviewComplete && normalApproval,
+    select: allowed && reviewComplete && normalApproval,
     reject: allowed,
     replace: allowed && context.requestsFresh !== false && !requestConflict,
     recheck: allowed && item?.canRecheck === true,
@@ -45,6 +48,7 @@ export function capabilities(item, d, context = {}) {
     download: context.authenticated === true && itemId(item?.id),
     // Request identity/capability comes from the server, not its display title.
     restore: !writeBlocked && itemId(item?.id) && item?.canRestore === true && item?.source !== 'recovery' && restorePhase && !list(item?.queue).length && !item?.replacement && context.requestsFresh !== false,
+    reviewComplete,
     writeBlocked,
     reason: reasons[0] || (!validItem ? 'Položka nemá ověřený aktuální otisk souborů.' : ''),
     reasons,

@@ -63,8 +63,9 @@ try{
   const cookie=login.headers.get('set-cookie').split(';')[0];
   const get=async()=>{const r=await fetch(base+'/api/items',{headers:{cookie}});assert.equal(r.status,200,await r.clone().text());return r.json()};
   const postJSON=(route,body)=>fetch(base+route,{method:'POST',headers:{cookie,origin:base,'content-type':'application/json'},body:JSON.stringify(body)});
-  const single=(item,action='approve',snapshot=item.snapshot)=>postJSON(`/api/items/${item.id}/${action}`,{snapshot,reason:action==='reject'?'Synthetic rejection reason':undefined});
-  const batch=items=>postJSON('/api/approve-batch',{items:items.map(({id,snapshot})=>({id,snapshot}))});
+  const revisions={};
+  const single=(item,action='approve',snapshot=item.snapshot)=>postJSON(`/api/items/${item.id}/${action}`,{snapshot,reviewRevision:revisions[item.id],reason:action==='reject'?'Synthetic rejection reason':undefined});
+  const batch=items=>postJSON('/api/approve-batch',{items:items.map(({id,snapshot})=>({id,snapshot,reviewRevision:revisions[id]}))});
   const waitFor=async predicate=>{
     let state;for(let i=0;i<240;i++){state=await get();if(predicate(state))return state;await new Promise(r=>setTimeout(r,100))}
     assert.fail('Operation did not finish: '+JSON.stringify(state)+' '+errors);
@@ -74,6 +75,25 @@ try{
   const film=byTitle('Film'),a=byTitle('Batch A'),b=byTitle('Batch B'),blocked=byTitle('Blocked'),guardA=byTitle('Guard A'),guardB=byTitle('Guard B');
   for(const item of [film,a,b,guardA,guardB])assert.equal(item.status,'ready',JSON.stringify(item));
   assert.equal(blocked.status,'blocked');assert.equal(blocked.durationMismatch,true);
+
+  // Each user confirmation belongs to this exact copy, with a server revision.
+  assert.equal((await single(film)).status,409,'raw technically ready output is not a completed human review');
+  assert.equal((await batch([a,b])).status,409);
+  const confirmReview=async item=>{
+    const route=`/api/items/${item.id}/review-session`;
+    const existing=await fetch(base+route+'?snapshot='+item.snapshot,{headers:{cookie}});assert.equal(existing.status,200);let d=await existing.json();
+    assert.equal((await postJSON(route,{snapshot:'stale',revision:d.revision,session:d.session})).status,409);
+    const initialized={...d.session,method:'external',device:'Synthetic test player',step:0,scope:{originalIndex:1,reviewIndex:1,seconds:null}};
+    const begin=await postJSON(route,{snapshot:item.snapshot,revision:d.revision,session:initialized});assert.equal(begin.status,200,await begin.clone().text());d=await begin.json();
+    const session={...d.session,step:4,checks:{preparation:true,image:true,audio:true,syncStart:true,syncMiddle:true,syncEnd:true,hdr:false},deferred:false};
+    const done=await postJSON(route,{snapshot:item.snapshot,revision:d.revision,session});assert.equal(done.status,200,await done.clone().text());const completed=await done.json();assert.equal(completed.complete,true);revisions[item.id]=completed.revision;
+    assert.equal((await postJSON(route,{snapshot:item.snapshot,revision:d.revision,session})).status,409,'old draft revision cannot overwrite confirmation');
+    return completed;
+  };
+  await confirmReview(film);await confirmReview(a);
+  assert.equal((await batch([a,b])).status,409,'one incomplete film blocks the whole batch');
+  for(const item of [b,guardA,guardB])await confirmReview(item);
+  assert.equal((await postJSON(`/api/items/${film.id}/approve`,{snapshot:film.snapshot,reviewRevision:revisions[film.id]-1})).status,409,'old confirmation revision cannot approve');
 
   // Whole-batch preflight: a stale or blocked selection cannot start earlier films.
   for(const selected of [[a,{...b,snapshot:'stale'}],[a,blocked]])assert.equal((await batch(selected)).status,409);

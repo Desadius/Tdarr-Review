@@ -1,22 +1,25 @@
 # Tdarr Review
 
-Review and approve Tdarr transcodes before replacing the files in your media library. Includes image and audio comparison, batch approval, recorded rejection reasons, savings statistics, and optional Radarr replacement recovery.
+Review and approve Tdarr transcodes before replacing the files in your media library. Compare picture, sound and audio/video synchronisation in one five-step review, save your progress, then approve individually or in a batch. Includes recorded rejection reasons, savings statistics and optional Radarr replacement recovery.
 
-The application currently uses a **Czech interface**. It is a community project, independent of Tdarr, Radarr and Plex.
+Choose **English** or **Čeština** in the interface; Czech is the initial default. This is a community project, independent of Tdarr, Radarr and Plex.
 
-Release version: **1.10.1**. Use the explicit `1.10.1` image tag for this release; source/image publication and installation are separate operations. The initial source was collected from the deployed installation on 11 October 2026. Personal configuration, credentials, journals, film files and one-off repair approvals are excluded.
+Source version: **1.10.2**. The release is prepared and tested; registry image publication is a separate release operation. Use the explicit `1.10.2` image tag once it has been published, or build this source locally. Personal configuration, credentials, journals, film files and one-off repair approvals are excluded from the repository and images.
 
 ## What is included
 
 - Review dashboard, library, history, savings and configuration pages.
-- Individual or sequential batch approval, with source identity checks and a persistent replacement journal.
-- PNG image comparison at the same requested time, audio waveforms/alignment, and 12-second headphone A/B samples: original on the left, transcode on the right, played sequentially.
-- Evidence score that distinguishes verified, failed and unknown checks. It is not a probability that a film is flawless.
+- One review workspace: **Preparation → Picture → Audio → Synchronisation → Decision**, with manual confirmations beside the comparison tools in each step.
+- Server-saved progress and deferral with a note; individual start, middle and end synchronisation observations retain their selected tracks and times.
+- External player/TV review and a separate HDR/Dolby Vision confirmation on a named suitable device.
+- PNG frames with 1:1 viewing, waveforms/alignment, 12-second headphone A/B and playable side-by-side AV clips with shared controls.
+- Server-enforced completed review, current file snapshot and review revision for individual and batch approval; persistent replacement journals and file identity checks.
+- Technical assessment that distinguishes verified, failed and unknown evidence. It is not a probability that a film is flawless.
 - Optional Radarr replacement request, preserving originals in quarantine and restricting the replacement profile to the same or higher quality.
 - Optional Recovery worker: repeated confirmation of known original decoding errors, precise release exclusion, replacement tracking and shared status in Review.
 - Quarantine retention: seven days **after explicit Review approval of the identified replacement**, with identity checks before deletion.
 
-Review does not automatically approve films, and it does not repeat a complete video/audio decode during normal approval. Tdarr performs the health check; the viewer judges the result.
+Loading or playing a preview never checks a review box. Browser AV clips use H.264, mono AAC and at most 960 px, with supported HDR converted to SDR; native HDR and surround playback require a suitable external device. Review does not automatically approve films or repeat a complete video/audio decode during normal approval. Tdarr performs the health check; the viewer judges the result.
 
 ## Documentation
 
@@ -25,7 +28,9 @@ Review does not automatically approve films, and it does not repeat a complete v
 | [Installation on Unraid](docs/INSTALL-UNRAID.md) | Docker image, mappings, permissions, login and first configuration |
 | [Community Applications](docs/COMMUNITY-APPS.md) | Unraid template, maintainer submission and catalog status |
 | [Configuration](docs/CONFIGURATION.md) | Paths, database, Radarr and Recovery settings |
-| [User guide](docs/USER-GUIDE.md) | Approval, comparison, rejection, recovery and statistics |
+| [User guide](docs/USER-GUIDE.md) | Guided review, comparison, saved progress, approval and recovery |
+| [Review workflow](docs/REVIEW-WORKFLOW-DESIGN.md) | Implemented checklist, observations, revisions and approval gates |
+| [Interface languages](docs/UI-LANGUAGES.md) | English/Czech selection and preserved review progress |
 | [Tdarr integration](docs/TDARR-INTEGRATION.md) | Flow placement, health checks and receipt format |
 | [Architecture and safety](docs/ARCHITECTURE.md) | Replacement transaction, lifecycle and quarantine |
 | [Operations](docs/OPERATIONS.md) | Updates, backup, restart and troubleshooting |
@@ -36,18 +41,21 @@ Review does not automatically approve films, and it does not repeat a complete v
 
 ## Quick start
 
-On a Linux server with Docker Compose:
+On a Linux server with Docker Compose, build the prepared source:
 
 ```bash
 git clone https://github.com/Desadius/Tdarr-Review.git
 cd Tdarr-Review
 cp .env.example .env
 # Edit .env, create its host directories and set write permissions first.
-docker compose pull review
-docker compose up -d --no-build review
+# Set REVIEW_IMAGE_TAG=1.10.2 for this source version.
+docker compose build review
+docker compose up -d review
 ```
 
-Follow [the installation guide](docs/INSTALL-UNRAID.md) before enabling file replacement. The public image is `ghcr.io/desadius/tdarr-review:1.10.1` for Linux amd64; optional Recovery uses `ghcr.io/desadius/tdarr-recovery:1.10.1`. Builds and isolated image tests passed, and anonymous registry access was verified; [packaging status](docs/COMMUNITY-APPS.md) records the remaining catalog steps. You can also build from source with `docker compose build review`. The default bind address is localhost. Set it to your server's LAN address and set `PUBLIC_ORIGIN` to the exact address used in your browser.
+Follow [the installation guide](docs/INSTALL-UNRAID.md) before enabling file replacement. After registry publication, the Linux amd64 image is selected with `REVIEW_IMAGE_TAG=1.10.2` (`ghcr.io/desadius/tdarr-review:1.10.2`); use `docker compose pull review` and `docker compose up -d --no-build review`. Optional Recovery has its own `RECOVERY_IMAGE_TAG` and image publication. The default bind address is localhost. Set it to your server's LAN address and set `PUBLIC_ORIGIN` to the exact address used in your browser.
+
+The 1.10.2 source passed 297 Linux tests, AV fixture/HTTP checks and the approval HTTP integration. A local deployed instance passed its health check and reopening a saved review in the browser. These checks do not themselves publish an image or update another installation.
 
 ## Project layout
 

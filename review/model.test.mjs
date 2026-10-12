@@ -6,7 +6,8 @@ import {capabilities, classifyRecovery, recoveryProgress, liveRecoveryRecord, pr
 const NOW = Date.parse('2026-10-11T11:35:00Z');
 const freshTime = new Date(NOW - 30000).toISOString();
 const ready = {id:'a'.repeat(24),snapshot:'b'.repeat(64),status:'ready',durationA:600,durationB:600};
-const clear = {active:null,batchRunning:false,batch:null,recovery:[],restorePending:0};
+const completedReview={version:1,requirements:{hdr:false},snapshot:ready.snapshot,complete:true,session:{step:4,deferred:false,checks:{preparation:true,image:true,audio:true,syncStart:true,syncMiddle:true,syncEnd:true}}};
+const clear = {active:null,batchRunning:false,batch:null,recovery:[],restorePending:0,reviewSessions:{[ready.id]:completedReview}};
 const context = {authenticated:true,fresh:true};
 const writes = ['approve','approveBatch','select','reject','replace','recheck','restore','compareImage','compareAudio'];
 
@@ -224,5 +225,18 @@ test('synthetic fixtures: all 17 requests survive and no undocumented imported s
   assert.equal(projected.filter(x=>x.category==='done').length,0);
   assert.equal(projected.filter(x=>x.phase==='deferred_limit'&&x.category==='waiting').length,4);
   assert.equal(projected.filter(x=>x.tdarrStatus==='Queued'&&x.category==='running').length,3);
-  for(const item of items.items) assert.equal(capabilities(item,items,context).approve,true);
+  for(const item of items.items) { assert.equal(capabilities(item,items,context).approve,false); assert.equal(capabilities(item,{...items,reviewSessions:{[item.id]:{...completedReview,snapshot:item.snapshot}}},context).approve,true); }
+});
+
+
+test('approval requires the current individually completed review; tools remain available before confirmation',()=>{
+ for(const review of [undefined,{...completedReview,snapshot:'c'.repeat(64)},{...completedReview,complete:false},{...completedReview,version:0},{...completedReview,session:{...completedReview.session,deferred:true}},{...completedReview,session:{...completedReview.session,checks:{...completedReview.session.checks,syncEnd:false}}}]){
+  const c=capabilities(ready,{...clear,reviewSessions:{[ready.id]:review}},context);
+  for(const k of ['approve','approveBatch','select'])assert.equal(c[k],false,k);assert.equal(c.compareImage,true);assert.equal(c.compareAudio,true);assert.equal(c.reject,true);
+ }
+});
+
+test('HDR approval requires an explicit device attestation and remains conditional for SDR',()=>{
+ for(const review of [{...completedReview,requirements:{hdr:true}},{...completedReview,requirements:{hdr:true},session:{...completedReview.session,device:'TV',checks:{...completedReview.session.checks,hdr:false}}}])assert.equal(capabilities(ready,{...clear,reviewSessions:{[ready.id]:review}},context).approve,false);
+ const review={...completedReview,requirements:{hdr:true},session:{...completedReview.session,device:'TV',checks:{...completedReview.session.checks,hdr:true}}};assert.equal(capabilities(ready,{...clear,reviewSessions:{[ready.id]:review}},context).approve,true);
 });

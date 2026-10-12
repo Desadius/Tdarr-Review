@@ -1,5 +1,17 @@
 # Repository verification — 2026-10-12
 
+## 1.10.2 — guided review and video comparison
+
+The release candidate passed 297 Linux regression tests with no failures or skipped tests. Packaged HTTP integration rejects incomplete assessments, outdated review revisions and mixed incomplete batches before file replacement, records the completed assessment in history and retains the existing identity, concurrency and transaction protections.
+
+Generated-media FFmpeg verification uses a five-second container start and a deliberately delayed audio track. The preview retained the delay (300 ms in the source, 320 ms at the decoded AAC onset) within the stated preview precision. AV HTTP tests cover login, stale snapshots, invalid tracks/times, playable H.264/AAC clips, waveforms and unchanged original hashes. These two tests are also part of Docker smoke for the exact images before registry publication.
+
+Browser checks exercised embedded video playback, shared tracks, distinct saved synchronization times, invalidation of old previews on time changes, draft restoration and deferral reasons. Returning to a deferred Synchronization step loads track metadata before creating its player; concurrent refresh does not start duplicate metadata requests. Loading or playing a sample does not create manual confirmation.
+
+The candidate was installed on the existing Linux amd64 deployment and reported healthy. Its environment, mounts, user and resource restrictions matched the previous deployment. Temporary generated-media test containers and stopped rollback containers from this change were removed; private backups and prior images were retained. No production film was approved or replaced as a test. This is not a fresh Unraid installation test or proof that every playback device supports the previews.
+
+Publication and anonymous registry verification are separate final checks; see the release workflow for the selected source revision and results.
+
 ## 1.10.1 — verification before publication
 
 The complete expanded **262 regression tests** passed on Linux / Node 24.15.0. Earlier local snapshots passed 158, 203 and 252 tests. The current batch adds persistent registry validation/migration and automatic daily-quota resumption to measured original-decode status, confirmed faulty replacement deferral and handoff recovery. Manual replacement lifecycle tests exercise all supported Tdarr states, exact path/library binding, missing/changed/malformed records, transient errors, stale download/search state, public-field filtering and real approval-evidence-based retention transitions. Imported observations make only database reads; tests verify that they do not rescan or requeue a file. Tdarr success alone does not create approval or retention evidence.

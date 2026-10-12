@@ -11,7 +11,7 @@
   <Project>https://github.com/Desadius/Tdarr-Review</Project>
   <ReadMe>https://github.com/Desadius/Tdarr-Review/blob/main/docs/INSTALL-UNRAID.md</ReadMe>
   <License>https://github.com/Desadius/Tdarr-Review/blob/main/LICENSE</License>
-  <Overview>Review Tdarr transcodes before replacing originals. Compare image and audio samples, approve individually or in batches, record rejection reasons and track savings. Optional manual Radarr replacement requests preserve the original in quarantine. Czech interface. Linux amd64. Requires a separately installed Tdarr server, its DB2 directory and a separate folder containing completed results. Set PUBLIC_ORIGIN and TDARR_URL for your server before installing. Recovery is an optional separate worker; this template installs only Review. Approval writes to your media library.</Overview>
+  <Overview>Review Tdarr transcodes before replacing originals. A guided process combines picture, audio and synchronized video samples with saved manual checks. Approve completed assessments individually or in batches, record rejection reasons and track savings. Optional manual Radarr replacement requests preserve the original in quarantine. Czech and English interfaces. Linux amd64. Requires a separately installed Tdarr server, its DB2 directory and a separate folder containing completed results. Set PUBLIC_ORIGIN and TDARR_URL for your server before installing. Recovery is an optional separate worker; this template installs only Review. Approval writes to your media library.</Overview>
   <Category>Tools:Utilities MediaApp:Video</Category>
   <WebUI>http://[IP]:[PORT:8270]</WebUI>
   <Icon>https://raw.githubusercontent.com/Desadius/Tdarr-Review/main/assets/icon.svg</Icon>

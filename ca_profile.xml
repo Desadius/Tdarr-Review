@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <CommunityApplications>
-  <Profile>Community-maintained tools for reviewing Tdarr transcodes before replacing media library originals. Tdarr Review includes comparison, manual and batch approval, recorded rejection reasons and optional Radarr recovery. The interface is currently Czech. Support and bug reports: GitHub Issues.</Profile>
+  <Profile>Community-maintained tools for reviewing Tdarr transcodes before replacing media library originals. Tdarr Review includes guided picture, audio and video comparison with saved manual checks, individual and batch approval, recorded rejection reasons and optional Radarr recovery. Czech and English interfaces. Support and bug reports: GitHub Issues.</Profile>
   <Icon>https://raw.githubusercontent.com/Desadius/Tdarr-Review/main/assets/icon.svg</Icon>
   <WebPage>https://github.com/Desadius/Tdarr-Review</WebPage>
   <Forum>https://github.com/Desadius/Tdarr-Review/issues</Forum>
