@@ -1,6 +1,6 @@
 import {mountAVComparison} from '/av-player.js?v=20261012-av1';
 import {mountReviewWorkflow} from '/review-workflow.js?v=20261012-workflow1';
-import {capabilities, classifyRecovery, recoveryProgress, liveRecoveryRecord, projectRequests, historyWarnings, historyFollowup} from '/review-model.js?v=20261011-ui2';
+import {capabilities, classifyRecovery, recoveryProgress, downloadProgress, liveRecoveryRecord, projectRequests, historyWarnings, historyFollowup, quarantineLifecycle, recoveryFollowup} from '/review-model.js?v=20261012-recovery3';
 import {tr,locale,initializeLocale,translateAudioTrackLabel as audioTrackLabel} from '/i18n.js?v=20261012-en1';
 initializeLocale();
 
@@ -150,10 +150,16 @@ function makeTabs(container,tabs,current,onChange){
 function recoveryRow(projected){
  const r=projected.record||projected.raw||projected,cl=projected.classification||classifyRecovery(r,Date.now()),row=el('article','recovery-row'),info=el('div','row-info');
  info.append(badge(cl.label,cl.category==='attention'?'warning':cl.category==='done'?'ready':''),el('h2','',r.title,true),el('p','details',cl.nextStep));
- const progress=recoveryProgress(r);if(progress)info.append(decodeProgressView(progress,false));
+ const progress=recoveryProgress(r);if(progress)info.append(decodeProgressView(progress,false));for(const download of downloadProgress(r).slice(0,1))info.append(downloadProgressView(download,false));
  const meta=el('div','row-metric');meta.append(el('span','details',r.source==='recovery'?'Recovery · Radarr · Tdarr':'Náhrada přes Radarr'),el('small',cl.stale?'failure':'details',cl.stale?'Stav starší než 12 minut':date(r.statusUpdated||r.updated)));
  const b=button('Prohlédnout',()=>openDetail('request',projected.key));b.setAttribute('aria-label',tr('Prohlédnout obnovu '+r.title));b.dataset.focus='recovery:'+projected.key;
  row.append(poster('request',r.id,r.title),info,meta,b);return row;
+}
+function downloadProgressView(p,detail=true){
+ const box=el('div','decode-progress');box.append(el('strong','',p.label));if(detail&&p.title)box.append(el('p','details',p.title,true));
+ if(p.downloadPercent!==null){const meter=el('progress','task-meter');meter.max=100;meter.value=p.downloadPercent;meter.setAttribute('aria-label',tr('Průběh stažení souboru'));box.append(meter,detailsFacts([['Stažení souboru',p.downloadPercent.toLocaleString(locale,{maximumFractionDigits:1})+' %']]));}
+ if(p.eta)box.append(detailsFacts([['Zbývající čas stažení',p.eta]]));
+ if(detail){box.append(el('p','details','Procenta označují pouze stažení. Import, převod a schválení jsou samostatné kroky.'));if(p.error)box.append(el('p','failure',p.error));}return box;
 }
 function decodeProgressView(p,detail=true){
  const box=el('div','decode-progress'),meter=el('progress','task-meter');meter.max=100;meter.setAttribute('aria-label',tr(`Kontrola originálu, průchod ${p.pass} ze 2`));if(p.percent!==null)meter.value=p.percent;
@@ -164,7 +170,7 @@ function decodeProgressView(p,detail=true){
  return box;
 }
 function renderRecovery(){
- const projects=projectRequests(requests,latest?.items||[],Date.now()),categories=[['running','Probíhá'],['waiting','Čeká'],['attention','Vyžaduje zásah'],['done','Dokončeno']];
+ const projects=projectRequests(requests,latest?.items||[],Date.now()),categories=[['running','Probíhá'],['waiting','Čeká'],['attention','Vyžaduje zásah'],['unverified','Stav nelze ověřit'],['done','Dokončeno']];
  makeTabs($('recoveryFilters'),categories.map(([key,title])=>[key,`${title} (${projects.filter(p=>p.classification.category===key).length})`]),ui.filter,id=>navigate('recovery',{filter:id}));
  $('recoveryPanel').setAttribute('aria-labelledby','recoveryFilters-'+ui.filter);
  const query=$('recoverySearch').value.trim().toLocaleLowerCase(),visible=projects.filter(p=>p.classification.category===ui.filter&&(p.record||p.raw||p).title.toLocaleLowerCase().includes(query));
@@ -223,8 +229,10 @@ function detailReview(item,tab){
 function detailRequest(r,tab){
  const box=$('detailBody'),cl=classifyRecovery(r,Date.now());box.replaceChildren();
  if(tab==='overview'){box.append(el('h3','',cl.label),el('p','',cl.nextStep));for(const warning of cl.warnings||[])box.append(el('p','alert inline-warning',warning));const progress=recoveryProgress(r);if(progress)box.append(decodeProgressView(progress));box.append(detailsFacts([['Poslední potvrzený stav',date(r.statusUpdated||r.updated)],['Původní kopie',r.quarantineRetained?'Zachovaná v karanténě':r.sourceRetained||r.phase==='waiting_source_kept'?'Zůstává v Plexu; vydání vyloučeno z převodů':'Viz aktuální protokol obnovy'],['Další hledání',r.nextSearchAt?date(r.nextSearchAt):'Termín není doložen'],['Další pokus obnovy',r.nextRetryAt?date(r.nextRetryAt):'Termín není doložen']]));if(r.message)box.append(el('p','details',r.message));
-  const next=r.replacementFollowup;
-  if(next?.id===r.replacementFollowupId&&requests.some(x=>x.id===next.id&&x.source==='recovery')){
+  if(r.legacyReplacementBinding===true)box.append(el('p','details','Stav Tdarru je dohledán podle přesné historické cesty náhrady. Tato vazba nepotvrzuje schválení filmu ani neopravňuje k úklidu karantény.'));
+  if(r.error==='Approved replacement metadata timestamp changed; content identity is not reverified; quarantine preserved')box.append(el('p','details','Změnil se pouze čas změny metadat schválené kopie. Není to potvrzené poškození filmu. Karanténa zůstává zachovaná, protože chybí nový důkaz shody obsahu; další převod ani stažení nejsou tímto hlášením vyžádány.'));
+  const next=recoveryFollowup(r,requests);
+  if(next){
    if(r.replacementFollowupBinding==='ctime_changed')box.append(el('p','details','Změnil se čas změny metadat náhrady. Navazující případ používá vlastní aktuální identitu a důkazy; historická schválení se nepřenášejí.'));
    box.append(el('h4','','Navazující kontrola náhrady'),detailsFacts([['Stav náhrady ověřen',date(next.statusUpdated)],['Další pokus obnovy náhrady',next.nextRetryAt?date(next.nextRetryAt):'Termín není doložen'],['Další hledání náhrady',next.nextSearchAt?date(next.nextSearchAt):'Termín není doložen']]),button('Otevřít navazující případ',()=>openDetail('request','recovery:'+next.id)));
    const nextProgress=recoveryProgress(next);if(nextProgress)box.append(decodeProgressView(nextProgress));
@@ -301,7 +309,7 @@ function handleHash(){
  const {view,params}=parseHash(),oldView=ui.view,focusWasInContent=$('content').contains(document.activeElement);ui.view=view;
  for(const section of document.querySelectorAll('.view'))section.hidden=section.id!=='view-'+view;
  for(const link of document.querySelectorAll('[data-view]')){if(link.dataset.view===view)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current')}
- if(view==='recovery'){const filter=params.get('filter');if(['running','waiting','attention','done'].includes(filter)&&filter!==ui.filter){ui.filter=filter;renderRecovery()}}
+ if(view==='recovery'){const filter=params.get('filter');if(['running','waiting','attention','unverified','done'].includes(filter)&&filter!==ui.filter){ui.filter=filter;renderRecovery()}}
  if(view==='history'&&params.get('filter')==='warning'&&$('historyFilter').value!=='warning'){$('historyFilter').value='warning';ui.historyPage=0;renderHistory()}
  if(view==='savings'&&Date.now()-statsLoaded>15000)loadStatistics();
  const tab=params.get('tab');if(['review','overview','comparison','recovery','technical'].includes(tab))ui.tab=params.has('film')&&tab==='comparison'?'review':tab;
@@ -458,12 +466,13 @@ const quarantineDialog=el('dialog','settings-dialog');document.body.append(quara
 const quarantineButton=$('settingsQuarantine');quarantineButton.onclick=()=>openQuarantine();
 async function openQuarantine(title='',caseId=''){
  try{
-  const d=await api('/api/quarantine');quarantineDialog.replaceChildren(el('h2','','Karanténa'+(title?' · '+title:'')));
+  await loadRequests(true);const d=await api('/api/quarantine');quarantineDialog.replaceChildren(el('h2','','Karanténa'+(title?' · '+title:'')));
   const query=title.toLocaleLowerCase().replace(/\s*\(\d{4}\).*$/,'').trim();
   const files=d.files.filter(f=>caseId?f.caseId===caseId:!query||f.name.toLocaleLowerCase().includes(query));
   quarantineDialog.append(el('p','details','Originály se uchovávají do schválení funkční náhrady v Review. Schválená lhůta pro následný úklid je 7 dní. Automatický úklid je zapnutý pro náhrady s uloženým důkazem schválení a nezměněnou identitou obou souborů. Starší případy bez důkazu zůstávají zachované.'));
+  quarantineDialog.append(el('p','details','Velikost zobrazených souborů: '+fmt(files.reduce((sum,f)=>sum+(Number.isSafeInteger(f.bytes)&&f.bytes>=0?f.bytes:0),0))),el('p','details','Součet velikostí souborů nemusí odpovídat fyzicky zabranému místu; některé kopie mohou být hardlinky.'));
   if(!files.length)quarantineDialog.append(el('p','','Pro tento výběr není v karanténě žádný soubor.'));
-  for(const f of files){const row=el('article','movie');row.append(el('strong','',f.name,true),el('p','details',fmt(f.bytes)),el('p','details',f.path,true));const copy=el('button','secondary','Kopírovat cestu');copy.onclick=async()=>{try{await navigator.clipboard.writeText(f.path);copy.textContent=tr('Zkopírováno')}catch{copy.textContent=tr('Označ a zkopíruj cestu výše')}};row.append(copy);quarantineDialog.append(row)}
+  for(const f of files){const row=el('article','movie');row.append(el('strong','',f.name,true),el('p','details',fmt(f.bytes)),el('p','details',f.path,true));const lifecycle=quarantineLifecycle(f,requests);row.append(el('p','',lifecycle.label),el('p','details',lifecycle.reason));if(lifecycle.deleteAfter!==null)row.append(detailsFacts([['Termín úklidu',date(lifecycle.deleteAfter)]]));if(lifecycle.requestKey)row.append(button('Otevřít obnovu',()=>{quarantineDialog.close();openDetail('request',lifecycle.requestKey)}));const copy=el('button','secondary','Kopírovat cestu');copy.onclick=async()=>{try{await navigator.clipboard.writeText(f.path);copy.textContent=tr('Zkopírováno')}catch{copy.textContent=tr('Označ a zkopíruj cestu výše')}};row.append(copy);quarantineDialog.append(row)}
   for(const w of d.warnings)quarantineDialog.append(el('p','failure',w));
   if(title){const all=el('button','secondary','Zobrazit celou karanténu');all.onclick=()=>{quarantineDialog.close();openQuarantine()};quarantineDialog.append(all)}
   const close=el('button','secondary','Zavřít');close.onclick=()=>quarantineDialog.close();quarantineDialog.append(close);quarantineDialog.setAttribute('aria-label',tr('Karanténa'+(title?' · '+title:'')));quarantineDialog.showModal();
@@ -471,7 +480,7 @@ async function openQuarantine(title='',caseId=''){
 }
 
 function recoveryDetails(r){
- const box=el('div');box.append(el('strong','',r.pipelineLabel||r.message));if(r.statusUpdated){box.append(el('p','details','Stav aktualizován: '+new Date(r.statusUpdated).toLocaleString(locale)));if(Date.now()-Date.parse(r.statusUpdated)>12*60000)box.append(el('p','failure','Stav je starší než 12 minut; spojení s Recovery může být přerušené.'));}if(r.replacementTitle)box.append(el('p','details','Náhrada: '+r.replacementTitle));if(r.tdarrStatus)box.append(el('p','details','Tdarr: '+r.tdarrStatus));if(r.quarantineRetained)box.append(el('p','details','Původní kopie je zachovaná v karanténě.'));if(r.deleteAfter)box.append(el('p','details','Úklid karantény po schválení: '+new Date(r.deleteAfter).toLocaleString(locale)));for(const q of r.queue||[]){box.append(el('p','details',q.title+' · '+q.status+(q.percent==null?'':' · '+q.percent.toFixed(1)+' %')+(q.timeleft?' · odhad '+q.timeleft:'')));if(q.percent!=null){const progress=el('progress');progress.max=100;progress.value=q.percent;box.append(progress);}}if(r.phase==='waiting_source_kept')box.append(el('strong','failure','Vydání vyřazeno z převodů — náhrada zatím nenalezena'),el('p','','Film zůstává v Plexu. Jeho původní zvuk má potvrzenou chybu; toto vydání se nebude znovu převádět.'));
+ const box=el('div');box.append(el('strong','',r.pipelineLabel||r.message));if(r.statusUpdated){box.append(el('p','details','Stav aktualizován: '+new Date(r.statusUpdated).toLocaleString(locale)));if(Date.now()-Date.parse(r.statusUpdated)>12*60000)box.append(el('p','failure','Stav je starší než 12 minut; spojení s Recovery může být přerušené.'));}if(r.replacementTitle)box.append(el('p','details','Náhrada: '+r.replacementTitle));if(r.tdarrStatus)box.append(el('p','details','Tdarr: '+r.tdarrStatus));if(r.quarantineRetained)box.append(el('p','details','Původní kopie je zachovaná v karanténě.'));if(r.deleteAfter)box.append(el('p','details','Úklid karantény po schválení: '+new Date(r.deleteAfter).toLocaleString(locale)));for(const q of downloadProgress(r))box.append(downloadProgressView(q));if(r.phase==='waiting_source_kept')box.append(el('strong','failure','Vydání vyřazeno z převodů — náhrada zatím nenalezena'),el('p','','Film zůstává v Plexu. Jeho původní zvuk má potvrzenou chybu; toto vydání se nebude znovu převádět.'));
  if(r.edition)box.append(el('p','details','Vyřazené vydání: '+r.edition));
  if(r.lastSearchAt)box.append(el('p','details','Poslední hledání: '+new Date(r.lastSearchAt).toLocaleString(locale)));
  if(r.nextSearchAt)box.append(el('p','details','Další automatické hledání: '+new Date(r.nextSearchAt).toLocaleString(locale)));

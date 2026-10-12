@@ -18,7 +18,11 @@ export async function retainCase(c,{mediaRoot,reviewRoot,quarantineRoot,reviewQu
  const directory=path.join(path.dirname(await fs.realpath(mediaRoot)),'.tdarr-approvals');
  let a;try{const f=path.join(directory,key(c.replacementRelative,c.replacementSourceFP));await regular(f);a=JSON.parse(await fs.readFile(f,'utf8'));}catch(e){if(e.code==='ENOENT')return;throw e;}
  if(a.version!==1||a.relative!==c.replacementRelative||a.sourceFP!==c.replacementSourceFP||!Number.isFinite(Date.parse(a.approvedAt))||Date.parse(a.approvedAt)>now)throw Error('Invalid approval evidence');
- const installed=under(mediaRoot,a.installedRelative);if(fp(await regular(installed))!==a.installedFP)throw Error('Approved replacement changed; quarantine preserved');
+ const installed=under(mediaRoot,a.installedRelative);const installedNow=fp(await regular(installed));
+ if(installedNow!==a.installedFP){
+  if(sameFile(installedNow,a.installedFP))throw Error('Approved replacement metadata timestamp changed; content identity is not reverified; quarantine preserved');
+  throw Error('Approved replacement changed; quarantine preserved');
+ }
  if(!c.cleanup){c.cleanup={approvedAt:a.approvedAt,deleteAfter:new Date(Date.parse(a.approvedAt)+7*86400000).toISOString(),files:[]};await atomicCase(c);}
  if(now<Date.parse(c.cleanup.deleteAfter))return;
  const targets=[[c.quarantine||c.originalQuarantine,c.fp||c.originalFP,quarantineRoot],[c.reviewQuarantine,c.reviewFP,reviewQuarantineRoot]].filter(v=>v[0]);

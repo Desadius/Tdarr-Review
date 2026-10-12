@@ -373,7 +373,7 @@ const server=http.createServer(async(req,res)=>{
     if(url.pathname==='/api/items'&&req.method==='GET'){
       if(state.pauses.length&&!recovery.length&&!active&&!batchRunning&&!reviewSessions.busy)await resume();
       const items=await scan();
-      return respond(res,200,{version:'1.10.2',label:config.label,serverTime:Date.now(),items,reviewSessions:reviewSessions.list(items),active,batch:state.batch||null,batchRunning,history:state.history,recovery,restorePending:state.pauses.length});
+      return respond(res,200,{version:'1.10.3',label:config.label,serverTime:Date.now(),items,reviewSessions:reviewSessions.list(items),active,batch:state.batch||null,batchRunning,history:state.history,recovery,restorePending:state.pauses.length});
     }
     const reviewSession=/^\/api\/items\/([a-f0-9]{24})\/review-session$/.exec(url.pathname);
     if(reviewSession&&req.method==='GET'){

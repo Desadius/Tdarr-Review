@@ -106,12 +106,12 @@ test('imported, queued and transcode success do not invent approval', () => {
   const rec={id:'case',source:'recovery',phase:'replacement_imported',statusUpdated:freshTime};
   for(const status of [null,undefined,'Unknown','Anything else']) {
     const result=classifyRecovery({...rec,tdarrStatus:status,pipelineLabel:'Náhrada schválena'},NOW);
-    assert.equal(result.category,'attention');assert.equal(result.unknown,true);
+    assert.equal(result.category,'unverified');assert.equal(result.unknown,true);
   }
   assert.equal(classifyRecovery({...rec,tdarrStatus:'Queued'},NOW).category,'running');
   assert.equal(classifyRecovery({...rec,tdarrStatus:'Transcoding'},NOW).category,'running');
   for(const status of ['Transcode success','Transcode error','Not required']) assert.equal(classifyRecovery({...rec,tdarrStatus:status},NOW).category,'attention');
-  assert.equal(classifyRecovery({phase:'imported',updated:freshTime},NOW).category,'attention');
+  assert.equal(classifyRecovery({phase:'imported',updated:freshTime},NOW).category,'unverified');
 });
 
 test('completion needs structured approval or cleanup evidence', () => {
@@ -119,8 +119,8 @@ test('completion needs structured approval or cleanup evidence', () => {
   assert.equal(classifyRecovery({...rec,cleanupComplete:true},NOW).category,'done');
   assert.equal(classifyRecovery({...rec,deleteAfter:'2026-10-18T10:00:00Z'},NOW).category,'done');
   assert.equal(classifyRecovery({...rec,approvedAt:'2026-10-11T10:00:00Z'},NOW).category,'done');
-  assert.equal(classifyRecovery({...rec,approvedAt:'2026-10-12T10:00:00Z'},NOW).category,'attention');
-  assert.equal(classifyRecovery({...rec,deleteAfter:'invalid'},NOW).category,'attention');
+  assert.equal(classifyRecovery({...rec,approvedAt:'2026-10-12T10:00:00Z'},NOW).category,'unverified');
+  assert.equal(classifyRecovery({...rec,deleteAfter:'invalid'},NOW).category,'unverified');
   assert.equal(classifyRecovery({...rec,cleanupComplete:true,error:'Retention identity mismatch'},NOW).category,'attention');
   const restored=classifyRecovery({phase:'restored',updated:freshTime},NOW);
   assert.equal(restored.category,'done');assert.match(restored.label,/vráceny/);assert.match(restored.nextStep,/ověř/);
@@ -130,10 +130,10 @@ test('stale and unknown timestamps remain visible and cannot imply active succes
   const rec={source:'recovery',phase:'deferred_limit',statusUpdated:new Date(NOW-RECOVERY_STALE_MS).toISOString()};
   assert.equal(classifyRecovery(rec,NOW).category,'waiting');
   const stale=classifyRecovery({...rec,statusUpdated:new Date(NOW-RECOVERY_STALE_MS-1).toISOString()},NOW);
-  assert.equal(stale.stale,true);assert.equal(stale.category,'attention');assert.match(stale.warnings.join(' '),/12 minut/);
+  assert.equal(stale.stale,true);assert.equal(stale.category,'unverified');assert.match(stale.warnings.join(' '),/12 minut/);
   for(const invalid of [null,'bad',new Date(NOW+120001).toISOString()]) {
     const result=classifyRecovery({...rec,statusUpdated:invalid,updated:freshTime},NOW);
-    assert.equal(result.category,'attention');assert.equal(result.unknown,true);
+    assert.equal(result.category,'unverified');assert.equal(result.unknown,true);
   }
   const oldCompleted=classifyRecovery({...rec,cleanupComplete:true,statusUpdated:'2026-09-01T00:00:00Z'},NOW);
   assert.equal(oldCompleted.category,'done');assert.equal(oldCompleted.stale,true);assert.ok(oldCompleted.warnings.length);
@@ -239,4 +239,47 @@ test('approval requires the current individually completed review; tools remain 
 test('HDR approval requires an explicit device attestation and remains conditional for SDR',()=>{
  for(const review of [{...completedReview,requirements:{hdr:true}},{...completedReview,requirements:{hdr:true},session:{...completedReview.session,device:'TV',checks:{...completedReview.session.checks,hdr:false}}}])assert.equal(capabilities(ready,{...clear,reviewSessions:{[ready.id]:review}},context).approve,false);
  const review={...completedReview,requirements:{hdr:true},session:{...completedReview.session,device:'TV',checks:{...completedReview.session.checks,hdr:true}}};assert.equal(capabilities(ready,{...clear,reviewSessions:{[ready.id]:review}},context).approve,true);
+});
+
+ test('stale evidence does not hide a concrete failure or manual decision',()=>{for(const fields of [{phase:'manual'},{phase:'replacement_imported',tdarrStatus:'Transcode error'},{phase:'verifying',error:'Source changed'}])assert.equal(classifyRecovery({source:'recovery',statusUpdated:'2026-09-01T00:00:00Z',...fields},NOW).category,'attention');});
+
+ test('completed downloads blocked at import require a specific action',()=>{const r=classifyRecovery({source:'recovery',phase:'waiting_replacement',statusUpdated:freshTime,queue:[{status:'completed',trackedDownloadState:'importBlocked',trackedDownloadStatus:'warning',percent:100}]},NOW);assert.equal(r.category,'attention');assert.match(r.label,/blokuje import/);assert.match(r.nextStep,/ruční import/);});
+
+import {quarantineLifecycle}from './public/review-model.js';
+test('quarantine links only a unique case and conversion success cannot authorize cleanup',()=>{
+ const id='a'.repeat(24),f={caseId:id},r={id,source:'recovery',phase:'replacement_imported',tdarrStatus:'Transcode success'};
+ assert.match(quarantineLifecycle(f,[r],NOW).label,/Chybí/);assert.equal(quarantineLifecycle(f,[r],NOW).requestKey,'recovery:'+id);
+ for(const records of [[],[r,r]])assert.equal(quarantineLifecycle(f,records,NOW).requestKey,null);
+ assert.equal(quarantineLifecycle({caseId:'invalid'},[r],NOW).requestKey,null);
+});
+test('quarantine distinguishes deadline, identity errors and residual files without deletion capabilities',()=>{
+ const id='a'.repeat(24),f={caseId:id},r={id,source:'recovery',deleteAfter:new Date(NOW+60000).toISOString()};
+ assert.match(quarantineLifecycle(f,[r],NOW).label,/konec/);
+ assert.match(quarantineLifecycle(f,[{...r,deleteAfter:new Date(NOW-60000).toISOString()}],NOW).label,/uběhla/);
+ assert.match(quarantineLifecycle(f,[{...r,error:'Identity changed'}],NOW).label,/kontrolu/);
+ assert.match(quarantineLifecycle(f,[{...r,cleanupComplete:true}],NOW).label,/stále přítomný/);
+ assert.match(quarantineLifecycle(f,[{...r,deleteAfter:'bad'}],NOW).label,/Chybí/);
+ assert.equal(Object.hasOwn(quarantineLifecycle(f,[r],NOW),'canDelete'),false);
+});
+
+import {downloadProgress}from './public/review-model.js';
+test('download displays measured progress and isolates import stages from its ETA',()=>{
+ const q={title:'Release',status:'downloading',percent:72,timeleft:'01:20:30'};
+ assert.equal(downloadProgress({phase:'waiting',queue:[q]})[0].eta,'01:20:30');
+ assert.equal(downloadProgress({phase:'waiting',queue:[{...q,percent:100}]})[0].stage,'downloading');
+ for(const [patch,stage]of [[{trackedDownloadState:'importBlocked'},'blocked'],[{trackedDownloadState:'importing'},'importing'],[{status:'completed'},'downloaded'],[{status:'paused'},'paused']]){const p=downloadProgress({phase:'waiting_replacement',queue:[{...q,...patch}]})[0];assert.equal(p.stage,stage);assert.equal(p.eta,null);}
+ for(const phase of ['replacement_imported','imported','verifying','deferred_limit'])assert.deepEqual(downloadProgress({phase,queue:[q]}),[]);
+ for(const percent of [null,'50',NaN,-1])assert.equal(downloadProgress({phase:'waiting',queue:[{...q,percent}]})[0].downloadPercent,null);
+ for(const timeleft of ['00:00:00','unknown','00:99:30'])assert.equal(downloadProgress({phase:'waiting',queue:[{...q,timeleft}]})[0].eta,null);
+});
+
+ test('imported replacements ignore obsolete downloader failures while retaining current errors',()=>{const r={source:'recovery',phase:'replacement_imported',statusUpdated:freshTime,tdarrStatus:'Queued',queue:[{status:'completed',trackedDownloadState:'importBlocked',error:'Manual Import required'}]};assert.equal(classifyRecovery(r,NOW).category,'running');assert.equal(classifyRecovery({...r,error:'Quarantine identity changed'},NOW).category,'attention');});
+
+import {recoveryFollowup}from './public/review-model.js';
+test('detail links tolerate legacy missing followups and require one distinct Recovery child',()=>{
+ const child={id:'b'.repeat(24),source:'recovery'},r={id:'a'.repeat(24),source:'recovery',replacementFollowupId:child.id,replacementFollowup:child};
+ assert.equal(recoveryFollowup(r,[child]),child);
+ for(const patch of [{replacementFollowup:undefined},{replacementFollowupId:undefined},{replacementFollowup:{id:null}},{replacementFollowupId:r.id,replacementFollowup:{...child,id:r.id}},{replacementFollowup:{...child,source:'radarr'}},{source:'radarr'}])assert.equal(recoveryFollowup({...r,...patch},[child]),null);
+ assert.equal(recoveryFollowup(r,[]),null);assert.equal(recoveryFollowup(r,[child,child]),null);
+ assert.equal(recoveryFollowup({source:'recovery'},[child]),null);
 });

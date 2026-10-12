@@ -1,3 +1,6 @@
+import {downloadQueue} from './download-queue.mjs';
+import {quotaFor} from './deferred-limit.mjs';
+import {relative as safeRelative} from './policy.mjs';
 import {replacementFollowup} from './replacement-followup.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -15,7 +18,7 @@ export async function maintainWaitingSources({cfg,state,rad,td,phase,save,comman
  for(const c of Object.values(state.cases).filter(c=>['waiting_replacement','waiting_source_kept'].includes(c.status))){
   try{
    const m=await rad('/movie/'+c.movieId),queue=(await rad('/queue?pageSize=1000')).records.filter(q=>q.movieId===c.movieId);
-   c.tmdbId=m.tmdbId;c.titleSlug=m.titleSlug;c.latestQueue=queue.map(q=>({title:q.title,status:q.status,percent:q.size?100*(1-q.sizeleft/q.size):null,timeleft:q.timeleft,error:q.errorMessage||null}));
+   c.tmdbId=m.tmdbId;c.titleSlug=m.titleSlug;c.latestQueue=queue.map(downloadQueue);
    if(c.status==='waiting_replacement'){
     if(m.movieFileId&&m.movieFileId!==(c.keptMovieFileId||c.binding.movieFileId)||queue.length||!c.quarantine)continue;
     if(c.searchCommand){const cmd=await rad('/command/'+c.searchCommand);if(!['completed','failed','aborted','cancelled'].includes(cmd.status))continue;}
@@ -64,19 +67,31 @@ export async function maintainWaitingSources({cfg,state,rad,td,phase,save,comman
   }catch(e){c.observationError=e.message;await save();}
  }
 }
+// Historical journals lacked replacementRelative/FP. Recover only a display
+// path; never manufacture fingerprints, approval evidence or cleanup authority.
+export function replacementDisplayPath(c,cfg){
+ if(typeof c.replacementRelative==='string'&&c.replacementRelative){
+  try{return {relative:safeRelative(cfg.sourceRoot+'/'+c.replacementRelative,cfg.sourceRoot),legacy:false};}catch{return null;}
+ }
+ if(c.status!=='replacement_imported'||!Number.isInteger(c.movieId)||c.movieId<=0||!Number.isInteger(c.replacement?.movieFileId)||c.replacement.movieFileId<=0||typeof c.replacement?.path!=='string'||typeof cfg.radarrRoot!=='string')return null;
+ try{return {relative:safeRelative(c.replacement.path,cfg.radarrRoot),legacy:true};}catch{return null;}
+}
 export async function publishRecoveryStatus({cfg,state,atomic,tdarrFiles=[]}){
  const labels={deferred_limit:'Čeká na uvolnění denního limitu obnov',candidate:'Ověřuje se originál',verifying:'Kontrola originálu',confirmed:'Chyba originálu potvrzena',profile_intent:'Nastavuje se kvalita náhrady',holding:'Pozastavuje se vadné vydání',quarantine_intent:'Přesun originálu do karantény',quarantined:'Originál uložen v karanténě',blocklist_intent:'Vyřazuje se vadné vydání',blocked:'Vadné vydání vyřazeno',search_intent:'Spouští se hledání náhrady',waiting_source_kept:'Náhrada zatím nenalezena; film zůstává v knihovně',waiting_replacement:'Hledání nebo stahování náhrady',replacement_queue_intent:'Nová kopie se předává Tdarru',replacement_imported:'Náhrada předána Tdarru',manual:'Obnova vyžaduje kontrolu',restore_source_intent:'Vrací se zachovaná kopie do knihovny',remove_kept_source_intent:'Připravuje se stažení náhrady',replacement_download_intent:'Předává se náhrada ke stažení'};
  Object.assign(labels,{defer_limit_intent:'Pozastavuje se vadné vydání během denního limitu',defer_cooldown_intent:'Pozastavuje se potvrzené vadné vydání',deferred_cooldown:'Vadné vydání pozastavené; čeká na limit obnov',no_action:'Kontrola originálu dokončena',dry_run:'Chyba potvrzena; automatické změny vypnuté'});
+ const frozenLimit=Object.values(state.cases).some(c=>c.status==='deferred_limit'&&c.approval&&!c.deferredLimit)?quotaFor({cfg,state}):null;
  const cases=Object.values(state.cases).filter(c=>labels[c.status]).map(c=>{
-  const file=c.replacementRelative?cfg.sourceRoot+'/'+c.replacementRelative:null;
-  const row=file?tdarrFiles.find(f=>f._id===file&&f.DB===cfg.libraryId):null;
+  const display=replacementDisplayPath(c,cfg);
+  const file=display?cfg.sourceRoot+'/'+display.relative:null;
+  const matches=file?tdarrFiles.filter(f=>f._id===file&&f.DB===cfg.libraryId):[];
+  const row=matches.length===1?matches[0]:null;
   const tdarrStatus=row?.TranscodeDecisionMaker||null;
   let pipelineLabel=labels[c.status];
   if(c.status==='replacement_imported')pipelineLabel=c.cleanup?.complete?'Náhrada schválena; karanténa uklizena':c.cleanup?.approvedAt?'Náhrada schválena; čeká na úklid karantény':tdarrStatus==='Queued'?'Náhrada čeká ve frontě Tdarru':tdarrStatus==='Transcoding'?'Tdarr převádí náhradu':tdarrStatus==='Transcode error'?'Převod náhrady skončil chybou':tdarrStatus==='Transcode success'?'Převod dokončen; ověř výsledek v Review':tdarrStatus==='Not required'?'Tdarr náhradu vynechal; vyžaduje posouzení':'Náhrada předána Tdarru';
   if(c.status==='replacement_imported'&&tdarrStatus==='Hold'&&!c.cleanup?.approvedAt)pipelineLabel='Náhrada je pozastavená v Tdarru; zkontroluj důvod';
   if(c.status==='no_action')pipelineLabel=c.originalCheckKind==='healthy'?'Úplná kontrola originálu bez chyby':'Kontrola originálu nepotvrdila poškození';
   const followup=replacementFollowup(c,{cfg,state});
-  return {replacementFollowupId:followup?.id||null,replacementFollowupBinding:followup?.binding||null,id:c.id,title:c.relative?.split('/')[0]||'Film',phase:c.status,pipelineLabel,source:'recovery',message:c.message,reason:c.evidence?.signature||c.approval?.signature||c.message,created:c.created,updated:c.updated,lastSearchAt:c.lastSearchAt||null,nextSearchAt:c.nextSearchAt||null,nextRetryAt:c.nextRetryAt||null,sourceRetained:c.status==='waiting_source_kept'||c.status==='deferred_cooldown'||c.status==='deferred_limit'&&!!c.deferredLimit,originalCheckKind:c.originalCheckKind||null,tmdbId:c.tmdbId||null,titleSlug:c.titleSlug||null,edition:c.binding?.sourceTitle||c.approval?.sourceTitle||null,queue:c.latestQueue||[],error:c.observationError||c.retentionError||null,tdarrStatus,replacementTitle:c.replacementRelative?.split('/').pop()||null,quarantineRetained:!!c.quarantine&&!c.cleanup?.complete,cleanupComplete:!!c.cleanup?.complete,deleteAfter:c.cleanup?.deleteAfter||null,canRestore:false};
+  return {replacementFollowupId:followup?.id||null,replacementFollowupBinding:followup?.binding||null,id:c.id,title:c.relative?.split('/')[0]||'Film',phase:c.status,pipelineLabel,source:'recovery',message:c.message,reason:c.evidence?.signature||c.approval?.signature||c.message,created:c.created,updated:c.updated,lastSearchAt:c.lastSearchAt||null,nextSearchAt:c.nextSearchAt||null,nextRetryAt:(c.status==='deferred_limit'&&c.approval&&!c.deferredLimit?frozenLimit?.retryAt:c.nextRetryAt)||null,sourceRetained:c.status==='waiting_source_kept'||c.status==='deferred_cooldown'||c.status==='deferred_limit'&&!!(c.deferredLimit||c.approval),originalCheckKind:c.originalCheckKind||null,tmdbId:c.tmdbId||null,titleSlug:c.titleSlug||null,edition:c.binding?.sourceTitle||c.approval?.sourceTitle||null,queue:['waiting_replacement','waiting_source_kept','manual'].includes(c.status)?c.latestQueue||[]:[],error:c.observationError||c.retentionError||null,tdarrStatus,legacyReplacementBinding:display?.legacy===true,replacementTitle:display?.relative.split('/').pop()||null,quarantineRetained:!!c.quarantine&&!c.cleanup?.complete,cleanupComplete:!!c.cleanup?.complete,deleteAfter:c.cleanup?.deleteAfter||null,canRestore:false};
  });
  await atomic(path.join(path.dirname(cfg.mediaRoot),'.tdarr-recovery-status.json'),{version:1,updated:new Date().toISOString(),cases});
 }

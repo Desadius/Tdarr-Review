@@ -1,3 +1,4 @@
+import {downloadQueue} from './download-queue.mjs';
 import {ensureHandoff} from './replacement-handoff.mjs';
 import {retainCase,fp as retentionFP} from './quarantine-retention.mjs';
 import fs from 'node:fs/promises';
@@ -67,7 +68,7 @@ export function createReplacement({data,getConfig,safeFile,hash,atomicJSON,tdarr
   const cleanup=c.cleanup,complete=cleanup?.complete===true;
   const pipelineLabel=c.observationError||c.retentionError?'Obnova vyžaduje kontrolu':complete?'Náhrada schválena; karanténa uklizena':cleanup?.approvedAt?'Náhrada schválena; čeká na úklid karantény':c.phase==='imported'?(importedLabels[c.tdarrStatus]||'Náhrada předána; stav Tdarru není doložen'):publicText(c.message);
   return {id:c.id,itemId:c.itemId,title:c.title,phase:c.phase,message:publicText(c.message),pipelineLabel,reason:publicText(c.reason),created:c.created,updated:c.updated,statusUpdated:c.statusUpdated||c.updated,
-   queue:(Array.isArray(c.queue)?c.queue:[]).map(q=>({title:q.title,status:q.status,percent:q.percent,timeleft:q.timeleft,error:publicText(q.error)})),
+   queue:(Array.isArray(c.queue)?c.queue:[]).map(q=>({title:q.title,status:q.status,trackedDownloadState:q.trackedDownloadState,trackedDownloadStatus:q.trackedDownloadStatus,percent:q.percent,timeleft:q.timeleft,error:publicText(q.error)})),
    search:c.phase!=='imported'&&c.search?{id:c.search.id,status:c.search.status,message:publicText(c.search.message)}:null,
    replacement:c.replacement?{title:c.replacement.title,quality:c.replacement.quality,languages:Array.isArray(c.replacement.languages)?c.replacement.languages:[],bytes:c.replacement.bytes}:null,
    originalQuality:c.originalQuality,profileId:c.profileId,tdarrStatus:c.tdarrStatus||null,replacementTitle:c.replacement?.title||null,
@@ -157,7 +158,7 @@ export function createReplacement({data,getConfig,safeFile,hash,atomicJSON,tdarr
     // after a missing entry, a timeout or an unsupported Tdarr state.
     if(c.phase==='imported'){await observeImported(c,cfg);await persist(c);continue;}
     const m=await api(con,'/movie/'+c.movieId),queue=(await api(con,'/queue?pageSize=1000')).records.filter(q=>q.movieId===c.movieId);
-    c.queue=queue.map(q=>({title:q.title,status:q.status,percent:q.size?Math.max(0,Math.min(100,100*(1-q.sizeleft/q.size))):null,timeleft:q.timeleft,error:q.errorMessage||null}));
+    c.queue=queue.map(downloadQueue);
     if(c.searchId){const s=await api(con,'/command/'+c.searchId);c.search={id:s.id,status:s.status,message:s.message};}
     if(m.movieFileId&&m.movieFileId!==c.oldFileId){
      const root=con.mediaRoot+'/',f=m.movieFile;if(!f?.path?.startsWith(root)||f.sceneName&&new RegExp(titleRegex(c.sourceTitle),'i').test(f.sceneName))throw Error('Importovaná kopie je původní vydání nebo má neplatnou cestu.');

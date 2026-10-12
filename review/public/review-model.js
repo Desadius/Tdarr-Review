@@ -91,20 +91,21 @@ export function classifyRecovery(record, now = Date.now()) {
   const sourceRecovery = r.source === 'recovery';
   const stampValue = sourceRecovery ? r.statusUpdated : (r.statusUpdated || r.updated);
   const stamp = finiteTime(stampValue);
-  const unknownTime = stamp === null || stamp > clock + 120000;
+  let unknownTime = stamp === null || stamp > clock + 120000;
   let stale = !unknownTime && clock - stamp > RECOVERY_STALE_MS;
-  const queue = list(r.queue);
+  const queue = ['waiting','waiting_replacement','waiting_source_kept','manual'].includes(r.phase) ? list(r.queue).filter(q=>q&&typeof q==='object'&&!Array.isArray(q)) : [];
   const searchStatus = normalize(r.search?.status);
   const tdarrStatus = normalize(r.tdarrStatus);
   const warnings = [text(r.error), text(r.retentionError), text(r.warning), ...queue.map(q => text(q.error))].filter(Boolean);
   const failedSearch = ['failed', 'aborted', 'cancelled'].includes(searchStatus);
-  const failedQueue = queue.some(q => ['failed', 'error', 'warning', 'downloadclientunavailable'].includes(normalize(q.status)));
+  const blockedImport = queue.some(q => normalize(q.trackedDownloadState)==='importblocked');
+  const failedQueue = blockedImport || queue.some(q => ['failed', 'error', 'warning', 'downloadclientunavailable'].includes(normalize(q.status)));
   if (failedSearch) warnings.push('Hledání v Radarru selhalo nebo bylo zrušené.');
   if (failedQueue) warnings.push('Fronta Radarru vyžaduje kontrolu.');
   if (stale) warnings.push('Stav je starší než 12 minut; obnov aktuální údaje.');
   if (unknownTime) warnings.push('Čas posledního ověření stavu není dostupný.');
 
-  let category = 'attention', label = 'Stav nelze ověřit', nextStep = 'Obnov stav a zkontroluj detail případu.', unknown = false;
+  let category = 'unverified', label = 'Stav nelze ověřit', nextStep = 'Obnov stav a zkontroluj detail případu.', unknown = false;
   // deleteAfter is only published after the backend verified approval evidence.
   const approvalTime = finiteTime(r.approvedAt || r.cleanup?.approvedAt);
   const deletionTime = finiteTime(r.deleteAfter || r.cleanup?.deleteAfter);
@@ -116,7 +117,7 @@ export function classifyRecovery(record, now = Date.now()) {
   } else if (r.phase === 'restored') {
     category = 'done'; label = 'Obě kopie byly vráceny'; nextStep = 'Vrácený převod před případným schválením znovu ověř v Review.';
   } else if (r.phase === 'manual') {
-    label = 'Obnova vyžaduje kontrolu'; nextStep = 'Otevři detail a ověř zachované kopie před další akcí.';
+    category = 'attention'; label = 'Obnova vyžaduje kontrolu'; nextStep = 'Otevři detail a ověř zachované kopie před další akcí.';
   } else if (r.phase === 'deferred_limit') {
     category = 'waiting'; label = 'Čeká na denní limit obnov'; nextStep = 'Obnova pokračuje po uvolnění limitu.';
   } else if (r.phase === 'deferred_cooldown') {
@@ -125,10 +126,10 @@ export function classifyRecovery(record, now = Date.now()) {
     if (r.originalCheckKind === 'healthy') {
       category = 'done'; label = 'Kontrola originálu bez chyby'; nextStep = 'Celý originál se dekódoval bez chyby. Jde o dokončení diagnostiky; výsledek převodu se schvaluje zvlášť v Review.';
     } else {
-      label = 'Kontrola originálu nepotvrdila poškození'; nextStep = 'Prověř provozní nebo nejednoznačnou chybu v detailu. Náhrada se automaticky nestahuje.';
+      category = 'attention'; label = 'Kontrola originálu nepotvrdila poškození'; nextStep = 'Prověř provozní nebo nejednoznačnou chybu v detailu. Náhrada se automaticky nestahuje.';
     }
   } else if (r.phase === 'dry_run') {
-    label = 'Chyba potvrzena; změny jsou vypnuté'; nextStep = 'Zkontroluj nastavení Recovery před povolením obnovy.';
+    category = 'attention'; label = 'Chyba potvrzena; změny jsou vypnuté'; nextStep = 'Zkontroluj nastavení Recovery před povolením obnovy.';
   } else if (r.phase === 'waiting_source_kept') {
     category = 'waiting'; label = 'Náhrada zatím nenalezena'; nextStep = 'Film zůstává v knihovně; vadné vydání se znovu nepřevádí.';
   } else if (r.phase === 'replacement_imported' || r.phase === 'imported') {
@@ -140,19 +141,24 @@ export function classifyRecovery(record, now = Date.now()) {
       category=next.category==='done'?'attention':next.category;
       label='Kontrola náhrady: '+next.label;
       nextStep=next.category==='done'?'Otevři navazující případ; dokončení diagnostiky není schválením náhrady.':next.nextStep;
-      warnings.push(...next.warnings);unknown=next.unknown;stale ||= next.stale;
+      // The displayed activity belongs to the child. Retain real parent
+      // errors, but do not apply the parent's observation age to this activity.
+      for(let i=warnings.length-1;i>=0;i--)if(['Stav je starší než 12 minut; obnov aktuální údaje.','Čas posledního ověření stavu není dostupný.'].includes(warnings[i]))warnings.splice(i,1);
+      const followupStamp=finiteTime(followup.statusUpdated);
+      unknownTime=followupStamp===null||followupStamp>clock+120000;
+      warnings.push(...next.warnings);unknown=next.unknown;stale=next.stale;
     } else if (tdarrStatus === 'queued') {
       category = 'running'; label = 'Čeká ve frontě Tdarru'; nextStep = 'Vyčkej na převod náhrady.';
     } else if (tdarrStatus === 'transcoding') {
       category = 'running'; label = 'Tdarr převádí náhradu'; nextStep = 'Výsledek se objeví v Review po dokončení převodu.';
     } else if (tdarrStatus === 'transcode success') {
-      label = 'Převod dokončen; čeká na posouzení'; nextStep = 'Ověř výsledek v Review před schválením.';
+      category = 'attention'; label = 'Převod dokončen; čeká na posouzení'; nextStep = 'Ověř výsledek v Review před schválením.';
     } else if (tdarrStatus === 'transcode error') {
-      label = 'Převod náhrady skončil chybou'; nextStep = 'Zkontroluj detail chyby a zachované kopie.';
+      category = 'attention'; label = 'Převod náhrady skončil chybou'; nextStep = 'Zkontroluj detail chyby a zachované kopie.';
     } else if (tdarrStatus === 'not required') {
-      label = 'Tdarr náhradu vynechal'; nextStep = 'Posuď důvod vynechání a funkčnost náhrady.';
+      category = 'attention'; label = 'Tdarr náhradu vynechal'; nextStep = 'Posuď důvod vynechání a funkčnost náhrady.';
     } else if (tdarrStatus === 'hold') {
-      label = 'Náhrada je pozastavená v Tdarru'; nextStep = 'Zkontroluj důvod pozastavení a navazující případ Recovery.';
+      category = 'attention'; label = 'Náhrada je pozastavená v Tdarru'; nextStep = 'Zkontroluj důvod pozastavení a navazující případ Recovery.';
     } else {
       unknown = true; label = 'Náhrada předána; stav Tdarru není doložen'; nextStep = 'Obnov stav a ověř, kde se náhrada nachází.';
     }
@@ -173,8 +179,9 @@ export function classifyRecovery(record, now = Date.now()) {
   }
   if (warnings.some(w => w !== 'Stav je starší než 12 minut; obnov aktuální údaje.' && w !== 'Čas posledního ověření stavu není dostupný.')) {
     category = 'attention'; nextStep = 'Zkontroluj upozornění v detailu případu.';
-  } else if ((stale || unknownTime) && category !== 'done') {
-    category = 'attention'; nextStep = 'Obnov stav; aktuální průběh nelze spolehlivě ověřit.';
+    if(blockedImport){label='Staženo; Radarr blokuje import';nextStep='Otevři frontu Radarru a přiřaď stažený soubor správnému filmu přes ruční import. Nové stahování není potřeba.';}
+  } else if ((stale || unknownTime) && !['done', 'attention'].includes(category)) {
+    category = 'unverified'; nextStep = 'Obnov seznam. Pokud stav zůstane neověřený, správce musí zkontrolovat propojení Recovery a Tdarru; převod ani nové stažení nespouštěj naslepo.';
   }
   return {category, label, nextStep, stale, unknown: unknown || unknownTime, warnings: [...new Set(warnings)], confirmedAudioFault: r.audioFaultConfirmed === true || r.phase === 'waiting_source_kept'};
 }
@@ -200,6 +207,20 @@ export function recoveryProgress(record, now = Date.now()) {
     elapsedSeconds:validTime(started) ? Math.max(0,(now-started)/1000) : null,
     etaSeconds:p.running === true && duration !== null && freshMeasurement && alive && !noAdvance && number(p.etaSeconds) ? p.etaSeconds : null,
     speed:hasDuration(p.speed) ? p.speed : null,measuredAt:validTime(measured)?p.updatedAt:null,heartbeatAt:validTime(heartbeat)?p.heartbeatAt:null};
+}
+
+/** Download percentages never describe import, encoding or approval progress. */
+export function downloadProgress(record) {
+  if(!['waiting','waiting_replacement','waiting_source_kept','manual'].includes(record?.phase))return [];
+  return list(record.queue).filter(q=>q&&typeof q==='object'&&!Array.isArray(q)).slice(0,8).map(q=>{
+    const state=normalize(q?.trackedDownloadState),status=normalize(q?.status);
+    const stage=state==='importblocked'?'blocked':state==='importing'?'importing':status==='completed'?'downloaded':status==='paused'?'paused':'downloading';
+    const labels={blocked:'Staženo; import je zablokovaný',importing:'Radarr importuje film',downloaded:'Staženo; čeká na import',paused:'Stahování je pozastavené',downloading:'Průběh stahování'};
+    const measured=typeof q.percent==='number'&&Number.isFinite(q.percent)&&q.percent>=0;
+    const left=text(q.timeleft);
+    const eta=stage==='downloading'&&/^\d{1,6}:[0-5]\d:[0-5]\d$/.test(left)&&!/^0+:00:00$/.test(left)?left:null;
+    return {title:text(q.title),stage,label:labels[stage],downloadPercent:measured?Math.min(100,q.percent):null,eta,error:text(q.error)};
+  });
 }
 
 /** Only read-only Recovery details may follow live observations automatically.
@@ -250,4 +271,23 @@ export function historyWarnings(history) {
     if (!warning && !activeError) return [];
     return [{key: `history:${h.id || 'unknown'}:${h.action || 'event'}:${h.time || index}`, id: h.id, title: h.title, action: h.action, time: h.time, status: h.status, category: 'attention', severity: activeError ? 'error' : 'warning', message: [activeError ? text(h.message) || 'Operace skončila chybou.' : '', warning].filter(Boolean).join(' '), entry: h, reviewItemId: null}];
   });
+}
+
+/** Read-only explanation of a quarantined file. Never supplies deletion rights. */
+export function quarantineLifecycle(file, requests, now = Date.now()) {
+  const matches = itemId(file?.caseId) ? list(requests).filter(r => r?.id === file.caseId) : [];
+  if(matches.length !== 1) return {label:'Případ není jednoznačně přiřazen', requestKey:null, deleteAfter:null, reason:'Soubor zůstává zachovaný; nelze určit podmínky jeho úklidu.'};
+  const r=matches[0],requestKey=`${r.source==='recovery'?'recovery':'radarr'}:${r.id}`;
+  const error=text(r.error)||text(r.retentionError),deadline=finiteTime(r.deleteAfter||r.cleanup?.deleteAfter);
+  if(error) return {label:'Úklid vyžaduje kontrolu',requestKey,deleteAfter:deadline,reason:error};
+  if(r.cleanupComplete===true||r.cleanup?.complete===true) return {label:'Soubor je stále přítomný po evidovaném úklidu',requestKey,deleteAfter:deadline,reason:'Otevři obnovu a ověř evidenci; automatické mazání nelze odvodit z tohoto přehledu.'};
+  if(deadline!==null) return {label:deadline>now?'Čeká na konec schválené lhůty':'Lhůta uběhla; čeká na bezpečný úklid',requestKey,deleteAfter:deadline,reason:'Úklid proběhne jen při splnění kontrol identity zachovaných souborů.'};
+  return {label:'Chybí doložené schválení náhrady',requestKey,deleteAfter:null,reason:'Nejprve je potřeba posoudit funkční náhradu. Samotný úspěšný převod nestačí k úklidu karantény.'};
+}
+
+/** UI links must tolerate older snapshots and require a unique real child. */
+export function recoveryFollowup(record,records){
+ const child=record?.replacementFollowup;
+ if(record?.source!=='recovery'||!itemId(child?.id)||child.id!==record.replacementFollowupId||child.id===record.id||child.source!=='recovery')return null;
+ return list(records).filter(r=>r?.id===child.id&&r.source==='recovery').length===1?child:null;
 }

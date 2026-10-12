@@ -68,3 +68,14 @@ Published and anonymously verified on 11 October 2026:
 Anonymous checks fetched and hashed each manifest and image configuration, confirmed Linux amd64, and matched the revision/digests pushed by CI. This was a manifest/config accessibility check, not a full fresh download of every layer to a new Unraid host. The initial compressed image layers total about 1.5 GB because the pinned upstream Tdarr runtime is retained.
 
 The Community Applications portal accepted the repository's MIT license and profile and found one valid Docker application with no template errors or warnings. The image pullability check also passed. Final submission was received and auto-approved on 11 October 2026; the portal states that inclusion follows the next published catalog build. The template remains marked beta.
+
+
+## 1.10.3 audit
+
+The release audit covers read-only historical replacement association, stale/follow-up observations, blocked imports, frozen-approval quota timing, quarantine explanations and the optional Recovery-to-Review routing function. Legacy journal fields do not create fingerprints, approvals or cleanup permission. The strict installed/quarantined-file identity checks remain unchanged, including metadata-only mismatches.
+
+The final source passed 318 Linux regression tests without failures or skips. Both actual candidate images passed fresh-data/login/runtime smoke checks, approval/batch HTTP integration and packaged private-registry migration/worker checks. All disposable fixtures remain independent of production media and credentials. Browser checks passed for the separate unverified filter, downloader percentages/ETA, blocked-import advice, quarantine deadlines and links, legacy details with missing follow-up fields, and Czech/English labels.
+
+One browser-only failure was found during the audit: opening a historical detail with absent follow-up fields could throw. It was fixed with a null-safe, unique-child link policy and a regression test; the repaired quarantine link was exercised again in the browser. A stale downloader warning after import was also removed from both status projection and presentation.
+
+A successful conversion is still not an approval. No historical cleanup is automatically authorized, and no production movie is approved as a release test. Full-file content equivalence for older ctime-only changes is not proven by this release; those quarantine copies remain protected.

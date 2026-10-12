@@ -1,6 +1,6 @@
 import {projectReplacementFollowups} from './replacement-followup.mjs';
 // Public status is a projection of the private journal, never a repair decision.
-const PUBLIC_FIELDS = ['replacementFollowupId', 'replacementFollowupBinding', 'id', 'title', 'phase', 'pipelineLabel', 'source', 'message', 'reason', 'created', 'updated', 'lastSearchAt', 'nextSearchAt', 'nextRetryAt', 'sourceRetained', 'originalCheckKind', 'tmdbId', 'titleSlug', 'edition', 'error', 'tdarrStatus', 'replacementTitle', 'quarantineRetained', 'cleanupComplete', 'deleteAfter', 'canRestore'];
+const PUBLIC_FIELDS = ['legacyReplacementBinding', 'replacementFollowupId', 'replacementFollowupBinding', 'id', 'title', 'phase', 'pipelineLabel', 'source', 'message', 'reason', 'created', 'updated', 'lastSearchAt', 'nextSearchAt', 'nextRetryAt', 'sourceRetained', 'originalCheckKind', 'tmdbId', 'titleSlug', 'edition', 'error', 'tdarrStatus', 'replacementTitle', 'quarantineRetained', 'cleanupComplete', 'deleteAfter', 'canRestore'];
 const PUBLIC_TEXT = ['message', 'reason', 'error'];
 const iso = value => new Date(value).toISOString();
 const timestamp = value => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? Date.parse(value) : null;
@@ -58,7 +58,7 @@ export function createLiveStatusPublisher({getState, publish, readTdarrFiles, cl
       else if (previous.key !== retentionKey) retention.set(entry.id, {key: retentionKey, changedAt: now});
       const result = Object.fromEntries(PUBLIC_FIELDS.filter(key => Object.hasOwn(entry, key)).map(key => [key, entry[key]]));
       for (const key of PUBLIC_TEXT) if (Object.hasOwn(result, key)) result[key] = publicText(result[key]);
-      result.queue = (Array.isArray(entry.queue) ? entry.queue : []).map(q => ({title: q.title, status: q.status, percent: q.percent, timeleft: q.timeleft, error: publicText(q.error)}));
+      result.queue = (Array.isArray(entry.queue) ? entry.queue : []).map(q => ({title: q.title, status: q.status, trackedDownloadState: q.trackedDownloadState, trackedDownloadStatus: q.trackedDownloadStatus, percent: q.percent, timeleft: q.timeleft, error: publicText(q.error)}));
       const active = c.status === 'verifying' && decode?.running === true;
       const observed = Math.max(timestamp(c.updated) ?? 0, phase?.startedAt ?? 0, retention.get(entry.id)?.changedAt ?? 0, filesCheckedAt ?? 0, decode?.finishedAt ?? 0, active ? now : 0);
       result.statusUpdated = observed > 0 ? iso(observed) : null;

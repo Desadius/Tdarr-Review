@@ -1,5 +1,33 @@
 export default {
   "exact": {
+    "Staženo; import je zablokovaný": "Downloaded; import is blocked",
+    "Radarr importuje film": "Radarr is importing the movie",
+    "Staženo; čeká na import": "Downloaded; waiting for import",
+    "Stahování je pozastavené": "Download is paused",
+    "Průběh stahování": "Download progress",
+    "Průběh stažení souboru": "File download progress",
+    "Stažení souboru": "File download",
+    "Zbývající čas stažení": "Download time remaining",
+    "Procenta označují pouze stažení. Import, převod a schválení jsou samostatné kroky.": "Percentages describe downloading only. Import, transcoding and approval are separate steps.",
+    "Případ není jednoznačně přiřazen": "The case is not uniquely matched",
+    "Soubor zůstává zachovaný; nelze určit podmínky jeho úklidu.": "The file is preserved; its cleanup conditions could not be determined.",
+    "Úklid vyžaduje kontrolu": "Cleanup needs inspection",
+    "Soubor je stále přítomný po evidovaném úklidu": "The file is still present after recorded cleanup",
+    "Otevři obnovu a ověř evidenci; automatické mazání nelze odvodit z tohoto přehledu.": "Open the recovery case and verify its records; this overview does not authorize automatic deletion.",
+    "Čeká na konec schválené lhůty": "Waiting for the approved retention deadline",
+    "Lhůta uběhla; čeká na bezpečný úklid": "Retention deadline passed; waiting for safe cleanup",
+    "Úklid proběhne jen při splnění kontrol identity zachovaných souborů.": "Cleanup only proceeds when the preserved file identity checks pass.",
+    "Chybí doložené schválení náhrady": "Verified replacement approval is missing",
+    "Nejprve je potřeba posoudit funkční náhradu. Samotný úspěšný převod nestačí k úklidu karantény.": "A working replacement needs to be reviewed first. A successful transcode alone is insufficient for quarantine cleanup.",
+    "Součet velikostí souborů nemusí odpovídat fyzicky zabranému místu; některé kopie mohou být hardlinky.": "The sum of file sizes may differ from physical disk usage; some copies may be hardlinks.",
+    "Termín úklidu": "Cleanup deadline",
+    "Otevřít obnovu": "Open recovery case",
+    "Staženo; Radarr blokuje import": "Downloaded; Radarr import is blocked",
+    "Otevři frontu Radarru a přiřaď stažený soubor správnému filmu přes ruční import. Nové stahování není potřeba.": "Open the Radarr queue and assign the downloaded file to the correct movie using manual import. Another download is not needed.",
+    "Změnil se pouze čas změny metadat schválené kopie. Není to potvrzené poškození filmu. Karanténa zůstává zachovaná, protože chybí nový důkaz shody obsahu; další převod ani stažení nejsou tímto hlášením vyžádány.": "Only the approved copy metadata timestamp changed. This does not confirm film corruption. Quarantine is preserved because there is no new proof of content identity; this message does not request another conversion or download.",
+    "Approved replacement metadata timestamp changed; content identity is not reverified; quarantine preserved": "Only the approved replacement metadata timestamp changed. Content identity has not been reverified; quarantine is preserved.",
+    "Stav Tdarru je dohledán podle přesné historické cesty náhrady. Tato vazba nepotvrzuje schválení filmu ani neopravňuje k úklidu karantény.": "The Tdarr status is matched using the exact historical replacement path. This association does not confirm approval or authorize quarantine cleanup.",
+    "Obnov seznam. Pokud stav zůstane neověřený, správce musí zkontrolovat propojení Recovery a Tdarru; převod ani nové stažení nespouštěj naslepo.": "Refresh the list. If the status remains unverified, an administrator needs to check the Recovery and Tdarr integration; do not start another conversion or download blindly.",
     "POSOUZENÍ": "REVIEW",
     "Podklady": "Preparation",
     "Synchronizace": "Synchronisation",
@@ -1217,6 +1245,14 @@ export default {
           0
         ]
       }
+    ],
+    [
+      "Stav nelze ověřit ({0})",
+      "Status unverified ({0})"
+    ],
+    [
+      "Velikost zobrazených souborů: {0}",
+      "Size of displayed files: {0}"
     ],
     [
       "Vyžaduje zásah ({0})",

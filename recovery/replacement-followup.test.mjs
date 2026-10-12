@@ -45,6 +45,22 @@ test('follow-up visibility never supplies mutation or approval capability to the
   const result=classifyRecovery({...r,replacementFollowup:{...next,phase,originalCheckKind:'healthy',cleanupComplete:true,approvedAt:r.statusUpdated}},now);
   assert.equal(result.category,category);assert.match(result.label,/Kontrola náhrady/);
  }
- const stale=classifyRecovery({...r,replacementFollowup:{...next,phase:'verifying',statusUpdated:new Date(now-20*60000).toISOString()}},now);assert.equal(stale.category,'attention');assert.equal(stale.stale,true);
+ const stale=classifyRecovery({...r,replacementFollowup:{...next,phase:'verifying',statusUpdated:new Date(now-20*60000).toISOString()}},now);assert.equal(stale.category,'unverified');assert.equal(stale.stale,true);
  const mismatch=classifyRecovery({...r,replacementFollowup:{...next,id:'c'.repeat(24),phase:'verifying'}},now);assert.match(mismatch.label,/pozastavená/);
 });
+
+ test('fresh child activity is not made stale by an old or missing parent observation',()=>{
+ const f=fixture(),now=Date.parse('2026-10-12T10:00:00Z'),child={id:f.child.id,source:'recovery',phase:'verifying',statusUpdated:new Date(now).toISOString()};
+ for(const parentTime of [null,'bad',new Date(now-30*60000).toISOString()]){
+ const r={id:f.parent.id,source:'recovery',phase:'replacement_imported',statusUpdated:parentTime,replacementFollowupId:child.id,replacementFollowup:child};
+ const result=classifyRecovery(r,now);assert.equal(result.category,'running');assert.equal(result.stale,false);assert.equal(result.unknown,false);assert.equal(result.warnings.length,0);
+ const error=classifyRecovery({...r,error:'Quarantine identity changed'},now);assert.equal(error.category,'attention');assert(error.warnings.includes('Quarantine identity changed'));
+ }
+ });
+ test('fresh parent cannot rescue missing or stale child timestamps',()=>{
+ const f=fixture(),now=Date.parse('2026-10-12T10:00:00Z');
+ for(const childTime of [null,'bad',new Date(now-30*60000).toISOString(),new Date(now+5*60000).toISOString()]){
+ const r={id:f.parent.id,source:'recovery',phase:'replacement_imported',statusUpdated:new Date(now).toISOString(),replacementFollowupId:f.child.id,replacementFollowup:{id:f.child.id,source:'recovery',phase:'verifying',statusUpdated:childTime}};
+ assert.equal(classifyRecovery(r,now).category,'unverified');
+ }
+ });
