@@ -4,7 +4,7 @@ Review and approve Tdarr transcodes before replacing the files in your media lib
 
 Choose **English** or **Čeština** in the interface; Czech is the initial default. This is a community project, independent of Tdarr, Radarr and Plex.
 
-Release version: **[1.10.4](https://github.com/Desadius/Tdarr-Review/releases/tag/v1.10.4)**. Use the explicit Linux amd64 `1.10.4` image tags for this source release. Moving `latest` is a separate publication choice. Source publication, image publication and updating a running installation remain separate operations. Personal configuration, credentials, journals, film files and one-off repair approvals are excluded from the repository and images.
+Release version: **[1.10.5](https://github.com/Desadius/Tdarr-Review/releases/tag/v1.10.5)**. Use the explicit Linux amd64 `1.10.5` image tags for this source release. Moving `latest` is a separate publication choice. Source publication, image publication and updating a running installation remain separate operations. Personal configuration, credentials, journals, film files and one-off repair approvals are excluded from the repository and images.
 
 ## What is included
 
@@ -49,14 +49,14 @@ git clone https://github.com/Desadius/Tdarr-Review.git
 cd Tdarr-Review
 cp .env.example .env
 # Edit .env, create its host directories and set write permissions first.
-# Set REVIEW_IMAGE_TAG=1.10.4 for this release.
+# Set REVIEW_IMAGE_TAG=1.10.5 for this release.
 docker compose pull review
 docker compose up -d --no-build review
 ```
 
-Follow [the installation guide](docs/INSTALL-UNRAID.md) before enabling file replacement. The Linux amd64 image is `ghcr.io/desadius/tdarr-review:1.10.4`; optional Recovery is `ghcr.io/desadius/tdarr-recovery:1.10.4`, selected separately with `RECOVERY_IMAGE_TAG`. To build locally instead, use `docker compose build review` and `docker compose up -d review`. The default bind address is localhost. Set it to your server's LAN address and set `PUBLIC_ORIGIN` to the exact address used in your browser.
+Follow [the installation guide](docs/INSTALL-UNRAID.md) before enabling file replacement. The Linux amd64 image is `ghcr.io/desadius/tdarr-review:1.10.5`; optional Recovery is `ghcr.io/desadius/tdarr-recovery:1.10.5`, selected separately with `RECOVERY_IMAGE_TAG`. To build locally instead, use `docker compose build review` and `docker compose up -d review`. The default bind address is localhost. Set it to your server's LAN address and set `PUBLIC_ORIGIN` to the exact address used in your browser.
 
-The 1.10.4 changes add a larger shared video comparison with a draggable divider, optional automatic movement and bounded detail/compact preview profiles. Manual assessment and approval protections remain unchanged. Regression tests and isolated image/HTTP checks are recorded in [verification](docs/VERIFICATION.md). These checks do not themselves publish an image or update another installation.
+The 1.10.5 changes prepare the existing review samples in advance (bounded private cache, ordered audio-language preferences), keep the shared Recovery status readable over SMB and let the Recovery worker stop cleanly on `docker stop`. Manual assessment and approval protections remain unchanged. Regression tests and isolated image checks are recorded in [verification](docs/VERIFICATION.md). These checks do not themselves publish an image or update another installation.
 
 ## Project layout
 

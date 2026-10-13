@@ -1,5 +1,13 @@
 # Repository verification — 2026-10-13
 
+## 1.10.5 — prepared samples and clean Recovery stop
+
+The prepared-samples change (`626bb44`, merged as `05e8179`) was verified on Linux with Node 24 after merging the then-current `main`: 380 regression tests without failures or skips, both Docker images, real FFmpeg previews, the new preview-cache HTTP test (generated media, local mock Tdarr; now part of CI) covering preparation, cached reuse and restart, packaged approval integration and the Recovery tests. The hashes of all 120 packaged files matched the manifest. The Review and Recovery images built from `05e8179` were installed on the existing deployment.
+
+Release source `8bea743` passed `npm run check` and all 382 Linux regression tests in CI without failures or skips, followed by the Docker build and smoke checks of both images with disposable fixtures and no external network. New worker tests run the real Recovery worker without `--once`: SIGTERM during the idle wait exits with code 0 within seconds and leaves the journal unchanged, and SIGTERM during an original decode lets both passes finish before exiting, so no case is left interrupted.
+
+The Recovery image was built from `8bea743` on the existing Linux deployment. Its 37 application files matched the release source, and user, read-only root filesystem and mappings matched the previous container. Before each restart there were no ffmpeg processes and no case in an active phase. The previous build still needed 63 s and exit code 137 to stop; the new worker stopped in about 2 s with exit code 0, then completed its next cycle without error and refreshed the shared status file. Review was running the earlier `05e8179` build, whose Review sources are identical in this release. No production film was approved or replaced as a test.
+
 ## 1.10.4 — shared picture and movable divider
 
 The candidate passed 329 Linux regression tests without failures or skips, the real FFmpeg timing/geometry fixtures, AV HTTP checks and packaged single/batch approval integration. New fixtures cover anamorphic sample aspect ratios, bounded portrait previews and 1920×1080 detail output. The original five-second container origin and deliberate 300 ms audio delay remain covered.
