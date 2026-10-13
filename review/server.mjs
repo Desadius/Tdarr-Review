@@ -19,6 +19,7 @@ import {fileURLToPath} from 'node:url';
 import {safeFile,fingerprint,hash,atomicJSON,command,probe,inspect,replaceChecked,recoverTransactions} from './core.mjs';
 import {measure} from './progress.mjs';
 import {appVersion} from './app-version.mjs';
+import {isLoopback,recoveryStatusHealth,healthSummary} from './health-status.mjs';
 import {captureReceipt,cleanupReviewed} from './cleanup.mjs';
 import {resolveReviewSource} from './source-mapping.mjs';
 import {matchReviewJob} from './job-matching.mjs';
@@ -365,6 +366,10 @@ const server=http.createServer(async(req,res)=>{
     const url=new URL(req.url,'http://'+HOST);
     if(req.method==='POST'&&req.headers.origin!==config.publicOrigin)return respond(res,403,{error:'Nepovolený původ požadavku.'});
     if(req.method==='POST'&&req.headers['content-type']!=='application/json')return respond(res,415,{error:'Vyžadován JSON.'});
+    if(url.pathname==='/health'&&req.method==='GET'){
+      if(!isLoopback(req.socket.remoteAddress))return respond(res,404,{error:'Nenalezeno.'});
+      return respond(res,200,healthSummary({pendingTransactions:recovery.length,restorePending:state.pauses.length,recoveryStatus:await recoveryStatusHealth(path.join(path.dirname(config.mediaRoot),'.tdarr-recovery-status.json'))}));
+    }
     if(url.pathname==='/api/login'&&req.method==='POST'){
       const now=Date.now();pruneAuthAttempts(authAttempts,now);if(!registerAuthAttempt(authAttempts,req.socket.remoteAddress,now))return respond(res,429,{error:'Zkus přihlášení za minutu.'});
       const b=await body(req);

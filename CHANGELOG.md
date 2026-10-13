@@ -10,6 +10,7 @@ This records the implemented application features. Versions before 1.10.0 were d
 - Recovery detects edits to `config.json` made after start-up: it logs that a restart is required and reports `configChange` (with a validity flag) in the shared status file. The running worker still applies configuration only at start-up. Documented in Configuration and Operations.
 - Add `npm run test:docker` for the full Linux/Node 24 syntax and regression suite from Windows, with a read-only repository, disposable scratch space and no container network.
 - Report Windows-only POSIX directory-fsync, permission and symlink test limitations explicitly while retaining platform-independent coverage and mandatory production durability checks.
+- The Review health check now reads a loopback-only `/health` summary and writes pending exchange transactions, Tdarr nodes still paused by Review and a stale Recovery status into Docker's health log. These are reported without marking the container unhealthy, so no restart interrupts them.
 
 ## 1.10.5 — 2026-10-13
 
