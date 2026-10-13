@@ -4,6 +4,8 @@ This records the implemented application features. Versions before 1.10.0 were d
 
 ## Unreleased
 
+- Document that Review can undo a manual Tdarr node pause applied during its action, including pending resume retries and the maintenance pause procedure.
+- Document and regression-test Review blocking a Recovery-returned hardlinked original while keeping its quarantine protection intact.
 - Cover authored server-error string literals with a regression check against the English catalog, and translate missing file-identity, review-save and preview errors without changing Czech messages or operational checks.
 
 ## 1.10.5 — 2026-10-13
