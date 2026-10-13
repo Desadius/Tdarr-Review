@@ -4,6 +4,8 @@ This records the implemented application features. Versions before 1.10.0 were d
 
 ## Unreleased
 
+- Document that Review can undo a manual Tdarr node pause applied during its action, including pending resume retries and the maintenance pause procedure.
+- Document and regression-test Review blocking a Recovery-returned hardlinked original while keeping its quarantine protection intact.
 - The Review health check now reads a loopback-only `/health` summary and writes pending exchange transactions, Tdarr nodes still paused by Review and a stale Recovery status into Docker's health log. These are reported without marking the container unhealthy, so no restart interrupts them.
 
 ## 1.10.5 — 2026-10-13

@@ -44,6 +44,14 @@ Review copies the result into the destination filesystem and reads it again for 
 
 Normal approval does not repeat the entire audio/video decode. Comparison samples and profile-specific metadata checks are separate operations and can still take time.
 
+## Manual Tdarr node pauses during a Review action
+
+Before a replacement, Review records the names of nodes that are currently unpaused, then pauses them to prevent new dispatch. Nodes that were already paused are not recorded and are left paused when Review resumes dispatch.
+
+For a recorded node, resuming checks only its name and current `nodePaused` flag. If it is paused, Review sets that flag to `false`. It cannot distinguish its own pause from a manual pause made in Tdarr after the Review action started. That later manual pause can therefore be undone when the action finishes. There is no per-node confirmation or timestamp-based ownership check.
+
+Pause maintenance nodes in Tdarr **before** starting a Review replacement or replacement request. If the action is already running, wait for Review to become idle and for `restorePending` to reach zero, then apply the maintenance pause and verify it in Tdarr. A failed resume remains pending and can be retried by subsequent `/api/items` requests, including after a Review restart once unresolved exchange transactions are clear. Stopping Review or closing the browser during an action does not make a later manual pause safe from that retry; retain the pending state and finish reconciliation before applying the maintenance pause.
+
 ## Error or ambiguous state
 
 Inspect the film's detail and durable journal. Preserve `.tdarr-review-*.old`, `.tmp` files and incomplete JSON transactions. A timeout is not proof that a remote mutation failed; verify actual Tdarr/Radarr state before retrying. Review's replacement handoff avoids duplicate queueing when it can prove the same file is already queued or processed.
