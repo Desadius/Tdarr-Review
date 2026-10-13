@@ -6,8 +6,9 @@ import {itemRoutes} from './routes/items.mjs';
 import {previewRoutes} from './routes/previews.mjs';
 import {settingsRoutes} from './routes/settings.mjs';
 import {staticRoutes} from './routes/static.mjs';
+import {nodeRoutes} from './routes/nodes.mjs';
 
-const modules={libraryRoutes,itemRoutes,previewRoutes,settingsRoutes,staticRoutes};
+const modules={libraryRoutes,itemRoutes,previewRoutes,settingsRoutes,nodeRoutes,staticRoutes};
 const ID='a'.repeat(24);
 // Every authenticated route served before the split of server.mjs (#12).
 const ROUTES=[
@@ -21,7 +22,7 @@ const ROUTES=[
  ['POST','/api/items/'+ID+'/approve','itemRoutes'],['POST','/api/items/'+ID+'/reject','itemRoutes'],['GET','/api/items/'+ID+'/video','itemRoutes'],
  ['GET','/api/preview-settings','previewRoutes'],['POST','/api/preview-settings','previewRoutes'],['GET','/api/items/'+ID+'/preview-status','previewRoutes'],
  ['POST','/api/items/'+ID+'/audio-compare','previewRoutes'],['POST','/api/items/'+ID+'/frames','previewRoutes'],
- ['GET','/api/settings','settingsRoutes'],['POST','/api/settings','settingsRoutes'],['POST','/api/settings/test','settingsRoutes'],
+ ['GET','/api/settings','settingsRoutes'],['POST','/api/settings','settingsRoutes'],['POST','/api/settings/test','settingsRoutes'],['POST','/api/node-restores/keep','nodeRoutes'],
  ...['/','/app.js','/ui-kit.js','/recovery-view.js','/comparison.js','/settings-dialogs.js','/quarantine.js','/statistics.js','/error-messages.js','/review-workflow.js','/av-player.js','/review-model.js','/i18n.js','/messages.en.js','/style.css','/favicon.svg'].map(p=>['GET',p,'staticRoutes']),
 ];
 const TOUCHED=Symbol('ctx touched');
