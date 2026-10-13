@@ -219,3 +219,18 @@ test('retention identity errors stay public and clear when exact approved identi
   await f.atomicJSON(approvalFile,approval);await f.service.cleanup();c=(await f.service.list())[0];assert.equal(c.retentionError,null);assert.equal(c.error,null);assert.equal(c.approvedAt,approval.approvedAt);assert.equal(classifyRecovery(c).category,'done');assert.equal(await fs.readFile(journal.originalQuarantine,'utf8'),'ORIGINAL');
  }finally{await f.cleanup()}
 });
+
+test('Recovery restart notice leaves the server with only its safe fields, and full-hash progress passes through',async()=>{
+ const f=await fixture();try{
+  const file=path.join(path.dirname(f.media),'.tdarr-recovery-status.json'),fresh=new Date().toISOString();
+  assert.equal(await f.service.recoveryConfig(),null,'no status file: no notice');
+  await f.atomicJSON(file,{version:1,updated:fresh,configChange:null,cases:[]});assert.equal(await f.service.recoveryConfig(),null);
+  await f.atomicJSON(file,{version:1,updated:fresh,configChange:{detectedAt:'2026-10-13T10:00:00.000Z',restartRequired:true,valid:false,error:'config.json is not valid JSON'.padEnd(400,'x'),digest:'secret-digest'},cases:[{id:'d'.repeat(24),phase:'confirmed',fullHash:{stage:'confirmation',done:5,total:10,started:fresh,updated:fresh}}]});
+  const notice=await f.service.recoveryConfig();
+  assert.deepEqual(Object.keys(notice).sort(),['detectedAt','error','restartRequired','valid']);assert.equal(notice.valid,false);assert.equal(notice.error.length,300);assert.ok(!JSON.stringify(notice).includes('secret-digest'));
+  assert.deepEqual((await f.service.list()).find(r=>r.id==='d'.repeat(24)).fullHash,{stage:'confirmation',done:5,total:10,started:fresh,updated:fresh});
+  await f.atomicJSON(file,{version:1,updated:fresh,configChange:{detectedAt:'not a date',restartRequired:true,valid:true,error:null},cases:[]});
+  assert.deepEqual(await f.service.recoveryConfig(),{detectedAt:null,restartRequired:true,valid:true,error:null});
+  await fs.writeFile(file,'{broken');assert.equal(await f.service.recoveryConfig(),null,'an unreadable status file never breaks the request list');
+ }finally{await f.cleanup();}
+});

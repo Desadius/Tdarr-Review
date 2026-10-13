@@ -1,5 +1,13 @@
 export default {
   "exact": {
+    "Konfigurace Recovery byla změněna. Změna se projeví až po restartu kontejneru Recovery; restartuj ho, až bude nečinný.": "The Recovery configuration was changed. The change takes effect only after the Recovery container restarts; restart it while it is idle.",
+    "Konfigurace Recovery byla změněna a není platná. Oprav config.json před restartem, jinak se Recovery nespustí.": "The Recovery configuration was changed and is not valid. Fix config.json before restarting, otherwise Recovery will not start.",
+    "Zjištěno:": "Detected:",
+    "Úplný kontrolní součet originálu": "Full checksum of the original",
+    "při potvrzení chyby": "at fault confirmation",
+    "před přesunem do karantény": "before moving to quarantine",
+    "Chybí čerstvé hlášení průběhu; obnovením ověř spojení s Recovery.": "No recent progress report; refresh to check the connection to Recovery.",
+    "Recovery čte celý originál s nízkou prioritou a součet porovná s potvrzeným stavem. Rozdíl zastaví přesun do karantény.": "Recovery reads the whole original at low priority and compares the checksum with the confirmed state. A difference stops the move to quarantine.",
     "Výběr zvukových stop musí být objekt.": "The audio track selection must be an object.",
     "Vyber platný způsob kontroly.": "Choose a valid review method.",
     "Verzi revize již nelze zvýšit.": "The review revision can no longer be increased.",
