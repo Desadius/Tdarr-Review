@@ -14,3 +14,14 @@ test('timeouts, permissions and unknown stderr cannot trigger replacements',()=>
  assert.deepEqual(s.c.cleanup,approval);assert.ok((await fs.stat(s.file)).isFile());
  }finally{await fs.rm(s.root,{recursive:true,force:true})}
  });
+
+test('cleanup deadline and the published retention rules come from one policy shared by Review and Recovery',async()=>{
+ const review=await import('../review/quarantine-retention.mjs');const {quarantineRetention}=await import('./quarantine-retention.mjs');
+ assert.deepEqual(review.quarantineRetention,quarantineRetention);assert.ok(Object.isFrozen(quarantineRetention));
+ assert.ok(Number.isInteger(quarantineRetention.retentionDays)&&quarantineRetention.retentionDays>0);assert.equal(typeof quarantineRetention.cleanupEnabled,'boolean');
+ const s=await setup();try{
+  await publishApproval({...s,relative:'new.mkv',sourceFP:s.c.replacementSourceFP,installedRelative:'new.mkv'});
+  await retainCase(s.c,{...s,now:Date.now()});
+  assert.equal(Date.parse(s.c.cleanup.deleteAfter)-Date.parse(s.c.cleanup.approvedAt),quarantineRetention.retentionDays*86400000);
+ }finally{await fs.rm(s.root,{recursive:true,force:true})}
+});

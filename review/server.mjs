@@ -1,5 +1,5 @@
 import {extractPreview,PREVIEW_PROFILES} from './av-preview.mjs';
-import {publishApproval} from './quarantine-retention.mjs';
+import {publishApproval,quarantineRetention} from './quarantine-retention.mjs';
 import {extractListeningAudio} from './audio-listen.mjs';
 import {assessment} from './assessment.mjs';
 import {extractAudio,alignment} from './audio-compare.mjs';
@@ -414,7 +414,7 @@ const server=http.createServer(async(req,res)=>{
           }
         }catch(e){if(e.code!=='ENOENT')warnings.push('Nelze načíst '+root+': '+e.message);}
       }
-      return respond(res,200,{files,warnings,retentionDays:7,cleanupEnabled:true});
+      return respond(res,200,{files,warnings,...quarantineRetention});
     }
     if(url.pathname==='/api/radarr/settings'&&req.method==='GET')return respond(res,200,await replacements.publicSettings());
     if(['/api/radarr/settings','/api/radarr/settings/test'].includes(url.pathname)&&req.method==='POST'){

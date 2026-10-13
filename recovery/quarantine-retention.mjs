@@ -1,6 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+// Single source for the retention rules; the Review UI reads them from /api/quarantine.
+export const quarantineRetention=Object.freeze({retentionDays:7,cleanupEnabled:true});
 export const fp=s=>[s.dev,s.ino,s.size,s.mtimeMs,s.ctimeMs].join(':');
 const sameFile=(a,b)=>a.split(':').slice(0,4).join(':')===b.split(':').slice(0,4).join(':');
 function under(root,rel){const p=path.resolve(root,rel);if(!rel||path.isAbsolute(rel)||p===root||!p.startsWith(root+path.sep))throw Error('Invalid retention path');return p;}
@@ -14,7 +16,7 @@ export async function publishApproval({mediaRoot,relative,sourceFP,installedRela
  await atomic(target,record);return record;
 }
 export async function retainCase(c,{mediaRoot,reviewRoot,quarantineRoot,reviewQuarantineRoot,atomicCase,now=Date.now()}){
- if(!c.replacementSourceFP||!c.replacementRelative||c.cleanup?.complete)return;
+ if(!quarantineRetention.cleanupEnabled||!c.replacementSourceFP||!c.replacementRelative||c.cleanup?.complete)return;
  const directory=path.join(path.dirname(await fs.realpath(mediaRoot)),'.tdarr-approvals');
  let a;try{const f=path.join(directory,key(c.replacementRelative,c.replacementSourceFP));await regular(f);a=JSON.parse(await fs.readFile(f,'utf8'));}catch(e){if(e.code==='ENOENT')return;throw e;}
  if(a.version!==1||a.relative!==c.replacementRelative||a.sourceFP!==c.replacementSourceFP||!Number.isFinite(Date.parse(a.approvedAt))||Date.parse(a.approvedAt)>now)throw Error('Invalid approval evidence');
@@ -23,7 +25,7 @@ export async function retainCase(c,{mediaRoot,reviewRoot,quarantineRoot,reviewQu
   if(sameFile(installedNow,a.installedFP))throw Error('Approved replacement metadata timestamp changed; content identity is not reverified; quarantine preserved');
   throw Error('Approved replacement changed; quarantine preserved');
  }
- if(!c.cleanup){c.cleanup={approvedAt:a.approvedAt,deleteAfter:new Date(Date.parse(a.approvedAt)+7*86400000).toISOString(),files:[]};await atomicCase(c);}
+ if(!c.cleanup){c.cleanup={approvedAt:a.approvedAt,deleteAfter:new Date(Date.parse(a.approvedAt)+quarantineRetention.retentionDays*86400000).toISOString(),files:[]};await atomicCase(c);}
  if(now<Date.parse(c.cleanup.deleteAfter))return;
  const targets=[[c.quarantine||c.originalQuarantine,c.fp||c.originalFP,quarantineRoot],[c.reviewQuarantine,c.reviewFP,reviewQuarantineRoot]].filter(v=>v[0]);
  for(const [file,expected,root]of targets){
