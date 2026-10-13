@@ -19,3 +19,14 @@ test('GET /api/items has no node side effects; the retry runs on a guarded serve
  for(const guard of ['stopping','!state.pauses.length',"busyFor('resume')",'Date.now()<nextResumeAt'])assert.ok(timer[1].split('||').includes(guard),guard);
  assert.match(server,/clearInterval\(resumeRetryTimer\)/);
 });
+
+test('any resume or keep that clears every pending node resets the retry backoff',async()=>{
+ const server=await fs.readFile(new URL('./server.mjs',import.meta.url),'utf8');
+ const declared=server.indexOf('let resumeFailures=0,nextResumeAt=0;'),startup=server.indexOf('if(!recovery.length)await resume();');
+ assert.ok(declared>0&&declared<server.indexOf('function resume(){')&&declared<startup,'declared before the start-up resume can run');
+ const resume=server.slice(server.indexOf('function resume(){'),server.indexOf('async function pauseDispatch('));
+ assert.match(resume,/state\.pauses=pending;if\(!pending\.length\)resumeFailures=nextResumeAt=0;/);
+ const keep=server.slice(server.indexOf('async function keepNodePaused('),server.indexOf('const pendingRestores='));
+ assert.match(keep,/if\(!state\.pauses\.length\)resumeFailures=nextResumeAt=0;/);
+ assert.equal((server.match(/let resumeFailures/g)||[]).length,1);
+});

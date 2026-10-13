@@ -188,12 +188,14 @@ function workerBusy(nodes,item){
   }return false;
 }
 let resumeTask=null;
+// Backoff for the retry timer; any resume that clears every pause resets it.
+let resumeFailures=0,nextResumeAt=0;
 function resume(){
  if(resumeTask)return resumeTask;
  resumeTask=(async()=>{
   const pending=[],requested=(state.pauses||[]).map(p=>p.name);
   for(const p of state.pauses||[]){try{const ns=await tdarr('/api/v2/get-nodes');const n=Object.values(ns).find(n=>n.nodeName===p.name);if(!n){pending.push(p);continue}if(n.nodePaused)await tdarr('/api/v2/update-node',{nodeID:n._id,nodeUpdates:{nodePaused:false}})}catch{pending.push(p)}}
-  state.pauses=pending;await save();
+  state.pauses=pending;if(!pending.length)resumeFailures=nextResumeAt=0;await save();
   if(requested.length)logEvent('nodes.resume',{requested,pending:pending.map(p=>p.name),outcome:pending.length?'incomplete':'success'});
  })().finally(()=>{resumeTask=null});
  return resumeTask;
@@ -213,7 +215,7 @@ async function pauseDispatch(item){
 // maintenance). Review forgets it without contacting Tdarr, so no resume undoes that pause.
 async function keepNodePaused(name){
   const index=state.pauses.findIndex(p=>p.name===name);if(index<0)return false;
-  const [entry]=state.pauses.splice(index,1);await save();
+  const [entry]=state.pauses.splice(index,1);if(!state.pauses.length)resumeFailures=nextResumeAt=0;await save();
   logEvent('node.kept-paused',{node:name,pausedAt:entry.pausedAt,id:entry.for?.id,title:entry.for?.title});
   return true;
 }
@@ -443,10 +445,9 @@ const server=http.createServer(async(req,res)=>{
 server.listen(PORT,'0.0.0.0',()=>console.log('Tdarr Review listening on '+PORT));
 const previewTimer=setInterval(()=>{if(!busyFor('background'))void scan().then(preparePreviews).catch(error=>console.error('Preview preparation: '+error.message))},60000);previewTimer.unref();
 // A failed node restore is retried here with backoff, never as a side effect of a GET request.
-let resumeFailures=0,nextResumeAt=0;
 const resumeRetryTimer=setInterval(()=>{
  if(stopping||!state.pauses.length||busyFor('resume')||Date.now()<nextResumeAt)return;
- void resume().catch(e=>console.error('Node restore: '+e.message)).then(()=>{if(state.pauses.length)nextResumeAt=Date.now()+resumeRetryDelay(resumeFailures++);else resumeFailures=nextResumeAt=0});
+ void resume().catch(e=>console.error('Node restore: '+e.message)).then(()=>{if(state.pauses.length)nextResumeAt=Date.now()+resumeRetryDelay(resumeFailures++)});
 },RESUME_RETRY_TICK_MS);resumeRetryTimer.unref();
 const previewStart=setTimeout(()=>{void scan().then(preparePreviews).catch(error=>console.error('Preview preparation: '+error.message))},1000);previewStart.unref();
 let stopping=false;

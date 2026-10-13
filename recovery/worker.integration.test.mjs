@@ -226,7 +226,8 @@ test('a full-file hash that differs from the confirmation keeps the original in 
   f.parent.movieId=2;f.cfg.maxRepairsPerDay=1;f.cfg.fullSourceHash=true;await f.write();await f.run();let result=await f.result();
   // Simulate a change the fingerprint and samples cannot see by altering the confirmed digest.
   result.state.cases[f.id].evidence.fullSHA256='0'.repeat(64);result.state.cases[f.parent.id].mutationStarted=Date.now()-86400001;
-  await fs.writeFile(f.data+'/state.json',JSON.stringify(result.state));f.allowRepair();await f.run();result=await f.result();const c=result.state.cases[f.id];
+  await fs.writeFile(f.data+'/state.json',JSON.stringify(result.state));f.allowRepair();const holdsBefore=f.requests.filter(r=>r.url==='/api/v2/bulk-update-files').length;await f.run();result=await f.result();const c=result.state.cases[f.id];
+  assert.equal(f.requests.filter(r=>r.url==='/api/v2/bulk-update-files').length,holdsBefore,'the hash is compared before Recovery holds the file in Tdarr');
   assert.notEqual(c.status,'waiting_replacement');assert.match(JSON.stringify(c)+String(result.state.lastError),/Full source hash changed before quarantine/);
   assert.equal(c.quarantine,undefined);await f.unchanged();
   assert.equal(f.requests.filter(r=>r.url==='/api/v3/command'&&r.method==='POST').length,0,'no Radarr search after a refused rename');

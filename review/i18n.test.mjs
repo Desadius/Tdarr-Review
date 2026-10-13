@@ -155,3 +155,12 @@ test('quarantine retention text uses the server-provided number of days',async()
  const quarantine=await fs.readFile(new URL('./public/quarantine.js',import.meta.url),'utf8'),settings=await fs.readFile(new URL('./public/settings-dialogs.js',import.meta.url),'utf8');
  for(const ui of [quarantine,settings])assert.doesNotMatch(ui,/(úklid|Retence karantény)[^'"]*\b7 dní/);assert.match(quarantine,/d\.retentionDays/);assert.match(quarantine,/d\.cleanupEnabled/);assert.match(settings,/c\.retentionDays/);
 });
+
+test('pending node restores show only known film and time, never an untranslated fallback',async()=>{
+ assert.equal(en('Pozastaveno pro Film (2020)'),'Paused for Film (2020)');
+ const app=await fs.readFile(new URL('./public/app.js',import.meta.url),'utf8');
+ const line=app.split('\n').find(l=>l.includes("tr('Pozastaveno pro '"));
+ assert.ok(line,'node restore line');
+ assert.match(line,/n\.title\?tr\('Pozastaveno pro '\+n\.title\):''/);assert.match(line,/n\.pausedAt\?date\(n\.pausedAt\):''/);
+ assert.doesNotMatch(line,/'\?'/,'no placeholder for a missing film');
+});

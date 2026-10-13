@@ -961,7 +961,7 @@ export default {
     "Uchování ukázek od vytvoření (dny)": "Sample retention from creation (days)"
   },
   "patterns": [
-    ["Pozastaveno pro {0} · {1}", "Paused for {0} · {1}", {"raw": [0, 1]}],
+    ["Pozastaveno pro {0}", "Paused for {0}", {"raw": [0]}],
     ["Ponechat pozastavený: {0}", "Keep paused: {0}", {"raw": [0]}],
     ["Neplatný limit přípravy: {0}", "Invalid preparation limit: {0}", {"raw": [0]}],
     [
