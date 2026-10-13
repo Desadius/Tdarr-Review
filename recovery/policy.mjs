@@ -1,3 +1,4 @@
+// @ts-check
 import path from 'node:path';
 import crypto from 'node:crypto';
 
@@ -14,15 +15,28 @@ const damage = [
   /Read past end of XLL band data/i,
 ];
 const operational = /Permission denied|Operation not permitted|Input\/output error|I\/O error|Stale file handle|No such file or directory|No space left|Connection (?:reset|refused|timed out)|Network is unreachable|Cannot allocate memory|Out of memory|Resource temporarily unavailable|Decoder .* not found|Unknown decoder|Unsupported codec/i;
+/**
+ * Result of one original decode (runOriginalDecode).
+ * @typedef {{code:number|null,stderr:string,timeout?:boolean,signal?:string|null,error?:unknown}} DecodeResult
+ */
+/**
+ * @param {DecodeResult} result
+ * @returns {{kind:'healthy'|'corrupt'|'unconfirmed'|'operational',signature?:string}}
+ */
 export function classify(result) {
   if (result.timeout || result.signal || result.error || operational.test(result.stderr || '')) return {kind:'operational'};
   const signature = damage.map(r => (result.stderr || '').match(r)?.[0]).filter(Boolean).join('\n');
   if(signature)return {kind:'corrupt',signature};
   return result.code===0&&!String(result.stderr||'').trim()?{kind:'healthy'}:{kind:'unconfirmed'};
 }
+/**
+ * Two independent decodes confirm the same recognized corruption.
+ * @param {DecodeResult} a
+ * @param {DecodeResult} b
+ */
 export function confirmed(a,b) {
-  a=classify(a);b=classify(b);
-  return a.kind==='corrupt' && b.kind==='corrupt' && a.signature===b.signature;
+  const first=classify(a),second=classify(b);
+  return first.kind==='corrupt' && second.kind==='corrupt' && first.signature===second.signature;
 }
 export function relative(source,root) {
   const p=source.replaceAll('\\','/');root=root.replace(/\/$/,'');
