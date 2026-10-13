@@ -20,6 +20,8 @@ jobs:
         with:
           node-version: '24'
       - run: npm run check
+      - name: Type-check JSDoc-annotated modules (pinned dev-only TypeScript)
+        run: npm run typecheck
       - name: Run the complete suite and report Node coverage
         run: npm run test:coverage
   docker-test:

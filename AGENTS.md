@@ -6,7 +6,7 @@ Tdarr Review lets a person review and approve Tdarr transcodes before the origin
 
 ## Project layout
 
-- `review/` — web application (`server.mjs`, `core.mjs`, UI in `review/public/`) and its regression tests (`*.test.mjs`, `*.test.cjs`, `test.mjs`).
+- `review/` — web application (`server.mjs`, route modules in `review/routes/`, `core.mjs`, UI modules in `review/public/`) and its regression tests (`*.test.mjs`, `*.test.cjs`, `test.mjs`).
 - `recovery/` — optional background worker and its tests.
 - `tools/` — syntax checker, test runner, Docker smoke and demo scripts.
 - `docs/` — installation, user, architecture, operations, release and verification documentation.
@@ -20,6 +20,7 @@ There are no npm dependencies to install. Use Linux and Node 24.
 
 ```bash
 npm run check   # JavaScript syntax check
+npm run typecheck   # JSDoc type check (installs pinned dev-only TypeScript into .typecheck/)
 npm test        # full unit/regression suite (review + recovery)
 ```
 

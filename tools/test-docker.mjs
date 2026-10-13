@@ -8,7 +8,9 @@ export function dockerTestArguments(root=repositoryRoot){
   return ['run','--rm','--pull=never','--platform','linux/amd64',
     '--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges',
     '--volume',`${path.resolve(root)}:/workspace:ro`,'--workdir','/workspace',
-    '--tmpfs','/tmp:rw,nosuid,nodev','--env','NPM_CONFIG_CACHE=/tmp/npm-cache',
+    // Docker mounts tmpfs noexec unless asked. The HTTP fixtures write stand-in
+    // ffprobe/ffmpeg scripts there and Review checks them with access(X_OK).
+    '--tmpfs','/tmp:rw,exec,nosuid,nodev','--env','NPM_CONFIG_CACHE=/tmp/npm-cache',
     'node:24','sh','-c','npm run check && npm test'];
 }
 

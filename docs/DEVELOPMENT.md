@@ -16,7 +16,13 @@ docker pull --platform linux/amd64 node:24
 npm run test:docker
 ```
 
-`test:docker` runs `npm run check && npm test` in `node:24` for Linux amd64. It mounts only this repository read-only, uses a read-only container root with disposable `/tmp` scratch space, drops capabilities and disables the container network. It neither forwards host settings/credentials nor mounts a Docker socket, media or runtime data. Fixtures use synthetic temporary files and loopback mocks. The image must already be present (`--pull=never`); the test invocation cannot fetch it. The disposable container is removed on exit, and failed checks/Docker errors return a nonzero status. Docker image smoke and generated-media integration checks remain separate commands below.
+`test:docker` runs `npm run check && npm test` in `node:24` for Linux amd64. It mounts only this repository read-only, uses a read-only container root with disposable `/tmp` scratch space (mounted with `exec`, because the HTTP fixtures run stand-in `ffprobe`/`ffmpeg` scripts that Review checks for execute permission), drops capabilities and disables the container network. It neither forwards host settings/credentials nor mounts a Docker socket, media or runtime data. Fixtures use synthetic temporary files and loopback mocks. The image must already be present (`--pull=never`); the test invocation cannot fetch it. The disposable container is removed on exit, and failed checks/Docker errors return a nonzero status. Docker image smoke and generated-media integration checks remain separate commands below.
+
+## Type checking
+
+`npm run typecheck` checks JSDoc types with TypeScript, without emitting code. It currently covers `review/core.mjs` (transaction journal, file identity, command and exchange options) and `recovery/policy.mjs` (decode results and their classification). A file joins the check by starting with `// @ts-check` and being listed in `tsconfig.typecheck.json`; `strict` is off until more modules are annotated.
+
+TypeScript and `@types/node` are a maintainer-approved, development-only exception to the no-dependency rule. The script installs exactly the versions pinned in `tools/typecheck.mjs` into the git-ignored `.typecheck/` folder (no lockfile, install scripts disabled). They are not in `package.json` and never in the Docker images. CI runs the check before the test suite; it needs network access to the npm registry the first time.
 
 To run the same complete suite with Node 24's built-in experimental coverage reporting:
 

@@ -37,7 +37,7 @@ test('the summary flags operator conditions but always stays ok',()=>{
 
 test('server serves /health before authentication to loopback only; the health check reports without failing',async()=>{
  const server=await fs.readFile(new URL('./server.mjs',import.meta.url),'utf8');
- const health=server.indexOf("if(url.pathname==='/health'&&req.method==='GET'){"),auth=server.indexOf("if(url.pathname.startsWith('/api/')&&!authenticated)");
+ const health=server.indexOf("if(url.pathname==='/health'&&req.method==='GET'){"),auth=server.indexOf("if(url.pathname.startsWith('/api/')&&!authenticated(ctx,req))");
  assert.ok(health>0&&health<auth);
  assert.match(server.slice(health,health+400),/if\(!isLoopback\(req\.socket\.remoteAddress\)\)return respond\(res,404/);
  assert.ok(server.indexOf("if(req.headers.host!==HOST)")<health,'Host check still applies');
