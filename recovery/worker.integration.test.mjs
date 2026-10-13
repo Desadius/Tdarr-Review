@@ -58,10 +58,12 @@ async function fixture({terminalHeader=false}={}){
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;cfg.radarrUrl=base;cfg.tdarrUrl=base;cfg.radarrApiKey='fixture-only';
  async function write(){db.prepare('UPDATE filejsondb SET json_data=?').run(JSON.stringify(row));await fs.writeFile(data+'/config.json',JSON.stringify(cfg));await fs.writeFile(data+'/state.json',JSON.stringify(state));}
  async function run(){return new Promise((resolve,reject)=>{const child=spawn(process.execPath,['--require',preload,new URL('./worker.mjs',import.meta.url).pathname,'--once'],{env:{...process.env,DATA_ROOT:data},stdio:['ignore','pipe','pipe']});let output='';const timer=setTimeout(()=>child.kill('SIGKILL'),20000);child.stdout.on('data',b=>output+=b);child.stderr.on('data',b=>output+=b);child.on('error',reject);child.on('close',(code,signal)=>{clearTimeout(timer);if(code!==0||signal)return reject(Error('Worker fixture failed: '+output));resolve(output)});});}
+ // Long-running worker as in the container: no --once, stopped only by a signal.
+ function daemon(){const child=spawn(process.execPath,['--require',preload,new URL('./worker.mjs',import.meta.url).pathname],{env:{...process.env,DATA_ROOT:data},stdio:['ignore','pipe','pipe']});let output='';const timer=setTimeout(()=>child.kill('SIGKILL'),20000);child.stdout.on('data',b=>output+=b);child.stderr.on('data',b=>output+=b);const closed=new Promise((resolve,reject)=>{child.on('error',reject);child.on('close',(code,signal)=>{clearTimeout(timer);resolve({code,signal,output})});});return {child,closed};}
  async function result(){assert.equal((await fs.stat(root+'/media/.tdarr-recovery-status.json')).mode&0o777,0o644);assert.equal((await fs.stat(data+'/state.json')).mode&0o777,0o600);return {state:JSON.parse(await fs.readFile(data+'/state.json')),public:JSON.parse(await fs.readFile(root+'/media/.tdarr-recovery-status.json'))};}
  async function unchanged(){assert.equal(fp(await fs.stat(source)),sourceFP);assert.equal(await fs.readFile(source,'utf8'),sourceBytes);assert.equal(await fs.readFile(parent.quarantine,'utf8'),'PRESERVED PARENT');assert.equal(forbidden,false,'worker attempted an unexpected download or API mutation');}
  async function cleanup(){db.close();await new Promise(r=>server.close(r));assert(root.startsWith(path.resolve(os.tmpdir())+path.sep)&&path.basename(root).startsWith('recovery-worker-'));await fs.rm(root,{recursive:true,force:true});}
- return {cfg,state,parent,row,requests,file,relative,source,sourceFP,size,sourceBytes,data,write,run,result,unchanged,cleanup,id:identity(file,sourceFP),binding:bindHistory(movie,history,movie.movieFile.path,size),allowRepair:()=>{allowRepair=true;},setDecoder:script=>fs.writeFile(cfg.ffmpeg,script,{mode:0o755})};
+ return {cfg,state,parent,row,requests,file,relative,source,sourceFP,size,sourceBytes,data,write,run,daemon,result,unchanged,cleanup,id:identity(file,sourceFP),binding:bindHistory(movie,history,movie.movieFile.path,size),allowRepair:()=>{allowRepair=true;},setDecoder:script=>fs.writeFile(cfg.ffmpeg,script,{mode:0o755})};
 }
 
 test('actual worker retries an old unrecognized XLL report, links its exact parent and preserves cooldown',{skip:process.platform!=='linux'},async()=>{
@@ -177,4 +179,34 @@ test('missing or malformed persistent approval authority stops the actual worker
    await f.write();const stateBefore=await fs.readFile(f.data+'/state.json');await assert.rejects(f.run(),/Recovery approval registry/);assert.equal(f.requests.length,0);assert.deepEqual(await fs.readFile(f.data+'/state.json'),stateBefore);await assert.rejects(fs.stat(f.data+'/decode-calls'),{code:'ENOENT'});await f.unchanged();
   }finally{await f.cleanup();}
  }
+});
+
+async function until(check,ms=10000){const end=Date.now()+ms;while(!await check()){if(Date.now()>end)throw Error('Timed out waiting for the worker');await new Promise(r=>setTimeout(r,25));}}
+
+test('SIGTERM ends an idle worker promptly with exit code 0 and an intact journal',{skip:process.platform!=='linux'},async()=>{
+ const f=await fixture();try{
+  f.state.jobs['fixture-job']='manual: operator review';await f.write();
+  const worker=f.daemon();
+  // The first completed cycle stamps the journal; the worker then waits pollSeconds (300 s).
+  await until(async()=>JSON.parse(await fs.readFile(f.data+'/state.json','utf8')).updated);
+  const signalled=Date.now();worker.child.kill('SIGTERM');const exit=await worker.closed;
+  assert.equal(exit.signal,null,exit.output);assert.equal(exit.code,0,exit.output);assert.ok(Date.now()-signalled<5000,'worker kept waiting after SIGTERM');
+  assert.match(exit.output,/SIGTERM received; stopping after the current step/);assert.match(exit.output,/Recovery stopped/);
+  const result=await f.result();assert.deepEqual(Object.keys(result.state.cases),[f.parent.id]);assert.equal(result.state.cases[f.parent.id].status,'manual');assert.equal(result.state.jobs['fixture-job'],'manual: operator review');
+  await assert.rejects(fs.stat(f.data+'/decode-calls'),{code:'ENOENT'});await f.unchanged();
+ }finally{await f.cleanup();}
+});
+
+test('SIGTERM during an original decode finishes the step instead of leaving an interrupted case',{skip:process.platform!=='linux'},async()=>{
+ const f=await fixture();try{
+  f.state.jobs['fixture-job']='not_confirmed_decode_error_v2';Object.assign(f.parent,{status:'replacement_imported',replacement:{movieFileId:11,size:f.size}});
+  await fs.writeFile(path.join(f.data,'../reports/fixture/report'),'[dca] Read past end of XLL band data');
+  await f.setDecoder((await fs.readFile(f.cfg.ffmpeg,'utf8')).replace('quant_step_size larger than huff_lsbs','Read past end of XLL band data').replace('console.log("out_time_us','Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,500);console.log("out_time_us'));
+  await f.write();const worker=f.daemon();
+  await until(async()=>(await fs.readFile(f.data+'/decode-calls','utf8').catch(()=>''))==='1\n');
+  worker.child.kill('SIGTERM');const exit=await worker.closed;
+  assert.equal(exit.signal,null,exit.output);assert.equal(exit.code,0,exit.output);
+  assert.equal(await fs.readFile(f.data+'/decode-calls','utf8'),'1\n1\n');
+  const result=await f.result();assert.equal(result.state.cases[f.id].status,'deferred_cooldown');assert.doesNotMatch(result.state.cases[f.id].message,/Interrupted/);await f.unchanged();
+ }finally{await f.cleanup();}
 });
