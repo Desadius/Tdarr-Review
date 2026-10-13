@@ -29,7 +29,7 @@ test('Failed durable archive prevents destructive action',async()=>{
  const {box,events,state,item}=context(true);await box.performTest('reject',item,false,'Nesedí obraz');assert.equal(state.history[0].status,'error');assert.equal(state.history[0].rejectionReason,'Nesedí obraz');assert.ok(state.items.film);assert.ok(!events.some(e=>String(e).startsWith('unlink:')));
 });
 test('Missing reason cannot start a rejection',async()=>{const {box,events,item}=context();await assert.rejects(box.performTest('reject',item));assert.deepEqual(events,[]);assert.equal(box.active,null)});
-test('API validates reason before file scan and passes it into handler',()=>{const route=server.slice(server.indexOf("const action=/^\\/api\\/items"),server.indexOf('const audio=/'));assert.ok(route.indexOf('rejectionReason(b.reason)')<route.indexOf('await scan(true)'));assert.ok(route.includes('respond(res,400'));assert.match(route,/perform\(action\[2\],[\s\S]*acceptDuration,reason\)/)});
+test('API validates reason before file scan and passes it into handler',()=>{const route=server.slice(server.indexOf("const action=/^\\/api\\/items"),server.indexOf('const audio=/'));const reason=route.indexOf('rejectionReason(b.reason)'),scan=route.indexOf('await scan(true');assert.ok(reason>=0&&scan>reason);assert.ok(route.includes('respond(res,400'));assert.match(route,/perform\(action\[2\],[\s\S]*acceptDuration,reason\)/)});
 test('History reasons are rendered as text and action requests include the entered reason',async()=>{
  const ui=await fs.readFile(new URL('./public/app.js',import.meta.url),'utf8');
  assert.ok(ui.includes("reason:['reject','replace'].includes(request.action)?reason:undefined"));

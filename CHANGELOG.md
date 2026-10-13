@@ -2,6 +2,12 @@
 
 This records the implemented application features. Versions before 1.10.0 were deployed snapshots and are not published Git tags.
 
+## Unreleased
+
+- Centralize server concurrency policies and reserve mutating requests before asynchronous preflight, keeping competing approvals, batches, settings and previews excluded with HTTP 409.
+- Preserve deliberate recovery-safe settings/preview access and review-session revision queues; exclude in-flight node resumes and prevent discovery scans from mutating state during foreground work.
+- Add deterministic HTTP concurrency regression tests with loopback mocks and temporary synthetic files, including every mutating route and pending recovery/node pauses.
+
 ## 1.10.5 — 2026-10-13
 
 - Prepare the existing picture/audio/synchronization samples for waiting Review films in advance, with persistent private cache and bounded low-priority background work.
