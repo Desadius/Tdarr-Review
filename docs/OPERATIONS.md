@@ -12,6 +12,7 @@ Source publication, Docker image publication and updating a running deployment a
 
 1. Inspect authenticated `/api/items` or the UI. Wait for `active`, `batchRunning`, `restorePending` and unresolved exchange transactions (`recovery`) to clear. These exchange transactions are distinct from the background movie-replacement list.
 2. Check that the background worker is not in a mutating phase. A long decode is read-only but restarting it leaves an interrupted case requiring deliberate inspection.
+   On SIGTERM (`docker stop`) the worker leaves an idle wait at once and exits with code 0. If a check is in progress it first finishes that step; when the step outlasts the stop timeout, Docker kills the worker (exit code 137) and the case becomes manual on the next start. Stop the worker while it is idle rather than raising the timeout to cover a multi-hour decode.
 3. Back up code/images and private persistent data. Record the previous Git commit.
    If an older Recovery installation stores a private pending registry in its application directory, [migrate that registry](MIGRATE-RECOVERY-REGISTRY.md) with the worker stopped before replacing its source/image. Preserving state alone does not preserve authorization.
 4. Stop only the affected service, pull/build the chosen commit, and start it with the same data/mappings.

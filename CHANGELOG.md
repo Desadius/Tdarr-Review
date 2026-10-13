@@ -14,6 +14,7 @@ This records the implemented application features. Versions before 1.10.0 were d
 - Bound Compact and Detail AV previews with 3 Mb/s and 10 Mb/s VBV ceilings respectively, preserving the selected dimensions, 12-second interval and shared audio/video timing.
 - Tolerate only the exact Matroska keyframe-cue warning after successful extraction and output validation; retain decoder errors and reject incomplete PCM waveform samples.
 - Keep the shared Recovery status snapshot readable across atomic refreshes, including access through SMB, while retaining private permissions for worker state and settings.
+- Stop the Recovery worker cleanly on SIGTERM/SIGINT (exit code 0 instead of 137 after the Docker stop timeout): an idle wait ends at once, and a check already in progress finishes its step before the worker exits.
 
 ## 1.10.4 — 2026-10-13
 
