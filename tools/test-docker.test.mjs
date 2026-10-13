@@ -10,7 +10,7 @@ test('Docker suite uses only a read-only repository, disposable scratch space an
   assert.equal(value('--workdir'),'/workspace');assert.equal(value('--network'),'none');
   assert(args.includes('--read-only'));assert(args.includes('--rm'));assert(args.includes('--pull=never'));
   assert.equal(value('--platform'),'linux/amd64');assert.equal(value('--cap-drop'),'ALL');
-  assert.equal(value('--security-opt'),'no-new-privileges');assert.equal(value('--tmpfs'),'/tmp:rw,nosuid,nodev');
+  assert.equal(value('--security-opt'),'no-new-privileges');assert.equal(value('--tmpfs'),'/tmp:rw,exec,nosuid,nodev');
   assert.equal(value('--env'),'NPM_CONFIG_CACHE=/tmp/npm-cache');
   assert.equal(args.filter(v=>v==='--volume').length,1,'no Docker socket, media or runtime-data mounts');
   assert.equal(args.filter(v=>v==='--env').length,1,'no host configuration or credentials forwarded');

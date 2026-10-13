@@ -16,7 +16,7 @@ docker pull --platform linux/amd64 node:24
 npm run test:docker
 ```
 
-`test:docker` runs `npm run check && npm test` in `node:24` for Linux amd64. It mounts only this repository read-only, uses a read-only container root with disposable `/tmp` scratch space, drops capabilities and disables the container network. It neither forwards host settings/credentials nor mounts a Docker socket, media or runtime data. Fixtures use synthetic temporary files and loopback mocks. The image must already be present (`--pull=never`); the test invocation cannot fetch it. The disposable container is removed on exit, and failed checks/Docker errors return a nonzero status. Docker image smoke and generated-media integration checks remain separate commands below.
+`test:docker` runs `npm run check && npm test` in `node:24` for Linux amd64. It mounts only this repository read-only, uses a read-only container root with disposable `/tmp` scratch space (mounted with `exec`, because the HTTP fixtures run stand-in `ffprobe`/`ffmpeg` scripts that Review checks for execute permission), drops capabilities and disables the container network. It neither forwards host settings/credentials nor mounts a Docker socket, media or runtime data. Fixtures use synthetic temporary files and loopback mocks. The image must already be present (`--pull=never`); the test invocation cannot fetch it. The disposable container is removed on exit, and failed checks/Docker errors return a nonzero status. Docker image smoke and generated-media integration checks remain separate commands below.
 
 To run the same complete suite with Node 24's built-in experimental coverage reporting:
 
