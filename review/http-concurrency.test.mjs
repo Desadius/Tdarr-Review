@@ -152,8 +152,7 @@ for(const route of ['/api/settings','/api/settings/test','/api/radarr/settings',
   const gate=f.hold(radarr?'/api/v3/system/status':'/api/v2/get-nodes');
   const pending=f.post(route,radarr?{url:f.mockBase,apiKey:'synthetic-test-key',mediaRoot:'/fixture-library',preferCzechEnglish:true}:settings);
   // A request that answers before reaching the gated call failed early; report why instead of timing out.
-  await deadline(Promise.race([gate.entered,pending.then(async response=>{throw Error('settings request finished before validation reached Tdarr: '+response.status+' '+await response.clone().text()+'
-'+f.diagnostics())})]),'settings validation');assert.equal((await f.approve(item)).status,409);assert.equal((await f.post('/api/approve-batch',{items:[item]})).status,409);
+  await deadline(Promise.race([gate.entered,pending.then(async response=>{throw Error('settings request finished before validation reached Tdarr: '+response.status+' '+await response.clone().text()+' '+f.diagnostics())})]),'settings validation');assert.equal((await f.approve(item)).status,409);assert.equal((await f.post('/api/approve-batch',{items:[item]})).status,409);
   gate.release();const result=await pending;assert.equal(result.status,200,await result.clone().text());assert.deepEqual(await f.journals(),[]);await f.preserved();
  }finally{await f.close()}
 });

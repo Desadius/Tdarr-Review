@@ -50,7 +50,7 @@ test('unknown paths and wrong methods fall through without touching server state
 
 test('server.mjs keeps host, origin, login, authentication and mutation claims ahead of route dispatch',async()=>{
  const server=await fs.readFile(new URL('./server.mjs',import.meta.url),'utf8');
- const order=["if(req.headers.host!==HOST)","req.headers.origin!==config.publicOrigin","if(await login(ctx,req,res,url))return;","!authenticated(ctx,req))return respond(res,401","const kind=mutationKind(","await previews.pauseBackground({wait:true})","for(const route of routes)if(await route(ctx,req,res,url,request))return;","respond(res,404,"].map(text=>server.indexOf(text));
+ const order=["if(req.headers.host!==HOST)","req.headers.origin!==config.publicOrigin","if(await login(ctx,req,res,url))return;","!authenticated(ctx,req))return respond(res,401","const kind=mutationKind(","await previews.pauseBackground({wait:true})","for(const route of routes)if(await route(ctx,req,res,url,request))return;\n    respond(res,404,"].map(text=>server.indexOf(text));
  assert.ok(order.every(index=>index>0),JSON.stringify(order));
  assert.deepEqual([...order].sort((a,b)=>a-b),order);
  assert.match(server,/finally\{if\(request\.mutation&&mutationOwner===request\.mutation\)mutationOwner=null;/);
