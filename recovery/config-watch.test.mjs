@@ -44,3 +44,24 @@ test('the worker checks for config edits on every poll before its work',async()=
  assert.match(worker,/while\(!stopping\)\{try\{await noteConfigChange\(\);await tick\(\);/);
  assert.match(worker,/const cfg=JSON\.parse\(configText\);/);
 });
+
+test('an edit that parses is checked once against the start-up rules; their error marks it invalid',async()=>{
+ const s=await setup('{"enabled":false}');try{
+  const seen=[];const validate=async value=>{seen.push(value);return value.libraryId==='other'?'Recovery approval registry: missing frozen library mapping':null};
+  await fs.writeFile(s.file,'{"enabled":true,"libraryId":"other"}');
+  const first=await detectConfigChange({...s,validate});assert.equal(first.valid,false);assert.equal(first.error,'Recovery approval registry: missing frozen library mapping');
+  assert.deepEqual(seen,[{enabled:true,libraryId:'other'}]);
+  assert.strictEqual(await detectConfigChange({...s,validate,previous:first}),first);assert.equal(seen.length,1,'the same edit is not re-validated every poll');
+  await fs.writeFile(s.file,'{"enabled":true,"libraryId":"same"}');assert.equal((await detectConfigChange({...s,validate,previous:first})).valid,true);
+  await fs.writeFile(s.file,'{broken');assert.equal((await detectConfigChange({...s,validate})).valid,false);assert.equal(seen.length,2,'unparseable edits never reach the start-up checks');
+  await fs.writeFile(s.file,'{"x":1}');const thrown=await detectConfigChange({...s,validate:async()=>{throw Error('SECRET detail')}});
+  assert.equal(thrown.valid,false);assert.doesNotMatch(JSON.stringify(thrown),/SECRET/);
+ }finally{await fs.rm(s.root,{recursive:true,force:true})}
+});
+
+test('the worker validates edits with the same approval-registry gate as start-up',async()=>{
+ const worker=await fs.readFile(new URL('./worker.mjs',import.meta.url),'utf8');
+ assert.match(worker,/await loadApprovalRegistry\(\{data:DATA,cfg:value,state:structuredClone\(state\)\}\)/);
+ assert.match(worker,/e\?\.code==='RECOVERY_APPROVAL_REGISTRY'\?e\.message:'config\.json would not pass the start-up checks'/);
+ assert.match(worker,/detectConfigChange\(\{[^}]*validate:validateEditedConfig\}\)/);
+});
