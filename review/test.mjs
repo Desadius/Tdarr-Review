@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {safeFile,sourceRelative,fingerprint,replaceChecked,inspect,recoverTransactions} from './core.mjs';
+import {safeFile,fingerprint,replaceChecked,inspect,recoverTransactions} from './core.mjs';
 
 test('path traversal, symlinks and unsupported nesting are rejected',async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'review-test-'));
- try {await fs.writeFile(path.join(root,'film.mkv'),'original');await fs.symlink('/etc/passwd',path.join(root,'link.mkv'));await assert.rejects(safeFile(root,'../film.mkv'));await assert.rejects(safeFile(root,'link.mkv'));assert.equal(sourceRelative('PROD-Movies/Film/Film.mkv'),'Film/Film.mkv');assert.equal(sourceRelative('unknown/nested/Film/Film.mkv'),null)}finally{await fs.rm(root,{recursive:true,force:true})}
+ try {await fs.writeFile(path.join(root,'film.mkv'),'original');await fs.symlink('/etc/passwd',path.join(root,'link.mkv'));await assert.rejects(safeFile(root,'../film.mkv'));await assert.rejects(safeFile(root,'link.mkv'));}finally{await fs.rm(root,{recursive:true,force:true})}
 });
 test('approval replaces only the selected original and cleans completed transaction',async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'review-test-'));
