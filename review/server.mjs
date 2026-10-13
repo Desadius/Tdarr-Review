@@ -21,6 +21,10 @@ import {resolveReviewSource} from './source-mapping.mjs';
 import {matchReviewJob} from './job-matching.mjs';
 import {createArtwork,requestArtworkIdentity} from './artwork.mjs';
 import {createReviewSessionStore,ReviewSessionError,reviewRequirements} from './review-session.mjs';
+import {createPreviewCache,PreviewCacheError,previewCacheKey} from './preview-cache.mjs';
+import {createPreviewRenderer} from './preview-render.mjs';
+import {defaultPreviewPlan} from './preview-plan.mjs';
+import {defaultPreviewSettings,validatePreviewSettings,previewLimits} from './preview-settings.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 const DATA=process.env.DATA_ROOT||'/data',PORT=Number(process.env.PORT||8270);
@@ -47,6 +51,84 @@ let active=null,scanPromise=null,cache=null,cacheAt=0,batchRunning=false;
 let saveChain=Promise.resolve();
 const save=()=>{const snapshot=structuredClone(state);saveChain=saveChain.catch(()=>{}).then(()=>atomicJSON(statefile,snapshot));return saveChain};
 const reviewSessions=createReviewSessionStore({getState:()=>state,save,verify:verifyReviewItem});
+const previewSettingsFile=path.join(DATA,'preview-settings.json');
+let previewSettings=validatePreviewSettings({...defaultPreviewSettings(),...JSON.parse(await fs.readFile(previewSettingsFile,'utf8').catch(e=>{if(e.code!=='ENOENT')throw e;return '{}'}))});
+const rendererFiles=['preview-render.mjs','av-preview.mjs','audio-compare.mjs','audio-listen.mjs','frames.mjs','preview-process.mjs'];
+const previewCodeVersion=hash((await Promise.all(rendererFiles.map(file=>fs.readFile(path.join(ROOT,file),'utf8')))).join('\n'));
+const previewVersion=()=>hash(previewCodeVersion+'|'+JSON.stringify([MEDIA,REVIEW,FFPROBE,config.ffmpeg]));
+const previewPairs=new Map(),previewPlans=new Map(),previewAttempts=new Map();
+let previewMutationHolds=0,previewPlanning=null;
+async function previewIdentity(request){
+ if(request.rendererVersion!==previewVersion())throw new ReviewSessionError('Nastavení náhledu se změnilo. Obnov přehled.',409);
+ const item=state.items[request.itemId];
+ if(!item||item.snapshot!==request.snapshot)throw new ReviewSessionError('Soubory ukázky se změnily. Obnov přehled.',409);
+ let a,b;try{a=await safeFile(MEDIA,item.relative);b=await safeFile(REVIEW,item.reviewRelative)}catch{throw new ReviewSessionError('Soubory ukázky nejsou dostupné nebo se změnily. Obnov přehled.',409)}
+ if(hash(a.fp+'|'+b.fp)!==request.snapshot)throw new ReviewSessionError('Soubory ukázky se změnily. Obnov přehled.',409);
+ return {a,b};
+}
+async function previewPair(request,{background=false}={}){
+ const {a,b}=await previewIdentity(request),key=request.itemId+'|'+request.snapshot+'|'+request.rendererVersion;
+ let pair=previewPairs.get(key);
+ if(!pair){
+  const lower=background&&process.platform==='linux';
+  const read=file=>command(lower?'/usr/bin/ionice':FFPROBE,[...(lower?['-c','2','-n','7','/usr/bin/nice','-n','19',FFPROBE]:[]),'-v','error','-show_streams','-show_format','-of','json',file],{timeout:30000}).then(JSON.parse);
+  const [pa,pb]=await Promise.all([read(a.path),read(b.path)]);
+  await previewIdentity(request);pair={a,b,pa,pb};
+  previewPairs.set(key,pair);while(previewPairs.size>40)previewPairs.delete(previewPairs.keys().next().value);
+ }
+ return pair;
+}
+const previews=await createPreviewCache({directory:path.join(DATA,'preview-cache'),rendererVersion:previewVersion(),limits:previewLimits(previewSettings),backgroundDelayMs:1000,
+ render:createPreviewRenderer({getPair:previewPair,getConfig:()=>config}),verify:async request=>{await previewIdentity(request);return true},
+ allowBackground:()=>previewSettings.enabled&&!previewMutationHolds&&!active&&!batchRunning&&!resumeTask&&!previewBusy&&!settingsBusy&&!reviewSessions.busy&&!scanPromise&&!recovery.length&&!state.pauses.length,
+ onError:error=>{if(!['CANCELLED','STALE'].includes(error.code))console.error('Preview preparation: '+error.message)}
+});
+function previewPreparation(id,snapshot){
+ const plan=previewPlans.get(id),updated=Date.now();
+ if(!plan||plan.snapshot!==snapshot)return {snapshot,updated,state:previewSettings.enabled?'waiting':'disabled',ready:0,total:0,error:null,defaultScope:null,jobs:[]};
+ const jobs=plan.requests.map(request=>({mode:request.mode,seconds:request.seconds,originalIndex:request.originalIndex,reviewIndex:request.reviewIndex,previewProfile:request.profile,status:previews.status(request)}));
+ const ready=jobs.filter(job=>job.status==='ready').length,failed=jobs.some(job=>job.status==='error'),running=jobs.some(job=>job.status==='running'),queued=jobs.some(job=>job.status==='queued');
+ const quota=previews.stats().backgroundBudgetBlocked&&ready<jobs.length;
+ return {snapshot,updated,state:!previewSettings.enabled?'disabled':running?'running':ready===jobs.length&&jobs.length&&!plan.unavailableReason?'ready':failed||quota?'error':ready?'partial':queued?'waiting':plan.unavailableReason?'unavailable':'waiting',ready,total:jobs.length,error:plan.unavailableReason||(quota?'Příprava čeká na místo v mezipaměti. Zvyš její limit nebo použij vytvoření ukázky na požádání.':failed?'Některé ukázky se nepodařilo předpřipravit. Zkus je vytvořit ručně nebo použij vlastní přehrávač.':null),defaultScope:plan.defaultScope,chosenAudioLanguage:plan.chosenAudioLanguage||null,jobs};
+}
+async function planPreviewItem(id,snapshot,background=false){
+ const pair=await previewPair({itemId:id,snapshot,rendererVersion:previewVersion()},{background});
+ const scope={...reviewSessions.get(id,snapshot).session.scope,seconds:null};
+ const plan=defaultPreviewPlan({itemId:id,snapshot,durationA:Number(pair.pa.format?.duration),durationB:Number(pair.pb.format?.duration),originalTracks:(pair.pa.streams||[]).filter(s=>s.codec_type==='audio'),reviewTracks:(pair.pb.streams||[]).filter(s=>s.codec_type==='audio'),scope,rendererVersion:previewVersion(),...previewSettings});
+ const prior=previewPlans.get(id);
+ if(prior?.snapshot===snapshot&&(prior.defaultScope?.originalIndex!==plan.defaultScope.originalIndex||prior.defaultScope?.reviewIndex!==plan.defaultScope.reviewIndex)){
+  await previews.cancelBackground({itemId:id,wait:true});for(const [key,request] of previewAttempts)if(request.itemId===id)previewAttempts.delete(key);
+ }
+ previewPlans.set(id,{...plan,snapshot});return plan;
+}
+async function preparePreviews(items=cache||[]){
+ if(previewPlanning)return previewPlanning;
+ previewPlanning=(async()=>{
+  const valid=new Map(items.filter(item=>item.snapshot&&state.items[item.id]?.snapshot===item.snapshot).map(item=>[item.id,item.snapshot]));
+  for(const [id,plan] of previewPlans)if(valid.get(id)!==plan.snapshot){previewPlans.delete(id);await previews.invalidate({itemId:id})}
+  for(const [key,request] of previewAttempts)if(valid.get(request.itemId)!==request.snapshot||request.expiresAt&&Date.now()>=request.expiresAt)previewAttempts.delete(key);
+  await previews.prune();
+  if(!previewSettings.enabled)return;
+  const candidates=items.filter(item=>valid.get(item.id)===item.snapshot&&state.items[item.id]?.info).slice(0,previewSettings.maxFilms);
+  for(const item of candidates){
+   if(previewMutationHolds||settingsBusy||active||batchRunning||previewBusy||reviewSessions.busy||recovery.length||state.pauses.length)break;
+   try{
+    const plan=await planPreviewItem(item.id,item.snapshot,true);
+    for(const request of plan.requests){
+     const key=previewCacheKey(request,previewVersion());if(previewAttempts.has(key))continue;
+     const info=previews.entryInfo(request),record={...request,expiresAt:info?info.created+previewSettings.retentionDays*86400000:null};previewAttempts.set(key,record);
+     if(previews.status(request)==='ready')continue;
+     void previews.request(request,{priority:'background'}).then(()=>{const stored=previews.entryInfo(request);if(stored&&previewAttempts.get(key)===record)record.expiresAt=stored.created+previewSettings.retentionDays*86400000}).catch(error=>{if(error.code==='CANCELLED')previewAttempts.delete(key)});
+    }
+   }catch(error){if(state.items[item.id]?.snapshot===item.snapshot)previewPlans.set(item.id,{snapshot:item.snapshot,defaultScope:null,requests:[],unavailableReason:'Ukázky nyní nelze předpřipravit. Ověř dostupnost souborů.'});console.error('Preview plan: '+error.message)}
+  }
+ })().finally(()=>{previewPlanning=null});return previewPlanning;
+}
+async function forgetPreviews(id){
+ previewPlans.delete(id);for(const [key,request] of previewAttempts)if(request.itemId===id)previewAttempts.delete(key);
+ for(const key of previewPairs.keys())if(key.startsWith(id+'|'))previewPairs.delete(key);
+ try{await previews.invalidate({itemId:id})}catch(error){console.error('Preview cleanup: '+error.message)}
+}
 function reviewMutationBlocked(){return active||batchRunning||resumeTask||previewBusy||settingsBusy||scanPromise||recovery.length||state.pauses.length}
 async function verifyReviewItem(item,{id,snapshot},guard=true){
  if(guard&&reviewMutationBlocked())throw new ReviewSessionError('Nejprve dokonči probíhající akci nebo obnovu.',409);
@@ -115,6 +197,7 @@ const artwork=createArtwork({data:DATA,getConnection:async()=>JSON.parse(await f
 await replacements.recover();
 async function replacementAction(item,reason){
  active={id:item.id,title:item.title,action:'replace',stage:'Připravuji žádost Radarru',started:Date.now()};
+ await forgetPreviews(item.id);
  let outcome;
  try{const request=await replacements.run(item,reason);outcome={id:item.id,title:item.title,action:'replace',status:'success',requestId:request.id,rejectionReason:reason,time:new Date().toISOString(),savedBytes:0};delete state.items[item.id];delete state.reviewSessions[item.id];}
  catch(e){outcome={id:item.id,title:item.title,action:'replace',status:'error',message:e.message,rejectionReason:reason,time:new Date().toISOString()};}
@@ -197,7 +280,7 @@ async function scan(force=false,recheckId=null){
       if(!item.assessment)item.assessment=assessment(item,null);
       list.push(item);
     }
-    await save();cache=list;cacheAt=Date.now();return list;
+    await save();cache=list;cacheAt=Date.now();void preparePreviews(list).catch(error=>console.error('Preview preparation: '+error.message));return list;
   })().finally(()=>{scanPromise=null});return scanPromise;
 }
 function progress(stage,step=1,phase='metadata'){
@@ -211,6 +294,7 @@ async function perform(action,item,acceptDuration=false,reason){
   if(action==='reject')reason=rejectionReason(reason);
   const previous=state.items[item.id];
   active={id:item.id,title:item.title,action,stage:'Ověřuji soubory',started:Date.now()};
+  await forgetPreviews(item.id);
   progress('Ověřuji soubory, délku a zachované stopy');
   let journal,warning,outcome,reviewEvidence;
   try {
@@ -270,6 +354,7 @@ async function body(req){let b='';for await(const chunk of req){b+=chunk;if(b.le
 function respond(res,status,data,headers={}){res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff',...headers});res.end(JSON.stringify(data))}
 const authAttempts=new Map();
 const server=http.createServer(async(req,res)=>{
+  let releasePreviewBackground=false;
   try {
     if(req.headers.host!==HOST)return respond(res,403,{error:'Nepovolená adresa serveru.'});
     const url=new URL(req.url,'http://'+HOST);
@@ -286,6 +371,9 @@ const server=http.createServer(async(req,res)=>{
     const cookie=/review_session=([^;]+)/.exec(req.headers.cookie||'')?.[1];
     const authenticated=cookie&&(sessions.get(hash(cookie))||0)>Date.now();
     if(url.pathname.startsWith('/api/')&&!authenticated)return respond(res,401,{error:'Přihlas se přístupovým klíčem.'});
+    if(req.method==='POST'&&/^\/api\/(?:settings(?:\/test)?|preview-settings|approve-batch|radarr\/(?:settings(?:\/test)?|requests\/[a-f0-9]{24}\/restore)|items\/[a-f0-9]{24}\/(?:approve|reject|replace|recheck|review-session))$/.test(url.pathname)){
+      previewMutationHolds++;releasePreviewBackground=true;await previews.pauseBackground({wait:true});
+    }
     const poster=/^\/api\/artwork\/(review|request)\/([a-f0-9]{24})$/.exec(url.pathname);
     if(poster&&req.method==='GET'){
       let record;
@@ -348,7 +436,20 @@ const server=http.createServer(async(req,res)=>{
       const b=await body(req);if(b.confirm!==true)return respond(res,400,{error:'Potvrď obnovení zachovaných kopií.'});
       if(active||batchRunning||resumeTask||previewBusy||settingsBusy||reviewSessions.busy||recovery.length||state.pauses.length)return respond(res,409,{error:'Právě probíhá jiná akce.'});
       active={title:'Obnovení karantény',stage:'Ověřuji soubory',started:Date.now()};
-      try{const result=await replacements.restore(restoreRequest[1]);delete state.items[result.itemId];delete state.reviewSessions[result.itemId];await save();return respond(res,200,result)}finally{active=null;cache=null}
+      try{const result=await replacements.restore(restoreRequest[1]);await forgetPreviews(result.itemId);delete state.items[result.itemId];delete state.reviewSessions[result.itemId];await save();return respond(res,200,result)}finally{active=null;cache=null}
+    }
+    if(url.pathname==='/api/preview-settings'&&req.method==='GET')return respond(res,200,{config:previewSettings,revision:hash(JSON.stringify(previewSettings)),stats:{...previews.stats(),queued:previews.stats().queue,running:previews.stats().busy}});
+    if(url.pathname==='/api/preview-settings'&&req.method==='POST'){
+      if(active||batchRunning||previewBusy||settingsBusy||reviewSessions.busy||scanPromise)return respond(res,409,{error:'Právě probíhá jiná akce.'});
+      const b=await body(req);if(active||batchRunning||previewBusy||settingsBusy||reviewSessions.busy||scanPromise)return respond(res,409,{error:'Právě probíhá jiná akce.'});if(b.revision!==hash(JSON.stringify(previewSettings)))return respond(res,409,{error:'Nastavení se mezitím změnilo. Otevři ho znovu.'});
+      let candidate;try{candidate=validatePreviewSettings(b.config)}catch(error){return respond(res,400,{error:error.message})}
+      settingsBusy=true;
+      try{
+        await atomicJSON(previewSettingsFile,candidate);previewSettings=candidate;
+        await previews.updateLimits(previewLimits(candidate));
+        await previews.cancelBackground({all:true,wait:true});previewPlans.clear();previewAttempts.clear();
+        return respond(res,200,{config:previewSettings,revision:hash(JSON.stringify(previewSettings)),stats:previews.stats(),message:'Nastavení přípravy ukázek je uložené.'});
+      }finally{settingsBusy=false;void preparePreviews().catch(error=>console.error('Preview preparation: '+error.message))}
     }
     if(url.pathname==='/api/settings'&&req.method==='GET')return respond(res,200,{config,revision:hash(JSON.stringify(config))});
     if(['/api/settings/test','/api/settings'].includes(url.pathname)&&req.method==='POST'){
@@ -365,6 +466,7 @@ const server=http.createServer(async(req,res)=>{
         const matches=libraries.filter(l=>candidate.libraryId?l._id===candidate.libraryId:candidate.sourceRoots.includes(String(l.folder).replace(/\/$/,'')));
         if(matches.length!==1||!candidate.sourceRoots.includes(String(matches[0].folder).replace(/\/$/,'')))throw Error('Vyber jednoznačnou knihovnu a její zdrojovou cestu v Tdarru.');
         if(url.pathname==='/api/settings'){
+          await previews.invalidate({all:true});previewPairs.clear();previewPlans.clear();previewAttempts.clear();
           await atomicJSON(configfile,candidate);config=candidate;applyConfig();statsCache=null;state.items={};state.reviewSessions={};cache=null;cacheAt=0;await save();
         }
         return respond(res,200,{ok:true,message:'Připojení, databáze a cesty jsou dostupné.',publicOrigin:candidate.publicOrigin,revision:hash(JSON.stringify(config))});
@@ -373,7 +475,12 @@ const server=http.createServer(async(req,res)=>{
     if(url.pathname==='/api/items'&&req.method==='GET'){
       if(state.pauses.length&&!recovery.length&&!active&&!batchRunning&&!reviewSessions.busy)await resume();
       const items=await scan();
-      return respond(res,200,{version:'1.10.4',label:config.label,serverTime:Date.now(),items,reviewSessions:reviewSessions.list(items),active,batch:state.batch||null,batchRunning,history:state.history,recovery,restorePending:state.pauses.length});
+      return respond(res,200,{version:'1.10.5',label:config.label,serverTime:Date.now(),items,previews:Object.fromEntries(items.filter(item=>item.snapshot).map(item=>[item.id,previewPreparation(item.id,item.snapshot)])),reviewSessions:reviewSessions.list(items),active,batch:state.batch||null,batchRunning,history:state.history,recovery,restorePending:state.pauses.length});
+    }
+    const previewStatus=/^\/api\/items\/([a-f0-9]{24})\/preview-status$/.exec(url.pathname);
+    if(previewStatus&&req.method==='GET'){
+      const id=previewStatus[1],snapshot=url.searchParams.get('snapshot');await previewIdentity({itemId:id,snapshot,rendererVersion:previewVersion()});
+      return respond(res,200,{preparation:previewPreparation(id,snapshot)});
     }
     const reviewSession=/^\/api\/items\/([a-f0-9]{24})\/review-session$/.exec(url.pathname);
     if(reviewSession&&req.method==='GET'){
@@ -386,7 +493,7 @@ const server=http.createServer(async(req,res)=>{
       if(reviewMutationBlocked())return respond(res,409,{error:'Nejprve dokonči probíhající akci nebo obnovu.'});
       const request=await body(req);
       if(reviewMutationBlocked())return respond(res,409,{error:'Nejprve dokonči probíhající akci nebo obnovu.'});
-      return respond(res,200,await reviewSessions.write(reviewSession[1],request));
+      const saved=await reviewSessions.write(reviewSession[1],request);void preparePreviews().catch(error=>console.error('Preview preparation: '+error.message));return respond(res,200,saved);
     }
     if(url.pathname==='/api/approve-batch'&&req.method==='POST'){
       if(active||batchRunning||resumeTask||previewBusy||settingsBusy||reviewSessions.busy)return respond(res,409,{error:'Jiná akce nebo dávka právě probíhá.'});
@@ -427,71 +534,43 @@ const server=http.createServer(async(req,res)=>{
       return respond(res,202,{ok:true});
     }
     const audio=/^\/api\/items\/([a-f0-9]{24})\/audio-compare$/.exec(url.pathname);
-    if(audio&&req.method==='POST'){
-      const request=await body(req),item=state.items[audio[1]];
-      if(!item||item.snapshot!==request.snapshot)return respond(res,409,{error:'Obnov přehled, soubory se změnily.'});
-      if(active||batchRunning||previewBusy||settingsBusy||reviewSessions.busy||scanPromise)return respond(res,409,{error:'Právě probíhá jiná akce. Zkus to za chvíli.'});
-      previewBusy=true;
-      try{
-        const a=await safeFile(MEDIA,item.relative),b=await safeFile(REVIEW,item.reviewRelative);
-        if(hash(a.fp+'|'+b.fp)!==item.snapshot)throw Error('Soubory se změnily. Obnov přehled.');
-        const read=async f=>JSON.parse(await command(FFPROBE,['-v','error','-show_streams','-show_format','-of','json',f],{timeout:30000}));
-        const pa=await read(a.path),pb=await read(b.path);
-        const tracks=p=>p.streams.filter(s=>s.codec_type==='audio').map(s=>({index:s.index,label:`${s.index}: ${s.tags?.language||'und'} · ${s.codec_name} · ${s.channels} kan. · ${s.tags?.title||''}`}));
-        if(request.mode==='tracks')return respond(res,200,{original:tracks(pa),review:tracks(pb)});
-        const seconds=Number(request.seconds),duration=Math.min(Number(pa.format.duration),Number(pb.format.duration));
-        if(!Number.isFinite(seconds)||seconds<0||seconds+12>duration)return respond(res,400,{error:'Vyber úsek alespoň 12 sekund před koncem filmu.'});
-        if(!tracks(pa).some(s=>s.index===request.originalIndex)||!tracks(pb).some(s=>s.index===request.reviewIndex))return respond(res,400,{error:'Vyber platné zvukové stopy.'});
-        if(request.mode==='av'){
-          const va=pa.streams.find(s=>s.codec_type==='video'&&!s.disposition?.attached_pic),vb=pb.streams.find(s=>s.codec_type==='video'&&!s.disposition?.attached_pic);
-          if(!va||!vb||va.color_transfer!==vb.color_transfer)throw Error('Obrazové profily náhledu se neshodují.');
-          const previewProfile=request.previewProfile??'compact';
-          if(!Object.hasOwn(PREVIEW_PROFILES,previewProfile))return respond(res,400,{error:'Neplatný profil videonáhledu.'});
-          const original=await extractPreview(config.ffmpeg,a.path,request.originalIndex,seconds,Number(pa.format.start_time||0),va,previewProfile);
-          const review=await extractPreview(config.ffmpeg,b.path,request.reviewIndex,seconds,Number(pb.format.start_time||0),vb,previewProfile);
-          const originalWave=await extractAudio(config.ffmpeg,a.path,request.originalIndex,seconds,Number(pa.format.start_time||0));
-          const reviewWave=await extractAudio(config.ffmpeg,b.path,request.reviewIndex,seconds,Number(pb.format.start_time||0));
-          if((await safeFile(MEDIA,item.relative)).fp!==a.fp||(await safeFile(REVIEW,item.reviewRelative)).fp!==b.fp)throw Error('Soubory se během přípravy změnily.');
-          const rates=[va,vb].map(v=>{const [n,d]=String(v.avg_frame_rate||'0/1').split('/').map(Number);return n/d});
-          return respond(res,200,{seconds,duration:12,original,review,originalWave,reviewWave,alignment:alignment(originalWave,reviewWave),frameRates:rates.map(x=>Number.isFinite(x)&&x>0?x:null),hdr:va.color_transfer==='smpte2084',previewProfile,previewMaxWidth:PREVIEW_PROFILES[previewProfile].width,previewMaxHeight:PREVIEW_PROFILES[previewProfile].height});
-        }
-        if(request.mode==='listen'){
-          const original=await extractListeningAudio(config.ffmpeg,a.path,request.originalIndex,seconds,Number(pa.format.start_time||0));
-          const review=await extractListeningAudio(config.ffmpeg,b.path,request.reviewIndex,seconds,Number(pb.format.start_time||0));
-          if((await safeFile(MEDIA,item.relative)).fp!==a.fp||(await safeFile(REVIEW,item.reviewRelative)).fp!==b.fp)throw Error('Soubory se během přípravy změnily.');
-          return respond(res,200,{seconds,original,review,originalTrack:tracks(pa).find(s=>s.index===request.originalIndex),reviewTrack:tracks(pb).find(s=>s.index===request.reviewIndex),processing:'48 kHz PCM; FFmpeg mono downmix; časová osa kontejneru; žádná normalizace hlasitosti ani automatické dorovnání posunu.'});
-        }
-        const original=await extractAudio(config.ffmpeg,a.path,request.originalIndex,seconds,Number(pa.format.start_time||0));
-        const review=await extractAudio(config.ffmpeg,b.path,request.reviewIndex,seconds,Number(pb.format.start_time||0));
-        if((await safeFile(MEDIA,item.relative)).fp!==a.fp||(await safeFile(REVIEW,item.reviewRelative)).fp!==b.fp)throw Error('Soubory se během přípravy změnily.');
-        const result=alignment(original,review);
-        const sample={seconds,originalIndex:request.originalIndex,reviewIndex:request.reviewIndex,alignment:result,at:new Date().toISOString()};
-        item.audioSamples=[...(item.audioSamples||[]).filter(s=>!(s.seconds===seconds&&s.originalIndex===sample.originalIndex&&s.reviewIndex===sample.reviewIndex)),sample].slice(-30);
-        await save();cacheAt=0;
-        return respond(res,200,{seconds,stepMs:10,original,review,alignment:result});
-      }finally{previewBusy=false}
-    }
     const frames=/^\/api\/items\/([a-f0-9]{24})\/frames$/.exec(url.pathname);
-    if(frames&&req.method==='POST'){
-      const request=await body(req),item=state.items[frames[1]];
-      const seconds=Number(request.seconds);
+    if((audio||frames)&&req.method==='POST'){
+      const request=await body(req),id=(audio||frames)[1],item=state.items[id];
       if(!item||item.snapshot!==request.snapshot)return respond(res,409,{error:'Obnov přehled, soubory se změnily.'});
-      if(!Number.isFinite(seconds)||seconds<0||seconds>=Math.min(item.info.durationA,item.info.durationB))return respond(res,400,{error:'Čas je mimo délku filmu.'});
-      if(active||batchRunning||previewBusy||settingsBusy||reviewSessions.busy)return respond(res,409,{error:'Právě probíhá jiná akce nebo příprava snímků. Zkus to za chvíli.'});
-      previewBusy=true;
+      if(request.cachedOnly!==undefined&&typeof request.cachedOnly!=='boolean')return respond(res,400,{error:'Neplatný požadavek cache.'});
+      const readonly=request.cachedOnly===true||audio&&request.mode==='tracks';
+      if(!readonly&&(active||batchRunning||previewBusy||settingsBusy||reviewSessions.busy||scanPromise))return respond(res,409,{error:'Právě probíhá jiná akce. Zkus to za chvíli.'});
+      if(!readonly)previewBusy=true;
       try{
-        const a=await safeFile(MEDIA,item.relative),b=await safeFile(REVIEW,item.reviewRelative);
-        if(hash(a.fp+'|'+b.fp)!==item.snapshot)throw Error('Soubory se změnily. Obnov přehled.');
-        const pa=await probe(FFPROBE,a.path),pb=await probe(FFPROBE,b.path);
-        const va=pa.streams.find(x=>x.codec_type==='video'&&!x.disposition?.attached_pic),vb=pb.streams.find(x=>x.codec_type==='video'&&!x.disposition?.attached_pic);
-        const hdr=va.color_transfer==='smpte2084';
-        if(hdr!==(vb.color_transfer==='smpte2084')||[va,vb].some(x=>x.color_transfer==='arib-std-b67'))throw Error('Tuto kombinaci HDR nelze porovnat.');
-        const exe=config.ffmpeg;
-        const original=await extractFrame(exe,a.path,seconds,hdr);
-        const review=await extractFrame(exe,b.path,seconds,hdr);
-        if((await safeFile(MEDIA,item.relative)).fp!==a.fp||(await safeFile(REVIEW,item.reviewRelative)).fp!==b.fp)throw Error('Soubory se během přípravy změnily.');
-        return respond(res,200,{seconds,hdr,original:original.toString('base64'),review:review.toString('base64')});
-      }finally{previewBusy=false;}
+        const mode=frames?'frames':request.mode||'wave';
+        if(!['frames','tracks','wave','listen','av'].includes(mode))return respond(res,400,{error:'Neplatný typ ukázky.'});
+        const normalized={itemId:id,snapshot:request.snapshot,mode,seconds:Number(request.seconds),originalIndex:frames?null:request.originalIndex,reviewIndex:frames?null:request.reviewIndex,profile:mode==='av'?request.previewProfile??'compact':null,rendererVersion:previewVersion()};
+        const pair=await previewPair(normalized),tracks=p=>(p.streams||[]).filter(s=>s.codec_type==='audio').map(s=>({index:s.index,label:`${s.index}: ${s.tags?.language||'und'} · ${s.codec_name} · ${s.channels} kan. · ${s.tags?.title||''}`}));
+        if(mode==='tracks'){
+          if(previewPlans.get(id)?.snapshot!==request.snapshot)await planPreviewItem(id,request.snapshot);
+          const preparation=previewPreparation(id,request.snapshot);
+          return respond(res,200,{original:tracks(pair.pa),review:tracks(pair.pb),defaultScope:preparation.defaultScope,preparation});
+        }
+        const duration=Math.min(Number(pair.pa.format?.duration),Number(pair.pb.format?.duration));
+        if(!Number.isFinite(normalized.seconds)||normalized.seconds<0||normalized.seconds>=duration||mode!=='frames'&&normalized.seconds+12>duration)return respond(res,400,{error:mode==='frames'?'Čas je mimo délku filmu.':'Vyber úsek alespoň 12 sekund před koncem filmu.'});
+        if(mode!=='frames'&&(!tracks(pair.pa).some(s=>s.index===normalized.originalIndex)||!tracks(pair.pb).some(s=>s.index===normalized.reviewIndex)))return respond(res,400,{error:'Vyber platné zvukové stopy.'});
+        if(mode==='av'&&!Object.hasOwn(PREVIEW_PROFILES,normalized.profile))return respond(res,400,{error:'Neplatný profil videonáhledu.'});
+        const ready=await previews.peek(normalized);
+        if(readonly){
+          if(ready===null)return respond(res,202,{pending:true,preparation:previewPreparation(id,request.snapshot)});
+          return respond(res,200,{...ready,cached:true});
+        }
+        const result=ready??await previews.request(normalized,{priority:'interactive'});
+        await previewIdentity(normalized);
+        // Only an explicit waveform request records a measured sample. Warm-up and cache-only loading do not.
+        if(mode==='wave'){
+          const sample={seconds:normalized.seconds,originalIndex:normalized.originalIndex,reviewIndex:normalized.reviewIndex,alignment:result.alignment,at:new Date().toISOString()};
+          item.audioSamples=[...(item.audioSamples||[]).filter(s=>!(s.seconds===sample.seconds&&s.originalIndex===sample.originalIndex&&s.reviewIndex===sample.reviewIndex)),sample].slice(-30);
+          await save();cacheAt=0;
+        }
+        return respond(res,200,{...result,cached:ready!==null});
+      }finally{if(!readonly)previewBusy=false}
     }
     const video=/^\/api\/items\/([a-f0-9]{24})\/video$/.exec(url.pathname);
     if(video&&req.method==='GET'){
@@ -505,6 +584,15 @@ const server=http.createServer(async(req,res)=>{
       const [file,mime]=assets[url.pathname];res.writeHead(200,{'content-type':mime,'cache-control':'no-store','x-content-type-options':'nosniff','content-security-policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",'referrer-policy':'no-referrer'});res.end(await fs.readFile(path.join(ROOT,'public',file)));return;
     }
     respond(res,404,{error:'Nenalezeno.'});
-  }catch(e){console.error(e.message);if(!res.headersSent)respond(res,e instanceof ReviewSessionError?e.status:500,{error:e.message});else res.destroy()}
+  }catch(e){console.error(e.message);if(!res.headersSent)respond(res,e instanceof ReviewSessionError?e.status:e instanceof PreviewCacheError?(['STALE','CANCELLED'].includes(e.code)?409:e.code==='INVALID_REQUEST'?400:500):500,{error:e.message});else res.destroy()}
+  finally{if(releasePreviewBackground){previewMutationHolds--;if(!previewMutationHolds)previews.resumeBackground()}}
 });
 server.listen(PORT,'0.0.0.0',()=>console.log('Tdarr Review listening on '+PORT));
+const previewTimer=setInterval(()=>{if(!previewMutationHolds&&!active&&!batchRunning&&!previewBusy&&!settingsBusy&&!reviewSessions.busy&&!resumeTask&&!recovery.length&&!state.pauses.length)void scan().then(preparePreviews).catch(error=>console.error('Preview preparation: '+error.message))},60000);previewTimer.unref();
+const previewStart=setTimeout(()=>{void scan().then(preparePreviews).catch(error=>console.error('Preview preparation: '+error.message))},1000);previewStart.unref();
+let stopping=false;
+for(const signal of ['SIGTERM','SIGINT'])process.once(signal,()=>{
+ if(stopping)return;stopping=true;clearInterval(previewTimer);clearTimeout(previewStart);clearInterval(replacementTimer);
+ const drained=new Promise(resolve=>server.close(resolve));server.closeIdleConnections();
+ void Promise.all([previews.close(),drained]).then(async()=>{while(active||batchRunning||reviewSessions.busy||settingsBusy||resumeTask)await new Promise(resolve=>setTimeout(resolve,50));await saveChain;process.exit(0)}).catch(error=>{console.error('Review shutdown: '+error.message);process.exit(1)});
+});

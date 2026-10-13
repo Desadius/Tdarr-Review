@@ -25,6 +25,7 @@ Loading or playing a preview never checks a review box. Browser AV clips use H.2
 
 | Document | Contents |
 | --- | --- |
+| [Prepared samples](docs/PREPARED-SAMPLES.md) | Background preparation, language preferences and bounded cache |
 | [Installation on Unraid](docs/INSTALL-UNRAID.md) | Docker image, mappings, permissions, login and first configuration |
 | [Community Applications](docs/COMMUNITY-APPS.md) | Unraid template, maintainer submission and catalog status |
 | [Configuration](docs/CONFIGURATION.md) | Paths, database, Radarr and Recovery settings |

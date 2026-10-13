@@ -1,5 +1,5 @@
 import {mountAVComparison} from '/av-player.js?v=20261012-wipe1';
-import {mountReviewWorkflow} from '/review-workflow.js?v=20261012-workflow1';
+import {mountReviewWorkflow,classifyPreparation,preparationSummary,previewJobMatches,createCachedPreviewLoader} from '/review-workflow.js?v=20261013-prepared2';
 import {capabilities, classifyRecovery, recoveryProgress, downloadProgress, liveRecoveryRecord, projectRequests, historyWarnings, historyFollowup, quarantineLifecycle, recoveryFollowup} from '/review-model.js?v=20261012-recovery3';
 import {tr,locale,initializeLocale,translateAudioTrackLabel as audioTrackLabel} from '/i18n.js?v=20261012-en1';
 initializeLocale();
@@ -19,12 +19,14 @@ let reviewWorkspace=null;
 try{ui.layout=localStorage.getItem('tdarr-review-layout')==='gallery'?'gallery':'work'}catch{}
 const context=()=>({authenticated,fresh:!!receivedAt&&!dataError&&Date.now()-receivedAt<15000,requests,requestsFresh:!!requestsReceived&&!requestsError&&Date.now()-requestsReceived<90000,settingsBusy:actionInFlight});
 const caps=item=>capabilities(item,latest||{items:[],recovery:[]},context());
+function pendingPreviewMessage(preparation,request){const job=preparation?.jobs?.find(x=>previewJobMatches(x,request)),waiting=job&&job.status!=='error'&&!['disabled','unavailable'].includes(preparation.state);return preparationSummary(preparation,tr)+' · '+tr(waiting?'Hotová ukázka se načte automaticky. Jiný úsek vytvoř tlačítkem.':'Pro vybraný úsek není hotová ukázka. Vytvoř ji tlačítkem.')}
+function previewRenderSignature(data){return JSON.stringify({...data,serverTime:undefined,previews:Object.fromEntries(Object.entries(data.previews||{}).map(([id,value])=>[id,value?{...value,updated:undefined}:value]))})}
 
 async function api(route,body){
  if(body!==undefined){
   const preview=/^\/api\/items\/([a-f0-9]{24})\/(frames|audio-compare)$/.exec(route);
-  if(preview){const item=latest?.items.find(x=>x.id===preview[1]);if(!item||item.snapshot!==body.snapshot||!caps(item)[preview[2]==='frames'?'compareImage':'compareAudio'])throw Error('Porovnání nyní není dostupné. Obnov údaje a ověř stav filmu.');}
-  if(/^\/api\/(settings|radarr\/settings)(\/test)?$/.test(route)&&capabilities({},latest,context()).writeBlocked)throw Error('Nastavení nyní nelze měnit. Ověř přihlášení, aktuální údaje a probíhající operace.');
+  if(preview){const item=latest?.items.find(x=>x.id===preview[1]),permitted=body.cachedOnly===true?authenticated&&context().fresh:caps(item||{})[preview[2]==='frames'?'compareImage':'compareAudio'];if(!item||item.snapshot!==body.snapshot||!permitted)throw Error('Porovnání nyní není dostupné. Obnov údaje a ověř stav filmu.');}
+  if(/^\/api\/(settings|radarr\/settings|preview-settings)(\/test)?$/.test(route)&&capabilities({},latest,context()).writeBlocked)throw Error('Nastavení nyní nelze měnit. Ověř přihlášení, aktuální údaje a probíhající operace.');
  }
  const r=await fetch(route,{method:body===undefined?'GET':'POST',headers:body===undefined?{}:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
  let d;try{d=await r.json()}catch{throw Error('Server nevrátil platnou odpověď. Obnov údaje a ověř výsledek akce.')}
@@ -123,17 +125,24 @@ function keyed(container,records,keyOf,build){
  for(const row of old.values())row.remove();
  if(focus&&document.activeElement===document.body){const replacement=[...container.querySelectorAll('[data-focus]')].find(n=>n.dataset.focus===focus);replacement?.focus({preventScroll:true})}
 }
+function previewPreparationBadge(item){
+ const preparation=latest?.previews?.[item.id],status=classifyPreparation(preparation,item.snapshot),box=el('div','preview-card-status'),icon=el('span','preview-status-icon',status.icon,true),label=el('strong','preview-status-label',tr('Ukázky')+': '+tr(status.label),true);box.dataset.kind=status.kind;box.title=preparation?.snapshot===item.snapshot&&preparation.error?tr(preparation.error):preparationSummary(preparation?.snapshot===item.snapshot?preparation:null,tr);box.setAttribute('role','group');box.setAttribute('aria-label',tr('Stav ukázek'));icon.setAttribute('aria-hidden','true');box.append(icon,label);
+ if(status.total>0)box.append(el('span','preview-status-count',status.ready+'/'+status.total,true));
+ if(status.progress){const progress=el('progress','preview-status-progress');progress.max=status.total||1;if(status.total>0)progress.value=Math.min(status.ready,status.total);progress.setAttribute('aria-label',tr('Připravené ukázky')+' · '+status.ready+'/'+status.total);box.append(progress)}
+ return box;
+}
 function reviewRow(item){
  const row=el('article','review-row'),pick=el('label','selection'),checkbox=el('input');checkbox.type='checkbox';checkbox.setAttribute('aria-label',tr('Vybrat '+item.title));checkbox.dataset.focus='pick:'+item.id;checkbox.onchange=e=>{e.target.checked?selected.add(item.id):selected.delete(item.id);updateSelection()};pick.append(checkbox);
  const session=latest?.reviewSessions?.[item.id],deferred=session?.snapshot===item.snapshot&&session.session?.deferred;
  const info=el('div','row-info');info.append(badge(deferred?'Posouzení odloženo':item.status==='ready'?'K posouzení':'Zvláštní kontrola',deferred?'warning':item.status==='ready'?'ready':'warning'),el('h2','',item.title,true),el('p','details',deferred?session.session.note:item.status==='ready'?'Další krok: porovnej obraz a zvuk.':item.reason||'Ověř technické údaje a dostupnost souborů.'));
+ info.append(previewPreparationBadge(item));
  const metric=el('div','row-metric');metric.append(el('strong','saved',fmt(item.originalBytes-item.reviewBytes)),el('span','details',`${fmt(item.originalBytes)} → ${fmt(item.reviewBytes)}`));
  const inspect=button('Posoudit',()=>openDetail('review',item.id),'primary');inspect.dataset.focus='inspect:'+item.id;inspect.setAttribute('aria-label',tr('Posoudit '+item.title));row.append(pick,poster('review',item.id,item.title),info,metric,inspect);return row;
 }
 function renderAttention(){
  const items=filteredItems();$('readyCount').textContent=tr((latest?.items||[]).filter(x=>x.status==='ready').length);$('blockedCount').textContent=tr((latest?.items||[]).filter(x=>x.status!=='ready').length);
  $('saving').textContent=tr(fmt((latest?.items||[]).filter(x=>x.status==='ready').reduce((s,x)=>s+x.originalBytes-x.reviewBytes,0)));
- $('list').classList.toggle('gallery',ui.layout==='gallery');keyed($('list'),items.map(item=>({...item,reviewSession:latest?.reviewSessions?.[item.id]})),x=>x.id,reviewRow);$('reviewEmpty').hidden=!!items.length;$('reviewEmpty').textContent=tr(latest?.items.length?'Tomuto hledání neodpovídá žádný výsledek.':'Všechny výsledky jsou vyřízené. Nové se objeví automaticky po dokončení převodu.');
+ $('list').classList.toggle('gallery',ui.layout==='gallery');keyed($('list'),items.map(item=>{const preparation=latest?.previews?.[item.id];return {...item,reviewSession:latest?.reviewSessions?.[item.id],preparation:preparation?{...preparation,updated:undefined}:preparation}}),x=>x.id,reviewRow);$('reviewEmpty').hidden=!!items.length;$('reviewEmpty').textContent=tr(latest?.items.length?'Tomuto hledání neodpovídá žádný výsledek.':'Všechny výsledky jsou vyřízené. Nové se objeví automaticky po dokončení převodu.');
  for(const radio of document.querySelectorAll('input[name=layout]'))radio.checked=radio.value===ui.layout;
  const warnings=historyWarnings(latest?.history||[]),attention=projectRequests(requests,latest?.items||[],Date.now()).filter(x=>x.classification.category==='attention');
  $('events').hidden=!warnings.length&&!attention.length;
@@ -199,10 +208,11 @@ function detailReview(item,tab){
  const box=$('detailBody');
  if(tab==='review'){
   if(reviewWorkspace)return;
-  reviewWorkspace=mountReviewWorkflow(box,item,{api,tr,formatBytes:fmt,openComparison,openAudioComparison,
+  reviewWorkspace=mountReviewWorkflow(box,item,{api,tr,formatBytes:fmt,openComparison,openAudioComparison,preparation:latest?.previews?.[item.id],
    canWrite:()=>{const current=latest?.items.find(x=>x.id===item.id);return !!current&&current.snapshot===item.snapshot&&!caps(current).writeBlocked},
    canApprove:()=>{const current=latest?.items.find(x=>x.id===item.id);return !!current&&current.snapshot===item.snapshot&&caps(current).approve},
    onSession:record=>{if(!latest)return;latest.reviewSessions||={};latest.reviewSessions[item.id]=record;updateGuards()},
+   onPreparation:record=>{if(!latest||record?.snapshot!==item.snapshot)return;latest.previews||={};latest.previews[item.id]=record;renderAttention()},
    onApprove:()=>ask(item,'approve'),onReject:()=>ask(item,'reject'),onDeferred:()=>{$('filmDetail').close();renderAttention()}});return;
  }
  box.replaceChildren();
@@ -275,7 +285,7 @@ function updateGuards(){
  if(ui.detail){const item=ui.detail.record,current=ui.detail.kind==='review'?latest.items.find(x=>x.id===item.id):requests.find(x=>x.id===item.id&&x.source===item.source),changed=!current||(ui.detail.kind==='review'?current.snapshot!==item.snapshot:JSON.stringify(current)!==JSON.stringify(item));
   $('detailChanged').hidden=!changed;$('detailChanged').textContent=tr('Stav tohoto filmu se změnil. Zavři detail a otevři aktuální údaje.');
   for(const b of $('filmDetail').querySelectorAll('[data-cap]'))b.disabled=changed||!caps(current||item)[b.dataset.cap];
-  if(ui.detail.kind==='review'&&changed)reviewWorkspace?.invalidate();else{reviewWorkspace?.refreshGuard();if(ui.detail.kind==='review')reviewWorkspace?.observe(latest.reviewSessions?.[item.id])}
+  if(ui.detail.kind==='review'&&changed)reviewWorkspace?.invalidate();else{reviewWorkspace?.refreshGuard();if(ui.detail.kind==='review'){reviewWorkspace?.observe(latest.reviewSessions?.[item.id]);reviewWorkspace?.observePreparation(latest.previews?.[item.id],{authoritative:true})}}
   const guard=caps(item);$('detailGuard').hidden=!guard.writeBlocked&&!changed;$('detailGuard').textContent=tr(changed?'Akce čekají na nové posouzení aktuálního stavu.':guard.reason||'Zapisující akce jsou dočasně zablokované.');
  }
  if(pending){let enabled=!actionInFlight;if(pending.action==='batch')enabled&&=pending.items.every(x=>{const current=latest.items.find(i=>i.id===x.id&&i.snapshot===x.snapshot);return current&&caps(current).approveBatch&&latest.reviewSessions?.[x.id]?.revision===pending.reviewRevisions[x.id]});else if(pending.action==='restore'){const current=requests.find(r=>r.id===pending.record.id&&r.source===pending.record.source);enabled&&=!!current&&caps(current).restore;}else{const current=latest.items.find(x=>x.id===pending.item.id&&x.snapshot===pending.item.snapshot);enabled&&=!!current&&caps(current)[pending.action]&&(pending.action!=='approve'||latest.reviewSessions?.[pending.item.id]?.revision===pending.reviewRevision)}$('commit').disabled=!enabled;}
@@ -283,6 +293,7 @@ function updateGuards(){
 function render(d){
  const priorSessions=latest?.reviewSessions||{};d.reviewSessions||={};for(const [id,record]of Object.entries(priorSessions)){const current=d.items.find(x=>x.id===id);if(current?.snapshot===record.snapshot&&record.revision>(d.reviewSessions[id]?.revision??-1))d.reviewSessions[id]=record}
  latest=d;authenticated=true;document.querySelector('.server').textContent=d.label||'Tdarr Review';$('login').hidden=true;$('workspace').hidden=false;
+ if(ui.detail?.kind==='review')reviewWorkspace?.observePreparation(d.previews?.[ui.detail.id],{authoritative:true});
  for(const id of selected)if(!d.items.some(x=>x.id===id&&caps(x).select))selected.delete(id);
  $('attentionCount').textContent=tr(d.items.length);$('recoveryCount').textContent=tr(projectRequests(requests,d.items,Date.now()).filter(x=>x.classification.category!=='done').length);
  const warningCount=historyWarnings(d.history||[]).length;$('historyCount').hidden=!warningCount;$('historyCount').textContent=tr(warningCount);
@@ -301,7 +312,7 @@ async function loadStatistics(){
  }catch(e){let note=statsBox.querySelector('.stats-error');if(!note){note=el('p','alert stats-error');note.setAttribute('role','status');statsBox.prepend(note)}note.textContent=tr('Statistiky nelze aktualizovat; poslední údaje mohou být zastaralé. '+e.message);}finally{statsLoading=false}
 }
 setInterval(()=>{if(ui.view==='savings')loadStatistics()},15000);
-async function load(){if(loading)return;loading=true;try{const d=await api('/api/items');receivedAt=Date.now();serverAt=d.serverTime||receivedAt;authenticated=true;dataError='';$('lastUpdate').textContent=tr(date(receivedAt));$('lastUpdate').dateTime=new Date(receivedAt).toISOString();const sig=JSON.stringify({...d,serverTime:undefined});if(sig!==lastRender||$('workspace').hidden||!$('login').hidden){render(d);lastRender=sig}else updateGuards()}catch(e){dataError=e.message;updateGuards();if(!latest)error(e)}finally{loading=false}}
+async function load(){if(loading)return;loading=true;try{const d=await api('/api/items');receivedAt=Date.now();serverAt=d.serverTime||receivedAt;authenticated=true;dataError='';$('lastUpdate').textContent=tr(date(receivedAt));$('lastUpdate').dateTime=new Date(receivedAt).toISOString();const sig=previewRenderSignature(d);if(sig!==lastRender||$('workspace').hidden||!$('login').hidden){render(d);lastRender=sig}else{if(latest)latest.previews=d.previews||{};updateGuards()}}catch(e){dataError=e.message;updateGuards();if(!latest)error(e)}finally{loading=false}}
 async function loadRequests(force=false){if(requestsLoading||!authenticated||(!force&&Date.now()-requestsReceived<30000))return;requestsLoading=true;try{requests=(await api('/api/radarr/requests')).requests;requestsReceived=Date.now();requestsError='';if(latest){renderAttention();renderRecovery();$('recoveryCount').textContent=tr(projectRequests(requests,latest.items,Date.now()).filter(x=>x.classification.category!=='done').length);const live=ui.detail?.kind==='request'?liveRecoveryRecord(ui.detail.record,requests):null;if(live){ui.detail.record=live;$('detailSubtitle').textContent=tr(classifyRecovery(live).label);renderDetailTab();}updateGuards();handleHash()}}catch(e){requestsError=e.message;renderRecovery();updateGuards()}finally{requestsLoading=false}}
 function parseHash(){const [view,query='']=location.hash.slice(1).split('?');return {view:['attention','recovery','history','savings','settings'].includes(view)?view:'attention',params:new URLSearchParams(query)}}
 function navigate(view,params={}){if(view==='recovery'&&!params.filter)params.filter=ui.filter;const query=new URLSearchParams(params).toString(),hash='#'+view+(query?'?'+query:'');if(location.hash===hash)handleHash();else location.hash=hash}
@@ -361,28 +372,33 @@ const compareDialog=el('dialog','comparison');document.body.append(compareDialog
 let compareCleanup=null;
 compareDialog.addEventListener('close',()=>{compareCleanup?.();compareCleanup=null;compareDialog.replaceChildren()});
 function openComparison(item,options={}){
- const host=options.host||compareDialog;let dead=false,request=0;host.replaceChildren();
+ const host=options.host||compareDialog;let dead=false,request=0,cachedLoader=null;host.replaceChildren();
  const current=()=>!dead&&host.isConnected&&latest?.items.some(x=>x.id===item.id&&x.snapshot===item.snapshot);
- const cleanup=()=>{dead=true;request++;host.replaceChildren()};if(!options.host){compareCleanup?.();compareCleanup=cleanup}
- const heading=el('div','comparison-head'),close=el('button','secondary','Zavřít');close.onclick=()=>compareDialog.close();heading.append(el('h2','',item.title,true),close);
+ const cleanup=()=>{dead=true;request++;cachedLoader?.stop();host.replaceChildren()};if(!options.host){compareCleanup?.();compareCleanup=cleanup}
+ const heading=el('div','comparison-head'),close=button('Zavřít',()=>compareDialog.close());heading.append(el('h2','',item.title,true),close);
  const note=el('p','','Snímky ve stejném čase, PNG bez další ztrátové komprese. Porovnání je statické, bez zvuku.');
  const controls=el('form','comparison-controls'),label=el('label','','Čas ve filmu (sekundy)'),time=el('input');time.type='number';time.min='0';time.step='0.001';time.max=String(Math.max(0,Math.min(item.durationA,item.durationB)-1));time.value=String(Math.min(Number(time.max),options.scope?.seconds??Math.min(300,Math.floor(Number(time.max)/2))));label.append(time);
- const go=el('button','','Načíst oba snímky'),zoom=el('button','secondary','Zvětšení 1 : 1');zoom.type='button';
- const status=el('p','comparison-status','Vyber čas a načti snímky.');status.setAttribute('role','status');
- const pair=el('div','comparison-pair');let enlarged=false;
- zoom.onclick=()=>{enlarged=!enlarged;pair.classList.toggle('actual-size',enlarged);zoom.textContent=tr(enlarged?'Přizpůsobit šířce':'Zvětšení 1 : 1')};
+ const go=el('button','','Načíst oba snímky'),zoom=button('Zvětšení 1 : 1',()=>{enlarged=!enlarged;pair.classList.toggle('actual-size',enlarged);zoom.textContent=tr(enlarged?'Přizpůsobit šířce':'Zvětšení 1 : 1')});
+ const status=el('p','comparison-status','Vyber čas a načti snímky.');status.setAttribute('role','status');const pair=el('div','comparison-pair');let enlarged=false;
  controls.append(label,go,zoom);
  const canInteract=()=>current()&&(options.canInteract?.()??true),validTime=()=>time.value.trim()!==''&&time.validity.valid&&Number.isFinite(Number(time.value))&&Number(time.value)>=0&&Number(time.value)<=Number(time.max);
- const scopeChanged=()=>{if(!canInteract())return;const valid=validTime();options.onScopeValidityChange?.(valid);if(valid)options.onScopeChange?.({...options.scope,seconds:Number(time.value)});request++;pair.replaceChildren();status.textContent=tr('Vyber čas a načti snímky.');go.dataset.previewInvalid=String(!valid);go.disabled=!valid};time.oninput=time.onchange=scopeChanged;
- const presets=el('div','comparison-controls');for(const percent of [10,30,50,70,90]){const button=el('button','secondary',percent+' % filmu');button.onclick=()=>{time.value=String(Math.floor(Number(time.max)*percent/100));scopeChanged();controls.requestSubmit()};presets.append(button)}
+ const scopeChanged=()=>{if(!canInteract())return;cachedLoader?.stop();const valid=validTime();options.onScopeValidityChange?.(valid);if(valid)options.onScopeChange?.({...options.scope,seconds:Number(time.value)});request++;pair.replaceChildren();status.textContent=tr('Vyber čas a načti snímky.');go.dataset.previewInvalid=String(!valid);go.disabled=!valid};time.oninput=time.onchange=scopeChanged;
+ const presets=el('div','comparison-controls');for(const percent of [10,30,50,70,90])presets.append(button(percent+' % filmu',()=>{time.value=String(Math.floor(Number(time.max)*percent/100));scopeChanged();controls.requestSubmit()}));
  for(const control of [time,go,...presets.querySelectorAll('button')])control.dataset.previewControl='';const setBusy=value=>{controls.dataset.previewBusy=String(value);for(const control of [time,go,...presets.querySelectorAll('button')]){control.dataset.previewBusy=String(value);control.disabled=value||!canInteract()||control.dataset.previewInvalid==='true'}};
+ function renderFrames(d){
+  pair.replaceChildren();const panes=[];for(const [key,title]of [['original','Originál'],['review','Překódovaný výsledek']]){const figure=el('figure'),pane=el('div','frame-scroll'),img=el('img');img.alt=tr(title+' v čase '+elapsedText(d.seconds));img.src='data:image/png;base64,'+d[key];pane.append(img);figure.append(el('figcaption','',title),pane);pair.append(figure);panes.push(pane)}
+  let sync=false;for(const [i,pane]of panes.entries())pane.onscroll=()=>{if(sync)return;sync=true;panes[1-i].scrollLeft=pane.scrollLeft;panes[1-i].scrollTop=pane.scrollTop;requestAnimationFrame(()=>{sync=false})};
+  status.textContent=tr('Hotové snímky jsou načtené.')+' '+tr('Čas ve filmu (sekundy)')+': '+Number(d.seconds).toFixed(2)+' · '+tr(d.hdr?'HDR převedeno shodně do SDR pro náhled. Věrnost HDR ověř na TV.':'Plné rozlišení snímků; detaily porovnej ve zvětšení 1 : 1.');
+ }
  controls.onsubmit=async e=>{e.preventDefault();if(go.disabled||!canInteract()||!validTime())return;scopeChanged();const generation=++request;setBusy(true);pair.replaceChildren();status.textContent=tr('Připravuji oba snímky na serveru… Obvykle několik sekund, nejvýše dvě minuty.');
- try{await options.beforePreview?.();if(!current())return;const d=await api(`/api/items/${item.id}/frames`,{snapshot:item.snapshot,seconds:Number(time.value)});if(!current()||generation!==request)return;
- const panes=[];for(const [key,title] of [['original','Originál'],['review','Překódovaný výsledek']]){const figure=el('figure'),pane=el('div','frame-scroll'),img=el('img');img.alt=tr(title+' v čase '+elapsedText(d.seconds));img.src='data:image/png;base64,'+d[key];pane.append(img);figure.append(el('figcaption','',title),pane);pair.append(figure);panes.push(pane)}
- let sync=false;for(const [i,pane] of panes.entries())pane.onscroll=()=>{if(sync)return;sync=true;panes[1-i].scrollLeft=pane.scrollLeft;panes[1-i].scrollTop=pane.scrollTop;requestAnimationFrame(()=>{sync=false})};
- status.textContent=tr(`Čas ${elapsedText(d.seconds)} · ${d.hdr?'HDR převedeno shodně do SDR pro náhled. Věrnost HDR ověř na TV.':'Plné rozlišení snímků; detaily porovnej ve zvětšení 1 : 1.'} Stejný čas nezaručuje shodu při posunutém střihu.`);
- }catch(e){if(current()&&generation===request)status.textContent=tr(e.message)}finally{if(current()&&generation===request)setBusy(false)}};
- host.append(...(options.host?[]:[heading]),note,controls,presets,status,pair);if(!options.host){compareDialog.setAttribute('aria-label',tr('Porovnání obrazu · '+item.title));compareDialog.showModal()}if(options.autoLoad!==false)controls.requestSubmit();return cleanup;
+  try{await options.beforePreview?.();if(!current())return;const d=await api('/api/items/'+item.id+'/frames',{snapshot:item.snapshot,seconds:Number(time.value)});if(!current()||generation!==request)return;if(d.pending){options.onPreparation?.(d.preparation);status.textContent=preparationSummary(d.preparation,tr);return}renderFrames(d)}
+  catch(e){if(current()&&generation===request)status.textContent=tr(e.message)}finally{if(current()&&generation===request)setBusy(false)}
+ };
+ host.append(...(options.host?[]:[heading]),note,controls,presets,status,pair);if(!options.host){compareDialog.setAttribute('aria-label',tr('Porovnání obrazu · '+item.title));compareDialog.showModal()}
+ if(options.cachedAutoLoad){void Promise.resolve().then(()=>{if(!current()||!validTime())return;const generation=request;
+  cachedLoader=createCachedPreviewLoader({current:()=>current()&&generation===request,load:body=>api('/api/items/'+item.id+'/frames',body),readPreparation:()=>api('/api/items/'+item.id+'/preview-status?snapshot='+encodeURIComponent(item.snapshot)),onPreparation:options.onPreparation,onPending:(d,body)=>status.textContent=pendingPreviewMessage(d.preparation,body),onReady:renderFrames,onError:e=>status.textContent=tr(e.message)});
+  cachedLoader.start([{snapshot:item.snapshot,mode:'frames',seconds:Number(time.value)}]);
+ })}else if(options.autoLoad!==false)controls.requestSubmit();return cleanup;
 }
 const settingsDialog=el('dialog','settings-dialog');document.body.append(settingsDialog);
 const settingsButton=$('settingsReview');
@@ -397,50 +413,84 @@ settingsButton.onclick=async()=>{
  test.onclick=()=>submit(true);form.onsubmit=e=>{e.preventDefault();submit(false)};form.append(status,actions);settingsDialog.append(title,help,el('p','','Docker připojení složek, port a trvalý adresář /data se nastavují při instalaci kontejneru. Menu je samo nevytváří. Podporovaný profil: MKV, H.264 → HEVC 10bit, kopírované zvukové a titulkové stopy; HDR10, HDR10+, Dolby Vision 8.1 a zachování Dolby Vision 7/FEL podle kompatibilního profilu Review.'),form);settingsDialog.setAttribute('aria-label',tr('Nastavení Review'));settingsDialog.showModal();
  }catch(e){error(e)}
 };
+const previewSettingsDialog=el('dialog','settings-dialog');document.body.append(previewSettingsDialog);
+const previewSettingsCard=el('article'),previewSettingsButton=button('Nastavit přípravu ukázek',openPreviewSettings);previewSettingsCard.append(el('h2','','Příprava ukázek'),el('p','','Limity mezipaměti a automatická příprava porovnání pro čekající filmy.'),previewSettingsButton);$('view-settings').querySelector('.settings-grid').append(previewSettingsCard);
+async function openPreviewSettings(){
+ try{const data=await api('/api/preview-settings');previewSettingsDialog.replaceChildren(el('h2','','Příprava ukázek'));const form=el('form'),enabled=el('input');enabled.type='checkbox';enabled.checked=data.config.enabled;
+  const enabledLabel=el('label','preview-settings-enabled','Připravovat ukázky automaticky');enabledLabel.prepend(enabled);form.append(enabledLabel);const fields={};
+  for(const [key,label,min,max]of [['maxMiB','Limit mezipaměti (MiB)',32,20480],['maxFilms','Nejvýše připravovaných filmů',1,20],['retentionDays','Uchování ukázek od vytvoření (dny)',1,30]]){const input=el('input');input.type='number';input.min=String(min);input.max=String(max);input.step='1';input.required=true;input.value=String(data.config[key]);const field=el('label','settings-field',label);field.append(input);form.append(field);fields[key]=input}
+  const languages={};for(const [key,title]of [['preferredAudioLanguages','Upřednostněné jazyky zvuku (v pořadí)'],['fallbackAudioLanguages','Záložní jazyky zvuku (v pořadí)']]){const input=el('textarea');input.rows=2;input.maxLength=160;input.placeholder='ces, eng, slk, jpn';input.value=(data.config[key]||[]).join(', ');const label=el('label','settings-field',title);label.append(input,el('small','','Kódy odděl čárkou. Prázdný seznam je povolený; nejvýše 10 jazyků.'));const shortcuts=el('div','preview-language-shortcuts');for(const [code,name]of [['ces','Čeština'],['eng','Angličtina'],['slk','Slovenština'],['jpn','Japonština']])shortcuts.append(button(name,()=>{const current=input.value.split(/[\s,;]+/).filter(Boolean);if(!current.includes(code))input.value=[...current,code].join(', ');input.focus()}));form.append(label,shortcuts);languages[key]=input}
+  const allowOther=el('input');allowOther.type='checkbox';allowOther.checked=data.config.allowOtherAudioLanguages===true;const allowOtherLabel=el('label','preview-settings-enabled','Pokud chybí preferovaný i záložní jazyk, nabídnout jiný společný hlavní zvuk');allowOtherLabel.prepend(allowOther);form.append(allowOtherLabel,el('p','details','Uložený pár stop má vždy přednost. Nejednoznačný návrh musíš zkontrolovat a stopy vybrat ručně.'));
+  const stats=el('p','details'),status=el('p');status.setAttribute('role','status');const showStats=value=>stats.textContent=tr('Mezipaměť:')+' '+(Number(value.bytes||0)/2**20).toLocaleString(locale,{maximumFractionDigits:1})+' MiB · '+tr('Hotové položky:')+' '+Number(value.entries||0)+' · '+tr('Ve frontě:')+' '+Number(value.queued||0)+' · '+tr('Probíhá:')+' '+Number(value.running||0);showStats(data.stats||{});
+  const actions=el('div','dialog-actions'),close=button('Zavřít',()=>previewSettingsDialog.close()),save=el('button','primary','Uložit nastavení');save.type='submit';actions.append(close,save);
+  form.append(el('p','details','Na pozadí se připravuje vždy jedna úloha. Jiný čas nebo jiné stopy můžeš vytvořit na požádání. Hotové ukázky nic nepotvrzují a A/B poslech spouštíš ručně.'),stats,status,actions);
+  form.onsubmit=async e=>{e.preventDefault();if(save.disabled||!form.reportValidity())return;save.disabled=true;const inputs=[...form.querySelectorAll('input'),...form.querySelectorAll('textarea'),...form.querySelectorAll('.preview-language-shortcuts button')];for(const input of inputs)input.disabled=true;try{const config={enabled:enabled.checked,...Object.fromEntries(Object.entries(fields).map(([key,input])=>[key,Number(input.value)])),...Object.fromEntries(Object.entries(languages).map(([key,input])=>[key,input.value.split(/[\s,;]+/).filter(Boolean).map(x=>x.toLowerCase())])),allowOtherAudioLanguages:allowOther.checked},result=await api('/api/preview-settings',{config,revision:data.revision});data.revision=result.revision;for(const [key,input]of Object.entries(languages))input.value=(result.config[key]||[]).join(', ');status.textContent=tr(result.message||'Nastavení uloženo.');showStats(result.stats||{});lastRender='';await load()}catch(e){status.textContent=tr(e.message)}finally{save.disabled=false;for(const input of inputs)input.disabled=false}};
+  previewSettingsDialog.append(form);previewSettingsDialog.setAttribute('aria-label',tr('Příprava ukázek'));previewSettingsDialog.showModal();
+ }catch(e){error(e)}
+}
 const audioDialog=el('dialog','comparison');document.body.append(audioDialog);let audioCleanup=null;
 audioDialog.addEventListener('close',()=>{audioCleanup?.();audioCleanup=null;audioDialog.replaceChildren()});
 function openAudioComparison(item,options={}){
- const host=options.host||audioDialog;let dead=false,generation=0,working=false,abPlayer=null,avCleanup=null,prepared=null,trackReady=false;host.replaceChildren();
+ const host=options.host||audioDialog;let dead=false,generation=0,working=false,abPlayer=null,avCleanup=null,prepared=null,preparedIdentity=null,trackReady=false,cachedLoader=null,preparation=options.preparation;host.replaceChildren();
  const current=()=>!dead&&host.isConnected&&latest?.items.some(x=>x.id===item.id&&x.snapshot===item.snapshot);
- const cleanup=()=>{dead=true;generation++;abPlayer?.close();abPlayer=null;avCleanup?.();avCleanup=null;host.replaceChildren()};if(!options.host){audioCleanup?.();audioCleanup=cleanup}
+ const cleanup=()=>{dead=true;generation++;cachedLoader?.stop();abPlayer?.close();abPlayer=null;avCleanup?.();avCleanup=null;host.replaceChildren()};if(!options.host){audioCleanup?.();audioCleanup=cleanup}
  const head=el('div','comparison-head'),close=button('Zavřít',()=>audioDialog.close());head.append(el('h2','',item.title+' — porovnání zvuku'),close);
  const note=el('p','details','Porovnej stejný jazyk i verzi zvuku (nikoli dabing s originálem nebo komentářem). Grafy ukazují hlasitost v krocích 10 ms na stejné časové ose, nikoli kvalitu zvuku. Odhad hledá posun do ±1 sekundy. Neověřuje soulad řeči s pohybem úst.');
  const form=el('form','comparison-controls'),a=el('select'),b=el('select'),time=el('input'),profile=el('select');time.type='number';time.min='0';time.max=String(Math.max(0,Math.min(item.durationA,item.durationB)-12));time.step='0.01';time.value=String(Math.min(Number(time.max),options.scope?.seconds??Math.min(300,Math.floor(Number(time.max)/2))));
  profile.append(new Option(tr('Rychlý náhled · nejvýše 960 × 540'),'compact'),new Option(tr('Detailnější náhled · nejvýše 1920 × 1080'),'detail'));profile.value=options.previewProfile||'compact';profile.setAttribute('aria-label',tr('Kvalita videonáhledu'));
- for(const [title,input] of [['Stopa originálu',a],['Stopa převodu',b],['Začátek úseku (sekundy)',time]]){const label=el('label','',title);label.append(input);form.append(label)}
- const go=button('Porovnat 12 sekund',()=>prepare('wave')),avButton=button('Porovnat video a zvuk',()=>prepare('av'),'primary'),listen=button('Přehrát A/B do sluchátek',()=>prepare('listen'),'primary'),stop=button('Zastavit',()=>{generation++;abPlayer?.stop();setWorking(false);status.textContent=tr('Poslech zastaven.')}),repeat=button('Opakovat A/B',()=>play().catch(e=>status.textContent=tr(e.message))),volume=el('input');
+ for(const [title,input]of [['Stopa originálu',a],['Stopa převodu',b],['Začátek úseku (sekundy)',time]]){const label=el('label','',title);label.append(input);form.append(label)}
+ const go=button('Porovnat 12 sekund',()=>prepare('wave')),avButton=button('Porovnat video a zvuk',()=>prepare('av'),'primary'),listen=button('Přehrát A/B do sluchátek',()=>prepare('listen'),'primary'),stop=button('Zastavit',()=>{generation++;cachedLoader?.stop();abPlayer?.stop();setWorking(false);status.textContent=tr('Poslech zastaven.')}),repeat=button('Opakovat A/B',()=>play().catch(e=>status.textContent=tr(e.message))),volume=el('input');
  const status=el('p','comparison-status','Načítám seznam zvukových stop…');status.setAttribute('role','status');const plot=el('div'),avHost=el('div','av-host');
  const audioControls=el('div','comparison-controls'),volumeLabel=el('label','','Společná hlasitost');volume.type='range';volume.min='0';volume.max='1';volume.step='.05';volume.value='.5';volume.setAttribute('aria-label',tr('Společná hlasitost obou ukázek'));volumeLabel.append(volume);audioControls.append(listen,repeat,stop,volumeLabel);
  volume.oninput=()=>{if(abPlayer)abPlayer.gain.gain.value=Number(volume.value)};
  const selectedScope=()=>({...options.scope,seconds:Number(time.value),originalIndex:a.value===''?null:Number(a.value),reviewIndex:b.value===''?null:Number(b.value)});
- const previewIdentity=()=>JSON.stringify({...selectedScope(),previewProfile:profile.value});
+ const scopeIdentity=()=>JSON.stringify(selectedScope()),previewIdentity=()=>JSON.stringify({...selectedScope(),previewProfile:profile.value});
  const canInteract=()=>current()&&(options.canInteract?.()??true),validTime=()=>time.value.trim()!==''&&time.validity.valid&&Number.isFinite(Number(time.value))&&Number(time.value)>=0&&Number(time.value)<=Number(time.max);let lastScope=null;
  const presets=el('div','comparison-controls');
  const setWorking=value=>{working=value;form.dataset.previewBusy=String(value);for(const x of [go,avButton,listen,repeat,a,b,time,profile,...presets.querySelectorAll('button')]){x.dataset.previewControl='';x.dataset.previewBusy=String(value);x.dataset.previewInvalid=String([go,avButton,listen].includes(x)?!trackReady||!validTime():x===repeat?!prepared:false);x.disabled=value||!canInteract()||x.dataset.previewInvalid==='true'}};
- const invalidate=()=>{if(working||!canInteract())return;const valid=validTime();options.onScopeValidityChange?.(valid);const scope=valid?selectedScope():null,key=scope?previewIdentity():null;if(valid&&key===lastScope)return;lastScope=key;generation++;abPlayer?.stop();prepared=null;avCleanup?.();avCleanup=null;avHost.replaceChildren();plot.replaceChildren();status.textContent=tr('Vyber odpovídající stopy a připrav ukázku.');if(valid)options.onScopeChange?.(scope);setWorking(false)};
+ const observePreparation=value=>{if(value?.snapshot!==item.snapshot)return;preparation=value;options.onPreparation?.(value)};
+ const invalidate=()=>{if(working||!canInteract())return;const valid=validTime();options.onScopeValidityChange?.(valid);const scope=valid?selectedScope():null,key=scope?previewIdentity():null;if(valid&&key===lastScope)return;lastScope=key;generation++;cachedLoader?.stop();abPlayer?.stop();prepared=null;preparedIdentity=null;avCleanup?.();avCleanup=null;avHost.replaceChildren();plot.replaceChildren();status.textContent=tr('Vyber odpovídající stopy a připrav ukázku.');if(valid)options.onScopeChange?.(scope);setWorking(false)};
  time.addEventListener('input',invalidate);for(const input of [time,a,b,profile])input.addEventListener('change',invalidate);
- for(const [name,percent]of [['Začátek filmu',2],['Střed filmu',50],['Konec filmu',95]])presets.append(button(name,()=>{if(working||!canInteract())return;time.value=String(Math.floor(Number(time.max)*percent/100));invalidate()}));
- const play=async()=>{if(!current()||!prepared||!abPlayer)return;await abPlayer.context.resume();if(!current())return;const durations=abPlayer.play(prepared.original,prepared.review,()=>{if(current())status.textContent=tr('A/B dokončeno. Můžeš úsek opakovat.')});status.textContent=tr(`Originál vlevo (${durations.originalSeconds.toFixed(1)} s), pak převod vpravo (${durations.reviewSeconds.toFixed(1)} s). Úsek od ${prepared.seconds} s. ${audioTrackLabel(prepared.originalTrack.label)} → ${audioTrackLabel(prepared.reviewTrack.label)}.`)};
+ for(const [name,percent]of [['Začátek filmu',2],['Střed filmu',50],['Konec filmu',95]])presets.append(button(name,()=>{if(working||!canInteract())return;
+  const times=[...new Set((preparation?.jobs||[]).filter(x=>x.mode==='av'&&x.previewProfile==='compact'&&x.originalIndex===Number(a.value)&&x.reviewIndex===Number(b.value)).map(x=>x.seconds).filter(Number.isFinite))].sort((x,y)=>x-y);
+  time.value=String(times.length>=3?times[percent<10?0:percent>90?times.length-1:Math.floor(times.length/2)]:Math.floor(Number(time.max)*percent/100));invalidate();if(options.cachedAutoLoad)startAutomatic();
+ }));
+ async function ensurePlayer(){const AudioCtor=window.AudioContext||window.webkitAudioContext;if(!AudioCtor)throw Error('Prohlížeč nepodporuje zvukové A/B.');if(!abPlayer){abPlayer=new AudioABPlayer(new AudioCtor());abPlayer.gain.gain.value=Number(volume.value)}await abPlayer.context.resume()}
+ const play=async()=>{if(!canInteract()||!prepared||preparedIdentity!==scopeIdentity())return;const captured=prepared,attempt=generation;await ensurePlayer();if(!current()||attempt!==generation||captured!==prepared)return;
+  const durations=abPlayer.play(captured.original,captured.review,()=>{if(current()&&attempt===generation)status.textContent=tr('A/B dokončeno. Můžeš úsek opakovat.')});status.textContent=tr('Přehrávám připravené A/B ukázky.')+' '+Number(captured.seconds).toFixed(2)+' s · '+audioTrackLabel(captured.originalTrack.label)+' → '+audioTrackLabel(captured.reviewTrack.label);
+ };
+ function renderPayload(mode,d){
+  if(mode==='av'){avCleanup?.();avHost.replaceChildren(el('p','',audioTrackLabel(a.selectedOptions[0]?.textContent||'')+' → '+audioTrackLabel(b.selectedOptions[0]?.textContent||''),true));plot.replaceChildren();avCleanup=mountAVComparison(avHost,d,{tr});status.textContent=tr('Video i zvuk jsou připravené. Vybrané stopy a čas jsou pevné pro tuto ukázku.')}
+  else if(mode==='listen'){prepared=d;preparedIdentity=scopeIdentity();setWorking(false)}
+  else{plot.replaceChildren();const canvas=el('canvas');canvas.width=1100;canvas.height=310;canvas.style.width='100%';canvas.setAttribute('role','img');canvas.setAttribute('aria-label',tr('Zvukové průběhy originálu a převodu na společné časové ose'));plot.append(canvas);const ctx=canvas.getContext('2d');ctx.fillStyle='#111827';ctx.fillRect(0,0,1100,310);const max=Math.max(.001,...d.original,...d.review);
+   for(const [values,title,color,base]of [[d.original,'Originál','#38bdf8',120],[d.review,'Převod','#fbbf24',250]]){ctx.fillStyle=color;ctx.font='16px sans-serif';ctx.fillText(tr(title),12,base-80);ctx.strokeStyle=color;ctx.beginPath();values.forEach((v,i)=>{const x=85+i/1200*990,y=base-v/max*65;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke()}
+   ctx.fillStyle='#d1d5db';ctx.font='13px sans-serif';for(let i=0;i<=12;i+=2){const x=85+i/12*990;ctx.strokeStyle='#374151';ctx.beginPath();ctx.moveTo(x,45);ctx.lineTo(x,260);ctx.stroke();ctx.fillText((d.seconds+i).toFixed(1)+' s',x-20,285)}
+   const r=d.alignment;status.textContent=tr(r.reliable?'Posun mezi zvukovými stopami (ms):':'Posun zvuku nelze spolehlivě určit.')+(r.reliable?' '+r.offsetMs:'');
+  }
+ }
+ function startAutomatic(){
+  if(!options.cachedAutoLoad||working||!trackReady||!validTime()||!current())return;cachedLoader?.stop();const identity=previewIdentity(),attempt=generation,modes=options.mode==='audio'?['wave','listen']:['av'];
+  cachedLoader=createCachedPreviewLoader({current:()=>current()&&attempt===generation&&identity===previewIdentity(),load:body=>api('/api/items/'+item.id+'/audio-compare',body),readPreparation:()=>api('/api/items/'+item.id+'/preview-status?snapshot='+encodeURIComponent(item.snapshot)),onPreparation:observePreparation,onPending:(d,request)=>status.textContent=pendingPreviewMessage(d.preparation,request),onReady:(d,request)=>{renderPayload(request.mode,d);status.textContent=tr('Hotová ukázka je načtená. Přehrávání spusť ručně.');setWorking(false)},onError:e=>status.textContent=tr(e.message)});
+  cachedLoader.start(modes.map(mode=>({snapshot:item.snapshot,...selectedScope(),mode,...(mode==='av'?{previewProfile:profile.value}:{})})));
+ }
  async function prepare(mode){
-  if(working||!trackReady||!canInteract()||!validTime())return;const attempt=++generation;lastScope=previewIdentity();options.onScopeValidityChange?.(true);options.onScopeChange?.(selectedScope());setWorking(true);abPlayer?.stop();avCleanup?.();avCleanup=null;plot.replaceChildren();avHost.replaceChildren();
-  try{if(mode==='listen'){const AudioCtor=window.AudioContext||window.webkitAudioContext;if(!AudioCtor)throw Error('Prohlížeč nepodporuje zvukové A/B.');abPlayer?.close();abPlayer=new AudioABPlayer(new AudioCtor());abPlayer.gain.gain.value=Number(volume.value);await abPlayer.context.resume()}
-   status.textContent=tr(mode==='av'?'Připravuji dvě videa a zvukové průběhy. Příprava může trvat až čtyři minuty.':mode==='listen'?'Připravuji dvě 12sekundové ukázky; nejvýše dvě minuty.':'Připravuji zvukové průběhy… Nejvýše dvě minuty.');
-   await options.beforePreview?.();if(!current()||attempt!==generation)return;const capture={snapshot:item.snapshot,...selectedScope()};const d=await api(`/api/items/${item.id}/audio-compare`,{...capture,...(mode==='wave'?{}:{mode}),...(mode==='av'?{previewProfile:profile.value}:{})});if(!current()||attempt!==generation)return;
-   if(mode==='av'){avHost.append(el('p','',audioTrackLabel(a.selectedOptions[0]?.textContent||'')+' → '+audioTrackLabel(b.selectedOptions[0]?.textContent||''),true));avCleanup=mountAVComparison(avHost,d,{tr});status.textContent=tr('Video i zvuk jsou připravené. Vybrané stopy a čas jsou pevné pro tuto ukázku.')}
-   else if(mode==='listen'){prepared=d;await play()}
-   else{const canvas=el('canvas');canvas.width=1100;canvas.height=310;canvas.style.width='100%';canvas.setAttribute('role','img');canvas.setAttribute('aria-label',tr('Zvukové průběhy originálu a převodu na společné časové ose'));plot.append(canvas);const ctx=canvas.getContext('2d');ctx.fillStyle='#111827';ctx.fillRect(0,0,1100,310);const max=Math.max(.001,...d.original,...d.review);
-    for(const [values,title,color,base]of [[d.original,'Originál','#38bdf8',120],[d.review,'Převod','#fbbf24',250]]){ctx.fillStyle=color;ctx.font='16px sans-serif';ctx.fillText(tr(title),12,base-80);ctx.strokeStyle=color;ctx.beginPath();values.forEach((v,i)=>{const x=85+i/1200*990,y=base-v/max*65;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke()}
-    ctx.fillStyle='#d1d5db';ctx.font='13px sans-serif';for(let i=0;i<=12;i+=2){const x=85+i/12*990;ctx.strokeStyle='#374151';ctx.beginPath();ctx.moveTo(x,45);ctx.lineTo(x,260);ctx.stroke();ctx.fillText((d.seconds+i).toFixed(1)+' s',x-20,285)}
-    const r=d.alignment;status.textContent=tr(r.reliable?`Odhad posunu: ${r.offsetMs>0?'+':''}${r.offsetMs} ms (krok 10 ms). Kladný posun = zvuk převodu je později. Shoda obálek: ${(r.correlation*100).toFixed(1)} %. Platí jen pro tento úsek; porovnej také začátek a konec filmu.`:r.reason);
-   }
+  if(working||!trackReady||!canInteract()||!validTime())return;
+  if(mode==='listen'&&prepared&&preparedIdentity===scopeIdentity()){try{await play()}catch(e){if(current())status.textContent=tr(e.message)}return}
+  const attempt=++generation;cachedLoader?.stop();lastScope=previewIdentity();options.onScopeValidityChange?.(true);options.onScopeChange?.(selectedScope());setWorking(true);abPlayer?.stop();avCleanup?.();avCleanup=null;plot.replaceChildren();avHost.replaceChildren();
+  try{if(mode==='listen')await ensurePlayer();status.textContent=tr(mode==='av'?'Připravuji dvě videa a zvukové průběhy. Příprava může trvat až čtyři minuty.':mode==='listen'?'Připravuji dvě 12sekundové ukázky; nejvýše dvě minuty.':'Připravuji zvukové průběhy… Nejvýše dvě minuty.');
+   await options.beforePreview?.();if(!current()||attempt!==generation)return;const capture={snapshot:item.snapshot,...selectedScope()},d=await api('/api/items/'+item.id+'/audio-compare',{...capture,...(mode==='wave'?{}:{mode}),...(mode==='av'?{previewProfile:profile.value}:{})});if(!current()||attempt!==generation)return;
+   if(d.pending){observePreparation(d.preparation);status.textContent=pendingPreviewMessage(d.preparation,{...capture,mode,previewProfile:profile.value});return}
+   renderPayload(mode,d);if(mode==='listen')await play();
   }catch(e){if(current()&&attempt===generation)status.textContent=tr(e.message)}finally{if(current()&&attempt===generation)setWorking(false)}
  }
  form.onsubmit=e=>{e.preventDefault();prepare(options.mode==='av'?'av':'wave')};
  const showAV=options.mode!=='audio',showAudio=options.mode!=='av';if(showAV){const label=el('label','','Kvalita videonáhledu');label.append(profile);form.append(label,avButton)}if(showAudio)form.append(go);
  host.append(...(options.host?[]:[head]),note,form,presets,status);if(showAudio)host.append(el('p','details','Sluchátka: nejprve originál vlevo, potom stejný úsek převodu vpravo. Obě stopy se převedou na mono 48 kHz. Bez samostatné normalizace hlasitosti a bez automatického posunu; použij odpovídající dialogové stopy.'),audioControls);host.append(avHost,plot);
- if(!options.host){audioDialog.setAttribute('aria-label',tr('Porovnání zvuku · '+item.title));audioDialog.showModal()}
- setWorking(false);
- (async()=>{try{await Promise.resolve();const data=options.tracks||await api(`/api/items/${item.id}/audio-compare`,{snapshot:item.snapshot,mode:'tracks'});if(!current())return;for(const [select,tracks,key]of [[a,data.original,'originalIndex'],[b,data.review,'reviewIndex']]){select.append(new Option(tr('Vyber zvukovou stopu'),''));for(const track of tracks){const option=el('option','',audioTrackLabel(track.label),true);option.value=String(track.index);select.append(option)}select.value=options.scope?.[key]===null||options.scope?.[key]===undefined?'':String(options.scope[key])}trackReady=!!a.options.length&&!!b.options.length&&a.value!==''&&b.value!=='';lastScope=previewIdentity();const ready=()=>{trackReady=a.value!==''&&b.value!=='';setWorking(false)};a.addEventListener('change',ready);b.addEventListener('change',ready);setWorking(false);status.textContent=tr('Vyber odpovídající stopy a připrav ukázku.')}catch(e){if(current())status.textContent=tr(e.message)}})();
+ if(!options.host){audioDialog.setAttribute('aria-label',tr('Porovnání zvuku · '+item.title));audioDialog.showModal()}setWorking(false);
+ (async()=>{try{await Promise.resolve();const data=options.tracks||await api('/api/items/'+item.id+'/audio-compare',{snapshot:item.snapshot,mode:'tracks'});if(!current())return;observePreparation(data.preparation);
+  for(const [select,tracks,key]of [[a,data.original,'originalIndex'],[b,data.review,'reviewIndex']]){select.append(new Option(tr('Vyber zvukovou stopu'),''));for(const track of tracks){const option=el('option','',audioTrackLabel(track.label),true);option.value=String(track.index);select.append(option)}select.value=options.scope?.[key]===null||options.scope?.[key]===undefined?'':String(options.scope[key])}
+  trackReady=a.value!==''&&b.value!=='';lastScope=previewIdentity();const ready=()=>{trackReady=a.value!==''&&b.value!=='';setWorking(false)};a.addEventListener('change',ready);b.addEventListener('change',ready);setWorking(false);status.textContent=tr('Vyber odpovídající stopy a připrav ukázku.');startAutomatic();
+ }catch(e){if(current())status.textContent=tr(e.message)}})();
  return cleanup;
 }
 

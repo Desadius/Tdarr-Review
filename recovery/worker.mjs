@@ -23,7 +23,7 @@ let state=JSON.parse(await fs.readFile(stateFile,'utf8').catch(e=>{if(e.code!=='
 const pendingApprovals=await loadApprovalRegistry({data:DATA,cfg,state});
 const isApprovedCase=c=>registryHasApproval(pendingApprovals,c);
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
-async function atomic(file,value){const t=file+'.tmp';const h=await fs.open(t,'w',0o600);try{await h.writeFile(JSON.stringify(value,null,2)+'\n');await h.sync();}finally{await h.close();}await fs.rename(t,file);const d=await fs.open(path.dirname(file),'r');try{await d.sync();}finally{await d.close();}}
+import {atomicJson as atomic} from './atomic-json.mjs';
 async function save(){state.updated=new Date().toISOString();await atomic(stateFile,state);}
 async function publishNow(run){try{await run();delete state.statusPublicationError;}catch(e){state.statusPublicationError=e.message;console.error('Recovery status publication: '+e.message);}}
 async function phase(c,status,message){Object.assign(c,{status,message,updated:new Date().toISOString()});await save();await publishNow(()=>liveStatus.phaseChanged(c));console.log(JSON.stringify({time:c.updated,id:c.id,title:c.relative?.split('/')[0],status,message}));}
@@ -31,7 +31,7 @@ async function api(base,route,body,key){const r=await fetch(base.replace(/\/$/,'
 const rad=(p,b)=>api(cfg.radarrUrl+'/api/v3',p,b,cfg.radarrApiKey);
 const td=(p,b)=>api(cfg.tdarrUrl,p,b===undefined?undefined:{data:b});
 function rows(table){const db=new DatabaseSync(cfg.database,{readOnly:true});try{return db.prepare('SELECT json_data FROM '+table).all().map(r=>JSON.parse(r.json_data));}finally{db.close();}}
-const liveStatus=createLiveStatusPublisher({getState:()=>state,readTdarrFiles:()=>rows('filejsondb'),publish:({state,tdarrFiles,decorate})=>publishRecoveryStatus({cfg,state,tdarrFiles,atomic:(p,v)=>atomic(p,decorate(v))}),onError:e=>{state.statusPublicationError=e.message;console.error('Recovery status publication: '+e.message);}});
+const liveStatus=createLiveStatusPublisher({getState:()=>state,readTdarrFiles:()=>rows('filejsondb'),publish:({state,tdarrFiles,decorate})=>publishRecoveryStatus({cfg,state,tdarrFiles,atomic:(p,v,mode)=>atomic(p,decorate(v),mode)}),onError:e=>{state.statusPublicationError=e.message;console.error('Recovery status publication: '+e.message);}});
 async function safeSource(rel){const p=within(cfg.mediaRoot,rel);const real=await fs.realpath(p);if(real!==p)throw Error('Symlink source is not eligible');const s=await fs.stat(p);if(!s.isFile()||s.size===0||Date.now()-s.mtimeMs<cfg.stableMinutes*60000)throw Error('Source is not a stable regular file');return {p,size:s.size,fp:[s.dev,s.ino,s.size,s.mtimeMs,s.ctimeMs].join(':')};}
 async function sample(file){const h=await fs.open(file,'r');try{const s=await h.stat();const sum=crypto.createHash('sha256');for(const position of [0,Math.max(0,Math.floor(s.size/2)-524288),Math.max(0,s.size-1048576)]){const b=Buffer.alloc(Math.min(s.size,1048576));const n=await h.read(b,0,b.length,position);if(n.bytesRead!==b.length)throw Error('Short source read');sum.update(b);}return sum.digest('hex');}finally{await h.close();}}
 async function decode(c,pass){

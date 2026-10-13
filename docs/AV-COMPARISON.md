@@ -1,6 +1,6 @@
 # Interactive audio/video comparison
 
-In a film's detail, open **Review** and follow **Preparation → Picture → Audio → Synchronisation → Decision**. Video comparison is embedded in Picture and Synchronisation: choose matching audio tracks and a start time, then **Compare video and audio**. Review prepares two actual 12-second clips of the same section. Left/right headphone A/B remains available in the Audio step.
+In a film's detail, open **Review** and follow **Preparation → Picture → Audio → Synchronisation → Decision**. Video comparison is embedded in Picture and Synchronisation. Already prepared samples load automatically without starting playback. Choose matching audio tracks and a start time, then use **Compare video and audio** when the selected sample is not ready or you want a different section. Review prepares two actual 12-second clips of the same section. Left/right headphone A/B remains available in the Audio step and starts only after a user click. See [prepared samples](PREPARED-SAMPLES.md) for background preparation, language preferences and cache limits.
 
 ## Wipe comparison and playback
 
@@ -18,8 +18,8 @@ The profile is an explicit selection; both files use the same selected settings.
 
 | Profile | Video settings | Intended use |
 | --- | --- | --- |
-| **Detail** | Fit within 1920 × 1080, H.264 `veryfast`, CRF 16 | A larger moving-image comparison with more retained detail than the compact preview |
-| **Compact** | Fit within 960 × 540, H.264 `veryfast`, CRF 24 | Lighter preparation for dialogue/action synchronisation checks |
+| **Detail** | Fit within 1920 × 1080, H.264 `veryfast`, CRF 16, 10 Mb/s VBV ceiling | A larger moving-image comparison with more retained detail than the compact preview |
+| **Compact** | Fit within 960 × 540, H.264 `veryfast`, CRF 24, 3 Mb/s VBV ceiling | Lighter preparation for dialogue/action synchronisation checks |
 
 The fit limits both width and height, including portrait sources, preserves display aspect ratio and does not enlarge smaller content or crop it. Sample aspect ratio is accounted for when rasterising to square display pixels, so anamorphic sources retain their intended display shape. Audio is mono AAC in both profiles.
 
@@ -31,14 +31,18 @@ PQ HDR receives the same SDR tone mapping on each side. Unsupported transfer fun
 
 The waveform and correlation use source PCM envelopes in 10 ms bins, without independent loudness normalisation or automatic alignment. Correlation measures the difference between matching audio tracks, not whether the source itself is in sync with the picture. Ambiguous or silent samples do not produce a definitive offset. Original and transcoded waveforms share a cursor.
 
+Extraction rejects incomplete PCM waveform samples. The exact Matroska warning about incorrectly marked keyframes is tolerated only after a successful decoder exit and separate output validation; unrelated diagnostics and decoder failures still prevent the sample from loading. Loading a prepared waveform does not record a measured audio sample or complete a manual review check.
+
 The preview subtracts the same container origin and requested time from audio and video timestamps. It never separately resets each stream with `STARTPTS`. Decoder priming, frame granularity and browser buffering limit precision. A shared playback position, wipe or zero correlation offset is not proof of correct lip synchronisation; assess speech or a visible sound event against the picture.
 
 ## Resource and identity limits
 
-Both profiles retain the **12-second window, 90-second preparation timeout and 20 MiB output limit per video**. The two clips are prepared serially under the existing preview lock, with two decoder/encoder threads and one filter thread, plus bounded waveform extraction. Only one preview request runs at a time. Detail may take longer or reach the limits on complex/grainy material; the app reports the failure. It does not silently downgrade the profile or add a bitrate cap to disguise the quality change. Choose Compact explicitly for a lighter timing check, use full-resolution frames for detail, or review the files externally.
+Both profiles retain the **12-second window, 90-second timeout per encoding attempt and 20 MiB output limit per video**. The two clips are prepared serially in the shared renderer queue, with two decoder/encoder threads and one filter thread, plus bounded waveform extraction. Only one rendering job runs at a time; foreground requests take priority over background preparation. Detail may take longer or reach the limits on complex/grainy material; the app reports the failure. It does not silently downgrade the selected profile. Both profiles apply their stated VBV ceilings to bound preview size; complex detail can therefore lose more information than CRF alone suggests. Choose Compact explicitly for a lighter timing check, use full-resolution frames for detail, or review the files externally.
 
-Preparation uses the authenticated endpoint, validates audio indexes and a complete 12-second window, and checks file snapshots before and after generation. No film is modified. Clips live in browser Blob URLs and are revoked when the comparison is destroyed or a new selection invalidates it. The server does not store clip files. Wipe controls operate on these already prepared clips and do not generate additional media or server I/O.
+A narrow H.264 seek-decoding failure can retry once from 30 seconds before the selected start instead of 2 seconds. Both attempts retain the exact requested interval, shared timestamps, output bounds and diagnostic checks. Cancellation, timeouts, size limits and unrelated errors do not trigger this retry.
+
+Preparation uses the authenticated endpoint, validates audio indexes and a complete 12-second window, and checks file snapshots before and after generation and cache reads. No film is modified. The server can persist sample payloads privately under `/data/preview-cache`, bounded by configured size, count and expiry limits. Reuse is bound to the files' current snapshot, selected tracks/time/profile and renderer version. In the browser, playable clips use Blob URLs that are revoked when the comparison is destroyed or a new selection invalidates it. Wipe controls operate on these already loaded clips and do not generate additional media or server I/O. Preparation and cache loading never supply manual review confirmations.
 
 ## Validation
 
-`node tools/test.mjs` includes preview-argument/timestamp and player-control regressions. `tools/test-av-fixture.mjs` uses disposable generated media with a 5-second container origin and deliberately delayed audio. `tools/test-av-http.mjs` checks login, stale identity, invalid track/time, playable clips, waveforms and unchanged source hashes using a mock Tdarr. `tools/demo-av-preview.mjs` is an optional temporary UI smoke server using generated media only; do not expose it as a permanent service.
+`node tools/test.mjs` includes preview-argument/timestamp, retry, cache, language-selection and player-control regressions. `tools/test-av-fixture.mjs` uses disposable generated media with a 5-second container origin and deliberately delayed audio. `tools/test-av-http.mjs` checks login, stale identity, invalid track/time, playable clips, waveforms and unchanged source hashes using a mock Tdarr. `tools/test-preview-cache-http.mjs` verifies background preparation, cache-only loading, custom requests, restart reuse, stale-source rejection and unchanged manual assessment evidence with generated media and a loopback mock. `tools/demo-av-preview.mjs` is an optional temporary UI smoke server using generated media only; do not expose it as a permanent service.
