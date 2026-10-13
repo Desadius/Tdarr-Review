@@ -4,6 +4,7 @@ This records the implemented application features. Versions before 1.10.0 were d
 
 ## Unreleased
 
+- Optional Recovery setting `fullSourceHash`: compare a full SHA-256 of the original at confirmation and right before the quarantine rename, at idle I/O priority with progress in the status file. Sampling remains the default.
 - Retry a failed restore of Tdarr nodes that Review paused from a server timer with backoff (15 s doubling up to 10 min) instead of on every `GET /api/items` poll, so reading the dashboard no longer changes Tdarr state.
 - Add dependency-free Node 24 coverage reporting with `npm run test:coverage`; CI reports line, branch and function coverage in the same complete test run, without an unmeasured threshold.
 - Document that Review can undo a manual Tdarr node pause applied during its action, including pending resume retries and the maintenance pause procedure.

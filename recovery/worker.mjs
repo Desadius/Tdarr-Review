@@ -15,6 +15,7 @@ import crypto from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
 import {classify,confirmed,relative,bindHistory,bindApprovedImport,blocked,identity,within} from './policy.mjs';
 import {readHeader} from './container-header.mjs';
+import {lowPriorityHash} from './full-hash.mjs';
 
 const DATA=process.env.DATA_ROOT||'/data';
 // The container runs the worker as PID 1, which ignores signals without a handler.
@@ -40,6 +41,17 @@ function rows(table){const db=new DatabaseSync(cfg.database,{readOnly:true});try
 const liveStatus=createLiveStatusPublisher({getState:()=>state,readTdarrFiles:()=>rows('filejsondb'),publish:({state,tdarrFiles,decorate})=>publishRecoveryStatus({cfg,state,tdarrFiles,atomic:(p,v,mode)=>atomic(p,decorate(v),mode)}),onError:e=>{state.statusPublicationError=e.message;console.error('Recovery status publication: '+e.message);}});
 async function safeSource(rel){const p=within(cfg.mediaRoot,rel);const real=await fs.realpath(p);if(real!==p)throw Error('Symlink source is not eligible');const s=await fs.stat(p);if(!s.isFile()||s.size===0||Date.now()-s.mtimeMs<cfg.stableMinutes*60000)throw Error('Source is not a stable regular file');return {p,size:s.size,fp:[s.dev,s.ino,s.size,s.mtimeMs,s.ctimeMs].join(':')};}
 async function sample(file){const h=await fs.open(file,'r');try{const s=await h.stat();const sum=crypto.createHash('sha256');for(const position of [0,Math.max(0,Math.floor(s.size/2)-524288),Math.max(0,s.size-1048576)]){const b=Buffer.alloc(Math.min(s.size,1048576));const n=await h.read(b,0,b.length,position);if(n.bytesRead!==b.length)throw Error('Short source read');sum.update(b);}return sum.digest('hex');}finally{await h.close();}}
+// Optional (cfg.fullSourceHash) full SHA-256 of the original, published as c.fullHash while it runs.
+async function fullSourceHash(c,stage){
+  c.fullHash={stage,done:0,total:c.size??null,started:new Date().toISOString()};await save();await publishNow(()=>liveStatus.refresh());
+  let published=Date.now();
+  try{
+    const sha=await lowPriorityHash(c.source,{onProgress:p=>{c.fullHash={...c.fullHash,done:p.done,total:p.total,updated:new Date().toISOString()};if(Date.now()-published>=15000){published=Date.now();void publishNow(()=>liveStatus.refresh())}}});
+    if((await safeSource(c.relative)).fp!==c.fp)throw Error('Source changed during full hash');
+    console.log(JSON.stringify({time:new Date().toISOString(),id:c.id,title:c.relative?.split('/')[0],fullHash:stage,sha256:sha}));
+    return sha;
+  }finally{delete c.fullHash;await save();await publishNow(()=>liveStatus.refresh())}
+}
 async function decode(c,pass){
   await phase(c,'verifying','Independent original decode '+pass+'/2');
   if(c.headerDamage&&await readHeader(c.source)!=='terminal_overwrite')throw Error('Header signature changed');
@@ -95,6 +107,7 @@ async function repair(c,{reuseConfirmedEvidence=false}={}){
   if((await safeSource(c.relative)).fp!==c.fp||await sample(c.source)!==hash)throw Error('Source changed or repeated reads differ');
   c.evidence={signature:classify(a).signature,sourceFP:c.fp,checks:[a,b],sampleSHA256:hash,confirmed:new Date().toISOString()};
 }
+  if(cfg.fullSourceHash===true&&!c.evidence.fullSHA256){c.evidence.fullSHA256=await fullSourceHash(c,'confirmation');await save();}
   await phase(c,'confirmed','Same structural decoding error reproduced twice in unchanged original');
   if(!cfg.enabled){await phase(c,'dry_run','Confirmed; external changes disabled');return;}
   if(cooldownFor({cfg,state,c})){
@@ -116,6 +129,11 @@ async function repair(c,{reuseConfirmedEvidence=false}={}){
   c.skipCurrentEdition=false;delete c.nextRetryAt;c.mutationStarted=Date.now();await phase(c,'holding','Preventing another Tdarr dispatch');
   await td('/api/v2/bulk-update-files',{fileIds:[c.file],updatedObj:{TranscodeDecisionMaker:'Hold',holdUntil:Date.now()+30*86400000}});
   await delay(3000);await idle(c);
+  if(cfg.fullSourceHash===true){
+   if(!/^[a-f0-9]{64}$/.test(c.evidence?.fullSHA256||''))throw Error('Full source hash missing from confirmation evidence');
+   if(await fullSourceHash(c,'before_quarantine')!==c.evidence.fullSHA256)throw Error('Full source hash changed before quarantine');
+   await idle(c);
+  }
   if((await safeSource(c.relative)).fp!==c.fp||await sample(c.source)!==hash)throw Error('Source changed before quarantine');
   // Same-mounted-volume rename only. No copy/delete fallback and no overwrites.
   const qdir=within(cfg.quarantineRoot,c.id);await fs.mkdir(qdir,{recursive:false,mode:0o770});
