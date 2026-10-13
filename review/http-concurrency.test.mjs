@@ -117,7 +117,7 @@ async function fixture({pauses=false,recovery=false}={}){
    assert.fail('Mutation did not settle: '+diagnostics);
   };
   const preserved=async()=>{for(const [title,fileset] of files){assert.equal(await sha256(fileset.original),hash(Buffer.alloc(128,title.charCodeAt(0))));assert.equal(await sha256(fileset.review),hash(Buffer.alloc(32,title.charCodeAt(0)+32)))}};
-  return {root,data,files,mockBase,hold,calls,changes,post,get,items,confirm,approve,allMutations,journals,settled,preserved,close};
+  return {root,data,files,mockBase,hold,calls,changes,post,get,items,confirm,approve,allMutations,journals,settled,preserved,close,diagnostics:()=>diagnostics};
  }catch(error){await close();throw error}
 }
 
@@ -151,7 +151,9 @@ for(const route of ['/api/settings','/api/settings/test','/api/radarr/settings',
   const radarr=route.includes('/radarr/'),settings=radarr?null:await f.get('/api/settings');
   const gate=f.hold(radarr?'/api/v3/system/status':'/api/v2/get-nodes');
   const pending=f.post(route,radarr?{url:f.mockBase,apiKey:'synthetic-test-key',mediaRoot:'/fixture-library',preferCzechEnglish:true}:settings);
-  await deadline(gate.entered,'settings validation');assert.equal((await f.approve(item)).status,409);assert.equal((await f.post('/api/approve-batch',{items:[item]})).status,409);
+  // A request that answers before reaching the gated call failed early; report why instead of timing out.
+  await deadline(Promise.race([gate.entered,pending.then(async response=>{throw Error('settings request finished before validation reached Tdarr: '+response.status+' '+await response.clone().text()+'
+'+f.diagnostics())})]),'settings validation');assert.equal((await f.approve(item)).status,409);assert.equal((await f.post('/api/approve-batch',{items:[item]})).status,409);
   gate.release();const result=await pending;assert.equal(result.status,200,await result.clone().text());assert.deepEqual(await f.journals(),[]);await f.preserved();
  }finally{await f.close()}
 });
