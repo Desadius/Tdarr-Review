@@ -33,6 +33,12 @@ bash tools/docker-smoke.sh
 
 The smoke script creates uniquely named disposable containers and volumes and removes only those resources afterward. Review is tested with a new writable `/data` volume and a read-only container root, including login and the configured Host header. Generated-media AV timing and HTTP fixtures then exercise modules from that exact image, using only writable temporary files and loopback API mocks. Recovery runs a single disabled pass with empty fixture tables and a loopback-only mock. Its repair and original decoding policies are covered by unit tests, not by live downloads in the smoke test.
 
+## Browser automation for coding agents
+
+`.mcp.json` registers the [Playwright MCP server](https://github.com/microsoft/playwright-mcp) (pinned to `@playwright/mcp@0.0.83`) so Claude Code and other MCP clients can open the Review UI in a headless browser, take snapshots or screenshots and check both English and Czech layouts. Snapshots are written to the ignored `.playwright-mcp/` directory.
+
+The server uses the Chromium at `/opt/pw-browsers/chromium`, which Claude Code cloud environments provide. Elsewhere, set `PLAYWRIGHT_MCP_EXECUTABLE_PATH` to a local Chromium or Chrome binary before starting the client. The browser runs without the Chromium sandbox because container environments do not support it; only open a locally started Review server with disposable test data, never a production installation, real media or a live Tdarr/Radarr endpoint.
+
 ## Source provenance
 
 The application and worker were copied from the live installation on 11 October 2026. Runtime data, backups, SSH material, movie files and one-off historical repair runners were omitted. Public installation defaults are placeholders. No private pending registry is included in source/images; the persistent registry example is empty and synthetic fixtures are only for tests.
