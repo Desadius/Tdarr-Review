@@ -14,6 +14,17 @@
       "env": {
         "PLAYWRIGHT_MCP_EXECUTABLE_PATH": "${PLAYWRIGHT_MCP_EXECUTABLE_PATH:-/opt/pw-browsers/chromium}"
       }
+    },
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp@4.1.1"
+      ],
+      "env": {
+        "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY:-}",
+        "NODE_USE_ENV_PROXY": "1"
+      }
     }
   }
 }
