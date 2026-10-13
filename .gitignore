@@ -12,6 +12,10 @@ data/
 *.sqlite*
 *.db*
 access-key
+# Personal, machine-specific agent notes (may contain hosts, paths, SSH details)
+CLAUDE.local.md
+AGENTS.local.md
+.claude/settings.local.json
 settings.json
 radarr.json
 state.json
