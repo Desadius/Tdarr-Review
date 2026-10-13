@@ -4,6 +4,8 @@ This records the implemented application features. Versions before 1.10.0 were d
 
 ## Unreleased
 
+- Document that Review can undo a manual Tdarr node pause applied during its action, including pending resume retries and the maintenance pause procedure.
+- Document and regression-test Review blocking a Recovery-returned hardlinked original while keeping its quarantine protection intact.
 - Recovery detects edits to `config.json` made after start-up: it logs that a restart is required and reports `configChange` (with a validity flag) in the shared status file. The running worker still applies configuration only at start-up. Documented in Configuration and Operations.
 
 ## 1.10.5 — 2026-10-13

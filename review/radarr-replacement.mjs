@@ -1,6 +1,6 @@
 import {downloadQueue} from './download-queue.mjs';
 import {ensureHandoff} from './replacement-handoff.mjs';
-import {retainCase,fp as retentionFP} from './quarantine-retention.mjs';
+import {retainCase,fp as retentionFP,quarantineRetention} from './quarantine-retention.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -86,7 +86,7 @@ export function createReplacement({data,getConfig,safeFile,hash,atomicJSON,tdarr
   if(!['Queued','Transcoding','Transcode success','Transcode error','Not required','Hold'].includes(row.TranscodeDecisionMaker))throw Error('Tdarr vrátil neznámý stav náhrady.');
   c.tdarrStatus=row.TranscodeDecisionMaker;c.message=importedLabels[c.tdarrStatus];c.queue=[];observed(c);
  }
- async function publicSettings(){try{const c=await connection();return {configured:true,url:c.url,mediaRoot:c.mediaRoot,quarantineRoot:c.quarantineRoot||path.join(path.dirname(getConfig().mediaRoot),'.tdarr-review-quarantine'),preferCzechEnglish:c.preferCzechEnglish,hasApiKey:true}}catch(e){if(e.code!=='ENOENT')return {configured:false,error:'Nastavení Radarru je neplatné.'};return {configured:false,url:'',mediaRoot:'/media',quarantineRoot:path.join(path.dirname(getConfig().mediaRoot),'.tdarr-review-quarantine'),preferCzechEnglish:true,hasApiKey:false}}}
+ async function publicSettings(){try{const c=await connection();return {configured:true,url:c.url,mediaRoot:c.mediaRoot,quarantineRoot:c.quarantineRoot||path.join(path.dirname(getConfig().mediaRoot),'.tdarr-review-quarantine'),preferCzechEnglish:c.preferCzechEnglish,hasApiKey:true,retentionDays:quarantineRetention.retentionDays}}catch(e){if(e.code!=='ENOENT')return {configured:false,error:'Nastavení Radarru je neplatné.'};return {configured:false,url:'',mediaRoot:'/media',quarantineRoot:path.join(path.dirname(getConfig().mediaRoot),'.tdarr-review-quarantine'),preferCzechEnglish:true,hasApiKey:false,retentionDays:quarantineRetention.retentionDays}}}
  async function settings(input,testOnly=false){if(observing||mutating)throw Error('Probíhá kontrola náhrad, zkus to za chvíli.');if(!testOnly&&(await list()).some(c=>!['restored','imported'].includes(c.phase)))throw Error('Nejprve dokonči nebo obnov otevřené žádosti o náhradu.');let previous;try{previous=await connection()}catch{}const c=validateConnection({...input,apiKey:input.apiKey?.trim()||previous?.apiKey});await api(c,'/system/status');const movies=await api(c,'/movie');if(!Array.isArray(movies)||!movies.some(m=>m.path===c.mediaRoot||m.path.startsWith(c.mediaRoot+'/')))throw Error('Cesta knihovny neodpovídá filmům Radarru.');if(!testOnly)await atomicJSON(connectionFile,c);return {ok:true,message:'Spojení s Radarrem a cesta knihovny ověřeny.'};}
  async function prepare(item,reason){
   if(typeof reason!=='string'||!reason.trim()||reason.length>1000)throw Error('Uveď důvod žádosti o jinou kopii (nejvýše 1000 znaků).');
