@@ -41,7 +41,15 @@ test('server serves /health before authentication to loopback only; the health c
  assert.ok(health>0&&health<auth);
  assert.match(server.slice(health,health+400),/if\(!isLoopback\(req\.socket\.remoteAddress\)\)return respond\(res,404/);
  assert.ok(server.indexOf("if(req.headers.host!==HOST)")<health,'Host check still applies');
- const check=await fs.readFile(new URL('./healthcheck.mjs',import.meta.url),'utf8');
- assert.match(check,/path:'\/health'/);assert.match(check,/if\(response\.statusCode!==200\)process\.exit\(1\)/);
- assert.doesNotMatch(check,/attention[^\n]*process\.exit\(1\)/);
+});
+
+test('the container health check needs /health and the UI, but only reports operator conditions',async()=>{
+ const {checkHealth,UI_PATHS}=await import('./healthcheck.mjs');
+ const summary=JSON.stringify({ok:true,attention:['pending-transaction','node-restore-pending'],pendingTransactions:1});
+ const server=(overrides={})=>async route=>({status:overrides[route]??200,text:route==='/health'?summary:'<html>'});
+ const attention=await checkHealth(server());assert.equal(attention.ok,true,'attention never fails the check');assert.match(attention.line,/^Attention: pending-transaction, node-restore-pending /);
+ assert.deepEqual(UI_PATHS,['/','/app.js']);
+ for(const route of ['/health',...UI_PATHS]){const result=await checkHealth(server({[route]:404}));assert.equal(result.ok,false,route);assert.ok(result.line.endsWith('answered 404'),result.line)}
+ assert.equal((await checkHealth(async route=>({status:200,text:route==='/health'?'not json':''}))).line,'OK (unreadable summary)');
+ await assert.rejects(checkHealth(async()=>{throw Error('ECONNREFUSED')}),'no answer is a failure of the check');
 });
