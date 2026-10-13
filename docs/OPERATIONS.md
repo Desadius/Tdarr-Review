@@ -4,6 +4,13 @@
 
 Back up Review `/data`, Recovery `/data` if used, both source/configuration versions and the media-parent approval records. Review state includes its access key, sessions, history, transactions and Radarr requests. It is private operational data, not repository content.
 
+`state.json` keeps only the latest 150 history entries. The durable decision records are separate append-only files in Review `/data` (mode 0600, each record fsynced):
+
+- `decision-audit.jsonl`: one record per finished approval (success or failure) and per Radarr replacement request, with time, item, paths, snapshot, Tdarr job, the saved review evidence, transaction journal id, outcome, message and warning. At 10 MiB the file is renamed to `decision-audit-<UTC time>.jsonl` and a new one starts; archives are never deleted or rewritten by Review.
+- `rejection-decisions.jsonl`: rejection requests and results.
+
+Include these files in backups and remove old archives only deliberately. If a record cannot be written, the action keeps its result and the history entry shows a warning.
+
 Back up during an idle period. Keep media and quarantined originals protected by your normal storage backup policy. A Git commit of the application is not a backup of the movies or its transactional state.
 
 ## Update an existing deployment
@@ -61,6 +68,25 @@ Inspect the film's detail and durable journal. Preserve `.tdarr-review-*.old`, `
 ## Recovery configuration was edited
 
 Recovery applies `/data/config.json` only at start-up. After an edit the worker logs `config.json changed since start-up; restart the worker to apply it` and the shared status file shows `configChange.restartRequired: true`. If `configChange.valid` is `false`, correct the file first: a restart with invalid JSON stops the worker. Then restart the Recovery container while it is idle, as described in step 2 of *Update an existing deployment*. Reverting the edit clears the notice without a restart.
+
+## Review event log
+
+Review writes one JSON line per operator-relevant event to standard output, next to its plain-text messages. Each line has `time`, `source: "review"` and `event`:
+
+| Event | Fields |
+| --- | --- |
+| `action.started`, `action.finished` | `action` (`approve`, `reject`, `replace`), `id`, `title`; when finished also `outcome`, `message`, `warning`, `reason`, `jobId`, `requestId`, `elapsedSeconds`, `savedBytes` |
+| `batch.started`, `batch.finished`, `batch.interrupted` | `batchId`, `total`, `finished`, `failed`, `outcome`, `message` |
+| `node.paused`, `nodes.resume` | Tdarr node names paused for an action; nodes Review tried to resume and those still `pending` |
+| `transaction.unresolved`, `transactions.unresolved` | Exchange transactions that need manual inspection |
+| `settings.saved`, `preview-settings.saved`, `radarr-settings.saved`, `quarantine.restored` | The saved non-secret values or the restored request |
+| `request.error` | `method`, `route` (without query), `status`, `message` |
+
+Fields whose name contains `key`, `token`, `secret`, `password`, `cookie`, `authorization` or `session` are never written, so access keys, Radarr API keys, login sessions and review evidence stay out of the log. To reconstruct an incident:
+
+```bash
+docker logs tdarr-review 2>&1 | grep '"source":"review"'
+```
 
 ## Container health
 

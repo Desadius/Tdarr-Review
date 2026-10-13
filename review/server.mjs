@@ -17,6 +17,8 @@ import {fileURLToPath} from 'node:url';
 import {safeFile,fingerprint,hash,atomicJSON,command,probe,inspect,replaceChecked,recoverTransactions} from './core.mjs';
 import {measure} from './progress.mjs';
 import {appVersion} from './app-version.mjs';
+import {logEvent} from './log.mjs';
+import {recordDecision} from './decision-audit.mjs';
 import {isLoopback,recoveryStatusHealth,healthSummary} from './health-status.mjs';
 import {captureReceipt,cleanupReviewed} from './cleanup.mjs';
 import {resolveReviewSource} from './source-mapping.mjs';
@@ -188,9 +190,10 @@ let resumeTask=null;
 function resume(){
  if(resumeTask)return resumeTask;
  resumeTask=(async()=>{
-  const pending=[];
+  const pending=[],requested=(state.pauses||[]).map(p=>p.name);
   for(const p of state.pauses||[]){try{const ns=await tdarr('/api/v2/get-nodes');const n=Object.values(ns).find(n=>n.nodeName===p.name);if(!n){pending.push(p);continue}if(n.nodePaused)await tdarr('/api/v2/update-node',{nodeID:n._id,nodeUpdates:{nodePaused:false}})}catch{pending.push(p)}}
   state.pauses=pending;await save();
+  if(requested.length)logEvent('nodes.resume',{requested,pending:pending.map(p=>p.name),outcome:pending.length?'incomplete':'success'});
  })().finally(()=>{resumeTask=null});
  return resumeTask;
 }
@@ -200,6 +203,7 @@ async function pauseDispatch(item){
   for(const n of Object.values(nodes))if(!n.nodePaused){
     state.pauses.push({name:n.nodeName});await save();
     await tdarr('/api/v2/update-node',{nodeID:n._id,nodeUpdates:{nodePaused:true}});
+    logEvent('node.paused',{node:n.nodeName,id:item.id,title:item.title});
   }
   await new Promise(r=>setTimeout(r,2000));
   await verifyPaused(item);
@@ -209,20 +213,28 @@ async function verifyPaused(item){const nodes=await tdarr('/api/v2/get-nodes');i
 const replacements=createReplacement({data:DATA,getConfig:()=>config,safeFile,hash,atomicJSON,tdarr,pauseDispatch,verifyPaused,isWorkerBusy:async item=>workerBusy(await tdarr('/api/v2/get-nodes'),item),resume,onProgress:stage=>progress(stage)});
 const artwork=createArtwork({data:DATA,getConnection:async()=>JSON.parse(await fs.readFile(path.join(DATA,'radarr.json'),'utf8'))});
 await replacements.recover();
+// Operator log of a finished approval, rejection or replacement request (never review evidence).
+const outcomeLog=o=>({id:o.id,title:o.title,action:o.action,outcome:o.status,message:o.message,warning:o.warning,requestId:o.requestId,jobId:o.jobId,reason:o.rejectionReason,elapsedSeconds:o.elapsedSeconds,savedBytes:o.savedBytes});
+const auditFailed=(outcome,error)=>{outcome.warning=[outcome.warning,'Uložení záznamu do auditu rozhodnutí selhalo: '+error.message].filter(Boolean).join(' ')};
 async function replacementAction(item,reason){
+ logEvent('action.started',{action:'replace',id:item.id,title:item.title});
  active={id:item.id,title:item.title,action:'replace',stage:'Připravuji žádost Radarru',started:Date.now()};
  await forgetPreviews(item.id);
  let outcome;
  try{const request=await replacements.run(item,reason);outcome={id:item.id,title:item.title,action:'replace',status:'success',requestId:request.id,rejectionReason:reason,time:new Date().toISOString(),savedBytes:0};delete state.items[item.id];delete state.reviewSessions[item.id];}
  catch(e){outcome={id:item.id,title:item.title,action:'replace',status:'error',message:e.message,rejectionReason:reason,time:new Date().toISOString()};}
- finally{state.history.unshift(outcome);state.history=state.history.slice(0,150);await save();active=null;cache=null;}
+ finally{
+  try{await recordDecision(DATA,{event:'replacement',id:item.id,title:item.title,relative:item.relative,reviewRelative:item.reviewRelative,snapshot:item.snapshot,jobId:item.jobId,reason,requestId:outcome.requestId,outcome:outcome.status,message:outcome.message})}catch(e){auditFailed(outcome,e)}
+  state.history.unshift(outcome);state.history=state.history.slice(0,150);await save();active=null;cache=null;logEvent('action.finished',outcomeLog(outcome))}
 }
 const replacementTimer=setInterval(()=>{if(!busyFor('background'))void replacements.observe().then(()=>replacements.cleanup()).catch(e=>console.error('Radarr status: '+e.message));},60000);replacementTimer.unref();
 
 // Recover/inspect transactions before restarting dispatch; never replay approvals after restart.
 const recovery=await recoverTransactions(path.join(DATA,'transactions'));
+if(recovery.length)logEvent('transactions.unresolved',{transactions:recovery,message:'Exchange transactions need manual inspection; changes stay blocked.'});
 if(!recovery.length)await resume();
 if(state.batch?.status==='running'){
+  logEvent('batch.interrupted',{batchId:state.batch.id,finished:state.batch.finished,total:state.batch.total,message:'Review restarted during the batch.'});
   state.batch.status='interrupted';
   state.batch.message='Aplikace byla restartována. Zbývající filmy nebyly automaticky schválené; vyber je znovu.';
   await save();
@@ -307,6 +319,7 @@ async function perform(action,item,acceptDuration=false,reason){
   if(action==='reject')reason=rejectionReason(reason);
   const previous=state.items[item.id];
   active={id:item.id,title:item.title,action,stage:'Ověřuji soubory',started:Date.now()};
+  logEvent('action.started',{action,id:item.id,title:item.title,acceptDuration:acceptDuration||undefined});
   await forgetPreviews(item.id);
   progress('Ověřuji soubory, délku a zachované stopy');
   let journal,warning,outcome,reviewEvidence;
@@ -344,13 +357,15 @@ async function perform(action,item,acceptDuration=false,reason){
     delete state.items[item.id];delete state.reviewSessions[item.id];statsCache=null;
   }catch(e){
     outcome={id:item.id,title:item.title,action,rejectionReason:action==='reject'?reason:undefined,jobId:item.jobId||previous?.jobId,reviewSession:reviewEvidence,status:'error',message:e.message,time:new Date().toISOString()};state.history.unshift(outcome);
-    if(journal){const t=JSON.parse(await fs.readFile(journal,'utf8').catch(()=>'{"phase":"unknown"}'));if(!['aborted','complete'].includes(t.phase))recovery.push(t.id||'unknown');}
-  }finally{if(action==='reject'){try{await recordRejection(DATA,{event:'completed',...outcome})}catch(e){outcome.warning=[outcome.warning,'Uložení výsledku do archivu zamítnutí selhalo: '+e.message].filter(Boolean).join(' ');}}if(!recovery.length){progress('Obnovuji původní stav nodů',6,'resume');await resume()}state.history=state.history.slice(0,150);await save();active=null;cache=null;}
+    if(journal){const t=JSON.parse(await fs.readFile(journal,'utf8').catch(()=>'{"phase":"unknown"}'));if(!['aborted','complete'].includes(t.phase)){recovery.push(t.id||'unknown');logEvent('transaction.unresolved',{transaction:t.id||'unknown',phase:t.phase,id:item.id,title:item.title})}}
+  }finally{if(action==='reject'){try{await recordRejection(DATA,{event:'completed',...outcome})}catch(e){outcome.warning=[outcome.warning,'Uložení výsledku do archivu zamítnutí selhalo: '+e.message].filter(Boolean).join(' ');}}
+    if(action==='approve'){try{await recordDecision(DATA,{event:'approval',id:item.id,title:item.title,relative:item.relative,outputRelative:item.outputRelative,reviewRelative:item.reviewRelative,snapshot:item.snapshot,jobId:outcome.jobId,originalBytes:item.originalBytes,reviewBytes:item.reviewBytes,reviewSession:reviewEvidence,acceptedDurationDifference:outcome.acceptedDurationDifference,transaction:journal?path.basename(journal,'.json'):null,outcome:outcome.status,message:outcome.message,warning:outcome.warning,savedBytes:outcome.savedBytes,elapsedSeconds:outcome.elapsedSeconds})}catch(e){auditFailed(outcome,e)}}if(!recovery.length){progress('Obnovuji původní stav nodů',6,'resume');await resume()}state.history=state.history.slice(0,150);await save();active=null;cache=null;logEvent('action.finished',outcomeLog(outcome))}
   return outcome;
 }
 async function performBatch(items){
   batchRunning=true;
   state.batch={id:crypto.randomUUID(),status:'running',total:items.length,finished:0,failed:0,started:new Date().toISOString(),results:[],remaining:items.map(x=>({id:x.id,title:x.title}))};
+  logEvent('batch.started',{batchId:state.batch.id,total:items.length,ids:items.map(x=>x.id)});
   try {
     await save();
     for(const item of items){
@@ -361,7 +376,7 @@ async function performBatch(items){
     }
     if(state.batch.status==='running')state.batch.status='complete';
   }catch(e){state.batch.status='interrupted';state.batch.message=e.message;console.error(e)}
-  finally{state.batch.ended=new Date().toISOString();await save();batchRunning=false;cache=null}
+  finally{state.batch.ended=new Date().toISOString();await save();batchRunning=false;cache=null;logEvent('batch.finished',{batchId:state.batch.id,outcome:state.batch.status,finished:state.batch.finished,failed:state.batch.failed,total:state.batch.total,message:state.batch.message})}
 }
 const authAttempts=new Map();
 // Expired sessions and finished rate-limit windows are dropped hourly and on each login, so neither grows without bound.
@@ -412,7 +427,7 @@ const server=http.createServer(async(req,res)=>{
     }
     for(const route of routes)if(await route(ctx,req,res,url,request))return;
     respond(res,404,{error:'Nenalezeno.'});
-  }catch(e){console.error(e.message);if(!res.headersSent)respond(res,e instanceof ReviewSessionError?e.status:e instanceof PreviewCacheError?(['STALE','CANCELLED'].includes(e.code)?409:e.code==='INVALID_REQUEST'?400:500):500,{error:e.message});else res.destroy()}
+  }catch(e){const status=e instanceof ReviewSessionError?e.status:e instanceof PreviewCacheError?(['STALE','CANCELLED'].includes(e.code)?409:e.code==='INVALID_REQUEST'?400:500):500;logEvent('request.error',{method:req.method,route:String(req.url||'').split('?')[0],status,message:e.message});if(!res.headersSent)respond(res,status,{error:e.message});else res.destroy()}
   finally{if(request.mutation&&mutationOwner===request.mutation)mutationOwner=null;if(releasePreviewBackground){previewMutationHolds--;if(!previewMutationHolds)previews.resumeBackground()}}
 });
 server.listen(PORT,'0.0.0.0',()=>console.log('Tdarr Review listening on '+PORT));

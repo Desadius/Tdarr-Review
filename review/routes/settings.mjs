@@ -1,6 +1,7 @@
 import {hash,atomicJSON} from '../core.mjs';
 import {validate,checkPaths} from '../config.mjs';
 import {body,reply} from './http.mjs';
+import {logEvent} from '../log.mjs';
 
 // Tdarr connection and path settings. Saving resets cached items, previews and review sessions.
 export async function settingsRoutes(ctx,req,res,url,request){
@@ -21,6 +22,7 @@ export async function settingsRoutes(ctx,req,res,url,request){
    if(url.pathname==='/api/settings'){
     await ctx.previews.invalidate({all:true});ctx.previewPairs.clear();ctx.previewPlans.clear();ctx.previewAttempts.clear();
     await atomicJSON(ctx.configfile,candidate);ctx.config=candidate;ctx.applyConfig();ctx.statsCache=null;ctx.state.items={};ctx.state.reviewSessions={};ctx.cache=null;ctx.cacheAt=0;await ctx.save();
+    logEvent('settings.saved',{publicOrigin:candidate.publicOrigin,tdarrUrl:candidate.tdarrUrl,mediaRoot:candidate.mediaRoot,reviewRoot:candidate.reviewRoot,libraryId:candidate.libraryId});
    }
    return reply(res,200,{ok:true,message:'Připojení, databáze a cesty jsou dostupné.',publicOrigin:candidate.publicOrigin,revision:hash(JSON.stringify(ctx.config))});
   }finally{ctx.settingsBusy=false}
