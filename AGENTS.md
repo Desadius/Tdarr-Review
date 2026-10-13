@@ -20,6 +20,7 @@ There are no npm dependencies to install. Use Linux and Node 24.
 
 ```bash
 npm run check   # JavaScript syntax check
+npm run typecheck   # JSDoc type check (installs pinned dev-only TypeScript into .typecheck/)
 npm test        # full unit/regression suite (review + recovery)
 ```
 

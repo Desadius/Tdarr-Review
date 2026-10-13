@@ -1,3 +1,4 @@
+// @ts-check
 import hevcSDR from './hevc-sdr.cjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -9,8 +10,35 @@ import dualHDR from './dual-hdr.cjs';
 import legacySDR from './legacy-sdr.cjs';
 import hdrExtra from './hdr-extra.cjs';
 
+/**
+ * Durable exchange journal written by replaceChecked() and read by recoverTransactions().
+ * @typedef {object} TransactionJournal
+ * @property {string} id
+ * @property {string} original Absolute path of the original film.
+ * @property {string} review Absolute path of the reviewed result.
+ * @property {string} destination Installed path (the original path, or .mkv for a .ts/.m2ts original).
+ * @property {string} tmp Verified copy next to the original.
+ * @property {string} backup Original kept until the exchange completes.
+ * @property {string} originalFP fingerprint() of the original when reviewed.
+ * @property {string} reviewFP fingerprint() of the result when reviewed.
+ * @property {'preparing'|'syncing-copy'|'verifying-copy'|'ready'|'original-backed-up'|'installed'|'original-removed'|'complete'|'aborted'} phase
+ * @property {string} created ISO time.
+ * @property {string} [error] Why the exchange stopped.
+ * @property {string} [rollbackError] Why restoring the original failed, if it did.
+ */
+/** @typedef {{path:string,stat:import('node:fs').Stats,fp:string}} SafeFile */
+/** @typedef {{done:number,total:number,unit?:string,phase?:string,speed?:number|null}} TransferProgress */
+
+/** @param {string|Buffer} s */
 export const hash = s => crypto.createHash('sha256').update(s).digest('hex');
+/** @param {{dev:number,ino:number,size:number,mtimeMs:number,ctimeMs:number}} s */
 export const fingerprint = s => `${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}:${s.ctimeMs}`;
+/**
+ * Resolves a regular, single-link file strictly inside root.
+ * @param {string} root
+ * @param {string} relative
+ * @returns {Promise<SafeFile>}
+ */
 export async function safeFile(root, relative) {
   if (!relative || relative.includes('\\') || path.isAbsolute(relative) || relative.split('/').some(x=>!x||x==='.'||x==='..')) throw new Error('Neplatná cesta souboru.');
   const base=await fs.realpath(root), full=path.join(base,relative);
@@ -35,6 +63,7 @@ async function syncDirectory(dir) {
 const statOrMissing=async file=>{try{return await fs.lstat(file)}catch(e){if(e.code==='ENOENT')return null;throw e}};
 // Renaming changes ctime. Device, inode, size and mtime still identify the saved original.
 const originalIdentity=(stat,fp)=>stat?.isFile()&&!stat.isSymbolicLink()&&fingerprint(stat).split(':').slice(0,-1).join(':')===String(fp).split(':').slice(0,-1).join(':');
+/** @param {TransactionJournal} record */
 async function restoreBackup(record) {
   if(record.destination&&record.destination!==record.original&&await statOrMissing(record.destination))return false;
   let original=await statOrMissing(record.original),backup=await statOrMissing(record.backup);
@@ -51,6 +80,7 @@ async function restoreBackup(record) {
   await fs.unlink(record.backup);await syncDirectory(path.dirname(record.original));
   return true;
 }
+/** @param {TransactionJournal} t */
 function validJournalPaths(t) {
   return typeof t.id==='string'&&/^[A-Za-z0-9_-]+$/.test(t.id)&&typeof t.original==='string'&&path.isAbsolute(t.original)
     &&typeof t.review==='string'&&path.isAbsolute(t.review)&&typeof t.originalFP==='string'
@@ -81,12 +111,22 @@ export async function recoverTransactions(directory) {
   }
   return pending;
 }
+/**
+ * @param {string} file
+ * @param {(done:number)=>void} [onProgress]
+ */
 export async function sha256(file,onProgress=()=>{}) {
   const h=await fs.open(file,'r'), digest=crypto.createHash('sha256');
   let done=0,last=0;
   try {for await(const chunk of h.createReadStream({autoClose:false})) {digest.update(chunk);done+=chunk.length;if(Date.now()-last>=1000){last=Date.now();onProgress(done)}}onProgress(done);}finally{await h.close();}
   return digest.digest('hex');
 }
+/**
+ * @param {string} exe
+ * @param {string[]} args
+ * @param {{timeout?:number,onLine?:(line:string)=>void,onStdout?:(chunk:string)=>void}} [options]
+ * @returns {Promise<string>}
+ */
 export function command(exe,args,{timeout=120000,onLine,onStdout}={}) {
   return new Promise((resolve,reject)=>{
     const p=spawn(exe,args,{stdio:['ignore','pipe','pipe']});let out='',err='';
@@ -136,6 +176,18 @@ export function inspect(original,review) {
 
 // Caller holds the application mutex and pauses Tdarr dispatch before invoking.
 // Only exact, unchanged files can reach the rename. A durable journal tracks every stage.
+/**
+ * @param {object} options
+ * @param {string} options.original
+ * @param {string} options.review
+ * @param {string} [options.destination]
+ * @param {string} options.originalFP
+ * @param {string} options.reviewFP
+ * @param {string} options.journal Path of the TransactionJournal file.
+ * @param {(phase:TransactionJournal['phase'])=>void} [options.onStage]
+ * @param {(progress:TransferProgress)=>void} [options.onProgress]
+ * @param {()=>Promise<void>} [options.beforeCommit]
+ */
 export async function replaceChecked({original,review,destination=original,originalFP,reviewFP,journal,onStage=()=>{},onProgress=()=>{},beforeCommit=async()=>{}}) {
   if(!validDestination(original,destination))throw Error('Nepovolená cílová cesta převodu.');
   const check=async()=>{
@@ -144,6 +196,7 @@ export async function replaceChecked({original,review,destination=original,origi
   };
   await check();
   const id=crypto.randomUUID(),tmp=path.join(path.dirname(original),`.tdarr-review-${id}.tmp`),backup=path.join(path.dirname(original),`.tdarr-review-${id}.old`);
+  /** @type {TransactionJournal} */
   const record={id,original,review,destination,tmp,backup,originalFP,reviewFP,phase:'preparing',created:new Date().toISOString()};
   const save=async phase=>{record.phase=phase;await atomicJSON(journal,record);onStage(phase);};
   await save('preparing');
