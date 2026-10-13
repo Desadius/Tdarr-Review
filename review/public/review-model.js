@@ -291,3 +291,20 @@ export function recoveryFollowup(record,records){
  if(record?.source!=='recovery'||!itemId(child?.id)||child.id!==record.replacementFollowupId||child.id===record.id||child.source!=='recovery')return null;
  return list(records).filter(r=>r?.id===child.id&&r.source==='recovery').length===1?child:null;
 }
+
+// Recovery's config.json was edited after start-up and needs a restart (status file `configChange`).
+export function recoveryConfigNotice(change) {
+  if (!change || change.restartRequired !== true) return null;
+  return {kind: change.valid === false ? 'failure' : 'warning', detectedAt: finiteTime(change.detectedAt), error: change.valid === false ? text(change.error) || null : null};
+}
+
+const FULL_HASH_STAGES = {confirmation: 'při potvrzení chyby', before_quarantine: 'před přesunem do karantény'};
+// Optional full SHA-256 of an original that Recovery is reading (case `fullHash`, setting fullSourceHash).
+export function fullHashProgress(record, now = Date.now()) {
+  const h = record?.fullHash;
+  if (record?.source !== 'recovery' || !h || typeof h !== 'object' || !Object.hasOwn(FULL_HASH_STAGES, h.stage)) return null;
+  const number = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+  const done = number(h.done), total = number(h.total), updated = finiteTime(h.updated) ?? finiteTime(h.started);
+  return {stage: h.stage, label: FULL_HASH_STAGES[h.stage], done, total, percent: done !== null && total ? Math.min(100, 100 * done / total) : null, stale: updated === null || updated > now + 120000 || now - updated > 90000};
+}
+

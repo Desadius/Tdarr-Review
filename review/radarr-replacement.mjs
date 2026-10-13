@@ -206,8 +206,19 @@ export function createReplacement({data,getConfig,safeFile,hash,atomicJSON,tdarr
   }
  }
  async function cleanup(){await cleanupLanguageRepairs();const cfg=getConfig(),con=await connection();for(const c of (await list()).filter(c=>c.phase==='imported')){try{await retainCase(c,{mediaRoot:cfg.mediaRoot,reviewRoot:cfg.reviewRoot,quarantineRoot:con.quarantineRoot||path.join(path.dirname(cfg.mediaRoot),'.tdarr-review-quarantine'),reviewQuarantineRoot:path.join(cfg.reviewRoot,'.radarr-quarantine'),atomicCase:persist});if(c.retentionError){delete c.retentionError;await persist(c);}}catch(e){c.retentionError=e.message;await persist(c);}}}
- async function recoveryPublic(){
-  try{const cfg=getConfig(),file=path.join(path.dirname(cfg.mediaRoot),'.tdarr-recovery-status.json'),s=await fs.lstat(file);if(!s.isFile()||s.isSymbolicLink()||s.size>2000000)throw Error('Invalid recovery status');const v=JSON.parse(await fs.readFile(file,'utf8'));if(v.version!==1||!Array.isArray(v.cases))throw Error('Invalid recovery schema');const con=await connection();return v.cases.map(c=>({...c,source:'recovery',canRestore:false,queue:Array.isArray(c.queue)?c.queue:[],radarrMovieUrl:c.titleSlug?new URL('/movie/'+encodeURIComponent(c.titleSlug),con.url).href:con.url,statusUpdated:Object.hasOwn(c,'statusUpdated')?c.statusUpdated:v.updated}));}catch(e){if(e.code==='ENOENT')return [];throw e;}
+ // The shared Recovery status file, or null when Recovery is not installed.
+ async function readRecoveryStatus(){
+  try{const cfg=getConfig(),file=path.join(path.dirname(cfg.mediaRoot),'.tdarr-recovery-status.json'),s=await fs.lstat(file);if(!s.isFile()||s.isSymbolicLink()||s.size>2000000)throw Error('Invalid recovery status');const v=JSON.parse(await fs.readFile(file,'utf8'));if(v.version!==1||!Array.isArray(v.cases))throw Error('Invalid recovery schema');return v;}catch(e){if(e.code==='ENOENT')return null;throw e;}
  }
- return {cleanup,settings,publicSettings,prepare,run,restore,observe,list:async()=>[...(await list()).map(visible),...await recoveryPublic()],recover:async()=>{for(const c of await list())if(!canResume(c))await persist(c,'manual','Operace byla přerušená ve fázi '+c.phase+'. Neopakuj ji bez kontroly; zachované kopie nebyly smazané.');}};
+ // Recovery's config.json edited after start-up (#22); only these fields leave the server.
+ async function recoveryConfig(){
+  const change=(await readRecoveryStatus().catch(()=>null))?.configChange;
+  if(!change||change.restartRequired!==true)return null;
+  return {detectedAt:typeof change.detectedAt==='string'&&Number.isFinite(Date.parse(change.detectedAt))?change.detectedAt:null,restartRequired:true,valid:change.valid!==false,error:typeof change.error==='string'?change.error.slice(0,300):null};
+ }
+ async function recoveryPublic(){
+  const v=await readRecoveryStatus();if(!v)return [];
+  try{const con=await connection();return v.cases.map(c=>({...c,source:'recovery',canRestore:false,queue:Array.isArray(c.queue)?c.queue:[],radarrMovieUrl:c.titleSlug?new URL('/movie/'+encodeURIComponent(c.titleSlug),con.url).href:con.url,statusUpdated:Object.hasOwn(c,'statusUpdated')?c.statusUpdated:v.updated}));}catch(e){if(e.code==='ENOENT')return [];throw e;}
+ }
+ return {cleanup,settings,publicSettings,prepare,run,restore,observe,recoveryConfig,list:async()=>[...(await list()).map(visible),...await recoveryPublic()],recover:async()=>{for(const c of await list())if(!canResume(c))await persist(c,'manual','Operace byla přerušená ve fázi '+c.phase+'. Neopakuj ji bez kontroly; zachované kopie nebyly smazané.');}};
 }
