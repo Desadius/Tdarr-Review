@@ -2,6 +2,10 @@
 
 This records the implemented application features. Versions before 1.10.0 were deployed snapshots and are not published Git tags.
 
+## Unreleased
+
+- The Review health check now reads a loopback-only `/health` summary and writes pending exchange transactions, Tdarr nodes still paused by Review and a stale Recovery status into Docker's health log. These are reported without marking the container unhealthy, so no restart interrupts them.
+
 ## 1.10.5 — 2026-10-13
 
 - Prepare the existing picture/audio/synchronization samples for waiting Review films in advance, with persistent private cache and bounded low-priority background work.

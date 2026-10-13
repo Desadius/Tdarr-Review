@@ -50,6 +50,16 @@ Inspect the film's detail and durable journal. Preserve `.tdarr-review-*.old`, `
 
 `manual` means an identity, mapping or mutation could not be verified. It does not mean a quarantined file should be deleted. `Not required` means Tdarr skipped the encoding decision, not that the file is healthy or already optimized.
 
+## Container health
+
+The Review container health check reads `GET /health`, which answers only requests from loopback inside the container (other clients get 404) and needs no login. It returns `pendingTransactions`, `restorePending`, the shared Recovery status (`present`, `updated`, `stale` after 12 minutes) and an `attention` list (`pending-transaction`, `node-restore-pending`, `recovery-status-stale`). The check prints `OK` or `Attention: …` with the summary into Docker's health log:
+
+```bash
+docker inspect --format '{{json .State.Health.Log}}' tdarr-review
+```
+
+These conditions are reported, not treated as failures: the container stays healthy so that a restart policy or auto-heal tool does not restart Review during a pending transaction or node restore. The check fails only when the server does not answer. A missing Recovery status file (Recovery not installed) is not flagged.
+
 ## Recovery status is stale
 
 Check worker logs and its private `state.json` for `lastError` or `statusPublicationError`. Verify both services map the same media parent and Radarr is configured in Review. Idle publication is roughly five minutes. During a full original decode the worker publishes a 30-second heartbeat and measured progress at most every 15 seconds. Review displays the current pass, media position, elapsed time and an ETA when duration/rate are available. With no known duration the bar stays indeterminate. The decoder measurement time and worker heartbeat are shown separately; a responding worker can still be waiting for I/O. A stale/no-advance warning is not proof of film damage.
