@@ -8,6 +8,7 @@ This records the implemented application features. Versions before 1.10.0 were d
 - Optional Recovery setting `fullSourceHash`: compare a full SHA-256 of the original at confirmation and right before the quarantine rename, at idle I/O priority with progress in the status file. Sampling remains the default.
 - Every finished approval and Radarr replacement request is appended to a durable `decision-audit.jsonl` in `/data` (fsynced, size-rotated into timestamped archives that are never deleted), in addition to the 150-entry history.
 - Review writes one JSON line per approval, rejection, replacement request, batch, settings change, node pause/resume, unresolved transaction and request error, so `docker logs` can reconstruct incidents. Secret-looking fields are never logged.
+- A film blocked by the strict video rules now says which check failed (video track count, original codec, result codec, pixel format or resolution) instead of a generic message. The user guide explains every blocking rule.
 - Retry a failed restore of Tdarr nodes that Review paused from a server timer with backoff (15 s doubling up to 10 min) instead of on every `GET /api/items` poll, so reading the dashboard no longer changes Tdarr state.
 - Add dependency-free Node 24 coverage reporting with `npm run test:coverage`; CI reports line, branch and function coverage in the same complete test run, without an unmeasured threshold.
 - Document that Review can undo a manual Tdarr node pause applied during its action, including pending resume retries and the maintenance pause procedure.
