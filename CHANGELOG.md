@@ -5,6 +5,8 @@ This records the implemented application features. Versions before 1.10.0 were d
 ## Unreleased
 
 - Retry a failed restore of Tdarr nodes that Review paused from a server timer with backoff (15 s doubling up to 10 min) instead of on every `GET /api/items` poll, so reading the dashboard no longer changes Tdarr state.
+- Document that Review can undo a manual Tdarr node pause applied during its action, including pending resume retries and the maintenance pause procedure.
+- Document and regression-test Review blocking a Recovery-returned hardlinked original while keeping its quarantine protection intact.
 
 ## 1.10.5 — 2026-10-13
 

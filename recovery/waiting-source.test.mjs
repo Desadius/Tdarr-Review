@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import {maintainWaitingSources,eligibleRelease,fp,publishRecoveryStatus} from './waiting-source.mjs';
+import {safeFile} from '../review/core.mjs';
 const root=await fs.mkdtemp(path.join(os.tmpdir(),'tdarr-kept-'));
 try{
  const cfg={mediaRoot:path.join(root,'movies'),radarrRoot:'/media',quarantineRoot:path.join(root,'quarantine')};await fs.mkdir(path.join(cfg.mediaRoot,'Movie'),{recursive:true});await fs.mkdir(path.join(cfg.quarantineRoot,'case'),{recursive:true});
@@ -13,6 +14,13 @@ try{
  const rad=async p=>p.startsWith('/movie/')?movie:p.startsWith('/queue')?{records:[]}:p.startsWith('/qualityprofile')?profile:p.startsWith('/blocklist')?[]:p.startsWith('/release')?releases:undefined;
  const deps={cfg,state,rad:async(p,b)=>{if(p==='/release'&&b){downloads++;return {}}return rad(p)},td:async()=>{},phase:async(c,status,message)=>Object.assign(c,{status,message}),save:async()=>{},command:async()=>{if(!(await fs.stat(source).catch(()=>null))){movie={movieFileId:0,qualityProfileId:4,tmdbId:123,titleSlug:'movie-123'};return;}movie={movieFileId:11,movieFile:{path:'/media/Movie/file.mkv',size:c.size,quality:{quality:{id:30,resolution:1080}}},qualityProfileId:4,tmdbId:123,titleSlug:'movie-123'}},idle:async()=>{},safeSource:async()=>{const st=await fs.stat(source);return {fp:fp(st),size:st.size}},sample:async p=>fs.readFile(p,'utf8')};
  await maintainWaitingSources(deps);assert.equal(c.status,'waiting_source_kept',c.observationError);assert.equal(c.skipCurrentEdition,true);assert.equal(await fs.readFile(source,'utf8'),'retained original bytes');assert.equal((await fs.stat(q)).nlink,2);assert.equal(downloads,0);
+ // Recovery keeps the quarantined inode linked into the library. Review must
+ // reject that preserved edition, even when a separate regular result exists.
+ const reviewRoot=path.join(root,'review');await fs.mkdir(path.join(reviewRoot,'Movie'),{recursive:true});await fs.writeFile(path.join(reviewRoot,c.relative),'synthetic review result');
+ assert.equal((await safeFile(reviewRoot,c.relative)).stat.nlink,1);
+ assert.equal((await fs.stat(source)).ino,(await fs.stat(q)).ino);
+ await assert.rejects(safeFile(cfg.mediaRoot,c.relative),/Soubor není běžný soubor nebo má více pevných odkazů/);
+ assert.equal(await fs.readFile(q,'utf8'),'retained original bytes');assert.equal(await fs.readFile(source,'utf8'),'retained original bytes');assert.equal((await fs.stat(q)).nlink,2);
  assert(!eligibleRelease({downloadAllowed:true,title:'bad release',quality:{quality:{id:30}},rejections:[]},profile,new Set(['bad release'])));
  assert(!eligibleRelease({downloadAllowed:true,title:'other',quality:{quality:{id:7}},rejections:[]},profile,new Set()));
  assert(!eligibleRelease({downloadAllowed:true,title:'other',quality:{quality:{id:30}},rejections:['Language not wanted']},profile,new Set()));
@@ -22,10 +30,11 @@ try{
  c.nextSearchAt=new Date(0).toISOString();releases=[good];await maintainWaitingSources(deps);assert.equal(c.status,'waiting_replacement');assert.equal(downloads,1);assert.equal((await fs.stat(q)).nlink,1);assert.equal(await fs.readFile(q,'utf8'),'retained original bytes');await assert.rejects(fs.stat(source));
  await publishRecoveryStatus({cfg,state,atomic:async(p,v)=>fs.writeFile(p,JSON.stringify(v))});const exported=JSON.parse(await fs.readFile(path.join(root,'.tdarr-recovery-status.json')));assert.equal(exported.cases.length,1);assert(!JSON.stringify(exported).includes('apiKey'));
  const newSource=path.join(cfg.mediaRoot,'Movie/new-file.mkv');await fs.writeFile(newSource,'a different replacement');
+ assert.equal((await safeFile(cfg.mediaRoot,'Movie/new-file.mkv')).stat.nlink,1,'a distinct imported source passes the hardlink guard; other Review checks still apply');
  c.status='waiting_source_kept';c.keptMovieFileId=11;c.skipCurrentEdition=true;c.observationError='ENOENT old file';
  movie={movieFileId:12,movieFile:{path:'/media/Movie/new-file.mkv',size:(await fs.stat(newSource)).size,sceneName:'new release'}};
  deps.safeSource=async rel=>{const st=await fs.stat(path.join(cfg.mediaRoot,rel));return {fp:fp(st),size:st.size}};
  await maintainWaitingSources(deps);assert.equal(c.status,'waiting_replacement');assert.equal(c.observationError,undefined);assert.equal(c.skipCurrentEdition,false);assert.equal(c.nextSearchAt,null);assert.equal(await fs.readFile(q,'utf8'),'retained original bytes');
  c.status='waiting_source_kept';movie.movieFile.sceneName='bad release';await maintainWaitingSources(deps);assert.equal(c.status,'waiting_source_kept');assert.match(c.observationError,/identity not confirmed/);
- console.log('Retention, exclusion, replacement rename and public status checks passed');
+ console.log('Retention, Review hardlink guard, exclusion, replacement rename and public status checks passed');
 }finally{assert(root.startsWith(path.resolve(os.tmpdir())+path.sep)&&path.basename(root).startsWith('tdarr-kept-'));await fs.rm(root,{recursive:true,force:true});}
