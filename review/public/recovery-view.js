@@ -1,7 +1,7 @@
 // Recovery progress and detail renderers. Pure: they read only the record passed in.
 import {tr,locale} from '/i18n.js?v=20261013-retention1';
-import {downloadProgress} from '/review-model.js?v=20261012-recovery3';
-import {el,date,elapsedText,etaText,detailsFacts} from '/ui-kit.js?v=20261013-split1';
+import {downloadProgress} from '/review-model.js?v=20261013-signals1';
+import {el,fmt,date,elapsedText,etaText,detailsFacts} from '/ui-kit.js?v=20261013-split1';
 
 export function downloadProgressView(p,detail=true){
  const box=el('div','decode-progress');box.append(el('strong','',p.label));if(detail&&p.title)box.append(el('p','details',p.title,true));
@@ -28,3 +28,12 @@ export function recoveryDetails(r){
  box.append(el('p','details','Můžeš nezávisle hledat jiné vydání přes interaktivní hledání v Radarru. Vybírej stejnou nebo vyšší kvalitu; vyřazené vydání znovu nestahuj. Před nahrazením ověř stav obnovy; původní kopie se uchová podle pravidel karantény.'));
  return box;
 }
+
+export function fullHashProgressView(p,detail=true){
+ const box=el('div','decode-progress'),meter=el('progress','task-meter');meter.max=100;meter.setAttribute('aria-label',tr('Úplný kontrolní součet originálu'));if(p.percent!==null)meter.value=p.percent;
+ box.append(el('strong','',tr('Úplný kontrolní součet originálu')+' · '+tr(p.label)+(p.percent===null?'':' · '+p.percent.toLocaleString(locale,{maximumFractionDigits:1})+' %'),true),meter);
+ if(p.done!==null&&p.total!==null)box.append(el('p','details',fmt(p.done)+' / '+fmt(p.total),true));
+ if(detail||p.stale)box.append(el('p',p.stale?'failure':'details',p.stale?'Chybí čerstvé hlášení průběhu; obnovením ověř spojení s Recovery.':'Recovery čte celý originál s nízkou prioritou a součet porovná s potvrzeným stavem. Rozdíl zastaví přesun do karantény.'));
+ return box;
+}
+

@@ -283,3 +283,20 @@ test('detail links tolerate legacy missing followups and require one distinct Re
  assert.equal(recoveryFollowup(r,[]),null);assert.equal(recoveryFollowup(r,[child,child]),null);
  assert.equal(recoveryFollowup({source:'recovery'},[child]),null);
 });
+
+import {recoveryConfigNotice,fullHashProgress} from './public/review-model.js';
+test('Recovery restart notice distinguishes a pending restart from an invalid edit',()=>{
+ for(const value of [null,undefined,{},{restartRequired:false,valid:false}])assert.equal(recoveryConfigNotice(value),null);
+ assert.deepEqual(recoveryConfigNotice({restartRequired:true,valid:true,detectedAt:'2026-10-13T10:00:00Z',error:'ignored'}),{kind:'warning',detectedAt:Date.parse('2026-10-13T10:00:00Z'),error:null});
+ assert.deepEqual(recoveryConfigNotice({restartRequired:true,valid:false,detectedAt:'bad',error:' config.json is not valid JSON '}),{kind:'failure',detectedAt:null,error:'config.json is not valid JSON'});
+});
+test('full-hash progress is shown only for a known stage and goes stale without reports',()=>{
+ const now=Date.parse('2026-10-13T12:00:00Z'),at=new Date(now-10000).toISOString();
+ const rec={source:'recovery',fullHash:{stage:'before_quarantine',done:25,total:100,started:at,updated:at}};
+ assert.deepEqual(fullHashProgress(rec,now),{stage:'before_quarantine',label:'před přesunem do karantény',done:25,total:100,percent:25,stale:false});
+ assert.equal(fullHashProgress({...rec,fullHash:{...rec.fullHash,updated:new Date(now-91000).toISOString(),started:new Date(now-91000).toISOString()}},now).stale,true);
+ assert.equal(fullHashProgress({...rec,fullHash:{...rec.fullHash,updated:new Date(now+600000).toISOString()}},now).stale,true,'a time in the future is not fresh');
+ assert.equal(fullHashProgress({...rec,fullHash:{...rec.fullHash,total:0}},now).percent,null);
+ assert.equal(fullHashProgress({...rec,fullHash:{...rec.fullHash,done:-1}},now).done,null);
+ for(const bad of [{...rec,source:'radarr'},{...rec,fullHash:null},{...rec,fullHash:{...rec.fullHash,stage:'other'}},{...rec,fullHash:'x'}])assert.equal(fullHashProgress(bad,now),null);
+});

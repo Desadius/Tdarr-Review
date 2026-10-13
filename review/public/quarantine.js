@@ -1,6 +1,6 @@
 // Quarantine listing dialog.
 import {tr} from '/i18n.js?v=20261013-retention1';
-import {quarantineLifecycle} from '/review-model.js?v=20261012-recovery3';
+import {quarantineLifecycle} from '/review-model.js?v=20261013-signals1';
 import {$,el,button,fmt,date,detailsFacts} from '/ui-kit.js?v=20261013-split1';
 
 let app=null;
