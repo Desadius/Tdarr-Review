@@ -22,12 +22,6 @@ export async function safeFile(root, relative) {
   if(!stat.isFile() || stat.nlink!==1) throw new Error('Soubor není běžný soubor nebo má více pevných odkazů.');
   return {path:resolved,stat,fp:fingerprint(stat)};
 }
-export function sourceRelative(reviewRelative) {
-  const bits=reviewRelative.split('/');
-  if(['PROD-Movies','PC-LANG-v2','PC-test'].includes(bits[0])) bits.shift();
-  if(bits.length!==2 || !/\.mkv$/i.test(bits[1])) return null;
-  return bits.join('/');
-}
 export async function atomicJSON(file,data) {
   const tmp=file+'.new';
   const h=await fs.open(tmp,'w',0o600);

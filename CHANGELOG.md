@@ -4,7 +4,8 @@ This records the implemented application features. Versions before 1.10.0 were d
 
 ## Unreleased
 
-- A film blocked by the strict video rules now says which check failed (video track count, original codec, result codec, pixel format or resolution) instead of a generic message. The user guide explains every blocking rule.
+- Document that Review can undo a manual Tdarr node pause applied during its action, including pending resume retries and the maintenance pause procedure.
+- Document and regression-test Review blocking a Recovery-returned hardlinked original while keeping its quarantine protection intact.
 
 ## 1.10.5 — 2026-10-13
 

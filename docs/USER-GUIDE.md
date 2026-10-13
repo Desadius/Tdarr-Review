@@ -74,7 +74,7 @@ If a film is blocked by one of these rules, check the Tdarr flow and plugin sett
 
 A completed server-saved review enables the approval button in Decision, provided the file and operational checks also allow approval. Review checks the current snapshot, checklist version and review revision on the server; a direct request cannot bypass the review gate. Inspect the separate final confirmation: approval replaces the original and removes its former version.
 
-Review revalidates file identities, prevents concurrent actions, pauses new Tdarr dispatch and checks that the same film is not being processed. It copies the result into the original directory, verifies SHA-256, then exchanges the files through a durable transaction. It rescans the affected Tdarr entry and restores only node pauses it owns. The confirmed review is recorded with the decision history.
+Review revalidates file identities, prevents concurrent actions, pauses new Tdarr dispatch and checks that the same film is not being processed. It copies the result into the original directory, verifies SHA-256, then exchanges the files through a durable transaction. It rescans the affected Tdarr entry and resumes nodes it recorded as initially unpaused. A manual node pause applied during the action can be undone by that resume; see [the maintenance pause procedure](OPERATIONS.md#manual-tdarr-node-pauses-during-a-review-action). The confirmed review is recorded with the decision history.
 
 Plex uses the resulting file in its existing library directory. If your server does not automatically detect the change, run a Plex library scan. There is no Plex API integration in this release.
 
@@ -95,6 +95,10 @@ Configure Radarr first. In the film's recovery panel, enter the reason and confi
 The optional automatic Recovery worker is stricter: it must independently confirm a recognised decoding error in the **original** twice before requesting a replacement. Permissions, network, disk I/O, timeout and generic encoder errors are not sufficient. An unacceptable transcode or uncertain waveform correlation does not itself prove that the original is damaged.
 
 If automatic Recovery finds no suitable release, it can preserve a quarantined original link/copy back in the library, hold that edition out of Tdarr and search again after six hours. Review displays the exclusion, next search and a Radarr link for independent searching. The manual Review-request workflow does not currently perform that same automatic restore/search loop.
+
+When Recovery returns the original as a hardlink, the library path and quarantine path name the same file (`nlink = 2`). If a Review result exists for that edition, it is **Blocked** with **The file is not a regular file or has multiple hard links.** (**Soubor není běžný soubor nebo má více pevných odkazů.**). This is the expected file protection: the preserved edition remains excluded from Tdarr, and Review requires one hardlink for both files before approval. A completed manual checklist cannot bypass it. An exclusive-copy fallback has separate files and does not fail this particular hardlink check; it still remains held by Recovery and all other Review checks apply.
+
+Keep the quarantine and recorded library link/copy intact. Recovery validates both before removing only its recorded library path when a suitable release is found; the protected original stays in quarantine. Let that recovery continue or inspect its case if it reports an error. A distinct imported replacement can enter its own Tdarr/Review workflow. Do not remove the quarantine link, fabricate identity evidence or release the faulty edition's Hold merely to enable approval.
 
 Do not interpret `replacement_imported` as approved. Watch the Tdarr state, complete the new result's own Review checklist, then approve it. Quarantine becomes eligible for cleanup seven days after that explicit identified approval.
 

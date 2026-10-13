@@ -1,7 +1,7 @@
 import {mountAVComparison} from '/av-player.js?v=20261012-wipe1';
 import {mountReviewWorkflow,classifyPreparation,preparationSummary,previewJobMatches,createCachedPreviewLoader} from '/review-workflow.js?v=20261013-prepared2';
 import {capabilities, classifyRecovery, recoveryProgress, downloadProgress, liveRecoveryRecord, projectRequests, historyWarnings, historyFollowup, quarantineLifecycle, recoveryFollowup} from '/review-model.js?v=20261012-recovery3';
-import {tr,locale,initializeLocale,translateAudioTrackLabel as audioTrackLabel} from '/i18n.js?v=20261013-blocked1';
+import {tr,locale,initializeLocale,translateAudioTrackLabel as audioTrackLabel} from '/i18n.js?v=20261013-retention1';
 initializeLocale();
 
 const $=id=>document.getElementById(id);
@@ -503,7 +503,7 @@ radarrButton.onclick=async()=>{try{
  const status=el('p'),buttons=el('div','dialog-actions'),test=el('button','secondary','Otestovat spojení'),save=el('button','','Ověřit a uložit'),close=el('button','secondary','Zavřít');test.type=close.type='button';close.onclick=()=>radarrDialog.close();
  async function submit(testOnly){test.disabled=save.disabled=true;try{const body=Object.fromEntries(Object.entries(fields).map(([k,v])=>[k,v.value.trim()]));body.preferCzechEnglish=pref.checked;status.textContent=tr((await api('/api/radarr/settings'+(testOnly?'/test':''),body)).message);if(!testOnly)fields.apiKey.value=''}catch(e){status.textContent=tr(e.message)}finally{test.disabled=save.disabled=false}}
  test.onclick=()=>submit(true);form.onsubmit=e=>{e.preventDefault();submit(false)};buttons.append(close,test,save);form.append(status,buttons);radarrDialog.append(form);
- radarrDialog.append(el('p','details','Stavy filmů a žádostí najdeš v sekci Obnovy. Retence karantény běží 7 dní od doloženého schválení funkční náhrady.'));radarrDialog.setAttribute('aria-label',tr('Nastavení Radarru'));radarrDialog.showModal();
+ radarrDialog.append(el('p','details',Number.isInteger(c.retentionDays)?'Stavy filmů a žádostí najdeš v sekci Obnovy. Retence karantény běží '+c.retentionDays+' dní od doloženého schválení funkční náhrady.':'Stavy filmů a žádostí najdeš v sekci Obnovy.'));radarrDialog.setAttribute('aria-label',tr('Nastavení Radarru'));radarrDialog.showModal();
 }catch(e){error(e)}};
 
 class AudioABPlayer {
@@ -521,7 +521,7 @@ async function openQuarantine(title='',caseId=''){
   await loadRequests(true);const d=await api('/api/quarantine');quarantineDialog.replaceChildren(el('h2','','Karanténa'+(title?' · '+title:'')));
   const query=title.toLocaleLowerCase().replace(/\s*\(\d{4}\).*$/,'').trim();
   const files=d.files.filter(f=>caseId?f.caseId===caseId:!query||f.name.toLocaleLowerCase().includes(query));
-  quarantineDialog.append(el('p','details','Originály se uchovávají do schválení funkční náhrady v Review. Schválená lhůta pro následný úklid je 7 dní. Automatický úklid je zapnutý pro náhrady s uloženým důkazem schválení a nezměněnou identitou obou souborů. Starší případy bez důkazu zůstávají zachované.'));
+  quarantineDialog.append(el('p','details',['Originály se uchovávají do schválení funkční náhrady v Review.',Number.isInteger(d.retentionDays)?'Schválená lhůta pro následný úklid je '+d.retentionDays+' dní.':'',d.cleanupEnabled?'Automatický úklid je zapnutý pro náhrady s uloženým důkazem schválení a nezměněnou identitou obou souborů.':'Automatický úklid karantény je vypnutý.','Starší případy bez důkazu zůstávají zachované.'].filter(Boolean).map(text=>tr(text)).join(' '),true));
   quarantineDialog.append(el('p','details','Velikost zobrazených souborů: '+fmt(files.reduce((sum,f)=>sum+(Number.isSafeInteger(f.bytes)&&f.bytes>=0?f.bytes:0),0))),el('p','details','Součet velikostí souborů nemusí odpovídat fyzicky zabranému místu; některé kopie mohou být hardlinky.'));
   if(!files.length)quarantineDialog.append(el('p','','Pro tento výběr není v karanténě žádný soubor.'));
   for(const f of files){const row=el('article','movie');row.append(el('strong','',f.name,true),el('p','details',fmt(f.bytes)),el('p','details',f.path,true));const lifecycle=quarantineLifecycle(f,requests);row.append(el('p','',lifecycle.label),el('p','details',lifecycle.reason));if(lifecycle.deleteAfter!==null)row.append(detailsFacts([['Termín úklidu',date(lifecycle.deleteAfter)]]));if(lifecycle.requestKey)row.append(button('Otevřít obnovu',()=>{quarantineDialog.close();openDetail('request',lifecycle.requestKey)}));const copy=el('button','secondary','Kopírovat cestu');copy.onclick=async()=>{try{await navigator.clipboard.writeText(f.path);copy.textContent=tr('Zkopírováno')}catch{copy.textContent=tr('Označ a zkopíruj cestu výše')}};row.append(copy);quarantineDialog.append(row)}

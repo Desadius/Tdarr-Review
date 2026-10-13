@@ -548,12 +548,15 @@ export default {
     "Preferovat vydání s českým i anglickým audiem": "Prefer releases with both Czech and English audio",
     "Radarr posuzuje jazyky podle označení vydání. Skutečné stopy se ověří až po stažení. Samotné zamítnutí převodu nové stahování nespouští.": "Radarr assesses languages from release labels. The actual tracks are checked only after download. Rejecting a transcode alone does not start a new download.",
     "Otestovat spojení": "Test connection",
-    "Stavy filmů a žádostí najdeš v sekci Obnovy. Retence karantény běží 7 dní od doloženého schválení funkční náhrady.": "Movie and request statuses are in Recovery. Quarantine retention lasts 7 days after documented approval of a working replacement.",
+    "Stavy filmů a žádostí najdeš v sekci Obnovy.": "Movie and request statuses are in Recovery.",
     "Nastavení Radarru": "Radarr settings",
     "Neplatný poslechový úsek.": "Invalid playback clip.",
     "Neplatný zvukový vzorek.": "Invalid audio sample.",
     "Karanténa": "Quarantine",
-    "Originály se uchovávají do schválení funkční náhrady v Review. Schválená lhůta pro následný úklid je 7 dní. Automatický úklid je zapnutý pro náhrady s uloženým důkazem schválení a nezměněnou identitou obou souborů. Starší případy bez důkazu zůstávají zachované.": "Originals are kept until a working replacement is approved in Review. The approved retention period before cleanup is 7 days. Automatic cleanup is enabled for replacements with saved proof of approval and unchanged identities of both files. Older cases without proof are retained.",
+    "Originály se uchovávají do schválení funkční náhrady v Review.": "Originals are kept until a working replacement is approved in Review.",
+    "Automatický úklid je zapnutý pro náhrady s uloženým důkazem schválení a nezměněnou identitou obou souborů.": "Automatic cleanup is enabled for replacements with saved proof of approval and unchanged identities of both files.",
+    "Automatický úklid karantény je vypnutý.": "Automatic quarantine cleanup is disabled.",
+    "Starší případy bez důkazu zůstávají zachované.": "Older cases without proof are retained.",
     "Pro tento výběr není v karanténě žádný soubor.": "There are no quarantined files for this selection.",
     "Kopírovat cestu": "Copy path",
     "Zkopírováno": "Copied",
@@ -913,40 +916,12 @@ export default {
   },
   "patterns": [
     [
-      "Originál nemá právě jednu video stopu (nalezeno: {0}).",
-      "The original does not have exactly one video track (found: {0})."
+      "Stavy filmů a žádostí najdeš v sekci Obnovy. Retence karantény běží {0} dní od doloženého schválení funkční náhrady.",
+      "Movie and request statuses are in Recovery. Quarantine retention lasts {0} days after documented approval of a working replacement."
     ],
     [
-      "Výsledek nemá právě jednu video stopu (nalezeno: {0}).",
-      "The result does not have exactly one video track (found: {0})."
-    ],
-    [
-      "Kodek originálu není podporovaný: {0}. Povolené jsou h264, hevc, vc1 a mpeg2video.",
-      "The original's codec is not supported: {0}. Allowed codecs are h264, hevc, vc1 and mpeg2video.",
-      {
-        "raw": [0]
-      }
-    ],
-    [
-      "Výsledek není HEVC: {0}.",
-      "The result is not HEVC: {0}.",
-      {
-        "raw": [0]
-      }
-    ],
-    [
-      "Výsledek nemá 10bitový formát pixelů yuv420p10le: {0}.",
-      "The result does not use the 10-bit pixel format yuv420p10le: {0}.",
-      {
-        "raw": [0]
-      }
-    ],
-    [
-      "Rozlišení výsledku {0} se liší od originálu {1}.",
-      "The result's resolution {0} differs from the original's {1}.",
-      {
-        "raw": [0, 1]
-      }
+      "Schválená lhůta pro následný úklid je {0} dní.",
+      "The approved retention period before cleanup is {0} days."
     ],
     [
       "Po ověření identity souborů a kontrolního součtu kopie se původní film ({0}) nahradí výsledkem ({1}). Původní verze bude odstraněna. Plex bude používat nový soubor. Health check z Tdarru se neopakuje. Akce může trvat několik minut. Výslovně přijímáš rozdíl délky: originál {2} s, výstup {3} s, rozdíl {4} s. Potvrď pouze po kontrole začátku, konce a synchronizace zvuku.",

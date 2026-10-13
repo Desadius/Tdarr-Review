@@ -14,7 +14,7 @@ RUN mkdir -p /data && chown 99:100 /data
 WORKDIR /review-app
 COPY review/ /review-app/
 COPY LICENSE NOTICE /review-app/
-ENV PORT=8270 DATA_ROOT=/data
+ENV PORT=8270 DATA_ROOT=/data APP_VERSION=${APP_VERSION}
 USER 99:100
 EXPOSE 8270
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
