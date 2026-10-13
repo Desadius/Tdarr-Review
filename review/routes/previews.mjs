@@ -2,6 +2,7 @@ import {hash,atomicJSON} from '../core.mjs';
 import {PREVIEW_PROFILES} from '../av-preview.mjs';
 import {validatePreviewSettings,previewLimits} from '../preview-settings.mjs';
 import {body,reply} from './http.mjs';
+import {logEvent} from '../log.mjs';
 
 // Sample preparation settings, preparation status and on-demand frames/audio/AV samples.
 export async function previewRoutes(ctx,req,res,url,request){
@@ -14,6 +15,7 @@ export async function previewRoutes(ctx,req,res,url,request){
    await atomicJSON(ctx.previewSettingsFile,candidate);ctx.previewSettings=candidate;
    await ctx.previews.updateLimits(previewLimits(candidate));
    await ctx.previews.cancelBackground({all:true,wait:true});ctx.previewPlans.clear();ctx.previewAttempts.clear();
+   logEvent('preview-settings.saved',{config:candidate});
    return reply(res,200,{config:ctx.previewSettings,revision:hash(JSON.stringify(ctx.previewSettings)),stats:ctx.previews.stats(),message:'Nastavení přípravy ukázek je uložené.'});
   }finally{ctx.settingsBusy=false;void ctx.preparePreviews().catch(error=>console.error('Preview preparation: '+error.message))}
  }

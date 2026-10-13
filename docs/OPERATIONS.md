@@ -62,6 +62,25 @@ Inspect the film's detail and durable journal. Preserve `.tdarr-review-*.old`, `
 
 Recovery applies `/data/config.json` only at start-up. After an edit the worker logs `config.json changed since start-up; restart the worker to apply it` and the shared status file shows `configChange.restartRequired: true`. If `configChange.valid` is `false`, correct the file first: a restart with invalid JSON stops the worker. Then restart the Recovery container while it is idle, as described in step 2 of *Update an existing deployment*. Reverting the edit clears the notice without a restart.
 
+## Review event log
+
+Review writes one JSON line per operator-relevant event to standard output, next to its plain-text messages. Each line has `time`, `source: "review"` and `event`:
+
+| Event | Fields |
+| --- | --- |
+| `action.started`, `action.finished` | `action` (`approve`, `reject`, `replace`), `id`, `title`; when finished also `outcome`, `message`, `warning`, `reason`, `jobId`, `requestId`, `elapsedSeconds`, `savedBytes` |
+| `batch.started`, `batch.finished`, `batch.interrupted` | `batchId`, `total`, `finished`, `failed`, `outcome`, `message` |
+| `node.paused`, `nodes.resume` | Tdarr node names paused for an action; nodes Review tried to resume and those still `pending` |
+| `transaction.unresolved`, `transactions.unresolved` | Exchange transactions that need manual inspection |
+| `settings.saved`, `preview-settings.saved`, `radarr-settings.saved`, `quarantine.restored` | The saved non-secret values or the restored request |
+| `request.error` | `method`, `route` (without query), `status`, `message` |
+
+Fields whose name contains `key`, `token`, `secret`, `password`, `cookie`, `authorization` or `session` are never written, so access keys, Radarr API keys, login sessions and review evidence stay out of the log. To reconstruct an incident:
+
+```bash
+docker logs tdarr-review 2>&1 | grep '"source":"review"'
+```
+
 ## Container health
 
 The Review container health check reads `GET /health`, which answers only requests from loopback inside the container (other clients get 404) and needs no login. It returns `pendingTransactions`, `restorePending`, the shared Recovery status (`present`, `updated`, `stale` after 12 minutes) and an `attention` list (`pending-transaction`, `node-restore-pending`, `recovery-status-stale`). The check prints `OK` or `Attention: …` with the summary into Docker's health log:

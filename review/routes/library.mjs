@@ -4,6 +4,7 @@ import {requestArtworkIdentity} from '../artwork.mjs';
 import {statistics} from '../stats.mjs';
 import {quarantineRetention} from '../quarantine-retention.mjs';
 import {body,reply} from './http.mjs';
+import {logEvent} from '../log.mjs';
 
 // Posters, statistics, quarantine listing and Radarr replacement requests/settings.
 export async function libraryRoutes(ctx,req,res,url,request){
@@ -51,7 +52,7 @@ export async function libraryRoutes(ctx,req,res,url,request){
  }
  if(url.pathname==='/api/radarr/settings'&&req.method==='GET')return reply(res,200,await ctx.replacements.publicSettings());
  if(['/api/radarr/settings','/api/radarr/settings/test'].includes(url.pathname)&&req.method==='POST'){
-  const b=await body(req);if(ctx.busyFor('radarrSettings',request.mutation))return reply(res,409,{error:'Právě probíhá jiná akce.'});ctx.settingsBusy=true;try{return reply(res,200,await ctx.replacements.settings(b,url.pathname.endsWith('/test')))}finally{ctx.settingsBusy=false}
+  const b=await body(req);if(ctx.busyFor('radarrSettings',request.mutation))return reply(res,409,{error:'Právě probíhá jiná akce.'});ctx.settingsBusy=true;try{const testOnly=url.pathname.endsWith('/test'),result=await ctx.replacements.settings(b,testOnly);if(!testOnly)logEvent('radarr-settings.saved',{url:b.url,mediaRoot:b.mediaRoot,quarantineRoot:b.quarantineRoot,preferCzechEnglish:b.preferCzechEnglish});return reply(res,200,result)}finally{ctx.settingsBusy=false}
  }
  if(url.pathname==='/api/radarr/requests'&&req.method==='GET')return reply(res,200,{requests:await ctx.replacements.list()});
  const restoreRequest=/^\/api\/radarr\/requests\/([a-f0-9]{24})\/restore$/.exec(url.pathname);
@@ -59,7 +60,7 @@ export async function libraryRoutes(ctx,req,res,url,request){
   const b=await body(req);if(b.confirm!==true)return reply(res,400,{error:'Potvrď obnovení zachovaných kopií.'});
   if(ctx.busyFor('restore',request.mutation))return reply(res,409,{error:'Právě probíhá jiná akce.'});
   ctx.active={title:'Obnovení karantény',stage:'Ověřuji soubory',started:Date.now()};
-  try{const result=await ctx.replacements.restore(restoreRequest[1]);await ctx.forgetPreviews(result.itemId);delete ctx.state.items[result.itemId];delete ctx.state.reviewSessions[result.itemId];await ctx.save();return reply(res,200,result)}finally{ctx.active=null;ctx.cache=null}
+  try{const result=await ctx.replacements.restore(restoreRequest[1]);logEvent('quarantine.restored',{requestId:restoreRequest[1],id:result.itemId});await ctx.forgetPreviews(result.itemId);delete ctx.state.items[result.itemId];delete ctx.state.reviewSessions[result.itemId];await ctx.save();return reply(res,200,result)}finally{ctx.active=null;ctx.cache=null}
  }
  return false;
 }
