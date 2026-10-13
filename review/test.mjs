@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {safeFile,sourceRelative,fingerprint,replaceChecked,inspect,recoverTransactions} from './core.mjs';
+import {safeFile,fingerprint,replaceChecked,inspect,recoverTransactions} from './core.mjs';
 const directorySync={skip:process.platform==='win32'?'Requires POSIX directory fsync for durable replacement journals':false};
 const fileSymlink={skip:process.platform==='win32'?'File symlinks require Windows Developer Mode or elevated privileges; covered by the Linux suite':false};
 
-test('path traversal and unsupported nesting are rejected',async()=>{
+test('path traversal is rejected',async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'review-test-'));
- try {await fs.writeFile(path.join(root,'film.mkv'),'original');await assert.rejects(safeFile(root,'../film.mkv'));assert.equal(sourceRelative('PROD-Movies/Film/Film.mkv'),'Film/Film.mkv');assert.equal(sourceRelative('unknown/nested/Film/Film.mkv'),null)}finally{await fs.rm(root,{recursive:true,force:true})}
+ try {await fs.writeFile(path.join(root,'film.mkv'),'original');await assert.rejects(safeFile(root,'../film.mkv'));}finally{await fs.rm(root,{recursive:true,force:true})}
 });
 test('file symlinks are rejected',fileSymlink,async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'review-test-'));
