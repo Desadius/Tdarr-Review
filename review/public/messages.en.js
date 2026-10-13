@@ -1,5 +1,14 @@
 export default {
   "exact": {
+    "Čas je mimo délku kontrolovaných souborů.": "The time is outside the duration of the reviewed files.",
+    "Chybí obrazová stopa.": "The video track is missing.",
+    "Tuto kombinaci HDR nelze porovnat.": "This HDR combination cannot be compared.",
+    "Položku nelze bezpečně přiřadit k revizi. Obnov přehled.": "The item cannot be safely matched to the review. Refresh the overview.",
+    "Soubory nejsou dostupné nebo se změnily. Obnov přehled.": "The files are unavailable or have changed. Refresh the overview.",
+    "Soubory se během kontroly změnily. Obnov přehled.": "The files changed during verification. Refresh the overview.",
+    "Během ukládání začala jiná akce. Zkus revizi znovu.": "Another action started while saving. Try saving the review again.",
+    "Položka se během kontroly změnila. Obnov přehled.": "The item changed during verification. Refresh the overview.",
+    "Nelze ověřit délku kontrolovaných souborů.": "The duration of the reviewed files cannot be verified.",
     "Ukázky": "Samples",
     "Stav ukázek": "Sample status",
     "Připraveno": "Ready",
@@ -912,6 +921,7 @@ export default {
     "Uchování ukázek od vytvoření (dny)": "Sample retention from creation (days)"
   },
   "patterns": [
+    ["Neplatný limit přípravy: {0}", "Invalid preparation limit: {0}", {"raw": [0]}],
     [
       "Po ověření identity souborů a kontrolního součtu kopie se původní film ({0}) nahradí výsledkem ({1}). Původní verze bude odstraněna. Plex bude používat nový soubor. Health check z Tdarru se neopakuje. Akce může trvat několik minut. Výslovně přijímáš rozdíl délky: originál {2} s, výstup {3} s, rozdíl {4} s. Potvrď pouze po kontrole začátku, konce a synchronizace zvuku.",
       "After file identity and the copy's checksum are verified, the original movie ({0}) will be replaced with the output ({1}). The original version will be deleted. Plex will use the new file. Tdarr's health check is not repeated. The operation may take several minutes. You explicitly accept the duration difference: original {2} s, output {3} s, difference {4} s. Confirm only after checking the beginning, end and audio synchronisation."
