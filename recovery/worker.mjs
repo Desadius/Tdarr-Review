@@ -8,6 +8,7 @@ import {ensureHandoff} from './replacement-handoff.mjs';
 import {cooldownFor,deferConfirmedReplacement,inspectDeferredReplacement,reconcileDeferredIntent} from './replacement-gate.mjs';
 import {quotaFor,deferConfirmedLimit,inspectDeferredLimit,reconcileDeferredLimitIntent} from './deferred-limit.mjs';
 import {loadApprovalRegistry,registryHasApproval} from './approval-registry.mjs';
+import {configDigest,detectConfigChange} from './config-watch.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -20,7 +21,8 @@ const DATA=process.env.DATA_ROOT||'/data';
 // A stop ends an idle wait at once; work already in progress is never cut short here.
 let stopping=false,wake=()=>{};
 for(const signal of ['SIGTERM','SIGINT'])process.on(signal,()=>{if(stopping)return;stopping=true;console.log('Recovery: '+signal+' received; stopping after the current step');wake();});
-const cfg=JSON.parse(await fs.readFile(path.join(DATA,'config.json'),'utf8'));
+const configFile=path.join(DATA,'config.json'),configText=await fs.readFile(configFile,'utf8'),loadedConfigDigest=configDigest(configText);
+const cfg=JSON.parse(configText);
 const stateFile=path.join(DATA,'state.json');
 let state=JSON.parse(await fs.readFile(stateFile,'utf8').catch(e=>{if(e.code!=='ENOENT')throw e;return '{"version":1,"jobs":{},"cases":{}}'}));
 // Validate persistent authorization before DB reads, APIs or restart recovery.
@@ -257,6 +259,12 @@ async function tick(){
 for(const c of Object.values(state.cases))if(!['manual','no_action','dry_run','waiting_replacement','waiting_source_kept','replacement_imported','replacement_queue_intent','deferred_limit','defer_limit_intent','deferred_cooldown','defer_cooldown_intent'].includes(c.status))await phase(c,'manual','Interrupted '+c.status+'; inspect journal before any retry');
 console.log('Tdarr recovery started; enabled='+cfg.enabled);
 const pause=ms=>new Promise(r=>{const t=setTimeout(r,ms);wake=()=>{clearTimeout(t);r();};});
-while(!stopping){try{await tick();state.lastError=null;}catch(e){state.lastError=e.message;console.error('Recovery: '+e.message);}await publishNow(()=>liveStatus.refresh());await save();if(process.argv.includes('--once')||stopping)break;await pause(cfg.pollSeconds*1000);}
+// Edits to config.json apply only after a restart; report them instead of applying them mid-case.
+async function noteConfigChange(){
+  const change=await detectConfigChange({file:configFile,loadedDigest:loadedConfigDigest,previous:state.configChange});
+  if(change&&change!==state.configChange)console.error('Recovery: config.json changed since start-up; restart the worker to apply it'+(change.valid?'':' after fixing it ('+change.error+')'));
+  if(change)state.configChange=change;else delete state.configChange;
+}
+while(!stopping){try{await noteConfigChange();await tick();state.lastError=null;}catch(e){state.lastError=e.message;console.error('Recovery: '+e.message);}await publishNow(()=>liveStatus.refresh());await save();if(process.argv.includes('--once')||stopping)break;await pause(cfg.pollSeconds*1000);}
 await publishNow(()=>liveStatus.close());
 if(stopping){console.log('Recovery stopped');process.exit(0);}

@@ -1,4 +1,5 @@
 import {extractPreview,PREVIEW_PROFILES} from './av-preview.mjs';
+import {SESSION_TTL_MS,pruneSessions,pruneAuthAttempts,registerAuthAttempt} from './auth-state.mjs';
 import {RESUME_RETRY_TICK_MS,resumeRetryDelay} from './resume-retry.mjs';
 import {publishApproval,quarantineRetention} from './quarantine-retention.mjs';
 import {extractListeningAudio} from './audio-listen.mjs';
@@ -149,7 +150,7 @@ async function verifyReviewItem(item,{id,snapshot},guard=true){
  const indexes=probe=>(probe.streams||[]).filter(stream=>stream.codec_type==='audio').map(stream=>stream.index);
  return {duration,originalIndexes:indexes(original),reviewIndexes:indexes(review),requirements:reviewRequirements(original,review)};
 }
-const sessions=new Map(Object.entries(state.sessions||{}));
+const sessions=new Map(Object.entries(state.sessions||{}));pruneSessions(sessions);state.sessions=Object.fromEntries(sessions);
 async function readRows(table,cfg=config){
  const collections={jobsjsondb:'JobsJSONDB',librarysettingsjsondb:'LibrarySettingsJSONDB',statisticsjsondb:'StatisticsJSONDB'};
  if(!collections[table])throw Error('Unsupported Tdarr collection');
@@ -355,6 +356,8 @@ async function performBatch(items){
 async function body(req){let b='';for await(const chunk of req){b+=chunk;if(b.length>32768)throw new Error('Požadavek je příliš velký.')}return JSON.parse(b||'{}')}
 function respond(res,status,data,headers={}){res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff',...headers});res.end(JSON.stringify(data))}
 const authAttempts=new Map();
+// Expired sessions and finished rate-limit windows are dropped hourly and on each login, so neither grows without bound.
+const authTimer=setInterval(()=>{pruneAuthAttempts(authAttempts);if(pruneSessions(sessions)){state.sessions=Object.fromEntries(sessions);void save().catch(e=>console.error('Session cleanup: '+e.message))}},3600000);authTimer.unref();
 const server=http.createServer(async(req,res)=>{
   let releasePreviewBackground=false;
   try {
@@ -363,11 +366,10 @@ const server=http.createServer(async(req,res)=>{
     if(req.method==='POST'&&req.headers.origin!==config.publicOrigin)return respond(res,403,{error:'Nepovolený původ požadavku.'});
     if(req.method==='POST'&&req.headers['content-type']!=='application/json')return respond(res,415,{error:'Vyžadován JSON.'});
     if(url.pathname==='/api/login'&&req.method==='POST'){
-      const ip=req.socket.remoteAddress,now=Date.now(),attempt=authAttempts.get(ip)||{at:now,count:0};
-      if(now-attempt.at>60000){attempt.at=now;attempt.count=0}if(++attempt.count>12)return respond(res,429,{error:'Zkus přihlášení za minutu.'});authAttempts.set(ip,attempt);
+      const now=Date.now();pruneAuthAttempts(authAttempts,now);if(!registerAuthAttempt(authAttempts,req.socket.remoteAddress,now))return respond(res,429,{error:'Zkus přihlášení za minutu.'});
       const b=await body(req);
       if(hash(String(b.key||''))!==hash(KEY))return respond(res,401,{error:'Nesprávný přístupový klíč.'});
-      const token=crypto.randomBytes(32).toString('base64url');sessions.set(hash(token),Date.now()+30*86400000);state.sessions=Object.fromEntries(sessions);await save();
+      const token=crypto.randomBytes(32).toString('base64url');pruneSessions(sessions);sessions.set(hash(token),Date.now()+SESSION_TTL_MS);state.sessions=Object.fromEntries(sessions);await save();
       return respond(res,200,{ok:true},{'set-cookie':`review_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000`});
     }
     const cookie=/review_session=([^;]+)/.exec(req.headers.cookie||'')?.[1];
