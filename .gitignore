@@ -37,3 +37,6 @@ pending-approvals.json
 __pycache__/
 .DS_Store
 Thumbs.db
+
+# Playwright MCP snapshots and screenshots
+.playwright-mcp/
