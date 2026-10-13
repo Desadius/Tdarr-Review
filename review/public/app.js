@@ -1,7 +1,7 @@
 import {mountAVComparison} from '/av-player.js?v=20261012-wipe1';
 import {mountReviewWorkflow,classifyPreparation,preparationSummary,previewJobMatches,createCachedPreviewLoader} from '/review-workflow.js?v=20261013-prepared2';
 import {capabilities, classifyRecovery, recoveryProgress, downloadProgress, liveRecoveryRecord, projectRequests, historyWarnings, historyFollowup, quarantineLifecycle, recoveryFollowup} from '/review-model.js?v=20261012-recovery3';
-import {tr,locale,initializeLocale,translateAudioTrackLabel as audioTrackLabel} from '/i18n.js?v=20261013-retention1';
+import {tr,locale,initializeLocale,translateAudioTrackLabel as audioTrackLabel} from '/i18n.js?v=20261013-blocked2';
 initializeLocale();
 
 const $=id=>document.getElementById(id);
