@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "target": "es2023",
+    "lib": [
+      "es2023"
+    ],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": [
+      "node"
+    ],
+    "typeRoots": [
+      "./.typecheck/node_modules/@types"
+    ],
+    "skipLibCheck": true,
+    "strict": false
+  },
+  "files": [
+    "review/core.mjs",
+    "recovery/policy.mjs"
+  ]
+}
