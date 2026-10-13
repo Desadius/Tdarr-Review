@@ -125,11 +125,11 @@ async function host(){
     await run('docker',['run','-d','--name',names.review,...common,'--mount',`type=volume,source=${volumes[0]},target=/data`,'-e','PUBLIC_ORIGIN=http://review.example.invalid:48270','-e','TDARR_URL=http://127.0.0.1:1','tdarr-review:smoke'],{quiet:true});
     await copyScript(names.review);
     await run('docker',['exec',names.review,'/usr/bin/node','/tmp/docker-smoke.mjs','inside-review']);
-    for(const fixture of ['test-av-fixture.mjs','test-av-http.mjs']){
+    for(const fixture of ['test-av-fixture.mjs','test-av-http.mjs','test-preview-cache-http.mjs']){
       // Exercise modules from this exact image; copy only the disposable test driver into tmpfs.
       const contents=(await fs.readFile(new URL(fixture,import.meta.url),'utf8')).replaceAll("'../review/","'/review-app/");
       await run('docker',['exec','-i',names.review,'/usr/bin/node','-e',"require('node:fs').writeFileSync('/tmp/av-smoke.mjs', require('node:fs').readFileSync(0))"],{input:contents,quiet:true});
-      await run('docker',['exec','-e','FFMPEG='+decoder+'ffmpeg','-e','FFPROBE='+decoder+'ffprobe',names.review,'/usr/bin/node','/tmp/av-smoke.mjs'],{timeout:180000});
+      await run('docker',['exec','-e','FFMPEG='+decoder+'ffmpeg','-e','FFPROBE='+decoder+'ffprobe',names.review,'/usr/bin/node','/tmp/av-smoke.mjs'],{timeout:fixture==='test-preview-cache-http.mjs'?240000:180000});
     }
     await run('docker',['run','--rm','--name',names.integration,...common,'-e','FFMPEG='+decoder+'ffmpeg','-e','FFPROBE='+decoder+'ffprobe','--entrypoint','/usr/bin/node','tdarr-review:smoke','/review-app/integration.mjs'],{timeout:180000});
     // Start a fixture process so exec can write into its disposable tmpfs;

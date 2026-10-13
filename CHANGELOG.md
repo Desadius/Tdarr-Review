@@ -2,6 +2,19 @@
 
 This records the implemented application features. Versions before 1.10.0 were deployed snapshots and are not published Git tags.
 
+## 1.10.5 — unreleased
+
+- Prepare the existing picture/audio/synchronization samples for waiting Review films in advance, with persistent private cache and bounded low-priority background work.
+- Load prepared samples inside the review steps without auto-playing audio, saving manual confirmations or creating technical-score evidence. Other times and track pairs remain on-demand requests.
+- Add ordered preferred/fallback audio languages, unambiguous main-track matching and an explicit optional other-language fallback. Saved manual pairs override suggestions.
+- Expose preparation progress and configurable cache size, film count and expiry. Pause/preempt background decoding for foreground requests and media mutations; stop background work at the cache budget rather than cycling evictions.
+- Mark each dashboard film's sample readiness with a distinct icon/color/text badge and active progress count/bar in both layouts. Keep sample readiness separate from manual review completion and preserve focus during unchanged polls.
+- Retry a narrow H.264 seek failure once from an earlier decoder position while preserving the exact selected interval and all strict preview checks.
+- Remove obsolete renderer artifacts from the owned cache on startup so updates cannot consume the budget with samples that are no longer reusable; retain valid prepared artifacts.
+- Bound Compact and Detail AV previews with 3 Mb/s and 10 Mb/s VBV ceilings respectively, preserving the selected dimensions, 12-second interval and shared audio/video timing.
+- Tolerate only the exact Matroska keyframe-cue warning after successful extraction and output validation; retain decoder errors and reject incomplete PCM waveform samples.
+- Keep the shared Recovery status snapshot readable across atomic refreshes, including access through SMB, while retaining private permissions for worker state and settings.
+
 ## 1.10.4 — 2026-10-13
 
 - Compare synchronized videos in one larger picture with a draggable divider; retain the side-by-side option.

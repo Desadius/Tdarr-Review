@@ -9,7 +9,9 @@ npm test
 
 Tests cover path containment, source changes, copy/exchange recovery, metadata/profile checks, job matching, plain-text API replies, batch concurrency, configuration, artwork proxy limits, rejection evidence, audio alignment/A-B playback, quarantine retention, release/history binding, deferred quota and shared status. Fixtures are disposable fictional records, not live credentials or production repair approvals.
 
-Recovery status tests cover fragmented/nonfinite progress, per-pass ETA, heartbeat versus cached Tdarr freshness, serialized/coalesced publication, timer cleanup and write failure recovery. Linux worker integration fixtures execute the actual worker/journal with loopback-only Radarr/Tdarr mocks, temporary SQLite and a synthetic decoder. They verify two-pass cooldown diagnosis, one exact Hold, unchanged media/parent quarantine, no repeated decoding after restart, preserved active handoffs and manual handling of a changed movie-file identity. The synthetic decoder tests worker wiring; actual decoding behavior remains covered by the bundled FFmpeg tests and media integration checks.
+Prepared-sample tests cover private atomic cache writes, restart reuse, source and renderer changes, size/count/expiry limits, background budget exhaustion, foreground priority and cancellation. Plan and settings fixtures verify ordered audio-language preferences, ambiguous track matching and saved manual pairs. Frontend fixtures verify cache-only loading without playback or review writes, polling cleanup, stale responses and progress updates that preserve the active workspace. AV regressions retain shared timestamps and fixed preview bounds, reject decoder errors and incomplete PCM samples, and limit the H.264 seek retry to its specific supported failure.
+
+Recovery status tests cover fragmented/nonfinite progress, per-pass ETA, heartbeat versus cached Tdarr freshness, serialized/coalesced publication, timer cleanup and write failure recovery. Atomic-write fixtures check that repeated shared status refreshes retain readable `0644` permissions while worker state remains private at `0600`, including when an old temporary file has different permissions. Linux worker integration fixtures execute the actual worker/journal with loopback-only Radarr/Tdarr mocks, temporary SQLite and a synthetic decoder. They verify two-pass cooldown diagnosis, one exact Hold, unchanged media/parent quarantine, no repeated decoding after restart, preserved active handoffs and manual handling of a changed movie-file identity. The synthetic decoder tests worker wiring; actual decoding behavior remains covered by the bundled FFmpeg tests and media integration checks.
 
 Quota fixtures cover ranked capacity expiry, immutable evidence, exact Hold acknowledgement and read-only intent reconciliation. The actual worker resumes a job-based quota case using its original two decodes, while a header case remains held without re-decoding. Missing/malformed authorization stops before any API. Registry tests cover private file/mapping/evidence validation, semantic membership, completed non-authorizing legacy history, exact backups, exclusive/idempotent migration and races. The actual Recovery image smoke invokes its packaged migration utility with fictional data and confirms unchanged state and no API calls.
 
@@ -21,6 +23,16 @@ FFMPEG=/path/to/ffmpeg FFPROBE=/path/to/ffprobe npm run test:integration
 
 It must never point at real media or a real Tdarr/Radarr endpoint. The test server uses localhost port 18270. The approval subprocess deliberately receives an invalid decoder path so the test proves ordinary approval does not perform another complete decode.
 
+Run the generated-media AV and preview-cache HTTP fixtures with the same decoder binaries:
+
+```bash
+FFMPEG=/path/to/ffmpeg FFPROBE=/path/to/ffprobe node tools/test-av-fixture.mjs
+FFMPEG=/path/to/ffmpeg FFPROBE=/path/to/ffprobe node tools/test-av-http.mjs
+FFMPEG=/path/to/ffmpeg FFPROBE=/path/to/ffprobe node tools/test-preview-cache-http.mjs
+```
+
+The cache HTTP fixture starts an isolated Review server with generated original/transcode files and a loopback Tdarr mock. It checks background preparation, cache-only misses/hits, on-demand requests, language preferences and manual selections, persistent reuse after restart, source-change rejection and unchanged review evidence. These media/HTTP fixtures are separate from `npm test` and also run in Docker smoke against the exact built Review image; they never approve production films or use production settings.
+
 CI runs syntax and unit tests on Node 24 / Linux, builds the actual Linux amd64 images, and runs isolated image smoke and Review integration tests. Pushes to `main`, version tags and pull requests are tested with read-only repository permissions and never publish images. Docker publication uses a separate manually dispatched workflow for an approved full commit SHA already in `main`; it repeats tests and smoke checks before obtaining registry credentials. Updating `latest` is an explicit option, disabled by default. See [the release process](RELEASES.md). No production media or live Tdarr/Radarr endpoint is used. A complete new Unraid installation and Community Applications approval remain separate checks.
 
 To exercise built images locally on Linux:
@@ -31,7 +43,7 @@ docker build --platform linux/amd64 -f Dockerfile.recovery -t tdarr-recovery:smo
 bash tools/docker-smoke.sh
 ```
 
-The smoke script creates uniquely named disposable containers and volumes and removes only those resources afterward. Review is tested with a new writable `/data` volume and a read-only container root, including login and the configured Host header. Generated-media AV timing and HTTP fixtures then exercise modules from that exact image, using only writable temporary files and loopback API mocks. Recovery runs a single disabled pass with empty fixture tables and a loopback-only mock. Its repair and original decoding policies are covered by unit tests, not by live downloads in the smoke test.
+The smoke script creates uniquely named disposable containers and volumes and removes only those resources afterward. Review is tested with a new writable `/data` volume and a read-only container root, including login and the configured Host header. Generated-media AV timing, AV HTTP and preview-cache HTTP fixtures then exercise modules from that exact image, using only writable temporary files and loopback API mocks. The cache fixture has a 240-second process timeout; the AV fixtures retain 180 seconds. Recovery runs a single disabled pass with empty fixture tables and a loopback-only mock. Its repair and original decoding policies are covered by unit tests, not by live downloads in the smoke test.
 
 ## Browser automation for coding agents
 
@@ -49,7 +61,7 @@ The public pending-evidence worker retains strict identity/history/evidence chec
 
 ## Known limitations
 
-- Czech UI; no language selector yet.
+- The interface supports English and Czech; other interface languages are not implemented. Audio-language preferences select preview tracks and are separate from the interface language.
 - First public packaging is marked beta. Community Applications inclusion requires separate submission and catalog acceptance; see [packaging status](COMMUNITY-APPS.md).
 - Review and optional Recovery run as separate single processes/containers. No shared supervisor or multiple-writer deployment support.
 - Tdarr API authentication support is not implemented; changed future API/schema versions require testing.
