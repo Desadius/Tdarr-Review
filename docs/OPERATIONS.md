@@ -10,7 +10,7 @@ Back up during an idle period. Keep media and quarantined originals protected by
 
 Source publication, Docker image publication and updating a running deployment are separate decisions. Pushing a commit or version tag runs tests only. Use [the release process](RELEASES.md) for approved image publication; installing it still requires the idle checks below.
 
-1. Inspect authenticated `/api/items` or the UI. Wait for `active`, `batchRunning`, `restorePending` and unresolved exchange transactions (`recovery`) to clear. These exchange transactions are distinct from the background movie-replacement list.
+1. Inspect authenticated `/api/items` or the UI. Wait for `active`, `batchRunning`, `restorePending` and unresolved exchange transactions (`recovery`) to clear. These exchange transactions are distinct from the background movie-replacement list. A non-zero `restorePending` means Review could not yet unpause the Tdarr nodes it paused; the server retries on its own with backoff (15 s, doubling to at most 10 minutes) while no action is running. Reading `/api/items` does not trigger the retry.
 2. Check that the background worker is not in a mutating phase. A long decode is read-only but restarting it leaves an interrupted case requiring deliberate inspection.
    On SIGTERM (`docker stop`) the worker leaves an idle wait at once and exits with code 0. If a check is in progress it first finishes that step; when the step outlasts the stop timeout, Docker kills the worker (exit code 137) and the case becomes manual on the next start. Stop the worker while it is idle rather than raising the timeout to cover a multi-hour decode.
 3. Back up code/images and private persistent data. Record the previous Git commit.
