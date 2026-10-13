@@ -5,6 +5,8 @@ This records the implemented application features. Versions before 1.10.0 were d
 ## Unreleased
 
 - Optional Recovery setting `fullSourceHash`: compare a full SHA-256 of the original at confirmation and right before the quarantine rename, at idle I/O priority with progress in the status file. Sampling remains the default.
+- Every finished approval and Radarr replacement request is appended to a durable `decision-audit.jsonl` in `/data` (fsynced, size-rotated into timestamped archives that are never deleted), in addition to the 150-entry history.
+- Review writes one JSON line per approval, rejection, replacement request, batch, settings change, node pause/resume, unresolved transaction and request error, so `docker logs` can reconstruct incidents. Secret-looking fields are never logged.
 - Retry a failed restore of Tdarr nodes that Review paused from a server timer with backoff (15 s doubling up to 10 min) instead of on every `GET /api/items` poll, so reading the dashboard no longer changes Tdarr state.
 - Add dependency-free Node 24 coverage reporting with `npm run test:coverage`; CI reports line, branch and function coverage in the same complete test run, without an unmeasured threshold.
 - Document that Review can undo a manual Tdarr node pause applied during its action, including pending resume retries and the maintenance pause procedure.
@@ -14,6 +16,9 @@ This records the implemented application features. Versions before 1.10.0 were d
 - Report Windows-only POSIX directory-fsync, permission and symlink test limitations explicitly while retaining platform-independent coverage and mandatory production durability checks.
 - The Review health check now reads a loopback-only `/health` summary and writes pending exchange transactions, Tdarr nodes still paused by Review and a stale Recovery status into Docker's health log. These are reported without marking the container unhealthy, so no restart interrupts them.
 - Cover authored server-error string literals with a regression check against the English catalog, and translate missing file-identity, review-save and preview errors without changing Czech messages or operational checks.
+- Centralize server concurrency policies and reserve mutating requests before asynchronous preflight, keeping competing approvals, batches, settings and previews excluded with HTTP 409.
+- Preserve deliberate recovery-safe settings/preview access and review-session revision queues; exclude in-flight node resumes and prevent discovery scans from mutating state during foreground work.
+- Add deterministic HTTP concurrency regression tests with loopback mocks and temporary synthetic files, including every mutating route and pending recovery/node pauses.
 
 ## 1.10.5 — 2026-10-13
 

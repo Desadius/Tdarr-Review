@@ -1,5 +1,6 @@
 export default {
   "exact": {
+    "Audit rozhodnutí není běžný soubor.": "The decision audit is not a regular file.",
     "Čas je mimo délku kontrolovaných souborů.": "The time is outside the duration of the reviewed files.",
     "Chybí obrazová stopa.": "The video track is missing.",
     "Tuto kombinaci HDR nelze porovnat.": "This HDR combination cannot be compared.",
@@ -1071,6 +1072,10 @@ export default {
     [
       "Uložení výsledku do archivu zamítnutí selhalo: {0}",
       "Saving the result to the rejection archive failed: {0}"
+    ],
+    [
+      "Uložení záznamu do auditu rozhodnutí selhalo: {0}",
+      "Saving the record to the decision audit failed: {0}"
     ],
     [
       "Film je vyřízený, ale úklid review selhal: {0}",

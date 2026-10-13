@@ -72,14 +72,14 @@ class Option extends Element{constructor(text,value){super('option');this.textCo
 const el=(tag,cls,text)=>{const node=new Element(tag);node.className=cls||'';node.textContent=text||'';return node};
 const button=(text,fn,cls)=>{const b=el('button',cls,text);b.onclick=fn;return b};
 const find=(host,tag,text)=>host.querySelectorAll(tag).find(x=>x.textContent===text);
-const appSource=await fs.readFile(new URL('./public/app.js',import.meta.url),'utf8');
-const audioCode=appSource.slice(appSource.indexOf('function openAudioComparison(item,options={}){'),appSource.indexOf('const radarrDialog='));
+const appSource=await fs.readFile(new URL('./public/comparison.js',import.meta.url),'utf8');
+const audioCode=appSource.slice(appSource.indexOf('function openAudioComparison(item,options={}){'),appSource.indexOf('class AudioABPlayer'));
 function audioFixture(mode='audio',load){
  const host=new Element('div'),requests=[],clock=timers(),counters={contexts:0,plays:0,mounts:0,cleanups:0,save:0,scope:0};
  class Context{constructor(){counters.contexts++}async resume(){}async close(){}}
  class ABPlayer{constructor(context){this.context=context;this.gain={gain:{value:.5}}}stop(){}close(){void this.context.close()}play(){counters.plays++;return {originalSeconds:12,reviewSeconds:12}}}
  const packet={seconds:scope.seconds,original:[.1,.2],review:[.1,.2],alignment:{reliable:true,offsetMs:0},originalTrack:{label:'original'},reviewTrack:{label:'review'}};
- const context=vm.createContext({el,button,Option,tr:x=>x,audioTrackLabel:x=>x,latest:{items:[item]},window:{AudioContext:Context},AudioABPlayer:ABPlayer,createCachedPreviewLoader,previewJobMatches,preparationSummary:()=>'',pendingPreviewMessage:()=>'',encodeURIComponent,Promise,Number,JSON,console,api:async(route,body)=>{requests.push(body);return load?load(body):{...packet,cached:true}},mountAVComparison:()=>{counters.mounts++;return ()=>counters.cleanups++}});
+ const context=vm.createContext({el,button,Option,tr:x=>x,audioTrackLabel:x=>x,app:{latest:{items:[item]}},window:{AudioContext:Context},AudioABPlayer:ABPlayer,createCachedPreviewLoader,previewJobMatches,preparationSummary:()=>'',pendingPreviewMessage:()=>'',encodeURIComponent,Promise,Number,JSON,console,api:async(route,body)=>{requests.push(body);return load?load(body):{...packet,cached:true}},mountAVComparison:()=>{counters.mounts++;return ()=>counters.cleanups++}});
  vm.runInContext(audioCode,context);const cleanup=context.openAudioComparison(item,{host,scope:{...scope},tracks:{original:[{index:1,label:'original'}],review:[{index:2,label:'review'}]},mode,previewProfile:'detail',cachedAutoLoad:true,canInteract:()=>true,beforePreview:()=>counters.save++,onScopeChange:()=>counters.scope++});
  return {host,requests,clock,counters,cleanup,packet};
 }
