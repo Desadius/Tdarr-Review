@@ -46,3 +46,29 @@ test('the UI renders a known code in its language and falls back to the server t
  assert.match(app,/Error\(serverError\(d\)\|\|'Požadavek selhal\.'\)/);
  const assets=await fs.readFile(new URL('./routes/static.mjs',import.meta.url),'utf8');assert.ok(assets.includes("'/error-messages.js':['error-messages.js'"));
 });
+
+import {ReviewSessionError,createReviewSessionStore} from './review-session.mjs';
+test('review-session errors carry a code and keep their Czech message; plain text still works',()=>{
+ const coded=new ReviewSessionError('review_saved_elsewhere',409);
+ assert.equal(coded.code,'review_saved_elsewhere');assert.equal(coded.status,409);assert.equal(coded.message,ERROR_MESSAGES.review_saved_elsewhere.cs);
+ const plain=new ReviewSessionError('Nějaký jiný text.',400);assert.equal(plain.code,undefined);assert.equal(plain.message,'Nějaký jiný text.');
+});
+
+test('every thrown review error uses a known code, and the handler answers with it',async()=>{
+ const read=file=>fs.readFile(new URL(file,import.meta.url),'utf8');
+ for(const file of ['./server.mjs','./review-session.mjs']){
+  const source=await read(file);
+  for(const [,arg] of source.matchAll(/(?:new ReviewSessionError|\bfail)\(([^,)]+)/g)){
+   if(!/^'/.test(arg))continue;
+   const code=arg.slice(1,-1);assert.ok(Object.hasOwn(ERROR_MESSAGES,code),file+': '+arg);
+  }
+  assert.doesNotMatch(source,/(?:new ReviewSessionError|\bfail)\(`/,file+' builds an error message from a template');
+ }
+ const server=await read('./server.mjs');
+ assert.match(server,/respond\(res,status,e instanceof ReviewSessionError&&e\.code\?apiError\(e\.code,e\.params\):\{error:e\.message\}\)/);
+});
+
+test('a real review-session validation error reaches the client as a code',async()=>{
+ const state={items:{},reviewSessions:{}},store=createReviewSessionStore({getState:()=>state,save:async()=>{},verify:async()=>{throw Error('not reached')}});
+ await assert.rejects(store.write('a'.repeat(24),null),error=>error instanceof ReviewSessionError&&error.code==='review_request_not_object'&&error.message===ERROR_MESSAGES.review_request_not_object.cs);
+});

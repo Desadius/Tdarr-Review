@@ -1,16 +1,23 @@
+import {errorText} from './public/error-messages.js';
 const CHECKS=['preparation','image','audio','syncStart','syncMiddle','syncEnd','hdr'];
 const ID=/^[a-f0-9]{24}$/;
 const SNAPSHOT=/^[a-f0-9]{64}$/;
 const OBSERVATIONS=['image','hdr','audio','syncStart','syncMiddle','syncEnd'];
 const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 
+// Takes a code from public/error-messages.js; the message is its Czech text. Plain text
+// is still accepted and then travels without a code.
 export class ReviewSessionError extends Error {
- constructor(message,status=400){super(message);this.name='ReviewSessionError';this.status=status}
+ constructor(code,status=400,params){
+  const text=errorText(code,params,'cs');
+  super(text??code);this.name='ReviewSessionError';this.status=status;
+  if(text!==null){this.code=code;if(params)this.params=params}
+ }
 }
-const fail=(message,status=400)=>{throw new ReviewSessionError(message,status)};
-const cleanText=(value,max,label)=>{
+const fail=(code,status=400)=>{throw new ReviewSessionError(code,status)};
+const cleanText=(value,max,code)=>{
  if(value===undefined)return '';
- if(typeof value!=='string')fail(`${label} musí být text.`);
+ if(typeof value!=='string')fail(code);
  return value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g,'').trim().slice(0,max);
 };
 
@@ -25,24 +32,24 @@ export function reviewRequirements(...probes){
 // Only explicit booleans can record a user's confirmation. Diagnostic output,
 // submitted complete flags and unknown fields never become attestations.
 export function sanitizeReviewSession(input){
- if(!object(input))fail('Revize musí být objekt.');
+ if(!object(input))fail('review_not_object');
  const session=emptyReviewSession();
- if(input.method!==undefined){if(!['review','external'].includes(input.method))fail('Vyber platný způsob kontroly.');session.method=input.method}
- session.device=cleanText(input.device,160,'Přehrávač');
- session.note=cleanText(input.note,2000,'Poznámka');
- if(input.step!==undefined){if(!Number.isInteger(input.step)||input.step<0||input.step>4)fail('Neplatný krok revize.');session.step=input.step}
- if(input.deferred!==undefined){if(typeof input.deferred!=='boolean')fail('Odložení musí být ručně potvrzené.');session.deferred=input.deferred}
+ if(input.method!==undefined){if(!['review','external'].includes(input.method))fail('review_method_invalid');session.method=input.method}
+ session.device=cleanText(input.device,160,'review_device_not_text');
+ session.note=cleanText(input.note,2000,'review_note_not_text');
+ if(input.step!==undefined){if(!Number.isInteger(input.step)||input.step<0||input.step>4)fail('review_step_invalid');session.step=input.step}
+ if(input.deferred!==undefined){if(typeof input.deferred!=='boolean')fail('review_defer_unconfirmed');session.deferred=input.deferred}
  if(input.checks!==undefined){
-  if(!object(input.checks))fail('Potvrzení revize musí být objekt.');
-  for(const name of CHECKS)if(input.checks[name]!==undefined){if(typeof input.checks[name]!=='boolean')fail('Každou kontrolu potvrď ručně.');session.checks[name]=input.checks[name]}
+  if(!object(input.checks))fail('review_checks_not_object');
+  for(const name of CHECKS)if(input.checks[name]!==undefined){if(typeof input.checks[name]!=='boolean')fail('review_check_manual');session.checks[name]=input.checks[name]}
  }
  if(input.scope!==undefined){
-  if(!object(input.scope))fail('Výběr zvukových stop musí být objekt.');
+  if(!object(input.scope))fail('review_tracks_not_object');
   for(const name of ['originalIndex','reviewIndex'])if(input.scope[name]!==undefined&&input.scope[name]!==null){
-   const value=input.scope[name];if(!Number.isInteger(value)||value<0||value>65535)fail('Neplatný index zvukové stopy.');session.scope[name]=value;
+   const value=input.scope[name];if(!Number.isInteger(value)||value<0||value>65535)fail('review_track_index_invalid');session.scope[name]=value;
   }
   if(input.scope.seconds!==undefined&&input.scope.seconds!==null){
-   const value=input.scope.seconds;if(typeof value!=='number'||!Number.isFinite(value)||value<0||value>604800)fail('Neplatný čas kontrolovaného úseku.');session.scope.seconds=value;
+   const value=input.scope.seconds;if(typeof value!=='number'||!Number.isFinite(value)||value<0||value>604800)fail('review_time_invalid');session.scope.seconds=value;
   }
  }
  return session;
@@ -87,9 +94,9 @@ export function publicReviewSession(record,snapshot,requirements=record?.require
 
 export function updateReviewSession(previous,input,{duration,originalIndexes,reviewIndexes}={}){
  const session=sanitizeReviewSession(input),old=previous.session;
- if(session.deferred&&!session.note)fail('Při odložení napiš důvod a další krok kontroly.');
- if(duration!==undefined&&session.scope.seconds!==null&&(!Number.isFinite(duration)||session.scope.seconds>=duration))fail('Čas je mimo délku kontrolovaných souborů.');
- for(const [name,indexes] of [['originalIndex',originalIndexes],['reviewIndex',reviewIndexes]])if(session.scope[name]!==null&&indexes!==undefined&&!indexes.includes(session.scope[name]))fail('Vyber platné zvukové stopy.');
+ if(session.deferred&&!session.note)fail('review_defer_reason_required');
+ if(duration!==undefined&&session.scope.seconds!==null&&(!Number.isFinite(duration)||session.scope.seconds>=duration))fail('review_time_out_of_range');
+ for(const [name,indexes] of [['originalIndex',originalIndexes],['reviewIndex',reviewIndexes]])if(session.scope[name]!==null&&indexes!==undefined&&!indexes.includes(session.scope[name]))fail('sample_tracks_invalid');
  // A changed method/device or track pair must be saved before any fresh
  // confirmation. Checks carried in the same change cannot describe both scopes.
  if(session.method!==old.method||session.device!==old.device){
@@ -101,7 +108,7 @@ export function updateReviewSession(previous,input,{duration,originalIndexes,rev
  }
  const available=completedStep(session);
  if(session.step>available){
-  if(session.step>old.step)fail('Nejprve ručně dokonči předchozí kontroly.');
+  if(session.step>old.step)fail('review_previous_checks_first');
   session.step=available;
  }
  clearAfter(session,available);
@@ -116,7 +123,7 @@ export function createReviewSessionStore({getState,save,verify,now=()=>new Date(
   const state=getState(),item=state.items?.[id],record=state.reviewSessions?.[id];
   return publicReviewSession(record,snapshot,requirements||(record?.snapshot===snapshot?record.requirements:undefined)||(item?.snapshot===snapshot?item.info?.reviewRequirements:undefined)||{hdr:true});
  };
- const checkIdentity=(id,snapshot)=>{if(!ID.test(id)||!SNAPSHOT.test(snapshot))fail('Neplatná identita revize.',409)};
+ const checkIdentity=(id,snapshot)=>{if(!ID.test(id)||!SNAPSHOT.test(snapshot))fail('review_identity_invalid',409)};
  return {
   get busy(){return pending>0},
   idle:()=>queue,
@@ -125,24 +132,24 @@ export function createReviewSessionStore({getState,save,verify,now=()=>new Date(
   approval(id,snapshot,revision){
    checkIdentity(id,snapshot);
    const evidence=current(id,snapshot);
-   if(!evidence.complete)fail('Nejprve dokonči a ulož ruční revizi obrazu, zvuku a synchronizace.',409);
-   if(!Number.isSafeInteger(revision)||revision!==evidence.revision)fail('Revize se mezitím změnila. Otevři aktuální revizi a potvrď schválení znovu.',409);
+   if(!evidence.complete)fail('review_incomplete',409);
+   if(!Number.isSafeInteger(revision)||revision!==evidence.revision)fail('review_revision_changed',409);
    return structuredClone(evidence);
   },
   write(id,request){
    pending++;
    const operation=queue.catch(()=>{}).then(async()=>{
-    if(!object(request))fail('Požadavek revize musí být objekt.');
+    if(!object(request))fail('review_request_not_object');
     checkIdentity(id,request.snapshot);
-    if(!Number.isSafeInteger(request.revision)||request.revision<0)fail('Neplatná verze revize.',409);
+    if(!Number.isSafeInteger(request.revision)||request.revision<0)fail('review_revision_invalid',409);
     const state=getState(),item=state.items?.[id];
-    if(!item||item.snapshot!==request.snapshot)fail('Položka se změnila. Obnov přehled.',409);
+    if(!item||item.snapshot!==request.snapshot)fail('item_changed',409);
     const limits=await verify(item,{id,snapshot:request.snapshot,session:sanitizeReviewSession(request.session)});
-    if(getState()!==state||state.items[id]!==item||item.snapshot!==request.snapshot)fail('Položka se během ukládání změnila. Obnov přehled.',409);
+    if(getState()!==state||state.items[id]!==item||item.snapshot!==request.snapshot)fail('review_item_changed_during_save',409);
     const previous=current(id,request.snapshot);
-    if(request.revision!==previous.revision)fail('Revizi mezitím uložilo jiné okno. Načti aktuální stav.',409);
+    if(request.revision!==previous.revision)fail('review_saved_elsewhere',409);
     const session=updateReviewSession(previous,request.session,limits);
-    if(previous.revision===Number.MAX_SAFE_INTEGER)fail('Verzi revize již nelze zvýšit.',409);
+    if(previous.revision===Number.MAX_SAFE_INTEGER)fail('review_revision_exhausted',409);
     const updated=now(),observations={};
     for(const name of OBSERVATIONS)if(session.checks[name]){
      observations[name]=previous.session.checks[name]&&previous.observations[name]?structuredClone(previous.observations[name]):{method:session.method,device:session.device,scope:structuredClone(session.scope),at:updated};
