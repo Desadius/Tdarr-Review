@@ -1,10 +1,10 @@
 # Install on Unraid
 
-This guide describes **1.10.4**, targeting the versioned Linux amd64 image `ghcr.io/desadius/tdarr-review:1.10.4`. You can also build the source locally. The [Community Applications entry](https://ca.unraid.net/apps/tdarr-review-1qs5sdc0gn7hmk) uses the supplied [`templates/tdarr-review.xml`](../templates/tdarr-review.xml) with `latest`. Registry availability and catalog visibility are separate; see [publication status](COMMUNITY-APPS.md). Cloning this repository does not update an existing container.
+This guide describes **1.10.5**, targeting the versioned Linux amd64 image `ghcr.io/desadius/tdarr-review:1.10.5`. You can also build the source locally. The [Community Applications entry](https://ca.unraid.net/apps/tdarr-review-1qs5sdc0gn7hmk) uses the supplied [`templates/tdarr-review.xml`](../templates/tdarr-review.xml) with `latest`. Registry availability and catalog visibility are separate; see [publication status](COMMUNITY-APPS.md). Cloning this repository does not update an existing container.
 
-## Updating to 1.10.4
+## Updating to 1.10.5
 
-Back up persistent `/data` and update only while no approval, batch or transaction recovery is running. Keep existing mappings, access key and settings. This release adds a draggable comparison divider and optional automatic movement, plus a bounded detail preview profile. It uses the same ports, mappings and permissions. It does not reconstruct old approvals, reset assessments or relax quarantine identity checks. Review and optional Recovery have separate image tags. Select `1.10.4` explicitly; updating source or publishing images does not deploy an existing installation.
+Back up persistent `/data` and update only while no approval, batch or transaction recovery is running. Keep existing mappings, access key and settings. This release prepares the existing review samples in advance in a bounded private cache under `/data/preview-cache` (see [prepared samples](PREPARED-SAMPLES.md)), adds ordered audio-language preferences, keeps the shared Recovery status readable over SMB and lets the optional Recovery worker stop cleanly on `docker stop`. It uses the same ports, mappings and permissions. It does not reconstruct old approvals, reset assessments or relax quarantine identity checks. Review and optional Recovery have separate image tags. Select `1.10.5` explicitly; updating source or publishing images does not deploy an existing installation.
 
 The five-step assessment and current `reviewRevision` required since 1.10.2 remain mandatory for approval. The optional Recovery routing function is a separate Tdarr flow change; follow [the integration guide](TDARR-INTEGRATION.md#require-review-for-recovery-replacements).
 
@@ -36,11 +36,11 @@ cd Tdarr-Review
 cp .env.example .env
 ```
 
-Edit `.env` in a text editor. Set `REVIEW_IMAGE_TAG=1.10.4` for this source release, your real paths and API address. Set `REVIEW_BIND_IP` to the server's LAN IP if you want LAN access. Set `PUBLIC_ORIGIN` to exactly the browser origin, for example `http://YOUR_UNRAID_IP:8270` (with your actual IP).
+Edit `.env` in a text editor. Set `REVIEW_IMAGE_TAG=1.10.5` for this source release, your real paths and API address. Set `REVIEW_BIND_IP` to the server's LAN IP if you want LAN access. Set `PUBLIC_ORIGIN` to exactly the browser origin, for example `http://YOUR_UNRAID_IP:8270` (with your actual IP).
 
 `TDARR_DB_HOST` must be the **directory** containing `SQL/database.db`, not just the database file. Its WAL/SHM sidecars must be available through the same read-only mapping. Locate this directory in your Tdarr server appdata before starting.
 
-After the `1.10.4` image has been published, if Docker Compose is available on your Unraid installation:
+After the `1.10.5` image has been published, if Docker Compose is available on your Unraid installation:
 
 ```bash
 docker compose pull review
@@ -73,7 +73,7 @@ In **Docker → Add Container**, configure:
 | Field | Value |
 | --- | --- |
 | Name | `tdarr-review` |
-| Repository | `ghcr.io/desadius/tdarr-review:1.10.4` after publication, or `tdarr-review:local` |
+| Repository | `ghcr.io/desadius/tdarr-review:1.10.5` after publication, or `tdarr-review:local` |
 | Network | `bridge` |
 | WebUI | `http://[IP]:[PORT:8270]` |
 | Port | Host `8270` → container `8270/TCP` |
@@ -147,10 +147,10 @@ A fresh installation needs no frozen pending approvals. The empty `examples/reco
 
 For a local worker build, use `docker compose --profile recovery build recovery` first. The optional worker runs in a second container, with no HTTP port. Combining both processes in one container is not implemented in this release. Without this worker, normal Review approval and its manual Radarr integration still work.
 
-## 7. Update an existing installation to 1.10.4
+## 7. Update an existing installation to 1.10.5
 
 Keep the existing state, media, Review output and read-only Tdarr database mappings. Back up the mapped `/data` directory privately before the update; it contains access settings, history, journals and now server-saved review progress. Do not replace it with a fresh example directory. Run only one Review writer against those mappings.
 
-After registry publication, pin `REVIEW_IMAGE_TAG=1.10.4` in the existing `.env`, or the explicit `ghcr.io/desadius/tdarr-review:1.10.4` Repository value in Unraid, then pull/recreate that same Review service. A source build can be installed independently. Optional Recovery uses its own image tag and update procedure.
+After registry publication, pin `REVIEW_IMAGE_TAG=1.10.5` in the existing `.env`, or the explicit `ghcr.io/desadius/tdarr-review:1.10.5` Repository value in Unraid, then pull/recreate that same Review service. A source build can be installed independently. Optional Recovery uses its own image tag and update procedure.
 
 Existing pending films start with an unfinished manual review when no matching version-1 session is saved. Past successful transcodes, technical scores and historical approvals do not fabricate new checklist confirmations. Verify container health, login, the five-step workspace and reopening saved/deferred progress before approving a real film. A local installation passed these checks for this release; that does not update your own installation automatically.
