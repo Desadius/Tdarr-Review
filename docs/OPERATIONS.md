@@ -98,7 +98,7 @@ The Review container health check reads `GET /health`, which answers only reques
 docker inspect --format '{{json .State.Health.Log}}' tdarr-review
 ```
 
-These conditions are reported, not treated as failures: the container stays healthy so that a restart policy or auto-heal tool does not restart Review during a pending transaction or node restore. The check fails only when the server does not answer. A missing Recovery status file (Recovery not installed) is not flagged.
+These conditions are reported, not treated as failures: the container stays healthy so that a restart policy or auto-heal tool does not restart Review during a pending transaction or node restore. The check fails only when the server does not answer or the UI is not served: it also requests `/` and `/app.js` and needs a 200 for each. A missing Recovery status file (Recovery not installed) is not flagged.
 
 ## Recovery status is stale
 
