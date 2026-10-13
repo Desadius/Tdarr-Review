@@ -13,6 +13,7 @@ This records the implemented application features. Versions before 1.10.0 were d
 - Add `npm run test:docker` for the full Linux/Node 24 syntax and regression suite from Windows, with a read-only repository, disposable scratch space and no container network.
 - Report Windows-only POSIX directory-fsync, permission and symlink test limitations explicitly while retaining platform-independent coverage and mandatory production durability checks.
 - The Review health check now reads a loopback-only `/health` summary and writes pending exchange transactions, Tdarr nodes still paused by Review and a stale Recovery status into Docker's health log. These are reported without marking the container unhealthy, so no restart interrupts them.
+- Cover authored server-error string literals with a regression check against the English catalog, and translate missing file-identity, review-save and preview errors without changing Czech messages or operational checks.
 
 ## 1.10.5 — 2026-10-13
 
