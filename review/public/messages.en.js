@@ -1063,6 +1063,10 @@ export default {
       "Saving the result to the rejection archive failed: {0}"
     ],
     [
+      "Uložení záznamu do auditu rozhodnutí selhalo: {0}",
+      "Saving the record to the decision audit failed: {0}"
+    ],
+    [
       "Film je vyřízený, ale úklid review selhal: {0}",
       "The movie was handled, but review cleanup failed: {0}"
     ],

@@ -4,6 +4,7 @@ This records the implemented application features. Versions before 1.10.0 were d
 
 ## Unreleased
 
+- Every finished approval and Radarr replacement request is appended to a durable `decision-audit.jsonl` in `/data` (fsynced, size-rotated into timestamped archives that are never deleted), in addition to the 150-entry history.
 - Review writes one JSON line per approval, rejection, replacement request, batch, settings change, node pause/resume, unresolved transaction and request error, so `docker logs` can reconstruct incidents. Secret-looking fields are never logged.
 - Retry a failed restore of Tdarr nodes that Review paused from a server timer with backoff (15 s doubling up to 10 min) instead of on every `GET /api/items` poll, so reading the dashboard no longer changes Tdarr state.
 - Add dependency-free Node 24 coverage reporting with `npm run test:coverage`; CI reports line, branch and function coverage in the same complete test run, without an unmeasured threshold.
