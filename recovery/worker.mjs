@@ -280,8 +280,13 @@ for(const c of Object.values(state.cases))if(!['manual','no_action','dry_run','w
 console.log('Tdarr recovery started; enabled='+cfg.enabled);
 const pause=ms=>new Promise(r=>{const t=setTimeout(r,ms);wake=()=>{clearTimeout(t);r();};});
 // Edits to config.json apply only after a restart; report them instead of applying them mid-case.
+// The same gate as start-up: an edit that the approval registry would refuse is reported invalid.
+async function validateEditedConfig(value){
+  try{await loadApprovalRegistry({data:DATA,cfg:value,state:structuredClone(state)});return null;}
+  catch(e){return e?.code==='RECOVERY_APPROVAL_REGISTRY'?e.message:'config.json would not pass the start-up checks';}
+}
 async function noteConfigChange(){
-  const change=await detectConfigChange({file:configFile,loadedDigest:loadedConfigDigest,previous:state.configChange});
+  const change=await detectConfigChange({file:configFile,loadedDigest:loadedConfigDigest,previous:state.configChange,validate:validateEditedConfig});
   if(change&&change!==state.configChange)console.error('Recovery: config.json changed since start-up; restart the worker to apply it'+(change.valid?'':' after fixing it ('+change.error+')'));
   if(change)state.configChange=change;else delete state.configChange;
 }

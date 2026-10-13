@@ -11,14 +11,19 @@ export function checkConfigText(text){
 }
 
 // Returns the configChange record for the current file: null while it matches the loaded
-// configuration, otherwise when the change was first seen and whether it parses.
-export async function detectConfigChange({file,loadedDigest,previous=null,now=new Date()}){
+// configuration, otherwise when the change was first seen and whether the next start would
+// accept it. validate(config) runs the worker's own start-up checks and resolves to an error
+// text (never containing config values) or null; it runs once per distinct edit.
+export async function detectConfigChange({file,loadedDigest,previous=null,now=new Date(),validate=null}){
  let text;
  try{text=await fs.readFile(file,'utf8');}
  catch(e){return describe(previous,'missing:'+e.code,'config.json cannot be read: '+e.code,now);}
  const digest=configDigest(text);
  if(digest===loadedDigest)return null;
- return describe(previous,digest,checkConfigText(text),now);
+ if(previous?.digest===digest)return previous;
+ let error=checkConfigText(text);
+ if(!error&&validate){try{error=await validate(JSON.parse(text))}catch{error='config.json cannot be checked against the start-up rules'}}
+ return describe(previous,digest,error,now);
 }
 function describe(previous,digest,error,now){
  if(previous?.digest===digest)return previous;

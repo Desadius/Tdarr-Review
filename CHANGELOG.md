@@ -5,6 +5,7 @@ This records the implemented application features. Versions before 1.10.0 were d
 ## Unreleased
 
 - The Review container health check again verifies that the UI is served (`/` and `/app.js`), in addition to the `/health` summary.
+- The Recovery restart notice now runs the worker's start-up approval-registry check on an edited `config.json`, so a change that would stop the next start (such as a changed frozen library value) is reported as invalid instead of only "restart to apply".
 - Review fixes: the optional full-file hash now runs before Recovery changes anything in Radarr or Tdarr, so stopping the worker during it leaves no Hold; the node-restore retry delay resets after any successful restore; the request list reads the Recovery status file once per refresh; node-restore rows no longer show a Czech placeholder in English.
 - The Review Recovery view shows when Recovery's `config.json` was edited and needs a restart (red if the edit is invalid), and the progress of an optional full-file hash in the case list and detail.
 - Review lists the Tdarr nodes it will resume, with the film and time they were paused for, and lets you keep a node you paused yourself paused (with confirmation), so a maintenance pause set during an action is no longer undone.

@@ -189,3 +189,14 @@ test('offline CLI performs only explicit migration and does not print private ev
  await f.write(f.target,'invalid SECRET-PRIVATE-EVIDENCE');const failed=await run(['--source',f.source,'--data',f.data]);assert.equal(failed.code,1);assert(!failed.stdout.includes('SECRET'));assert(!failed.stderr.includes('SECRET'));assert.equal(await fs.readFile(f.target,'utf8'),'invalid SECRET-PRIVATE-EVIDENCE');
  const missing=await run([]);assert.equal(missing.code,1);assert.equal(missing.stdout,'');
 });
+
+test('a config edit that changes a frozen registry value is reported invalid before any restart',async t=>{
+ const {detectConfigChange,configDigest}=await import('./config-watch.mjs');
+ const f=await fixture(t);await f.write(f.target,f.registry);const file=path.join(f.data,'config.json'),loaded=configDigest(await fs.readFile(file,'utf8'));
+ const validate=async value=>{try{await loadApprovalRegistry({data:f.data,cfg:value,state:structuredClone(f.state)});return null}catch(e){return e?.code==='RECOVERY_APPROVAL_REGISTRY'?e.message:'config.json would not pass the start-up checks'}};
+ assert.equal(Object.hasOwn(f.registry.config,'pollSeconds'),false);await f.write(file,{...f.cfg,pollSeconds:600});const allowed=await detectConfigChange({file,loadedDigest:loaded,validate});assert.equal(allowed.valid,true,allowed.error);
+ for(const edit of [{maxRepairsPerDay:5},{libraryId:'another-library'}]){await f.write(file,{...f.cfg,...edit});const frozen=await detectConfigChange({file,loadedDigest:loaded,validate});assert.equal(frozen.valid,false,JSON.stringify(edit));assert.equal(frozen.error,'Recovery approval registry: frozen configuration differs');}
+ const {libraryId,...withoutLibrary}=f.cfg;await f.write(file,withoutLibrary);const refused=await detectConfigChange({file,loadedDigest:loaded,validate});
+ assert.equal(refused.valid,false);assert.match(refused.error,/^Recovery approval registry: /);assert.doesNotMatch(refused.error,/fixture-library/,'no config value is echoed');
+ assert.ok(!Object.isFrozen(f.state.cases[f.a.id]),'validation never freezes the live state');
+});

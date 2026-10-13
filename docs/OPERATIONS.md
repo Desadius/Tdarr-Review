@@ -69,7 +69,7 @@ Inspect the film's detail and durable journal. Preserve `.tdarr-review-*.old`, `
 
 ## Recovery configuration was edited
 
-Recovery applies `/data/config.json` only at start-up. After an edit the worker logs `config.json changed since start-up; restart the worker to apply it` and the shared status file shows `configChange.restartRequired: true`. If `configChange.valid` is `false`, correct the file first: a restart with invalid JSON stops the worker. Then restart the Recovery container while it is idle, as described in step 2 of *Update an existing deployment*. Review shows the same notice in the Recovery view (red when the edited file is invalid). Reverting the edit clears the notice without a restart.
+Recovery applies `/data/config.json` only at start-up. After an edit the worker logs `config.json changed since start-up; restart the worker to apply it` and the shared status file shows `configChange.restartRequired: true`. If `configChange.valid` is `false`, correct the file first: a restart with invalid JSON, or with a change the approval registry refuses (`error` names the rule), stops the worker. Then restart the Recovery container while it is idle, as described in step 2 of *Update an existing deployment*. Review shows the same notice in the Recovery view (red when the edited file is invalid). Reverting the edit clears the notice without a restart.
 
 ## Review event log
 
