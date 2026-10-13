@@ -20,9 +20,8 @@ test('cleanup removes completed film and matching receipt, keeps roots and pendi
   assert.equal(await fs.readFile(path.join(root,'PROD-Movies/Pending/keep.mkv'),'utf8'),'pending');
  }finally{await fs.rm(root,{recursive:true,force:true})}
 });
-test('cleanup preserves unknown receipts, recreated media and symlinks',async()=>{
+test('cleanup preserves unknown receipts and recreated media',async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'cleanup-'));
- const outside=await fs.mkdtemp(path.join(os.tmpdir(),'cleanup-out-'));
  try{
   const relative='Film/movie.mkv',file=path.join(root,relative);
   await fs.mkdir(path.dirname(file));await fs.writeFile(file,'video');
@@ -31,7 +30,16 @@ test('cleanup preserves unknown receipts, recreated media and symlinks',async()=
   assert.equal(await cleanupReviewed(root,relative,null),0);
   await fs.unlink(file);await cleanupReviewed(root,relative,null);
   assert.equal(await fs.readFile(file+'.tdarr-receipt.json','utf8'),'{}');
-  await fs.mkdir(path.join(outside,'empty'));await fs.symlink(outside,path.join(root,'link'));
+  await fs.writeFile(file,'recreated video');await pruneEmpty(root);
+  assert.equal(await fs.readFile(file,'utf8'),'recreated video');
+ }finally{await fs.rm(root,{recursive:true,force:true})}
+});
+test('cleanup preserves directories behind symlinks',{skip:process.platform==='win32'?'Directory symlinks require Windows Developer Mode or elevated privileges; covered by the Linux suite':false},async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'cleanup-'));
+ const outside=await fs.mkdtemp(path.join(os.tmpdir(),'cleanup-out-'));
+ try{
+  await fs.mkdir(path.join(outside,'empty'));await fs.symlink(outside,path.join(root,'link'),'dir');
   await pruneEmpty(root);assert.ok((await fs.stat(path.join(outside,'empty'))).isDirectory());
+  assert.ok((await fs.lstat(path.join(root,'link'))).isSymbolicLink());
  }finally{await fs.rm(root,{recursive:true,force:true});await fs.rm(outside,{recursive:true,force:true})}
 });

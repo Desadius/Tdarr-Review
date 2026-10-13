@@ -16,7 +16,6 @@ export async function itemRoutes(ctx,req,res,url,request){
   void ctx.replacementAction(item,reason);return reply(res,202,{ok:true});
  }
  if(url.pathname==='/api/items'&&req.method==='GET'){
-  if(ctx.state.pauses.length&&!ctx.busyFor('resume'))await ctx.resume();
   const items=await ctx.scan();
   return reply(res,200,{version:ctx.APP_VERSION,label:ctx.config.label,serverTime:Date.now(),items,previews:Object.fromEntries(items.filter(item=>item.snapshot).map(item=>[item.id,ctx.previewPreparation(item.id,item.snapshot)])),reviewSessions:ctx.reviewSessions.list(items),active:ctx.active,batch:ctx.state.batch||null,batchRunning:ctx.batchRunning,history:ctx.state.history,recovery:ctx.recovery,restorePending:ctx.state.pauses.length});
  }

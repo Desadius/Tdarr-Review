@@ -30,6 +30,10 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
+      - name: Preload the isolated Node 24 test image
+        run: docker pull --platform linux/amd64 node:24
+      - name: Run the developer suite with a read-only repository and no network
+        run: npm run test:docker
       - name: Build both Linux amd64 images
         run: |
           docker build --platform linux/amd64 -t tdarr-review:smoke .

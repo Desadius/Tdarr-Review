@@ -1,5 +1,6 @@
 import {extractPreview} from './av-preview.mjs';
 import {pruneSessions,pruneAuthAttempts} from './auth-state.mjs';
+import {RESUME_RETRY_TICK_MS,resumeRetryDelay} from './resume-retry.mjs';
 import {publishApproval} from './quarantine-retention.mjs';
 import {extractListeningAudio} from './audio-listen.mjs';
 import {assessment} from './assessment.mjs';
@@ -411,10 +412,16 @@ const server=http.createServer(async(req,res)=>{
 });
 server.listen(PORT,'0.0.0.0',()=>console.log('Tdarr Review listening on '+PORT));
 const previewTimer=setInterval(()=>{if(!busyFor('background'))void scan().then(preparePreviews).catch(error=>console.error('Preview preparation: '+error.message))},60000);previewTimer.unref();
+// A failed node restore is retried here with backoff, never as a side effect of a GET request.
+let resumeFailures=0,nextResumeAt=0;
+const resumeRetryTimer=setInterval(()=>{
+ if(stopping||!state.pauses.length||busyFor('resume')||Date.now()<nextResumeAt)return;
+ void resume().catch(e=>console.error('Node restore: '+e.message)).then(()=>{if(state.pauses.length)nextResumeAt=Date.now()+resumeRetryDelay(resumeFailures++);else resumeFailures=nextResumeAt=0});
+},RESUME_RETRY_TICK_MS);resumeRetryTimer.unref();
 const previewStart=setTimeout(()=>{void scan().then(preparePreviews).catch(error=>console.error('Preview preparation: '+error.message))},1000);previewStart.unref();
 let stopping=false;
 for(const signal of ['SIGTERM','SIGINT'])process.once(signal,()=>{
- if(stopping)return;stopping=true;clearInterval(previewTimer);clearTimeout(previewStart);clearInterval(replacementTimer);
+ if(stopping)return;stopping=true;clearInterval(previewTimer);clearTimeout(previewStart);clearInterval(replacementTimer);clearInterval(resumeRetryTimer);
  const drained=new Promise(resolve=>server.close(resolve));server.closeIdleConnections();
  void Promise.all([previews.close(),drained]).then(async()=>{while(active||batchRunning||reviewSessions.busy||settingsBusy||resumeTask)await new Promise(resolve=>setTimeout(resolve,50));await saveChain;process.exit(0)}).catch(error=>{console.error('Review shutdown: '+error.message);process.exit(1)});
 });
