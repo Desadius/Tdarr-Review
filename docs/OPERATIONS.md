@@ -58,6 +58,10 @@ Inspect the film's detail and durable journal. Preserve `.tdarr-review-*.old`, `
 
 `manual` means an identity, mapping or mutation could not be verified. It does not mean a quarantined file should be deleted. `Not required` means Tdarr skipped the encoding decision, not that the file is healthy or already optimized.
 
+## Recovery configuration was edited
+
+Recovery applies `/data/config.json` only at start-up. After an edit the worker logs `config.json changed since start-up; restart the worker to apply it` and the shared status file shows `configChange.restartRequired: true`. If `configChange.valid` is `false`, correct the file first: a restart with invalid JSON stops the worker. Then restart the Recovery container while it is idle, as described in step 2 of *Update an existing deployment*. Reverting the edit clears the notice without a restart.
+
 ## Container health
 
 The Review container health check reads `GET /health`, which answers only requests from loopback inside the container (other clients get 404) and needs no login. It returns `pendingTransactions`, `restorePending`, the shared Recovery status (`present`, `updated`, `stale` after 12 minutes) and an `attention` list (`pending-transaction`, `node-restore-pending`, `recovery-status-stale`). The check prints `OK` or `Attention: …` with the summary into Docker's health log:
