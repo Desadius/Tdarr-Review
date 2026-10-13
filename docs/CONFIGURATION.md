@@ -63,6 +63,7 @@ The worker reads `config.json` only when it starts. Edits, including `enabled`, 
 | `database`, `reports`, `ffmpeg` | Read-only Tdarr SQLite/reports and decoder executable |
 | `stableMinutes` | `10`: minimum time since source modification |
 | `decodeTimeoutHours` | `12`: timeout is an operational failure, never corruption proof |
+| `fullSourceHash` | `false`: identity is checked by fingerprint and three 1 MiB samples. `true` also reads the whole original for a SHA-256 once when the corruption is confirmed and again right before the quarantine rename; a different hash stops the repair before the rename. The hash runs at idle I/O and lowest CPU priority, reports progress as `fullHash` in the shared status file, and on a large film can take as long as reading the whole file twice. |
 | `confirmDelaySeconds` | `30`: delay between independent original checks |
 | `maxRepairsPerDay` | `3`: rolling 24-hour circuit breaker |
 | `movieCooldownDays` | `30`: prevent repeated repairs for the same movie |

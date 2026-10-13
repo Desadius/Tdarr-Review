@@ -56,11 +56,11 @@ Review only offers approval for a result produced by one of the supported transc
 
 | Check | Rule | Example message |
 | --- | --- | --- |
-| Video tracks | The original and the result each have exactly one video track (cover art is ignored). | *The result does not have exactly one video track (found: 2).* |
-| Original codec | The original is `h264`, `hevc`, `vc1` or `mpeg2video`. | *The original's codec is not supported: av1.* |
-| Result codec | The result is HEVC. | *The result is not HEVC: h264.* |
-| Pixel format | The result is 10-bit `yuv420p10le`. | *The result does not use the 10-bit pixel format yuv420p10le: yuv420p.* |
-| Resolution | The result has exactly the original's width and height; nothing is scaled or cropped. | *The result's resolution 1280×720 differs from the original's 1920×1080.* |
+| Video tracks | The original and the result each have exactly one video track (cover art is ignored). | *The result does not have exactly one video track. Video tracks: 2* |
+| Original codec | The original is `h264`, `hevc`, `vc1` or `mpeg2video`. | *The original's codec is not supported (allowed: h264, hevc, vc1 and mpeg2video): av1* |
+| Result codec | The result is HEVC. | *The result is not HEVC: h264* |
+| Pixel format | The result is 10-bit `yuv420p10le`. | *The result does not use the 10-bit pixel format yuv420p10le: yuv420p* |
+| Resolution | The result has exactly the original's width and height; nothing is scaled or cropped. | *The result's resolution differs from the original (result / original): 1280×720 / 1920×1080* |
 | Profile marker | An HEVC original needs a result tagged by an allowed profile: `TDARR_HDR_PROFILE` = `tdarr-hdr10-crf21-v1`, `tdarr-hdr10plus-crf21-v1`, `tdarr-dv81-crf21-v1`, `tdarr-dv81-hdr10plus-crf21-v1` or `tdarr-dv7-video-copy-v1`, or `TDARR_SDR_PROFILE` = `tdarr-hevc-sdr-crf21-v1`. A `vc1`/`mpeg2video` original needs the legacy SDR profile (`tdarr-legacy-sdr-crf21-v1`, progressive 1080p SDR only). An original that already carries an HDR profile marker has been converted before and is blocked. | *The HEVC result was not produced by an allowed HDR profile.* |
 | Profile metadata | Each profile then compares its own metadata: HDR10 mastering/content light levels, HDR10+ and Dolby Vision presence, SDR colour properties, frame rate and field order. | Message of the failed profile check |
 | Audio | The result has at least one audio track. | *The result contains no audio.* |

@@ -4,6 +4,7 @@ This records the implemented application features. Versions before 1.10.0 were d
 
 ## Unreleased
 
+- Optional Recovery setting `fullSourceHash`: compare a full SHA-256 of the original at confirmation and right before the quarantine rename, at idle I/O priority with progress in the status file. Sampling remains the default.
 - A film blocked by the strict video rules now says which check failed (video track count, original codec, result codec, pixel format or resolution) instead of a generic message. The user guide explains every blocking rule.
 - Retry a failed restore of Tdarr nodes that Review paused from a server timer with backoff (15 s doubling up to 10 min) instead of on every `GET /api/items` poll, so reading the dashboard no longer changes Tdarr state.
 - Add dependency-free Node 24 coverage reporting with `npm run test:coverage`; CI reports line, branch and function coverage in the same complete test run, without an unmeasured threshold.
@@ -13,6 +14,7 @@ This records the implemented application features. Versions before 1.10.0 were d
 - Add `npm run test:docker` for the full Linux/Node 24 syntax and regression suite from Windows, with a read-only repository, disposable scratch space and no container network.
 - Report Windows-only POSIX directory-fsync, permission and symlink test limitations explicitly while retaining platform-independent coverage and mandatory production durability checks.
 - The Review health check now reads a loopback-only `/health` summary and writes pending exchange transactions, Tdarr nodes still paused by Review and a stale Recovery status into Docker's health log. These are reported without marking the container unhealthy, so no restart interrupts them.
+- Cover authored server-error string literals with a regression check against the English catalog, and translate missing file-identity, review-save and preview errors without changing Czech messages or operational checks.
 
 ## 1.10.5 — 2026-10-13
 

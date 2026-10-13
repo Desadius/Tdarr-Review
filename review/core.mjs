@@ -106,12 +106,12 @@ export function inspect(original,review) {
   const a=original.streams.filter(s=>s.codec_type==='video'&&!s.disposition?.attached_pic);
   const b=review.streams.filter(s=>s.codec_type==='video'&&!s.disposition?.attached_pic);
   // Each failed rule names itself so a blocked film says which check it did not pass (docs/USER-GUIDE.md).
-  if(a.length!==1)throw new Error('Originál nemá právě jednu video stopu (nalezeno: '+a.length+').');
-  if(b.length!==1)throw new Error('Výsledek nemá právě jednu video stopu (nalezeno: '+b.length+').');
-  if(!['h264','hevc','vc1','mpeg2video'].includes(a[0].codec_name))throw new Error('Kodek originálu není podporovaný: '+(a[0].codec_name||'?')+'. Povolené jsou h264, hevc, vc1 a mpeg2video.');
-  if(b[0].codec_name!=='hevc')throw new Error('Výsledek není HEVC: '+(b[0].codec_name||'?')+'.');
-  if(b[0].pix_fmt!=='yuv420p10le')throw new Error('Výsledek nemá 10bitový formát pixelů yuv420p10le: '+(b[0].pix_fmt||'?')+'.');
-  if(a[0].width!==b[0].width||a[0].height!==b[0].height)throw new Error('Rozlišení výsledku '+b[0].width+'×'+b[0].height+' se liší od originálu '+a[0].width+'×'+a[0].height+'.');
+  if(a.length!==1)throw new Error('Originál nemá právě jednu video stopu. Počet video stop: '+a.length);
+  if(b.length!==1)throw new Error('Výsledek nemá právě jednu video stopu. Počet video stop: '+b.length);
+  if(!['h264','hevc','vc1','mpeg2video'].includes(a[0].codec_name))throw new Error('Kodek originálu není podporovaný (povolené jsou h264, hevc, vc1 a mpeg2video): '+(a[0].codec_name||'?'));
+  if(b[0].codec_name!=='hevc')throw new Error('Výsledek není HEVC: '+(b[0].codec_name||'?'));
+  if(b[0].pix_fmt!=='yuv420p10le')throw new Error('Výsledek nemá 10bitový formát pixelů yuv420p10le: '+(b[0].pix_fmt||'?'));
+  if(a[0].width!==b[0].width||a[0].height!==b[0].height)throw new Error('Rozlišení výsledku se liší od originálu (výsledek / originál): '+`${b[0].width}×${b[0].height} / ${a[0].width}×${a[0].height}`);
   if(['vc1','mpeg2video'].includes(a[0].codec_name))legacySDR.compare(original,review);
   if(a[0].codec_name==='hevc'&&review.format?.tags?.TDARR_SDR_PROFILE===hevcSDR.MARKER)hevcSDR.compare(original,review);
   else if(a[0].codec_name==='hevc'){

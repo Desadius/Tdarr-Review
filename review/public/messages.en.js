@@ -1,5 +1,14 @@
 export default {
   "exact": {
+    "Čas je mimo délku kontrolovaných souborů.": "The time is outside the duration of the reviewed files.",
+    "Chybí obrazová stopa.": "The video track is missing.",
+    "Tuto kombinaci HDR nelze porovnat.": "This HDR combination cannot be compared.",
+    "Položku nelze bezpečně přiřadit k revizi. Obnov přehled.": "The item cannot be safely matched to the review. Refresh the overview.",
+    "Soubory nejsou dostupné nebo se změnily. Obnov přehled.": "The files are unavailable or have changed. Refresh the overview.",
+    "Soubory se během kontroly změnily. Obnov přehled.": "The files changed during verification. Refresh the overview.",
+    "Během ukládání začala jiná akce. Zkus revizi znovu.": "Another action started while saving. Try saving the review again.",
+    "Položka se během kontroly změnila. Obnov přehled.": "The item changed during verification. Refresh the overview.",
+    "Nelze ověřit délku kontrolovaných souborů.": "The duration of the reviewed files cannot be verified.",
     "Ukázky": "Samples",
     "Stav ukázek": "Sample status",
     "Připraveno": "Ready",
@@ -915,40 +924,41 @@ export default {
     "Uchování ukázek od vytvoření (dny)": "Sample retention from creation (days)"
   },
   "patterns": [
+    ["Neplatný limit přípravy: {0}", "Invalid preparation limit: {0}", {"raw": [0]}],
     [
-      "Originál nemá právě jednu video stopu (nalezeno: {0}).",
-      "The original does not have exactly one video track (found: {0})."
+      "Originál nemá právě jednu video stopu. Počet video stop: {0}",
+      "The original does not have exactly one video track. Video tracks: {0}"
     ],
     [
-      "Výsledek nemá právě jednu video stopu (nalezeno: {0}).",
-      "The result does not have exactly one video track (found: {0})."
+      "Výsledek nemá právě jednu video stopu. Počet video stop: {0}",
+      "The result does not have exactly one video track. Video tracks: {0}"
     ],
     [
-      "Kodek originálu není podporovaný: {0}. Povolené jsou h264, hevc, vc1 a mpeg2video.",
-      "The original's codec is not supported: {0}. Allowed codecs are h264, hevc, vc1 and mpeg2video.",
+      "Kodek originálu není podporovaný (povolené jsou h264, hevc, vc1 a mpeg2video): {0}",
+      "The original's codec is not supported (allowed: h264, hevc, vc1 and mpeg2video): {0}",
       {
         "raw": [0]
       }
     ],
     [
-      "Výsledek není HEVC: {0}.",
-      "The result is not HEVC: {0}.",
+      "Výsledek není HEVC: {0}",
+      "The result is not HEVC: {0}",
       {
         "raw": [0]
       }
     ],
     [
-      "Výsledek nemá 10bitový formát pixelů yuv420p10le: {0}.",
-      "The result does not use the 10-bit pixel format yuv420p10le: {0}.",
+      "Výsledek nemá 10bitový formát pixelů yuv420p10le: {0}",
+      "The result does not use the 10-bit pixel format yuv420p10le: {0}",
       {
         "raw": [0]
       }
     ],
     [
-      "Rozlišení výsledku {0} se liší od originálu {1}.",
-      "The result's resolution {0} differs from the original's {1}.",
+      "Rozlišení výsledku se liší od originálu (výsledek / originál): {0}",
+      "The result's resolution differs from the original (result / original): {0}",
       {
-        "raw": [0, 1]
+        "raw": [0]
       }
     ],
     [
