@@ -1,15 +1,14 @@
-import {mountAVComparison} from '/av-player.js?v=20261012-wipe1';
-import {mountReviewWorkflow,classifyPreparation,preparationSummary,previewJobMatches,createCachedPreviewLoader} from '/review-workflow.js?v=20261013-prepared2';
-import {capabilities, classifyRecovery, recoveryProgress, downloadProgress, liveRecoveryRecord, projectRequests, historyWarnings, historyFollowup, quarantineLifecycle, recoveryFollowup} from '/review-model.js?v=20261012-recovery3';
-import {tr,locale,initializeLocale,translateAudioTrackLabel as audioTrackLabel} from '/i18n.js?v=20261013-retention1';
+import {mountReviewWorkflow,classifyPreparation,preparationSummary} from '/review-workflow.js?v=20261013-prepared2';
+import {capabilities, classifyRecovery, recoveryProgress, downloadProgress, liveRecoveryRecord, projectRequests, historyWarnings, historyFollowup, recoveryFollowup} from '/review-model.js?v=20261012-recovery3';
+import {$,el,fmt,date,elapsedText,etaText,poster,button,badge,keyed,makeTabs,detailsFacts} from '/ui-kit.js?v=20261013-split1';
+import {decodeProgressView,downloadProgressView,recoveryDetails} from '/recovery-view.js?v=20261013-split1';
+import {installComparisons,openComparison,openAudioComparison} from '/comparison.js?v=20261013-split1';
+import {installSettingsDialogs} from '/settings-dialogs.js?v=20261013-split1';
+import {installQuarantine,openQuarantine} from '/quarantine.js?v=20261013-split1';
+import {installStatistics,loadStatistics,statisticsLoadedAt} from '/statistics.js?v=20261013-split1';
+import {tr,locale,initializeLocale} from '/i18n.js?v=20261013-retention1';
 initializeLocale();
 
-const $=id=>document.getElementById(id);
-const el=(tag,cls,text,raw=false)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=raw?text:tr(text);return n};
-const fmt=n=>Number.isFinite(n)?(n/2**30).toLocaleString(locale,{maximumFractionDigits:1})+' GiB':'Nedoloženo';
-const date=n=>n&&Number.isFinite(new Date(n).getTime())?new Date(n).toLocaleString(locale):'Čas není doložen';
-const elapsedText=n=>{n=Math.max(0,Math.floor(n));return [Math.floor(n/3600),Math.floor(n%3600/60),n%60].map(x=>String(x).padStart(2,'0')).join(':')};
-const etaText=n=>n<60?'méně než minuta':Math.ceil(n/60)<60?`asi ${Math.ceil(n/60)} min`:`asi ${Math.floor(n/3600)} h ${Math.ceil(n%3600/60)} min`;
 const busy=d=>!!d?.active||!!d?.batchRunning;
 let latest=null,pending=null,loading=false,lastRender='',receivedAt=0,serverAt=Date.now();
 let authenticated=false,actionInFlight=false,requests=[],requestsReceived=0,requestsLoading=false,requestsError='',dataError='',confirmOrigin=null;
@@ -19,7 +18,6 @@ let reviewWorkspace=null;
 try{ui.layout=localStorage.getItem('tdarr-review-layout')==='gallery'?'gallery':'work'}catch{}
 const context=()=>({authenticated,fresh:!!receivedAt&&!dataError&&Date.now()-receivedAt<15000,requests,requestsFresh:!!requestsReceived&&!requestsError&&Date.now()-requestsReceived<90000,settingsBusy:actionInFlight});
 const caps=item=>capabilities(item,latest||{items:[],recovery:[]},context());
-function pendingPreviewMessage(preparation,request){const job=preparation?.jobs?.find(x=>previewJobMatches(x,request)),waiting=job&&job.status!=='error'&&!['disabled','unavailable'].includes(preparation.state);return preparationSummary(preparation,tr)+' · '+tr(waiting?'Hotová ukázka se načte automaticky. Jiný úsek vytvoř tlačítkem.':'Pro vybraný úsek není hotová ukázka. Vytvoř ji tlačítkem.')}
 function previewRenderSignature(data){return JSON.stringify({...data,serverTime:undefined,previews:Object.fromEntries(Object.entries(data.previews||{}).map(([id,value])=>[id,value?{...value,updated:undefined}:value]))})}
 
 async function api(route,body){
@@ -112,19 +110,6 @@ $('approveSelected').onclick=()=>{
  pending={action:'batch',items,reviewRevisions:Object.fromEntries(items.map(item=>[item.id,latest?.reviewSessions?.[item.id]?.revision]))};confirmSetup('HROMADNÉ SCHVÁLENÍ',`Schválit ${items.length} filmů?`,`Vybrané filmy: ${items.map(x=>x.title).join('; ')}. Postupně se ověří identita souborů a kontrolní součet kopie, pak se nahradí originály. Původní verze budou odstraněny. Health check z Tdarru se neopakuje. Možná úspora ${fmt(items.reduce((s,x)=>s+x.originalBytes-x.reviewBytes,0))}. Dávka běží na serveru i po zavření stránky. Při chybě jednoho filmu zachová jeho soubory a pokračuje dalším.`,`Schválit ${items.length} filmů`);$('confirm').showModal();
 };
 
-function poster(kind,id,title){
- const box=el('div','poster'),fallback=el('span','poster-fallback','▣'),img=el('img');fallback.setAttribute('aria-hidden','true');img.alt=tr('');img.width=96;img.height=144;img.loading='lazy';img.decoding='async';img.src=`/api/artwork/${kind}/${encodeURIComponent(id)}`;
- img.onerror=()=>{img.hidden=true;box.classList.add('missing')};box.append(fallback,img);return box;
-}
-function button(text,fn,cls='secondary'){const b=el('button',cls,text);b.type='button';b.onclick=fn;return b}
-function badge(text,kind=''){return el('span','badge '+kind,text)}
-function keyed(container,records,keyOf,build){
- const old=new Map([...container.children].map(n=>[n.dataset.key,n])),focus=document.activeElement?.closest('[data-focus]')?.dataset.focus;
- let cursor=container.firstElementChild;
- for(const data of records){const key=keyOf(data),sig=JSON.stringify(data);let row=old.get(key);old.delete(key);if(!row||row.dataset.signature!==sig){const fresh=build(data);fresh.dataset.key=key;fresh.dataset.signature=sig;if(row){if(cursor===row)cursor=fresh;row.replaceWith(fresh)}row=fresh}if(row!==cursor)container.insertBefore(row,cursor);cursor=row.nextElementSibling;}
- for(const row of old.values())row.remove();
- if(focus&&document.activeElement===document.body){const replacement=[...container.querySelectorAll('[data-focus]')].find(n=>n.dataset.focus===focus);replacement?.focus({preventScroll:true})}
-}
 function previewPreparationBadge(item){
  const preparation=latest?.previews?.[item.id],status=classifyPreparation(preparation,item.snapshot),box=el('div','preview-card-status'),icon=el('span','preview-status-icon',status.icon,true),label=el('strong','preview-status-label',tr('Ukázky')+': '+tr(status.label),true);box.dataset.kind=status.kind;box.title=preparation?.snapshot===item.snapshot&&preparation.error?tr(preparation.error):preparationSummary(preparation?.snapshot===item.snapshot?preparation:null,tr);box.setAttribute('role','group');box.setAttribute('aria-label',tr('Stav ukázek'));icon.setAttribute('aria-hidden','true');box.append(icon,label);
  if(status.total>0)box.append(el('span','preview-status-count',status.ready+'/'+status.total,true));
@@ -150,12 +135,6 @@ function renderAttention(){
  keyed($('events'),events,x=>x.kind,x=>{const row=el('div'),b=button(x.kind==='history'?'Historie':'Obnovy',()=>navigate(x.kind,{filter:x.kind==='history'?'warning':'attention'}));b.dataset.focus='event:'+x.kind;row.append(el('span','',x.kind==='history'?`${x.count} upozornění v historii`:`${x.count} obnov k ověření`),b);return row});
  updateSelection();
 }
-function makeTabs(container,tabs,current,onChange){
- const oldFocus=document.activeElement?.id;container.replaceChildren();
- for(const [id,label] of tabs){const b=button(label,()=>onChange(id));b.id=container.id+'-'+id;b.setAttribute('role','tab');b.setAttribute('aria-selected',String(id===current));b.setAttribute('aria-controls',container.id==='detailTabs'?'detailBody':'recoveryPanel');b.tabIndex=id===current?0:-1;
-  b.onkeydown=e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const i=tabs.findIndex(x=>x[0]===id),next=e.key==='Home'?0:e.key==='End'?tabs.length-1:(i+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;onChange(tabs[next][0]);$(container.id+'-'+tabs[next][0])?.focus()};container.append(b)}
- if(oldFocus&&oldFocus.startsWith(container.id+'-'))$(oldFocus)?.focus({preventScroll:true});
-}
 function recoveryRow(projected){
  const r=projected.record||projected.raw||projected,cl=projected.classification||classifyRecovery(r,Date.now()),row=el('article','recovery-row'),info=el('div','row-info');
  info.append(badge(cl.label,cl.category==='attention'?'warning':cl.category==='done'?'ready':''),el('h2','',r.title,true),el('p','details',cl.nextStep));
@@ -163,20 +142,6 @@ function recoveryRow(projected){
  const meta=el('div','row-metric');meta.append(el('span','details',r.source==='recovery'?'Recovery · Radarr · Tdarr':'Náhrada přes Radarr'),el('small',cl.stale?'failure':'details',cl.stale?'Stav starší než 12 minut':date(r.statusUpdated||r.updated)));
  const b=button('Prohlédnout',()=>openDetail('request',projected.key));b.setAttribute('aria-label',tr('Prohlédnout obnovu '+r.title));b.dataset.focus='recovery:'+projected.key;
  row.append(poster('request',r.id,r.title),info,meta,b);return row;
-}
-function downloadProgressView(p,detail=true){
- const box=el('div','decode-progress');box.append(el('strong','',p.label));if(detail&&p.title)box.append(el('p','details',p.title,true));
- if(p.downloadPercent!==null){const meter=el('progress','task-meter');meter.max=100;meter.value=p.downloadPercent;meter.setAttribute('aria-label',tr('Průběh stažení souboru'));box.append(meter,detailsFacts([['Stažení souboru',p.downloadPercent.toLocaleString(locale,{maximumFractionDigits:1})+' %']]));}
- if(p.eta)box.append(detailsFacts([['Zbývající čas stažení',p.eta]]));
- if(detail){box.append(el('p','details','Procenta označují pouze stažení. Import, převod a schválení jsou samostatné kroky.'));if(p.error)box.append(el('p','failure',p.error));}return box;
-}
-function decodeProgressView(p,detail=true){
- const box=el('div','decode-progress'),meter=el('progress','task-meter');meter.max=100;meter.setAttribute('aria-label',tr(`Kontrola originálu, průchod ${p.pass} ze 2`));if(p.percent!==null)meter.value=p.percent;
- box.append(el('strong','',`Kontrola originálu · průchod ${p.pass}/2${p.percent===null?'':` · ${p.percent.toLocaleString(locale,{maximumFractionDigits:1})} %`}`),meter);
- const position=p.seconds===null?'Čeká na měření':`Zkontrolováno ${elapsedText(p.seconds)}${p.duration===null?'':` z ${elapsedText(p.duration)}`}`;
- box.append(el('p','details',`${position} · ${p.etaSeconds===null?'Odhad času zatím není dostupný':'Zbývá '+etaText(p.etaSeconds)}`));
- if(detail){box.append(el('p','details',`${p.elapsedSeconds===null?'':`Tento průchod běží ${elapsedText(p.elapsedSeconds)} · `}${p.speed===null?'':'Rychlost '+p.speed.toLocaleString(locale,{maximumFractionDigits:2})+'×'}`),el('p','details',p.note),detailsFacts([['Poslední měření dekodéru',date(p.measuredAt)],['Poslední odezva Recovery',date(p.heartbeatAt)]]));}
- return box;
 }
 function renderRecovery(){
  const projects=projectRequests(requests,latest?.items||[],Date.now()),categories=[['running','Probíhá'],['waiting','Čeká'],['attention','Vyžaduje zásah'],['unverified','Stav nelze ověřit'],['done','Dokončeno']];
@@ -201,7 +166,6 @@ function renderHistory(){
  $('historyPage').textContent=tr(`Strana ${ui.historyPage+1} z ${pages} · ${records.length} událostí`);$('historyPrev').disabled=ui.historyPage===0;$('historyNext').disabled=ui.historyPage===pages-1;
  const b=latest?.batch;$('batchArchive').hidden=!b||b.status==='running';if(b&&b.status!=='running')$('batchArchive').replaceChildren(el('strong','',b.status==='complete'?'Poslední dávka dokončena':'Poslední dávka přerušena'),el('p','details',`${b.finished} z ${b.total} · chyby: ${b.failed}${b.message?' · '+b.message:''}`));
 }
-function detailsFacts(facts){const dl=el('dl','facts');for(const [key,value,raw=false]of facts){dl.append(el('dt','',key),el('dd','',value,raw))}return dl}
 function guardedButton(item,cap,text,fn,cls='secondary'){const b=button(text,()=>{if(!caps(item)[cap]){error(Error(caps(item).reason||'Akce není dostupná.'));return}fn()},cls);b.dataset.cap=cap;b.disabled=!caps(item)[cap];return b}
 
 function detailReview(item,tab){
@@ -301,17 +265,6 @@ function render(d){
  renderAttention();renderRecovery();renderHistory();renderBatch();paintProgress();updateGuards();handleHash();
 }
 function renderBatch(){const b=latest?.batch;$('batch').hidden=!b||b.status!=='running';$('batch').replaceChildren();if(b?.status==='running'){const p=el('progress','batch-meter');p.max=b.total;p.value=b.finished;p.setAttribute('aria-label',tr('Dokončené filmy dávky'));$('batch').append(el('strong','',`Hromadné schválení · ${b.finished} z ${b.total}`),p,el('span','details',`Chyby: ${b.failed}${b.message?' · '+b.message:''}`))}}
-const statsBox=$('statsContent');let statsLoading=false,statsLoaded=0;
-async function loadStatistics(){
- if(statsLoading||!authenticated||$('workspace').hidden)return;statsLoading=true;
- try{const d=await api('/api/statistics');statsLoaded=Date.now();statsBox.replaceChildren();const cards=el('div','stats-cards');
-  for(const [label,value,detail]of [['Doložená logická úspora',fmt(d.saved),`${d.count} souborů · průměr ${Number(d.percent).toFixed(1)} %`],['Z toho přes Review',fmt(d.reviewSaved),`${d.reviewCount} souborů · součást celkové úspory`],['Čeká na schválení',fmt(d.pendingBytes),`${d.pendingCount} výsledků · zatím neuvolněno`],['Tdarr hlásí celkem',d.reported===null?'Nedostupné':fmt(d.reported),'Všechny knihovny · může zahrnovat opakované převody']]){const card=el('div');card.append(el('span','details',label),el('strong','',value),el('small','details',detail));cards.append(card)}
-  const methodology=el('details','help');methodology.append(el('summary','','Jak se úspora počítá'),el('p','details',`Porovnání aktuální velikosti souborů s dostupnou historií převodů a dokončenými protokoly Review. Každý soubor se počítá jednou. ${d.unverified} souborů nebylo možné potvrdit; smazaná historie Tdarru může v součtu chybět.`));
-  statsBox.append(cards,el('p','details','Jde o logické zmenšení souborů. Volné místo na disku se tímto neměří a zachované kopie v karanténě dál zabírají místo.'),methodology,el('p','details','Poslední výpočet: '+date(d.at)));
-  for(const warning of d.warnings||[])statsBox.append(el('p','alert',warning));
- }catch(e){let note=statsBox.querySelector('.stats-error');if(!note){note=el('p','alert stats-error');note.setAttribute('role','status');statsBox.prepend(note)}note.textContent=tr('Statistiky nelze aktualizovat; poslední údaje mohou být zastaralé. '+e.message);}finally{statsLoading=false}
-}
-setInterval(()=>{if(ui.view==='savings')loadStatistics()},15000);
 async function load(){if(loading)return;loading=true;try{const d=await api('/api/items');receivedAt=Date.now();serverAt=d.serverTime||receivedAt;authenticated=true;dataError='';$('lastUpdate').textContent=tr(date(receivedAt));$('lastUpdate').dateTime=new Date(receivedAt).toISOString();const sig=previewRenderSignature(d);if(sig!==lastRender||$('workspace').hidden||!$('login').hidden){render(d);lastRender=sig}else{if(latest)latest.previews=d.previews||{};updateGuards()}}catch(e){dataError=e.message;updateGuards();if(!latest)error(e)}finally{loading=false}}
 async function loadRequests(force=false){if(requestsLoading||!authenticated||(!force&&Date.now()-requestsReceived<30000))return;requestsLoading=true;try{requests=(await api('/api/radarr/requests')).requests;requestsReceived=Date.now();requestsError='';if(latest){renderAttention();renderRecovery();$('recoveryCount').textContent=tr(projectRequests(requests,latest.items,Date.now()).filter(x=>x.classification.category!=='done').length);const live=ui.detail?.kind==='request'?liveRecoveryRecord(ui.detail.record,requests):null;if(live){ui.detail.record=live;$('detailSubtitle').textContent=tr(classifyRecovery(live).label);renderDetailTab();}updateGuards();handleHash()}}catch(e){requestsError=e.message;renderRecovery();updateGuards()}finally{requestsLoading=false}}
 function parseHash(){const [view,query='']=location.hash.slice(1).split('?');return {view:['attention','recovery','history','savings','settings'].includes(view)?view:'attention',params:new URLSearchParams(query)}}
@@ -322,7 +275,7 @@ function handleHash(){
  for(const link of document.querySelectorAll('[data-view]')){if(link.dataset.view===view)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current')}
  if(view==='recovery'){const filter=params.get('filter');if(['running','waiting','attention','unverified','done'].includes(filter)&&filter!==ui.filter){ui.filter=filter;renderRecovery()}}
  if(view==='history'&&params.get('filter')==='warning'&&$('historyFilter').value!=='warning'){$('historyFilter').value='warning';ui.historyPage=0;renderHistory()}
- if(view==='savings'&&Date.now()-statsLoaded>15000)loadStatistics();
+ if(view==='savings'&&Date.now()-statisticsLoadedAt()>15000)loadStatistics();
  const tab=params.get('tab');if(['review','overview','comparison','recovery','technical'].includes(tab))ui.tab=params.has('film')&&tab==='comparison'?'review':tab;
  const kind=params.has('film')?'review':params.has('case')?'request':null,id=params.get(kind==='review'?'film':'case');
  if(kind){if(ui.detail?.kind!==kind||ui.detail.id!==id){const exists=kind==='review'?latest?.items.some(x=>x.id===id):projectRequests(requests,latest?.items||[],Date.now()).some(p=>p.key===id);if(exists)openDetail(kind,id,true);else if($('filmDetail').open)$('filmDetail').close()}else if($('detailTabs').querySelector('[aria-selected=true]')?.id!=='detailTabs-'+ui.tab)renderDetailTab()}
@@ -368,178 +321,8 @@ if(document.modelContext?.registerTool){
  try{Promise.resolve(document.modelContext.registerTool({name:'get_review_status',title:tr('Stav schvalování filmů'),description:'Read the currently displayed review films, batch progress and recent decisions. Does not approve or reject films.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true},execute(input){if(!input||typeof input!=='object'||Object.keys(input).length)throw new Error('Tool accepts an empty object.');if(!latest||!$('login').hidden)throw new Error('Sign in and load the review list first.');return {items:latest.items.map(({id,title,status,reason,originalBytes,reviewBytes})=>({id,title,status,reason,originalBytes,reviewBytes})),active:latest.active,batch:latest.batch||null,history:latest.history.slice(0,10)}}},{signal:lifecycle.signal})).catch(()=>{})}catch{}
  addEventListener('pagehide',()=>lifecycle.abort(),{once:true});
 }
-const compareDialog=el('dialog','comparison');document.body.append(compareDialog);
-let compareCleanup=null;
-compareDialog.addEventListener('close',()=>{compareCleanup?.();compareCleanup=null;compareDialog.replaceChildren()});
-function openComparison(item,options={}){
- const host=options.host||compareDialog;let dead=false,request=0,cachedLoader=null;host.replaceChildren();
- const current=()=>!dead&&host.isConnected&&latest?.items.some(x=>x.id===item.id&&x.snapshot===item.snapshot);
- const cleanup=()=>{dead=true;request++;cachedLoader?.stop();host.replaceChildren()};if(!options.host){compareCleanup?.();compareCleanup=cleanup}
- const heading=el('div','comparison-head'),close=button('Zavřít',()=>compareDialog.close());heading.append(el('h2','',item.title,true),close);
- const note=el('p','','Snímky ve stejném čase, PNG bez další ztrátové komprese. Porovnání je statické, bez zvuku.');
- const controls=el('form','comparison-controls'),label=el('label','','Čas ve filmu (sekundy)'),time=el('input');time.type='number';time.min='0';time.step='0.001';time.max=String(Math.max(0,Math.min(item.durationA,item.durationB)-1));time.value=String(Math.min(Number(time.max),options.scope?.seconds??Math.min(300,Math.floor(Number(time.max)/2))));label.append(time);
- const go=el('button','','Načíst oba snímky'),zoom=button('Zvětšení 1 : 1',()=>{enlarged=!enlarged;pair.classList.toggle('actual-size',enlarged);zoom.textContent=tr(enlarged?'Přizpůsobit šířce':'Zvětšení 1 : 1')});
- const status=el('p','comparison-status','Vyber čas a načti snímky.');status.setAttribute('role','status');const pair=el('div','comparison-pair');let enlarged=false;
- controls.append(label,go,zoom);
- const canInteract=()=>current()&&(options.canInteract?.()??true),validTime=()=>time.value.trim()!==''&&time.validity.valid&&Number.isFinite(Number(time.value))&&Number(time.value)>=0&&Number(time.value)<=Number(time.max);
- const scopeChanged=()=>{if(!canInteract())return;cachedLoader?.stop();const valid=validTime();options.onScopeValidityChange?.(valid);if(valid)options.onScopeChange?.({...options.scope,seconds:Number(time.value)});request++;pair.replaceChildren();status.textContent=tr('Vyber čas a načti snímky.');go.dataset.previewInvalid=String(!valid);go.disabled=!valid};time.oninput=time.onchange=scopeChanged;
- const presets=el('div','comparison-controls');for(const percent of [10,30,50,70,90])presets.append(button(percent+' % filmu',()=>{time.value=String(Math.floor(Number(time.max)*percent/100));scopeChanged();controls.requestSubmit()}));
- for(const control of [time,go,...presets.querySelectorAll('button')])control.dataset.previewControl='';const setBusy=value=>{controls.dataset.previewBusy=String(value);for(const control of [time,go,...presets.querySelectorAll('button')]){control.dataset.previewBusy=String(value);control.disabled=value||!canInteract()||control.dataset.previewInvalid==='true'}};
- function renderFrames(d){
-  pair.replaceChildren();const panes=[];for(const [key,title]of [['original','Originál'],['review','Překódovaný výsledek']]){const figure=el('figure'),pane=el('div','frame-scroll'),img=el('img');img.alt=tr(title+' v čase '+elapsedText(d.seconds));img.src='data:image/png;base64,'+d[key];pane.append(img);figure.append(el('figcaption','',title),pane);pair.append(figure);panes.push(pane)}
-  let sync=false;for(const [i,pane]of panes.entries())pane.onscroll=()=>{if(sync)return;sync=true;panes[1-i].scrollLeft=pane.scrollLeft;panes[1-i].scrollTop=pane.scrollTop;requestAnimationFrame(()=>{sync=false})};
-  status.textContent=tr('Hotové snímky jsou načtené.')+' '+tr('Čas ve filmu (sekundy)')+': '+Number(d.seconds).toFixed(2)+' · '+tr(d.hdr?'HDR převedeno shodně do SDR pro náhled. Věrnost HDR ověř na TV.':'Plné rozlišení snímků; detaily porovnej ve zvětšení 1 : 1.');
- }
- controls.onsubmit=async e=>{e.preventDefault();if(go.disabled||!canInteract()||!validTime())return;scopeChanged();const generation=++request;setBusy(true);pair.replaceChildren();status.textContent=tr('Připravuji oba snímky na serveru… Obvykle několik sekund, nejvýše dvě minuty.');
-  try{await options.beforePreview?.();if(!current())return;const d=await api('/api/items/'+item.id+'/frames',{snapshot:item.snapshot,seconds:Number(time.value)});if(!current()||generation!==request)return;if(d.pending){options.onPreparation?.(d.preparation);status.textContent=preparationSummary(d.preparation,tr);return}renderFrames(d)}
-  catch(e){if(current()&&generation===request)status.textContent=tr(e.message)}finally{if(current()&&generation===request)setBusy(false)}
- };
- host.append(...(options.host?[]:[heading]),note,controls,presets,status,pair);if(!options.host){compareDialog.setAttribute('aria-label',tr('Porovnání obrazu · '+item.title));compareDialog.showModal()}
- if(options.cachedAutoLoad){void Promise.resolve().then(()=>{if(!current()||!validTime())return;const generation=request;
-  cachedLoader=createCachedPreviewLoader({current:()=>current()&&generation===request,load:body=>api('/api/items/'+item.id+'/frames',body),readPreparation:()=>api('/api/items/'+item.id+'/preview-status?snapshot='+encodeURIComponent(item.snapshot)),onPreparation:options.onPreparation,onPending:(d,body)=>status.textContent=pendingPreviewMessage(d.preparation,body),onReady:renderFrames,onError:e=>status.textContent=tr(e.message)});
-  cachedLoader.start([{snapshot:item.snapshot,mode:'frames',seconds:Number(time.value)}]);
- })}else if(options.autoLoad!==false)controls.requestSubmit();return cleanup;
-}
-const settingsDialog=el('dialog','settings-dialog');document.body.append(settingsDialog);
-const settingsButton=$('settingsReview');
-settingsButton.onclick=async()=>{
- try{
- const data=await api('/api/settings');settingsDialog.replaceChildren();const title=el('h2','','Nastavení Review'),form=el('form'),fields={};
- const help=el('p','','Jedna knihovna na instalaci. Cesty vlevo v Docker mapování nejsou stejné jako cesty uvnitř kontejnerů. Zde zadávej cesty dostupné uvnitř Review, u polí Tdarr cesty viditelné jeho serverem.');
- const descriptions=[['label','Název instalace','Například Domácí knihovna'],['publicOrigin','Veřejná adresa Review','Úplná adresa včetně http(s) a portu. Při změně se přepne adresa této stránky.'],['tdarrUrl','Adresa API Tdarr','Například http://tdarr:8266; musí být dostupná z kontejneru Review.'],['mediaRoot','Originály v kontejneru Review','Například /media; vyžaduje čtení a zápis.'],['reviewRoot','Výsledky v kontejneru Review','Například /review; oddělená složka s právem zápisu.'],['sourceRoots','Zdrojové cesty v Tdarru','Jedna cesta na řádek. První odpovídá knihovně, další jsou případné aliasy stejného obsahu.'],['tdarrReviewRoot','Review cesta v Tdarru','Například /pilot-review; slouží ke kontrole běžících úloh.'],['reviewPrefixes','Podsložky Review určené k odebrání z cesty','Jedno jméno na řádek, například PROD-Movies. Prázdné = stejná struktura jako originály.'],['libraryId','ID knihovny Tdarr','Prázdné = automaticky podle zdrojové cesty.'],['database','Databáze Tdarr v kontejneru Review','Připoj aktuální adresář SQL včetně WAL/SHM pouze pro čtení.'],['ffprobe','Program FFprobe','Absolutní cesta v kontejneru Review.'],['ffmpeg','Program FFmpeg','Absolutní cesta; používá se pro porovnání snímků.']];
- for(const [key,text,hint] of descriptions){const label=el('label','settings-field',text),input=el(['sourceRoots','reviewPrefixes'].includes(key)?'textarea':'input');input.value=Array.isArray(data.config[key])?data.config[key].join('\n'):data.config[key];label.append(input,el('small','',hint));form.append(label);fields[key]=input}
- const status=el('p');status.setAttribute('role','status');const actions=el('div','dialog-actions'),test=el('button','secondary','Otestovat'),save=el('button','','Ověřit a uložit'),close=el('button','secondary','Zavřít');test.type=close.type='button';close.onclick=()=>settingsDialog.close();actions.append(close,test,save);
- async function submit(onlyTest){test.disabled=save.disabled=true;status.textContent=tr('Ověřuji spojení a cesty…');try{const config={};for(const [k,input] of Object.entries(fields))config[k]=['sourceRoots','reviewPrefixes'].includes(k)?input.value.split('\n').map(x=>x.trim()).filter(Boolean):input.value.trim();const result=await api(onlyTest?'/api/settings/test':'/api/settings',{config,revision:data.revision});status.textContent=tr(onlyTest?result.message:'Nastavení uloženo. '+result.message);data.revision=result.revision;if(!onlyTest){lastRender='';if(result.publicOrigin!==location.origin){location.assign(result.publicOrigin);return}await load()}}catch(e){status.textContent=tr(e.message)}finally{test.disabled=save.disabled=false}}
- test.onclick=()=>submit(true);form.onsubmit=e=>{e.preventDefault();submit(false)};form.append(status,actions);settingsDialog.append(title,help,el('p','','Docker připojení složek, port a trvalý adresář /data se nastavují při instalaci kontejneru. Menu je samo nevytváří. Podporovaný profil: MKV, H.264 → HEVC 10bit, kopírované zvukové a titulkové stopy; HDR10, HDR10+, Dolby Vision 8.1 a zachování Dolby Vision 7/FEL podle kompatibilního profilu Review.'),form);settingsDialog.setAttribute('aria-label',tr('Nastavení Review'));settingsDialog.showModal();
- }catch(e){error(e)}
-};
-const previewSettingsDialog=el('dialog','settings-dialog');document.body.append(previewSettingsDialog);
-const previewSettingsCard=el('article'),previewSettingsButton=button('Nastavit přípravu ukázek',openPreviewSettings);previewSettingsCard.append(el('h2','','Příprava ukázek'),el('p','','Limity mezipaměti a automatická příprava porovnání pro čekající filmy.'),previewSettingsButton);$('view-settings').querySelector('.settings-grid').append(previewSettingsCard);
-async function openPreviewSettings(){
- try{const data=await api('/api/preview-settings');previewSettingsDialog.replaceChildren(el('h2','','Příprava ukázek'));const form=el('form'),enabled=el('input');enabled.type='checkbox';enabled.checked=data.config.enabled;
-  const enabledLabel=el('label','preview-settings-enabled','Připravovat ukázky automaticky');enabledLabel.prepend(enabled);form.append(enabledLabel);const fields={};
-  for(const [key,label,min,max]of [['maxMiB','Limit mezipaměti (MiB)',32,20480],['maxFilms','Nejvýše připravovaných filmů',1,20],['retentionDays','Uchování ukázek od vytvoření (dny)',1,30]]){const input=el('input');input.type='number';input.min=String(min);input.max=String(max);input.step='1';input.required=true;input.value=String(data.config[key]);const field=el('label','settings-field',label);field.append(input);form.append(field);fields[key]=input}
-  const languages={};for(const [key,title]of [['preferredAudioLanguages','Upřednostněné jazyky zvuku (v pořadí)'],['fallbackAudioLanguages','Záložní jazyky zvuku (v pořadí)']]){const input=el('textarea');input.rows=2;input.maxLength=160;input.placeholder='ces, eng, slk, jpn';input.value=(data.config[key]||[]).join(', ');const label=el('label','settings-field',title);label.append(input,el('small','','Kódy odděl čárkou. Prázdný seznam je povolený; nejvýše 10 jazyků.'));const shortcuts=el('div','preview-language-shortcuts');for(const [code,name]of [['ces','Čeština'],['eng','Angličtina'],['slk','Slovenština'],['jpn','Japonština']])shortcuts.append(button(name,()=>{const current=input.value.split(/[\s,;]+/).filter(Boolean);if(!current.includes(code))input.value=[...current,code].join(', ');input.focus()}));form.append(label,shortcuts);languages[key]=input}
-  const allowOther=el('input');allowOther.type='checkbox';allowOther.checked=data.config.allowOtherAudioLanguages===true;const allowOtherLabel=el('label','preview-settings-enabled','Pokud chybí preferovaný i záložní jazyk, nabídnout jiný společný hlavní zvuk');allowOtherLabel.prepend(allowOther);form.append(allowOtherLabel,el('p','details','Uložený pár stop má vždy přednost. Nejednoznačný návrh musíš zkontrolovat a stopy vybrat ručně.'));
-  const stats=el('p','details'),status=el('p');status.setAttribute('role','status');const showStats=value=>stats.textContent=tr('Mezipaměť:')+' '+(Number(value.bytes||0)/2**20).toLocaleString(locale,{maximumFractionDigits:1})+' MiB · '+tr('Hotové položky:')+' '+Number(value.entries||0)+' · '+tr('Ve frontě:')+' '+Number(value.queued||0)+' · '+tr('Probíhá:')+' '+Number(value.running||0);showStats(data.stats||{});
-  const actions=el('div','dialog-actions'),close=button('Zavřít',()=>previewSettingsDialog.close()),save=el('button','primary','Uložit nastavení');save.type='submit';actions.append(close,save);
-  form.append(el('p','details','Na pozadí se připravuje vždy jedna úloha. Jiný čas nebo jiné stopy můžeš vytvořit na požádání. Hotové ukázky nic nepotvrzují a A/B poslech spouštíš ručně.'),stats,status,actions);
-  form.onsubmit=async e=>{e.preventDefault();if(save.disabled||!form.reportValidity())return;save.disabled=true;const inputs=[...form.querySelectorAll('input'),...form.querySelectorAll('textarea'),...form.querySelectorAll('.preview-language-shortcuts button')];for(const input of inputs)input.disabled=true;try{const config={enabled:enabled.checked,...Object.fromEntries(Object.entries(fields).map(([key,input])=>[key,Number(input.value)])),...Object.fromEntries(Object.entries(languages).map(([key,input])=>[key,input.value.split(/[\s,;]+/).filter(Boolean).map(x=>x.toLowerCase())])),allowOtherAudioLanguages:allowOther.checked},result=await api('/api/preview-settings',{config,revision:data.revision});data.revision=result.revision;for(const [key,input]of Object.entries(languages))input.value=(result.config[key]||[]).join(', ');status.textContent=tr(result.message||'Nastavení uloženo.');showStats(result.stats||{});lastRender='';await load()}catch(e){status.textContent=tr(e.message)}finally{save.disabled=false;for(const input of inputs)input.disabled=false}};
-  previewSettingsDialog.append(form);previewSettingsDialog.setAttribute('aria-label',tr('Příprava ukázek'));previewSettingsDialog.showModal();
- }catch(e){error(e)}
-}
-const audioDialog=el('dialog','comparison');document.body.append(audioDialog);let audioCleanup=null;
-audioDialog.addEventListener('close',()=>{audioCleanup?.();audioCleanup=null;audioDialog.replaceChildren()});
-function openAudioComparison(item,options={}){
- const host=options.host||audioDialog;let dead=false,generation=0,working=false,abPlayer=null,avCleanup=null,prepared=null,preparedIdentity=null,trackReady=false,cachedLoader=null,preparation=options.preparation;host.replaceChildren();
- const current=()=>!dead&&host.isConnected&&latest?.items.some(x=>x.id===item.id&&x.snapshot===item.snapshot);
- const cleanup=()=>{dead=true;generation++;cachedLoader?.stop();abPlayer?.close();abPlayer=null;avCleanup?.();avCleanup=null;host.replaceChildren()};if(!options.host){audioCleanup?.();audioCleanup=cleanup}
- const head=el('div','comparison-head'),close=button('Zavřít',()=>audioDialog.close());head.append(el('h2','',item.title+' — porovnání zvuku'),close);
- const note=el('p','details','Porovnej stejný jazyk i verzi zvuku (nikoli dabing s originálem nebo komentářem). Grafy ukazují hlasitost v krocích 10 ms na stejné časové ose, nikoli kvalitu zvuku. Odhad hledá posun do ±1 sekundy. Neověřuje soulad řeči s pohybem úst.');
- const form=el('form','comparison-controls'),a=el('select'),b=el('select'),time=el('input'),profile=el('select');time.type='number';time.min='0';time.max=String(Math.max(0,Math.min(item.durationA,item.durationB)-12));time.step='0.01';time.value=String(Math.min(Number(time.max),options.scope?.seconds??Math.min(300,Math.floor(Number(time.max)/2))));
- profile.append(new Option(tr('Rychlý náhled · nejvýše 960 × 540'),'compact'),new Option(tr('Detailnější náhled · nejvýše 1920 × 1080'),'detail'));profile.value=options.previewProfile||'compact';profile.setAttribute('aria-label',tr('Kvalita videonáhledu'));
- for(const [title,input]of [['Stopa originálu',a],['Stopa převodu',b],['Začátek úseku (sekundy)',time]]){const label=el('label','',title);label.append(input);form.append(label)}
- const go=button('Porovnat 12 sekund',()=>prepare('wave')),avButton=button('Porovnat video a zvuk',()=>prepare('av'),'primary'),listen=button('Přehrát A/B do sluchátek',()=>prepare('listen'),'primary'),stop=button('Zastavit',()=>{generation++;cachedLoader?.stop();abPlayer?.stop();setWorking(false);status.textContent=tr('Poslech zastaven.')}),repeat=button('Opakovat A/B',()=>play().catch(e=>status.textContent=tr(e.message))),volume=el('input');
- const status=el('p','comparison-status','Načítám seznam zvukových stop…');status.setAttribute('role','status');const plot=el('div'),avHost=el('div','av-host');
- const audioControls=el('div','comparison-controls'),volumeLabel=el('label','','Společná hlasitost');volume.type='range';volume.min='0';volume.max='1';volume.step='.05';volume.value='.5';volume.setAttribute('aria-label',tr('Společná hlasitost obou ukázek'));volumeLabel.append(volume);audioControls.append(listen,repeat,stop,volumeLabel);
- volume.oninput=()=>{if(abPlayer)abPlayer.gain.gain.value=Number(volume.value)};
- const selectedScope=()=>({...options.scope,seconds:Number(time.value),originalIndex:a.value===''?null:Number(a.value),reviewIndex:b.value===''?null:Number(b.value)});
- const scopeIdentity=()=>JSON.stringify(selectedScope()),previewIdentity=()=>JSON.stringify({...selectedScope(),previewProfile:profile.value});
- const canInteract=()=>current()&&(options.canInteract?.()??true),validTime=()=>time.value.trim()!==''&&time.validity.valid&&Number.isFinite(Number(time.value))&&Number(time.value)>=0&&Number(time.value)<=Number(time.max);let lastScope=null;
- const presets=el('div','comparison-controls');
- const setWorking=value=>{working=value;form.dataset.previewBusy=String(value);for(const x of [go,avButton,listen,repeat,a,b,time,profile,...presets.querySelectorAll('button')]){x.dataset.previewControl='';x.dataset.previewBusy=String(value);x.dataset.previewInvalid=String([go,avButton,listen].includes(x)?!trackReady||!validTime():x===repeat?!prepared:false);x.disabled=value||!canInteract()||x.dataset.previewInvalid==='true'}};
- const observePreparation=value=>{if(value?.snapshot!==item.snapshot)return;preparation=value;options.onPreparation?.(value)};
- const invalidate=()=>{if(working||!canInteract())return;const valid=validTime();options.onScopeValidityChange?.(valid);const scope=valid?selectedScope():null,key=scope?previewIdentity():null;if(valid&&key===lastScope)return;lastScope=key;generation++;cachedLoader?.stop();abPlayer?.stop();prepared=null;preparedIdentity=null;avCleanup?.();avCleanup=null;avHost.replaceChildren();plot.replaceChildren();status.textContent=tr('Vyber odpovídající stopy a připrav ukázku.');if(valid)options.onScopeChange?.(scope);setWorking(false)};
- time.addEventListener('input',invalidate);for(const input of [time,a,b,profile])input.addEventListener('change',invalidate);
- for(const [name,percent]of [['Začátek filmu',2],['Střed filmu',50],['Konec filmu',95]])presets.append(button(name,()=>{if(working||!canInteract())return;
-  const times=[...new Set((preparation?.jobs||[]).filter(x=>x.mode==='av'&&x.previewProfile==='compact'&&x.originalIndex===Number(a.value)&&x.reviewIndex===Number(b.value)).map(x=>x.seconds).filter(Number.isFinite))].sort((x,y)=>x-y);
-  time.value=String(times.length>=3?times[percent<10?0:percent>90?times.length-1:Math.floor(times.length/2)]:Math.floor(Number(time.max)*percent/100));invalidate();if(options.cachedAutoLoad)startAutomatic();
- }));
- async function ensurePlayer(){const AudioCtor=window.AudioContext||window.webkitAudioContext;if(!AudioCtor)throw Error('Prohlížeč nepodporuje zvukové A/B.');if(!abPlayer){abPlayer=new AudioABPlayer(new AudioCtor());abPlayer.gain.gain.value=Number(volume.value)}await abPlayer.context.resume()}
- const play=async()=>{if(!canInteract()||!prepared||preparedIdentity!==scopeIdentity())return;const captured=prepared,attempt=generation;await ensurePlayer();if(!current()||attempt!==generation||captured!==prepared)return;
-  const durations=abPlayer.play(captured.original,captured.review,()=>{if(current()&&attempt===generation)status.textContent=tr('A/B dokončeno. Můžeš úsek opakovat.')});status.textContent=tr('Přehrávám připravené A/B ukázky.')+' '+Number(captured.seconds).toFixed(2)+' s · '+audioTrackLabel(captured.originalTrack.label)+' → '+audioTrackLabel(captured.reviewTrack.label);
- };
- function renderPayload(mode,d){
-  if(mode==='av'){avCleanup?.();avHost.replaceChildren(el('p','',audioTrackLabel(a.selectedOptions[0]?.textContent||'')+' → '+audioTrackLabel(b.selectedOptions[0]?.textContent||''),true));plot.replaceChildren();avCleanup=mountAVComparison(avHost,d,{tr});status.textContent=tr('Video i zvuk jsou připravené. Vybrané stopy a čas jsou pevné pro tuto ukázku.')}
-  else if(mode==='listen'){prepared=d;preparedIdentity=scopeIdentity();setWorking(false)}
-  else{plot.replaceChildren();const canvas=el('canvas');canvas.width=1100;canvas.height=310;canvas.style.width='100%';canvas.setAttribute('role','img');canvas.setAttribute('aria-label',tr('Zvukové průběhy originálu a převodu na společné časové ose'));plot.append(canvas);const ctx=canvas.getContext('2d');ctx.fillStyle='#111827';ctx.fillRect(0,0,1100,310);const max=Math.max(.001,...d.original,...d.review);
-   for(const [values,title,color,base]of [[d.original,'Originál','#38bdf8',120],[d.review,'Převod','#fbbf24',250]]){ctx.fillStyle=color;ctx.font='16px sans-serif';ctx.fillText(tr(title),12,base-80);ctx.strokeStyle=color;ctx.beginPath();values.forEach((v,i)=>{const x=85+i/1200*990,y=base-v/max*65;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke()}
-   ctx.fillStyle='#d1d5db';ctx.font='13px sans-serif';for(let i=0;i<=12;i+=2){const x=85+i/12*990;ctx.strokeStyle='#374151';ctx.beginPath();ctx.moveTo(x,45);ctx.lineTo(x,260);ctx.stroke();ctx.fillText((d.seconds+i).toFixed(1)+' s',x-20,285)}
-   const r=d.alignment;status.textContent=tr(r.reliable?'Posun mezi zvukovými stopami (ms):':'Posun zvuku nelze spolehlivě určit.')+(r.reliable?' '+r.offsetMs:'');
-  }
- }
- function startAutomatic(){
-  if(!options.cachedAutoLoad||working||!trackReady||!validTime()||!current())return;cachedLoader?.stop();const identity=previewIdentity(),attempt=generation,modes=options.mode==='audio'?['wave','listen']:['av'];
-  cachedLoader=createCachedPreviewLoader({current:()=>current()&&attempt===generation&&identity===previewIdentity(),load:body=>api('/api/items/'+item.id+'/audio-compare',body),readPreparation:()=>api('/api/items/'+item.id+'/preview-status?snapshot='+encodeURIComponent(item.snapshot)),onPreparation:observePreparation,onPending:(d,request)=>status.textContent=pendingPreviewMessage(d.preparation,request),onReady:(d,request)=>{renderPayload(request.mode,d);status.textContent=tr('Hotová ukázka je načtená. Přehrávání spusť ručně.');setWorking(false)},onError:e=>status.textContent=tr(e.message)});
-  cachedLoader.start(modes.map(mode=>({snapshot:item.snapshot,...selectedScope(),mode,...(mode==='av'?{previewProfile:profile.value}:{})})));
- }
- async function prepare(mode){
-  if(working||!trackReady||!canInteract()||!validTime())return;
-  if(mode==='listen'&&prepared&&preparedIdentity===scopeIdentity()){try{await play()}catch(e){if(current())status.textContent=tr(e.message)}return}
-  const attempt=++generation;cachedLoader?.stop();lastScope=previewIdentity();options.onScopeValidityChange?.(true);options.onScopeChange?.(selectedScope());setWorking(true);abPlayer?.stop();avCleanup?.();avCleanup=null;plot.replaceChildren();avHost.replaceChildren();
-  try{if(mode==='listen')await ensurePlayer();status.textContent=tr(mode==='av'?'Připravuji dvě videa a zvukové průběhy. Příprava může trvat až čtyři minuty.':mode==='listen'?'Připravuji dvě 12sekundové ukázky; nejvýše dvě minuty.':'Připravuji zvukové průběhy… Nejvýše dvě minuty.');
-   await options.beforePreview?.();if(!current()||attempt!==generation)return;const capture={snapshot:item.snapshot,...selectedScope()},d=await api('/api/items/'+item.id+'/audio-compare',{...capture,...(mode==='wave'?{}:{mode}),...(mode==='av'?{previewProfile:profile.value}:{})});if(!current()||attempt!==generation)return;
-   if(d.pending){observePreparation(d.preparation);status.textContent=pendingPreviewMessage(d.preparation,{...capture,mode,previewProfile:profile.value});return}
-   renderPayload(mode,d);if(mode==='listen')await play();
-  }catch(e){if(current()&&attempt===generation)status.textContent=tr(e.message)}finally{if(current()&&attempt===generation)setWorking(false)}
- }
- form.onsubmit=e=>{e.preventDefault();prepare(options.mode==='av'?'av':'wave')};
- const showAV=options.mode!=='audio',showAudio=options.mode!=='av';if(showAV){const label=el('label','','Kvalita videonáhledu');label.append(profile);form.append(label,avButton)}if(showAudio)form.append(go);
- host.append(...(options.host?[]:[head]),note,form,presets,status);if(showAudio)host.append(el('p','details','Sluchátka: nejprve originál vlevo, potom stejný úsek převodu vpravo. Obě stopy se převedou na mono 48 kHz. Bez samostatné normalizace hlasitosti a bez automatického posunu; použij odpovídající dialogové stopy.'),audioControls);host.append(avHost,plot);
- if(!options.host){audioDialog.setAttribute('aria-label',tr('Porovnání zvuku · '+item.title));audioDialog.showModal()}setWorking(false);
- (async()=>{try{await Promise.resolve();const data=options.tracks||await api('/api/items/'+item.id+'/audio-compare',{snapshot:item.snapshot,mode:'tracks'});if(!current())return;observePreparation(data.preparation);
-  for(const [select,tracks,key]of [[a,data.original,'originalIndex'],[b,data.review,'reviewIndex']]){select.append(new Option(tr('Vyber zvukovou stopu'),''));for(const track of tracks){const option=el('option','',audioTrackLabel(track.label),true);option.value=String(track.index);select.append(option)}select.value=options.scope?.[key]===null||options.scope?.[key]===undefined?'':String(options.scope[key])}
-  trackReady=a.value!==''&&b.value!=='';lastScope=previewIdentity();const ready=()=>{trackReady=a.value!==''&&b.value!=='';setWorking(false)};a.addEventListener('change',ready);b.addEventListener('change',ready);setWorking(false);status.textContent=tr('Vyber odpovídající stopy a připrav ukázku.');startAutomatic();
- }catch(e){if(current())status.textContent=tr(e.message)}})();
- return cleanup;
-}
 
-const radarrDialog=el('dialog','settings-dialog');document.body.append(radarrDialog);
-const radarrButton=$('settingsRadarr');
-radarrButton.onclick=async()=>{try{
- const c=await api('/api/radarr/settings');radarrDialog.replaceChildren(el('h2','','Radarr – náhrady filmů'));
- const fields={},form=el('form');for(const [name,label,type]of [['url','Adresa Radarru','url'],['mediaRoot','Cesta filmové knihovny uvnitř Radarru','text'],['quarantineRoot','Karanténa originálů v Review (mimo filmovou knihovnu)','text'],['apiKey','API klíč (prázdné = zachovat uložený)','password']]){const l=el('label','settings-field',label),input=el('input');input.type=type;input.value=name==='apiKey'?'':c[name]||'';input.autocomplete='off';l.append(input);form.append(l);fields[name]=input;}
- const pref=el('input');pref.type='checkbox';pref.checked=c.preferCzechEnglish!==false;const label=el('label','','Preferovat vydání s českým i anglickým audiem');label.prepend(pref);form.append(label,el('p','','Radarr posuzuje jazyky podle označení vydání. Skutečné stopy se ověří až po stažení. Samotné zamítnutí převodu nové stahování nespouští.'));
- const status=el('p'),buttons=el('div','dialog-actions'),test=el('button','secondary','Otestovat spojení'),save=el('button','','Ověřit a uložit'),close=el('button','secondary','Zavřít');test.type=close.type='button';close.onclick=()=>radarrDialog.close();
- async function submit(testOnly){test.disabled=save.disabled=true;try{const body=Object.fromEntries(Object.entries(fields).map(([k,v])=>[k,v.value.trim()]));body.preferCzechEnglish=pref.checked;status.textContent=tr((await api('/api/radarr/settings'+(testOnly?'/test':''),body)).message);if(!testOnly)fields.apiKey.value=''}catch(e){status.textContent=tr(e.message)}finally{test.disabled=save.disabled=false}}
- test.onclick=()=>submit(true);form.onsubmit=e=>{e.preventDefault();submit(false)};buttons.append(close,test,save);form.append(status,buttons);radarrDialog.append(form);
- radarrDialog.append(el('p','details',Number.isInteger(c.retentionDays)?'Stavy filmů a žádostí najdeš v sekci Obnovy. Retence karantény běží '+c.retentionDays+' dní od doloženého schválení funkční náhrady.':'Stavy filmů a žádostí najdeš v sekci Obnovy.'));radarrDialog.setAttribute('aria-label',tr('Nastavení Radarru'));radarrDialog.showModal();
-}catch(e){error(e)}};
-
-class AudioABPlayer {
- constructor(context){this.context=context;this.sources=[];this.gain=context.createGain();this.gain.gain.value=.5;this.gain.connect(context.destination);}
- stop(){for(const s of this.sources){s.onended=null;try{s.stop()}catch{}}this.sources=[];}
- buffer(packet,channel){const raw=atob(packet.pcm),bytes=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);if(bytes.length!==packet.frames*4||packet.sampleRate!==48000)throw Error('Neplatný poslechový úsek.');const view=new DataView(bytes.buffer),b=this.context.createBuffer(2,packet.frames,packet.sampleRate),data=b.getChannelData(channel);for(let i=0;i<data.length;i++){const v=view.getFloat32(i*4,true);if(!Number.isFinite(v))throw Error('Neplatný zvukový vzorek.');data[i]=v;}return b;}
- play(original,review,ended){this.stop();const a=this.buffer(original,0),b=this.buffer(review,1),start=this.context.currentTime+.05;for(const [buffer,when] of [[a,start],[b,start+a.duration+.3]]){const s=this.context.createBufferSource();s.buffer=buffer;s.connect(this.gain);this.sources.push(s);s.start(when);}this.sources[1].onended=()=>{this.sources=[];ended?.()};return {originalSeconds:a.duration,reviewSeconds:b.duration};}
- close(){this.stop();void this.context.close();}
-}
-
-const quarantineDialog=el('dialog','settings-dialog');document.body.append(quarantineDialog);
-const quarantineButton=$('settingsQuarantine');quarantineButton.onclick=()=>openQuarantine();
-async function openQuarantine(title='',caseId=''){
- try{
-  await loadRequests(true);const d=await api('/api/quarantine');quarantineDialog.replaceChildren(el('h2','','Karanténa'+(title?' · '+title:'')));
-  const query=title.toLocaleLowerCase().replace(/\s*\(\d{4}\).*$/,'').trim();
-  const files=d.files.filter(f=>caseId?f.caseId===caseId:!query||f.name.toLocaleLowerCase().includes(query));
-  quarantineDialog.append(el('p','details',['Originály se uchovávají do schválení funkční náhrady v Review.',Number.isInteger(d.retentionDays)?'Schválená lhůta pro následný úklid je '+d.retentionDays+' dní.':'',d.cleanupEnabled?'Automatický úklid je zapnutý pro náhrady s uloženým důkazem schválení a nezměněnou identitou obou souborů.':'Automatický úklid karantény je vypnutý.','Starší případy bez důkazu zůstávají zachované.'].filter(Boolean).map(text=>tr(text)).join(' '),true));
-  quarantineDialog.append(el('p','details','Velikost zobrazených souborů: '+fmt(files.reduce((sum,f)=>sum+(Number.isSafeInteger(f.bytes)&&f.bytes>=0?f.bytes:0),0))),el('p','details','Součet velikostí souborů nemusí odpovídat fyzicky zabranému místu; některé kopie mohou být hardlinky.'));
-  if(!files.length)quarantineDialog.append(el('p','','Pro tento výběr není v karanténě žádný soubor.'));
-  for(const f of files){const row=el('article','movie');row.append(el('strong','',f.name,true),el('p','details',fmt(f.bytes)),el('p','details',f.path,true));const lifecycle=quarantineLifecycle(f,requests);row.append(el('p','',lifecycle.label),el('p','details',lifecycle.reason));if(lifecycle.deleteAfter!==null)row.append(detailsFacts([['Termín úklidu',date(lifecycle.deleteAfter)]]));if(lifecycle.requestKey)row.append(button('Otevřít obnovu',()=>{quarantineDialog.close();openDetail('request',lifecycle.requestKey)}));const copy=el('button','secondary','Kopírovat cestu');copy.onclick=async()=>{try{await navigator.clipboard.writeText(f.path);copy.textContent=tr('Zkopírováno')}catch{copy.textContent=tr('Označ a zkopíruj cestu výše')}};row.append(copy);quarantineDialog.append(row)}
-  for(const w of d.warnings)quarantineDialog.append(el('p','failure',w));
-  if(title){const all=el('button','secondary','Zobrazit celou karanténu');all.onclick=()=>{quarantineDialog.close();openQuarantine()};quarantineDialog.append(all)}
-  const close=el('button','secondary','Zavřít');close.onclick=()=>quarantineDialog.close();quarantineDialog.append(close);quarantineDialog.setAttribute('aria-label',tr('Karanténa'+(title?' · '+title:'')));quarantineDialog.showModal();
- }catch(e){error(e)}
-}
-
-function recoveryDetails(r){
- const box=el('div');box.append(el('strong','',r.pipelineLabel||r.message));if(r.statusUpdated){box.append(el('p','details','Stav aktualizován: '+new Date(r.statusUpdated).toLocaleString(locale)));if(Date.now()-Date.parse(r.statusUpdated)>12*60000)box.append(el('p','failure','Stav je starší než 12 minut; spojení s Recovery může být přerušené.'));}if(r.replacementTitle)box.append(el('p','details','Náhrada: '+r.replacementTitle));if(r.tdarrStatus)box.append(el('p','details','Tdarr: '+r.tdarrStatus));if(r.quarantineRetained)box.append(el('p','details','Původní kopie je zachovaná v karanténě.'));if(r.deleteAfter)box.append(el('p','details','Úklid karantény po schválení: '+new Date(r.deleteAfter).toLocaleString(locale)));for(const q of downloadProgress(r))box.append(downloadProgressView(q));if(r.phase==='waiting_source_kept')box.append(el('strong','failure','Vydání vyřazeno z převodů — náhrada zatím nenalezena'),el('p','','Film zůstává v Plexu. Jeho původní zvuk má potvrzenou chybu; toto vydání se nebude znovu převádět.'));
- if(r.edition)box.append(el('p','details','Vyřazené vydání: '+r.edition));
- if(r.lastSearchAt)box.append(el('p','details','Poslední hledání: '+new Date(r.lastSearchAt).toLocaleString(locale)));
- if(r.nextSearchAt)box.append(el('p','details','Další automatické hledání: '+new Date(r.nextSearchAt).toLocaleString(locale)));
- if(r.error)box.append(el('p','failure','Kontrola náhrady: '+r.error));
- if(r.radarrMovieUrl){const link=el('a','secondary','Otevřít film v Radarru — ruční hledání');link.href=r.radarrMovieUrl;link.target='_blank';link.rel='noopener noreferrer';box.append(link);}
- box.append(el('p','details','Můžeš nezávisle hledat jiné vydání přes interaktivní hledání v Radarru. Vybírej stejnou nebo vyšší kvalitu; vyřazené vydání znovu nestahuj. Před nahrazením ověř stav obnovy; původní kopie se uchová podle pravidel karantény.'));
- return box;
-}
-
+// The one context handed to the UI modules; getters keep app.js state authoritative.
+const appContext={api,error,load,loadRequests,openDetail,ui,forceRender:()=>{lastRender=''},get latest(){return latest},get requests(){return requests},get authenticated(){return authenticated}};
+installComparisons(appContext);installSettingsDialogs(appContext);installQuarantine(appContext);installStatistics(appContext);
 start();

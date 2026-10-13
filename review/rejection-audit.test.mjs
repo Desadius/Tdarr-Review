@@ -36,7 +36,8 @@ test('API validates reason before file scan and passes it into handler',async()=
 test('History reasons are rendered as text and action requests include the entered reason',async()=>{
  const ui=await fs.readFile(new URL('./public/app.js',import.meta.url),'utf8');
  assert.ok(ui.includes("reason:['reject','replace'].includes(request.action)?reason:undefined"));
- const helper=ui.split('\n').find(line=>line.startsWith('const el='));
+ const kit=await fs.readFile(new URL('./public/ui-kit.js',import.meta.url),'utf8');
+ const helper=kit.split('\n').find(line=>line.startsWith('export const el='))?.replace(/^export /,'');
  const renderReason=ui.split('\n').find(line=>line.includes('if(h.rejectionReason)'));
  assert.ok(helper&&renderReason,'Exercise the actual element helper and history reason renderer');
  for(const reason of ['Zavřít','<img src=x onerror=alert(1)>\n"Zavřít"']){

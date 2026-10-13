@@ -38,6 +38,22 @@ On restart, only a provably untouched original can be restored automatically. In
 
 Route modules receive one explicit server-state object (`ctx`). Its getters and setters read and write the server's own variables, so the busy flags, caches and settings that routes change are the same ones used by scanning, transactions and background preparation. A route returns `true` once it has answered; `review/routes.test.mjs` checks that every route is owned by exactly one module.
 
+### Browser UI modules
+
+The UI in `review/public/` is a set of ES modules loaded without a build step. `app.js` holds the page state (latest data, Radarr requests, selection, navigation) and renders the item list, detail dialog, confirmations and progress. It passes one context object (`api`, `error`, `load`, `loadRequests`, `openDetail` and getters for the current state) to the feature modules:
+
+| Module | Content |
+| --- | --- |
+| `ui-kit.js` | DOM and formatting helpers without application state |
+| `comparison.js` | Frame and audio/AV comparison dialogs and the A/B player |
+| `settings-dialogs.js` | Review, sample-preparation and Radarr settings dialogs |
+| `quarantine.js` | Quarantine listing |
+| `statistics.js` | Savings statistics |
+| `recovery-view.js` | Recovery progress and detail renderers |
+| `review-workflow.js`, `review-model.js`, `av-player.js`, `i18n.js` | Review steps, display rules, AV player and translations (unchanged) |
+
+Every module URL carries a `?v=` version so a release cannot mix cached old and new modules. A new UI file must also be listed in the static asset table in `review/routes/static.mjs`.
+
 ### Concurrent application actions
 
 `review/busy-guards.mjs` defines the server's named concurrency policies. After authentication, a mutating request reserves foreground work before reading its body, draining background previews or awaiting preflight. The reservation transfers to the existing active/batch flag when an asynchronous action starts, and releases on every response/error. An interactive preview reserves work after its body distinguishes an on-demand render from a cache-only/track-list read. Competing mutations receive HTTP 409.

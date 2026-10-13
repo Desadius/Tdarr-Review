@@ -152,6 +152,6 @@ test('quarantine retention text uses the server-provided number of days',async()
  assert.equal(en('Schválená lhůta pro následný úklid je 14 dní.'),'The approved retention period before cleanup is 14 days.');
  assert.equal(en('Stavy filmů a žádostí najdeš v sekci Obnovy. Retence karantény běží 7 dní od doloženého schválení funkční náhrady.'),'Movie and request statuses are in Recovery. Quarantine retention lasts 7 days after documented approval of a working replacement.');
  for(const text of ['Automatický úklid karantény je vypnutý.','Starší případy bez důkazu zůstávají zachované.','Stavy filmů a žádostí najdeš v sekci Obnovy.'])assert.notEqual(en(text),text);
- const app=await fs.readFile(new URL('./public/app.js',import.meta.url),'utf8');
- assert.doesNotMatch(app,/(úklid|Retence karantény)[^'"]*\b7 dní/);assert.match(app,/d\.retentionDays/);assert.match(app,/d\.cleanupEnabled/);assert.match(app,/c\.retentionDays/);
+ const quarantine=await fs.readFile(new URL('./public/quarantine.js',import.meta.url),'utf8'),settings=await fs.readFile(new URL('./public/settings-dialogs.js',import.meta.url),'utf8');
+ for(const ui of [quarantine,settings])assert.doesNotMatch(ui,/(úklid|Retence karantény)[^'"]*\b7 dní/);assert.match(quarantine,/d\.retentionDays/);assert.match(quarantine,/d\.cleanupEnabled/);assert.match(settings,/c\.retentionDays/);
 });
