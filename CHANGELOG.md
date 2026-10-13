@@ -4,6 +4,7 @@ This records the implemented application features. Versions before 1.10.0 were d
 
 ## Unreleased
 
+- Review fixes: the optional full-file hash now runs before Recovery changes anything in Radarr or Tdarr, so stopping the worker during it leaves no Hold; the node-restore retry delay resets after any successful restore; the request list reads the Recovery status file once per refresh; node-restore rows no longer show a Czech placeholder in English.
 - The Review Recovery view shows when Recovery's `config.json` was edited and needs a restart (red if the edit is invalid), and the progress of an optional full-file hash in the case list and detail.
 - Review lists the Tdarr nodes it will resume, with the film and time they were paused for, and lets you keep a node you paused yourself paused (with confirmation), so a maintenance pause set during an action is no longer undone.
 - Review-session and sample-identity errors now carry stable codes too, so the English UI shows them in English; 19 of them previously had no English translation at all.

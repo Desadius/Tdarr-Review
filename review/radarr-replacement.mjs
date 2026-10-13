@@ -211,14 +211,20 @@ export function createReplacement({data,getConfig,safeFile,hash,atomicJSON,tdarr
   try{const cfg=getConfig(),file=path.join(path.dirname(cfg.mediaRoot),'.tdarr-recovery-status.json'),s=await fs.lstat(file);if(!s.isFile()||s.isSymbolicLink()||s.size>2000000)throw Error('Invalid recovery status');const v=JSON.parse(await fs.readFile(file,'utf8'));if(v.version!==1||!Array.isArray(v.cases))throw Error('Invalid recovery schema');return v;}catch(e){if(e.code==='ENOENT')return null;throw e;}
  }
  // Recovery's config.json edited after start-up (#22); only these fields leave the server.
- async function recoveryConfig(){
-  const change=(await readRecoveryStatus().catch(()=>null))?.configChange;
+ function configNotice(status){
+  const change=status?.configChange;
   if(!change||change.restartRequired!==true)return null;
   return {detectedAt:typeof change.detectedAt==='string'&&Number.isFinite(Date.parse(change.detectedAt))?change.detectedAt:null,restartRequired:true,valid:change.valid!==false,error:typeof change.error==='string'?change.error.slice(0,300):null};
  }
- async function recoveryPublic(){
-  const v=await readRecoveryStatus();if(!v)return [];
+ async function recoveryPublic(v){
+  if(!v)return [];
   try{const con=await connection();return v.cases.map(c=>({...c,source:'recovery',canRestore:false,queue:Array.isArray(c.queue)?c.queue:[],radarrMovieUrl:c.titleSlug?new URL('/movie/'+encodeURIComponent(c.titleSlug),con.url).href:con.url,statusUpdated:Object.hasOwn(c,'statusUpdated')?c.statusUpdated:v.updated}));}catch(e){if(e.code==='ENOENT')return [];throw e;}
  }
- return {cleanup,settings,publicSettings,prepare,run,restore,observe,recoveryConfig,list:async()=>[...(await list()).map(visible),...await recoveryPublic()],recover:async()=>{for(const c of await list())if(!canResume(c))await persist(c,'manual','Operace byla přerušená ve fázi '+c.phase+'. Neopakuj ji bez kontroly; zachované kopie nebyly smazané.');}};
+ // One status-file read per call: the request list and the restart notice come from the same snapshot.
+ async function overview(){
+  let status=null,statusError=null;try{status=await readRecoveryStatus()}catch(e){statusError=e}
+  const own=(await list()).map(visible);if(statusError)throw statusError;
+  return {requests:[...own,...await recoveryPublic(status)],recoveryConfig:configNotice(status)};
+ }
+ return {cleanup,settings,publicSettings,prepare,run,restore,observe,overview,recoveryConfig:async()=>configNotice(await readRecoveryStatus().catch(()=>null)),list:async()=>(await overview()).requests,recover:async()=>{for(const c of await list())if(!canResume(c))await persist(c,'manual','Operace byla přerušená ve fázi '+c.phase+'. Neopakuj ji bez kontroly; zachované kopie nebyly smazané.');}};
 }

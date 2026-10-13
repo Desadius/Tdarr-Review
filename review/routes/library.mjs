@@ -54,7 +54,7 @@ export async function libraryRoutes(ctx,req,res,url,request){
  if(['/api/radarr/settings','/api/radarr/settings/test'].includes(url.pathname)&&req.method==='POST'){
   const b=await body(req);if(ctx.busyFor('radarrSettings',request.mutation))return reply(res,409,apiError('busy'));ctx.settingsBusy=true;try{const testOnly=url.pathname.endsWith('/test'),result=await ctx.replacements.settings(b,testOnly);if(!testOnly)logEvent('radarr-settings.saved',{url:b.url,mediaRoot:b.mediaRoot,quarantineRoot:b.quarantineRoot,preferCzechEnglish:b.preferCzechEnglish});return reply(res,200,result)}finally{ctx.settingsBusy=false}
  }
- if(url.pathname==='/api/radarr/requests'&&req.method==='GET')return reply(res,200,{requests:await ctx.replacements.list(),recoveryConfig:await ctx.replacements.recoveryConfig()});
+ if(url.pathname==='/api/radarr/requests'&&req.method==='GET')return reply(res,200,await ctx.replacements.overview());
  const restoreRequest=/^\/api\/radarr\/requests\/([a-f0-9]{24})\/restore$/.exec(url.pathname);
  if(restoreRequest&&req.method==='POST'){
   const b=await body(req);if(b.confirm!==true)return reply(res,400,apiError('restore_confirm_required'));

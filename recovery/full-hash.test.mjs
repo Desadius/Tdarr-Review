@@ -41,12 +41,12 @@ test('a missing file or a failing child never yields a digest',async()=>{
  await assert.rejects(lowPriorityHash('x',{command:[process.execPath,['-e','console.log(JSON.stringify({sha256:"not-a-digest"}))']]}),/Full source hash failed/);
 });
 
-test('the worker hashes at confirmation and compares again right before the quarantine rename',async()=>{
+test('the worker hashes at confirmation and compares again before any mutation and the rename',async()=>{
  const worker=await fs.readFile(new URL('./worker.mjs',import.meta.url),'utf8');
  const confirm=worker.indexOf("if(cfg.fullSourceHash===true&&!c.evidence.fullSHA256){c.evidence.fullSHA256=await fullSourceHash(c,'confirmation')"),confirmed=worker.indexOf("await phase(c,'confirmed'");
  assert.ok(confirm>0&&confirm<confirmed,'hash before the case is confirmed');
- const compare=worker.indexOf("if(await fullSourceHash(c,'before_quarantine')!==c.evidence.fullSHA256)throw Error('Full source hash changed before quarantine')"),rename=worker.indexOf('await fs.rename(c.source,c.quarantine)'),hold=worker.indexOf("TranscodeDecisionMaker:'Hold'",worker.indexOf("await phase(c,'holding'"));
- assert.ok(hold>0&&compare>hold&&compare<rename,'hash after the Tdarr Hold and before the rename');
+ const compare=worker.indexOf("if(await fullSourceHash(c,'before_quarantine')!==c.evidence.fullSHA256)throw Error('Full source hash changed before quarantine')"),rename=worker.indexOf('await fs.rename(c.source,c.quarantine)'),hold=worker.indexOf("TranscodeDecisionMaker:'Hold'",worker.indexOf("await phase(c,'holding'")),floor=worker.indexOf('if(isApprovedCase(c))await ensureApprovedFloor(c,movie);');
+ assert.ok(compare>0&&compare<floor&&floor<hold&&hold<rename,'hash before the first Radarr/Tdarr mutation, so an interrupted hash leaves no Hold');
  assert.ok(worker.indexOf("if((await safeSource(c.relative)).fp!==c.fp||await sample(c.source)!==hash)throw Error('Source changed before quarantine')")>compare,'fingerprint and samples are rechecked after the long hash');
  const exported=await fs.readFile(new URL('./waiting-source.mjs',import.meta.url),'utf8');assert.match(exported,/fullHash:c\.fullHash\?\{stage:c\.fullHash\.stage,done:c\.fullHash\.done,total:c\.fullHash\.total/);
 });

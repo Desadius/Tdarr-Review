@@ -124,16 +124,18 @@ async function repair(c,{reuseConfirmedEvidence=false}={}){
    if(await deferConfirmedLimit({cfg,state,c,phase,idle,safeSource,sample,readBinding,td}))return;
    throw Error('Daily recovery limit changed before deferral; source preserved for inspection');
   }
+  // The long optional full hash runs before the first Radarr/Tdarr mutation, so stopping the
+  // worker during it never leaves a Hold behind; fingerprint and samples are still rechecked
+  // immediately before the rename.
+  if(cfg.fullSourceHash===true){
+   if(!/^[a-f0-9]{64}$/.test(c.evidence?.fullSHA256||''))throw Error('Full source hash missing from confirmation evidence');
+   if(await fullSourceHash(c,'before_quarantine')!==c.evidence.fullSHA256)throw Error('Full source hash changed before quarantine');
+  }
   await idle(c);
   if(isApprovedCase(c))await ensureApprovedFloor(c,movie);
   c.skipCurrentEdition=false;delete c.nextRetryAt;c.mutationStarted=Date.now();await phase(c,'holding','Preventing another Tdarr dispatch');
   await td('/api/v2/bulk-update-files',{fileIds:[c.file],updatedObj:{TranscodeDecisionMaker:'Hold',holdUntil:Date.now()+30*86400000}});
   await delay(3000);await idle(c);
-  if(cfg.fullSourceHash===true){
-   if(!/^[a-f0-9]{64}$/.test(c.evidence?.fullSHA256||''))throw Error('Full source hash missing from confirmation evidence');
-   if(await fullSourceHash(c,'before_quarantine')!==c.evidence.fullSHA256)throw Error('Full source hash changed before quarantine');
-   await idle(c);
-  }
   if((await safeSource(c.relative)).fp!==c.fp||await sample(c.source)!==hash)throw Error('Source changed before quarantine');
   // Same-mounted-volume rename only. No copy/delete fallback and no overwrites.
   const qdir=within(cfg.quarantineRoot,c.id);await fs.mkdir(qdir,{recursive:false,mode:0o770});

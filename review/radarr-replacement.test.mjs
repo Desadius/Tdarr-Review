@@ -234,3 +234,16 @@ test('Recovery restart notice leaves the server with only its safe fields, and f
   await fs.writeFile(file,'{broken');assert.equal(await f.service.recoveryConfig(),null,'an unreadable status file never breaks the request list');
  }finally{await f.cleanup();}
 });
+
+test('the request list and the restart notice come from one status-file snapshot',async()=>{
+ const f=await fixture();try{
+  const file=path.join(path.dirname(f.media),'.tdarr-recovery-status.json'),fresh=new Date().toISOString();
+  await f.atomicJSON(file,{version:1,updated:fresh,configChange:{detectedAt:fresh,restartRequired:true,valid:true,error:null},cases:[{id:'e'.repeat(24),phase:'confirmed'}]});
+  const overview=await f.service.overview();
+  assert.deepEqual(overview.requests.map(r=>r.id),['e'.repeat(24)]);assert.equal(overview.recoveryConfig.restartRequired,true);
+  assert.deepEqual(await f.service.list(),overview.requests);
+  await fs.writeFile(file,'{broken');await assert.rejects(f.service.overview(),'a corrupt status file is still reported, as before');
+  const route=await fs.readFile(new URL('./routes/library.mjs',import.meta.url),'utf8');
+  assert.match(route,/\/api\/radarr\/requests'&&req\.method==='GET'\)return reply\(res,200,await ctx\.replacements\.overview\(\)\);/);
+ }finally{await f.cleanup();}
+});

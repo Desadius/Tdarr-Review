@@ -77,7 +77,8 @@ function renderNodeRestores(nodes){
  const box=$('nodeRestores');box.hidden=!nodes.length;if(!nodes.length){box.replaceChildren();return}
  const head=el('div');head.append(el('strong','','Nody Tdarru, které Review po akci znovu spustí'));
  keyed(box,[{name:'',head:true},...nodes],n=>n.head?'head':'node:'+n.name,n=>{if(n.head)return head;const row=el('div'),b=button('Ponechat pozastavený',()=>askKeepPaused(n.name));b.setAttribute('aria-label',tr('Ponechat pozastavený: '+n.name));b.dataset.focus='keep:'+n.name;
-  row.append(el('span','',n.name+(n.title||n.pausedAt?' · '+tr('Pozastaveno pro '+(n.title||'?')+' · '+date(n.pausedAt)):''),true),b);return row});
+  // Older records have no film or time; show only what is known so no fallback text stays untranslated.
+  row.append(el('span','',[n.name,n.title?tr('Pozastaveno pro '+n.title):'',n.pausedAt?date(n.pausedAt):''].filter(Boolean).join(' · '),true),b);return row});
 }
 function askRestore(record){
  if(!caps(record).restore){error(Error(caps(record).reason||'Obnovení není dostupné.'));return}
