@@ -1,5 +1,4 @@
 import {extractPreview,PREVIEW_PROFILES} from './av-preview.mjs';
-import {publishApproval} from './quarantine-retention.mjs';
 import {SESSION_TTL_MS,pruneSessions,pruneAuthAttempts,registerAuthAttempt} from './auth-state.mjs';
 import {publishApproval,quarantineRetention} from './quarantine-retention.mjs';
 import {extractListeningAudio} from './audio-listen.mjs';
