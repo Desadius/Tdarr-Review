@@ -2,31 +2,39 @@
 
 This records the implemented application features. Versions before 1.10.0 were deployed snapshots and are not published Git tags.
 
-## Unreleased
+## 1.11.0 — 2026-10-13
 
-- The Review container health check again verifies that the UI is served (`/` and `/app.js`), in addition to the `/health` summary.
-- The Recovery restart notice now runs the worker's start-up approval-registry check on an edited `config.json`, so a change that would stop the next start (such as a changed frozen library value) is reported as invalid instead of only "restart to apply".
-- Review fixes: the optional full-file hash now runs before Recovery changes anything in Radarr or Tdarr, so stopping the worker during it leaves no Hold; the node-restore retry delay resets after any successful restore; the request list reads the Recovery status file once per refresh; node-restore rows no longer show a Czech placeholder in English.
-- The Review Recovery view shows when Recovery's `config.json` was edited and needs a restart (red if the edit is invalid), and the progress of an optional full-file hash in the case list and detail.
-- Review lists the Tdarr nodes it will resume, with the film and time they were paused for, and lets you keep a node you paused yourself paused (with confirmation), so a maintenance pause set during an action is no longer undone.
-- Review-session and sample-identity errors now carry stable codes too, so the English UI shows them in English; 19 of them previously had no English translation at all.
-- API errors carry a stable `code` (with optional `params`) next to the Czech `error` text, and the UI shows them in the selected language from a shared Czech/English message table instead of translating the Czech text.
-- Optional Recovery setting `fullSourceHash`: compare a full SHA-256 of the original at confirmation and right before the quarantine rename, at idle I/O priority with progress in the status file. Sampling remains the default.
-- Every finished approval and Radarr replacement request is appended to a durable `decision-audit.jsonl` in `/data` (fsynced, size-rotated into timestamped archives that are never deleted), in addition to the 150-entry history.
-- Review writes one JSON line per approval, rejection, replacement request, batch, settings change, node pause/resume, unresolved transaction and request error, so `docker logs` can reconstruct incidents. Secret-looking fields are never logged.
-- A film blocked by the strict video rules now says which check failed (video track count, original codec, result codec, pixel format or resolution) instead of a generic message. The user guide explains every blocking rule.
-- Retry a failed restore of Tdarr nodes that Review paused from a server timer with backoff (15 s doubling up to 10 min) instead of on every `GET /api/items` poll, so reading the dashboard no longer changes Tdarr state.
-- Add dependency-free Node 24 coverage reporting with `npm run test:coverage`; CI reports line, branch and function coverage in the same complete test run, without an unmeasured threshold.
-- Document that Review can undo a manual Tdarr node pause applied during its action, including pending resume retries and the maintenance pause procedure.
-- Document and regression-test Review blocking a Recovery-returned hardlinked original while keeping its quarantine protection intact.
-- Recovery detects edits to `config.json` made after start-up: it logs that a restart is required and reports `configChange` (with a validity flag) in the shared status file. The running worker still applies configuration only at start-up. Documented in Configuration and Operations.
-- Add `npm run test:docker` for the full Linux/Node 24 syntax and regression suite from Windows, with a read-only repository, disposable scratch space and no container network.
-- Report Windows-only POSIX directory-fsync, permission and symlink test limitations explicitly while retaining platform-independent coverage and mandatory production durability checks.
-- The Review health check now reads a loopback-only `/health` summary and writes pending exchange transactions, Tdarr nodes still paused by Review and a stale Recovery status into Docker's health log. These are reported without marking the container unhealthy, so no restart interrupts them.
-- Cover authored server-error string literals with a regression check against the English catalog, and translate missing file-identity, review-save and preview errors without changing Czech messages or operational checks.
-- Centralize server concurrency policies and reserve mutating requests before asynchronous preflight, keeping competing approvals, batches, settings and previews excluded with HTTP 409.
-- Preserve deliberate recovery-safe settings/preview access and review-session revision queues; exclude in-flight node resumes and prevent discovery scans from mutating state during foreground work.
-- Add deterministic HTTP concurrency regression tests with loopback mocks and temporary synthetic files, including every mutating route and pending recovery/node pauses.
+### Review: workflow and interface
+
+- Show the Tdarr nodes Review will resume, with the film and time each was paused for, and let you keep a node you paused yourself paused (with confirmation), so a maintenance pause set during an action is no longer undone. Retry a failed node restore from a server timer with backoff (15 s doubling to 10 min, reset after any successful restore) instead of on every `/api/items` poll, so reading the dashboard no longer changes Tdarr state.
+- A film blocked by the strict video rules says which check failed (video track count, original codec, result codec, pixel format or resolution). The user guide explains every blocking rule.
+- The Recovery view shows when Recovery's `config.json` was edited and needs a restart, in red when the next start would fail, and the progress of an optional full-file hash in the case list and detail.
+- API errors carry a stable `code` (with optional `params`) next to the Czech `error` text. The UI shows them in the selected language from a shared Czech/English message table, including review-session and sample-identity errors; 19 of those previously had no English text. Missing English translations for file-identity, review-save and preview errors were added.
+- The quarantine dialog and Radarr settings show the retention period reported by the server instead of a fixed "7 days".
+
+### Review: safety, records and operations
+
+- Append every finished approval and Radarr replacement request to a durable `decision-audit.jsonl` in `/data` (fsynced, rotated at 10 MiB into timestamped archives that are never deleted), in addition to the 150-entry history.
+- Write one JSON line per approval, rejection, replacement request, batch, settings change, node pause/resume/keep, unresolved transaction and request error to the container log, never including keys, tokens or review evidence.
+- The container health check reads a loopback-only `/health` summary and also requires the UI (`/`, `/app.js`). Pending exchange transactions, node restores and a stale Recovery status are written to Docker's health log without marking the container unhealthy.
+- Centralize the concurrency policies: a mutating request is reserved before reading its body or running preflight, so competing approvals, batches, settings changes, restores and previews are refused with HTTP 409. Recovery-safe settings/preview access and review-session revision queues are preserved; discovery scans no longer write state during foreground work.
+- Prune expired login sessions and finished login rate-limit windows at start-up, on login and hourly.
+- Report the application version from the image build (or `package.json`) instead of a literal.
+
+### Recovery worker
+
+- Detect edits to `config.json` after start-up: log that a restart is required and report `configChange` in the shared status file. An edit is checked against the same approval-registry rules as start-up, so a change that would stop the next start (such as a changed frozen library value) is reported invalid with the rule, never the value. The running worker still applies configuration only at start-up.
+- Optional setting `fullSourceHash` (default off): compare a full SHA-256 of the original at confirmation and again before Recovery changes anything in Radarr or Tdarr for the repair, at idle I/O and CPU priority with progress in the status file. Sampling stays the default.
+
+### Development and tests
+
+- Split `review/server.mjs` into route modules (`review/routes/`) and `review/public/app.js` into UI modules, without behaviour changes; both receive one explicit state context.
+- Add `npm run typecheck` (pinned development-only TypeScript, CI only) for JSDoc types in `review/core.mjs` and `recovery/policy.mjs`; nothing is added to `package.json` dependencies or the images.
+- Add `npm run test:coverage` (Node 24 built-in coverage in CI) and `npm run test:docker` (full Linux suite from Windows with a read-only repository and no network); Windows runs report POSIX-only tests as explicit skips.
+- Add HTTP concurrency tests against the real server, a check that every authored server error has an English translation, a version-consistency check in `npm run check`, and regression tests for every change above.
+- Document and test that a Recovery-returned hardlinked original stays blocked in Review while its quarantine protection is kept; document manual Tdarr pauses during a Review action.
+- Remove the unused `sourceRelative()` helper with hard-coded installation prefixes.
+- Add shared agent configuration for the issue tracker, triage labels and domain docs (`AGENTS.md`, `docs/agents/`).
 
 ## 1.10.5 — 2026-10-13
 
