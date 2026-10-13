@@ -15,7 +15,10 @@ test('every mutating route has an explicit concurrency policy',()=>{
 test('all mutation policies exclude foreground work and a running node resume',()=>{
  for(const kind of Object.keys(BUSY_POLICIES)){
   assert.equal(busyFor(kind,{}),null);
-  for(const flag of ['foreground','active','batchRunning','resumeTask','previewBusy','settingsBusy'])assert.equal(busyFor(kind,{[flag]:true}),flag,`${kind}: ${flag}`);
+  // keepPaused only forgets a pending node restore; it must work while an action runs
+  // (that is when a node the user paused would be resumed), never during a resume.
+  const flags=kind==='keepPaused'?['foreground','resumeTask']:['foreground','active','batchRunning','resumeTask','previewBusy','settingsBusy'];
+  for(const flag of flags)assert.equal(busyFor(kind,{[flag]:true}),flag,`${kind}: ${flag}`);
  }
 });
 
@@ -34,3 +37,10 @@ test('intentional scan, recovery and review CAS differences are bounded',()=>{
  assert.equal(busyFor('settings',{statistics:true}),'statistics');
  assert.equal(busyFor('background',{previewHolds:true}),'previewHolds');
 });
+
+test('keeping a node paused is allowed during an approval or batch but not during a resume',()=>{
+ for(const flag of ['active','batchRunning','previewBusy','settingsBusy','scan','recovery','pauses'])assert.equal(busyFor('keepPaused',{[flag]:true}),null,flag);
+ assert.equal(busyFor('keepPaused',{resumeTask:true}),'resumeTask');
+ assert.equal(mutationKind('POST','/api/node-restores/keep'),'keepPaused');assert.equal(mutationKind('GET','/api/node-restores/keep'),null);
+});
+

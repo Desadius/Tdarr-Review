@@ -8,6 +8,13 @@ export default {
     "před přesunem do karantény": "before moving to quarantine",
     "Chybí čerstvé hlášení průběhu; obnovením ověř spojení s Recovery.": "No recent progress report; refresh to check the connection to Recovery.",
     "Recovery čte celý originál s nízkou prioritou a součet porovná s potvrzeným stavem. Rozdíl zastaví přesun do karantény.": "Recovery reads the whole original at low priority and compares the checksum with the confirmed state. A difference stops the move to quarantine.",
+    "Potvrď, že node zůstane pozastavený.": "Confirm that the node stays paused.",
+    "Tento node už Review neobnovuje. Obnov přehled.": "Review no longer restores this node. Refresh the overview.",
+    "Nody Tdarru, které Review po akci znovu spustí": "Tdarr nodes Review will resume after the action",
+    "Ponechat pozastavený": "Keep paused",
+    "NODE TDARRU": "TDARR NODE",
+    "Review tento node znovu nespustí a zapomene ho. Použij to jen pro node, který jsi v Tdarru pozastavil sám, například kvůli údržbě. Ostatní nody Review obnoví jako obvykle.": "Review will not resume this node and forgets it. Use this only for a node you paused yourself in Tdarr, for example for maintenance. Review resumes the other nodes as usual.",
+    "Ponechat node pozastavený": "Keep the node paused",
     "Výběr zvukových stop musí být objekt.": "The audio track selection must be an object.",
     "Vyber platný způsob kontroly.": "Choose a valid review method.",
     "Verzi revize již nelze zvýšit.": "The review revision can no longer be increased.",
@@ -954,6 +961,8 @@ export default {
     "Uchování ukázek od vytvoření (dny)": "Sample retention from creation (days)"
   },
   "patterns": [
+    ["Pozastaveno pro {0} · {1}", "Paused for {0} · {1}", {"raw": [0, 1]}],
+    ["Ponechat pozastavený: {0}", "Keep paused: {0}", {"raw": [0]}],
     ["Neplatný limit přípravy: {0}", "Invalid preparation limit: {0}", {"raw": [0]}],
     [
       "Originál nemá právě jednu video stopu. Počet video stop: {0}",

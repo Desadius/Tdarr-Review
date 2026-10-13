@@ -225,3 +225,25 @@ test('HTTP approval owns an asynchronous scan preflight before a transaction sta
   assert.deepEqual(await f.journals(),[]);scanGate.release();assert.equal((await pending).status,202);await deadline(pauseGate.entered,'approval after scan');pauseGate.release();assert.equal((await f.settled(1)).history[0].status,'success');assert.equal((await f.journals()).length,1);
  }finally{await f.close()}
 });
+
+test('HTTP a node kept paused during an approval is not resumed afterwards',linux,async()=>{
+ const f=await fixture();try{
+  const a=(await f.items()).items.find(item=>item.title==='A');await f.confirm(a);
+  const gate=f.hold('/api/v2/rescan-file');assert.equal((await f.approve(a)).status,202);await deadline(gate.entered,'post-exchange rescan');
+  const during=await f.items();assert.equal(during.restorePending,1);assert.deepEqual(during.pendingRestores.map(n=>[n.name,n.title]),[['fixture-node','A']]);assert.ok(Number.isFinite(Date.parse(during.pendingRestores[0].pausedAt)));
+  const kept=await f.post('/api/node-restores/keep',{name:'fixture-node',confirm:true});assert.equal(kept.status,200,await kept.clone().text());assert.deepEqual((await kept.json()).pendingRestores,[]);
+  gate.release();const finished=await f.settled(1);assert.equal(finished.history[0].status,'success',JSON.stringify(finished.history));
+  assert.deepEqual(f.changes,[true],'Review paused the node and never resumed it');assert.equal(finished.restorePending,0);assert.deepEqual(finished.pendingRestores,[]);
+ }finally{await f.close()}
+});
+
+test('HTTP a pending node restore can be kept paused only with confirmation and only for a recorded node',linux,async()=>{
+ const f=await fixture({pauses:true});try{
+  const before=await f.items();assert.equal(before.restorePending,1);assert.deepEqual(before.pendingRestores,[{name:'unavailable-node',pausedAt:null,title:null}]);
+  const unconfirmed=await f.post('/api/node-restores/keep',{name:'unavailable-node'});assert.equal(unconfirmed.status,400);assert.equal((await unconfirmed.json()).code,'node_keep_confirm_required');
+  const unknown=await f.post('/api/node-restores/keep',{name:'other-node',confirm:true});assert.equal(unknown.status,409);assert.equal((await unknown.json()).code,'node_restore_unknown');
+  const kept=await f.post('/api/node-restores/keep',{name:'unavailable-node',confirm:true});assert.equal(kept.status,200,await kept.clone().text());
+  const after=await f.items();assert.equal(after.restorePending,0);assert.deepEqual(after.pendingRestores,[]);
+  assert.ok(!f.calls.some(call=>call.route==='/api/v2/update-node'),'keeping a node paused never contacts Tdarr');
+ }finally{await f.close()}
+});

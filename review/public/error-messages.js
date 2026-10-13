@@ -33,6 +33,8 @@ export const ERROR_MESSAGES=Object.freeze({
  sample_tracks_invalid:Object.freeze({cs:"Vyber platné zvukové stopy.",en:"Select valid audio tracks."}),
  frame_time_out_of_range:Object.freeze({cs:"Čas je mimo délku filmu.",en:"The time is outside the movie duration."}),
  sample_time_out_of_range:Object.freeze({cs:"Vyber úsek alespoň 12 sekund před koncem filmu.",en:"Choose a segment starting at least 12 seconds before the movie ends."}),
+ node_keep_confirm_required:Object.freeze({cs:"Potvrď, že node zůstane pozastavený.",en:"Confirm that the node stays paused."}),
+ node_restore_unknown:Object.freeze({cs:"Tento node už Review neobnovuje. Obnov přehled.",en:"Review no longer restores this node. Refresh the overview."}),
  preview_files_changed:Object.freeze({cs:"Soubory ukázky se změnily. Obnov přehled.",en:"The sample files changed. Refresh the list."}),
  preview_files_unavailable:Object.freeze({cs:"Soubory ukázky nejsou dostupné nebo se změnily. Obnov přehled.",en:"The sample files are unavailable or have changed. Refresh the list."}),
  preview_settings_changed:Object.freeze({cs:"Nastavení náhledu se změnilo. Obnov přehled.",en:"Preview settings changed. Refresh the list."}),
