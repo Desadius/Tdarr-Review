@@ -50,6 +50,26 @@ Headphone A/B prepares the same 12-second window as mono PCM at 48 kHz. It plays
 
 Technical data still shows the evidence score: job matching (10), proven full Tdarr health check (25), video parameters (15), duration (15), tracks (15), chapter count (5), and sampled audio alignment (15). Failed and unknown markers remain visible; unknown contributes zero. A score of 100 does not complete the review or guarantee visual quality or lip synchronisation.
 
+## Why a film is blocked
+
+Review only offers approval for a result produced by one of the supported transcode profiles. The rules are intentionally strict: a result that does not match them may have lost picture, HDR metadata, audio or subtitles, so the film is shown as blocked and the original stays untouched. The blocked reason names the check that failed.
+
+| Check | Rule | Example message |
+| --- | --- | --- |
+| Video tracks | The original and the result each have exactly one video track (cover art is ignored). | *The result does not have exactly one video track (found: 2).* |
+| Original codec | The original is `h264`, `hevc`, `vc1` or `mpeg2video`. | *The original's codec is not supported: av1.* |
+| Result codec | The result is HEVC. | *The result is not HEVC: h264.* |
+| Pixel format | The result is 10-bit `yuv420p10le`. | *The result does not use the 10-bit pixel format yuv420p10le: yuv420p.* |
+| Resolution | The result has exactly the original's width and height; nothing is scaled or cropped. | *The result's resolution 1280×720 differs from the original's 1920×1080.* |
+| Profile marker | An HEVC original needs a result tagged by an allowed profile: `TDARR_HDR_PROFILE` = `tdarr-hdr10-crf21-v1`, `tdarr-hdr10plus-crf21-v1`, `tdarr-dv81-crf21-v1`, `tdarr-dv81-hdr10plus-crf21-v1` or `tdarr-dv7-video-copy-v1`, or `TDARR_SDR_PROFILE` = `tdarr-hevc-sdr-crf21-v1`. A `vc1`/`mpeg2video` original needs the legacy SDR profile (`tdarr-legacy-sdr-crf21-v1`, progressive 1080p SDR only). An original that already carries an HDR profile marker has been converted before and is blocked. | *The HEVC result was not produced by an allowed HDR profile.* |
+| Profile metadata | Each profile then compares its own metadata: HDR10 mastering/content light levels, HDR10+ and Dolby Vision presence, SDR colour properties, frame rate and field order. | Message of the failed profile check |
+| Audio | The result has at least one audio track. | *The result contains no audio.* |
+| Audio and subtitles | Every audio and subtitle track in the result exists in the original with the same codec, channel count and language. Tracks may be removed (they are listed as removed in the technical data), but not added or changed. | *Audio or subtitles do not match the original.* |
+| Chapters | The result has the same number of chapters as the original. | *The chapter count does not match.* |
+| Duration | Both durations can be read. A difference of more than 0.01 % does not block the film but requires explicit acceptance at approval. | *The movie duration cannot be verified.* |
+
+If a film is blocked by one of these rules, check the Tdarr flow and plugin settings for that film rather than the review itself. Reject the result if it cannot be fixed; the original remains in the library.
+
 ## Approve
 
 A completed server-saved review enables the approval button in Decision, provided the file and operational checks also allow approval. Review checks the current snapshot, checklist version and review revision on the server; a direct request cannot bypass the review gate. Inspect the separate final confirmation: approval replaces the original and removes its former version.

@@ -913,6 +913,42 @@ export default {
   },
   "patterns": [
     [
+      "Originál nemá právě jednu video stopu (nalezeno: {0}).",
+      "The original does not have exactly one video track (found: {0})."
+    ],
+    [
+      "Výsledek nemá právě jednu video stopu (nalezeno: {0}).",
+      "The result does not have exactly one video track (found: {0})."
+    ],
+    [
+      "Kodek originálu není podporovaný: {0}. Povolené jsou h264, hevc, vc1 a mpeg2video.",
+      "The original's codec is not supported: {0}. Allowed codecs are h264, hevc, vc1 and mpeg2video.",
+      {
+        "raw": [0]
+      }
+    ],
+    [
+      "Výsledek není HEVC: {0}.",
+      "The result is not HEVC: {0}.",
+      {
+        "raw": [0]
+      }
+    ],
+    [
+      "Výsledek nemá 10bitový formát pixelů yuv420p10le: {0}.",
+      "The result does not use the 10-bit pixel format yuv420p10le: {0}.",
+      {
+        "raw": [0]
+      }
+    ],
+    [
+      "Rozlišení výsledku {0} se liší od originálu {1}.",
+      "The result's resolution {0} differs from the original's {1}.",
+      {
+        "raw": [0, 1]
+      }
+    ],
+    [
       "Po ověření identity souborů a kontrolního součtu kopie se původní film ({0}) nahradí výsledkem ({1}). Původní verze bude odstraněna. Plex bude používat nový soubor. Health check z Tdarru se neopakuje. Akce může trvat několik minut. Výslovně přijímáš rozdíl délky: originál {2} s, výstup {3} s, rozdíl {4} s. Potvrď pouze po kontrole začátku, konce a synchronizace zvuku.",
       "After file identity and the copy's checksum are verified, the original movie ({0}) will be replaced with the output ({1}). The original version will be deleted. Plex will use the new file. Tdarr's health check is not repeated. The operation may take several minutes. You explicitly accept the duration difference: original {2} s, output {3} s, difference {4} s. Confirm only after checking the beginning, end and audio synchronisation."
     ],

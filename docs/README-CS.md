@@ -12,6 +12,8 @@ Rozhraní je v češtině. Dokumentace repozitáře je převážně anglicky, ab
 6. [Provoz a opravy](OPERATIONS.md): zálohy, aktualizace, nejasné transakce a chyby připojení.
 7. [Community Applications](COMMUNITY-APPS.md): připravená šablona a stav podání do katalogu. Připravená šablona sama neznamená, že je aplikace již v katalogu.
 
+Film je zablokovaný, pokud výsledek nesplňuje přísná pravidla převodu: originál h264, hevc, vc1 nebo mpeg2video s jedinou video stopou; výsledek HEVC 10 bit (`yuv420p10le`) ve stejném rozlišení se značkou povoleného HDR/SDR profilu; zvukové stopy a titulky pouze z originálu (stejný kodek, počet kanálů a jazyk, odebrat lze, přidat ani změnit ne) a stejný počet kapitol. Důvod blokace uvádí, které pravidlo selhalo. Podrobnosti jsou v [Používání](USER-GUIDE.md#why-a-film-is-blocked).
+
 Skóre kontroly vyjadřuje množství doložených kontrol, nikoli procentní pravděpodobnost bezvadného filmu. Úspory ukazují doložený rozdíl velikostí souborů; nemusí odpovídat okamžité změně volného místa array.
 
 V repozitáři nejsou skutečné API klíče, SSH klíče, seznamy osobních filmů, transakční protokoly ani osobní schválení oprav. Existující produkční instalace se tímto zveřejněním nemění.
