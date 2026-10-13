@@ -4,18 +4,24 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {safeFile,sourceRelative,fingerprint,replaceChecked,inspect,recoverTransactions} from './core.mjs';
+const directorySync={skip:process.platform==='win32'?'Requires POSIX directory fsync for durable replacement journals':false};
+const fileSymlink={skip:process.platform==='win32'?'File symlinks require Windows Developer Mode or elevated privileges; covered by the Linux suite':false};
 
-test('path traversal, symlinks and unsupported nesting are rejected',async()=>{
+test('path traversal and unsupported nesting are rejected',async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'review-test-'));
- try {await fs.writeFile(path.join(root,'film.mkv'),'original');await fs.symlink('/etc/passwd',path.join(root,'link.mkv'));await assert.rejects(safeFile(root,'../film.mkv'));await assert.rejects(safeFile(root,'link.mkv'));assert.equal(sourceRelative('PROD-Movies/Film/Film.mkv'),'Film/Film.mkv');assert.equal(sourceRelative('unknown/nested/Film/Film.mkv'),null)}finally{await fs.rm(root,{recursive:true,force:true})}
+ try {await fs.writeFile(path.join(root,'film.mkv'),'original');await assert.rejects(safeFile(root,'../film.mkv'));assert.equal(sourceRelative('PROD-Movies/Film/Film.mkv'),'Film/Film.mkv');assert.equal(sourceRelative('unknown/nested/Film/Film.mkv'),null)}finally{await fs.rm(root,{recursive:true,force:true})}
 });
-test('approval replaces only the selected original and cleans completed transaction',async()=>{
+test('file symlinks are rejected',fileSymlink,async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'review-test-'));
+ try{await fs.writeFile(path.join(root,'film.mkv'),'original');await fs.symlink(path.join(root,'film.mkv'),path.join(root,'link.mkv'));await assert.rejects(safeFile(root,'link.mkv'),/Symbolické/)}finally{await fs.rm(root,{recursive:true,force:true})}
+});
+test('approval replaces only the selected original and cleans completed transaction',directorySync,async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'review-test-'));
  try {const original=path.join(root,'movie.mkv'),review=path.join(root,'review.mkv'),journal=path.join(root,'transaction.json');await fs.writeFile(original,'original film');await fs.writeFile(review,'new film');await fs.writeFile(path.join(root,'other.mkv'),'keep');
  const updates=[];await replaceChecked({original,review,journal,originalFP:fingerprint(await fs.stat(original)),reviewFP:fingerprint(await fs.stat(review)),onProgress:p=>updates.push(p)});assert(updates.some(p=>p.phase==='preparing'&&p.done===8&&p.total===8));assert(updates.some(p=>p.phase==='verifying-copy'&&p.done===16&&p.total===16));assert.equal(await fs.readFile(original,'utf8'),'new film');assert.equal(await fs.readFile(path.join(root,'other.mkv'),'utf8'),'keep');await assert.rejects(fs.stat(review));assert.equal(JSON.parse(await fs.readFile(journal)).phase,'complete');assert.equal((await fs.readdir(root)).filter(n=>n.endsWith('.old')||n.endsWith('.tmp')).length,0)
  }finally{await fs.rm(root,{recursive:true,force:true})}
 });
-test('changed source and interrupted commit never overwrite original',async()=>{
+test('changed source and interrupted commit never overwrite original',directorySync,async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'review-test-'));
  try{const original=path.join(root,'movie.mkv'),review=path.join(root,'review.mkv'),journal=path.join(root,'transaction.json');await fs.writeFile(original,'original');await fs.writeFile(review,'new');const originalFP=fingerprint(await fs.stat(original)),reviewFP=fingerprint(await fs.stat(review));
  await assert.rejects(replaceChecked({original,review,journal,originalFP,reviewFP,beforeCommit:async()=>{throw new Error('Tdarr started')}}));assert.equal(await fs.readFile(original,'utf8'),'original');assert.equal(await fs.readFile(review,'utf8'),'new');assert.equal((await fs.readdir(root)).filter(n=>n.endsWith('.old')||n.endsWith('.tmp')).length,0);
@@ -24,7 +30,7 @@ test('changed source and interrupted commit never overwrite original',async()=>{
  }finally{await fs.rm(root,{recursive:true,force:true})}
 });
 
-test('failed swap rolls back the exact original and records a terminal abort',async()=>{
+test('failed swap rolls back the exact original and records a terminal abort',directorySync,async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'review-test-'));
  try{
   const original=path.join(root,'movie.mkv'),review=path.join(root,'review.mkv'),journal=path.join(root,'transaction.json');
@@ -43,7 +49,7 @@ async function recoveryFixture(root,phase){
  await fs.writeFile(journal,JSON.stringify(record));return {...record,journal};
 }
 
-test('restart restores a missing original before installation without replaying approval',async()=>{
+test('restart restores a missing original before installation without replaying approval',directorySync,async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'review-test-'));
  try{
   const f=await recoveryFixture(root,'ready');await fs.rename(f.original,f.backup);
