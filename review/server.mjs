@@ -1,4 +1,6 @@
 import {extractPreview,PREVIEW_PROFILES} from './av-preview.mjs';
+import {SESSION_TTL_MS,pruneSessions,pruneAuthAttempts,registerAuthAttempt} from './auth-state.mjs';
+import {RESUME_RETRY_TICK_MS,resumeRetryDelay} from './resume-retry.mjs';
 import {publishApproval,quarantineRetention} from './quarantine-retention.mjs';
 import {extractListeningAudio} from './audio-listen.mjs';
 import {assessment} from './assessment.mjs';
@@ -17,6 +19,7 @@ import {fileURLToPath} from 'node:url';
 import {safeFile,fingerprint,hash,atomicJSON,command,probe,inspect,replaceChecked,recoverTransactions} from './core.mjs';
 import {measure} from './progress.mjs';
 import {appVersion} from './app-version.mjs';
+import {isLoopback,recoveryStatusHealth,healthSummary} from './health-status.mjs';
 import {captureReceipt,cleanupReviewed} from './cleanup.mjs';
 import {resolveReviewSource} from './source-mapping.mjs';
 import {matchReviewJob} from './job-matching.mjs';
@@ -148,7 +151,7 @@ async function verifyReviewItem(item,{id,snapshot},guard=true){
  const indexes=probe=>(probe.streams||[]).filter(stream=>stream.codec_type==='audio').map(stream=>stream.index);
  return {duration,originalIndexes:indexes(original),reviewIndexes:indexes(review),requirements:reviewRequirements(original,review)};
 }
-const sessions=new Map(Object.entries(state.sessions||{}));
+const sessions=new Map(Object.entries(state.sessions||{}));pruneSessions(sessions);state.sessions=Object.fromEntries(sessions);
 async function readRows(table,cfg=config){
  const collections={jobsjsondb:'JobsJSONDB',librarysettingsjsondb:'LibrarySettingsJSONDB',statisticsjsondb:'StatisticsJSONDB'};
  if(!collections[table])throw Error('Unsupported Tdarr collection');
@@ -354,6 +357,8 @@ async function performBatch(items){
 async function body(req){let b='';for await(const chunk of req){b+=chunk;if(b.length>32768)throw new Error('Požadavek je příliš velký.')}return JSON.parse(b||'{}')}
 function respond(res,status,data,headers={}){res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff',...headers});res.end(JSON.stringify(data))}
 const authAttempts=new Map();
+// Expired sessions and finished rate-limit windows are dropped hourly and on each login, so neither grows without bound.
+const authTimer=setInterval(()=>{pruneAuthAttempts(authAttempts);if(pruneSessions(sessions)){state.sessions=Object.fromEntries(sessions);void save().catch(e=>console.error('Session cleanup: '+e.message))}},3600000);authTimer.unref();
 const server=http.createServer(async(req,res)=>{
   let releasePreviewBackground=false;
   try {
@@ -361,12 +366,15 @@ const server=http.createServer(async(req,res)=>{
     const url=new URL(req.url,'http://'+HOST);
     if(req.method==='POST'&&req.headers.origin!==config.publicOrigin)return respond(res,403,{error:'Nepovolený původ požadavku.'});
     if(req.method==='POST'&&req.headers['content-type']!=='application/json')return respond(res,415,{error:'Vyžadován JSON.'});
+    if(url.pathname==='/health'&&req.method==='GET'){
+      if(!isLoopback(req.socket.remoteAddress))return respond(res,404,{error:'Nenalezeno.'});
+      return respond(res,200,healthSummary({pendingTransactions:recovery.length,restorePending:state.pauses.length,recoveryStatus:await recoveryStatusHealth(path.join(path.dirname(config.mediaRoot),'.tdarr-recovery-status.json'))}));
+    }
     if(url.pathname==='/api/login'&&req.method==='POST'){
-      const ip=req.socket.remoteAddress,now=Date.now(),attempt=authAttempts.get(ip)||{at:now,count:0};
-      if(now-attempt.at>60000){attempt.at=now;attempt.count=0}if(++attempt.count>12)return respond(res,429,{error:'Zkus přihlášení za minutu.'});authAttempts.set(ip,attempt);
+      const now=Date.now();pruneAuthAttempts(authAttempts,now);if(!registerAuthAttempt(authAttempts,req.socket.remoteAddress,now))return respond(res,429,{error:'Zkus přihlášení za minutu.'});
       const b=await body(req);
       if(hash(String(b.key||''))!==hash(KEY))return respond(res,401,{error:'Nesprávný přístupový klíč.'});
-      const token=crypto.randomBytes(32).toString('base64url');sessions.set(hash(token),Date.now()+30*86400000);state.sessions=Object.fromEntries(sessions);await save();
+      const token=crypto.randomBytes(32).toString('base64url');pruneSessions(sessions);sessions.set(hash(token),Date.now()+SESSION_TTL_MS);state.sessions=Object.fromEntries(sessions);await save();
       return respond(res,200,{ok:true},{'set-cookie':`review_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000`});
     }
     const cookie=/review_session=([^;]+)/.exec(req.headers.cookie||'')?.[1];
@@ -474,7 +482,6 @@ const server=http.createServer(async(req,res)=>{
       }finally{settingsBusy=false}
     }
     if(url.pathname==='/api/items'&&req.method==='GET'){
-      if(state.pauses.length&&!recovery.length&&!active&&!batchRunning&&!reviewSessions.busy)await resume();
       const items=await scan();
       return respond(res,200,{version:APP_VERSION,label:config.label,serverTime:Date.now(),items,previews:Object.fromEntries(items.filter(item=>item.snapshot).map(item=>[item.id,previewPreparation(item.id,item.snapshot)])),reviewSessions:reviewSessions.list(items),active,batch:state.batch||null,batchRunning,history:state.history,recovery,restorePending:state.pauses.length});
     }
@@ -590,10 +597,16 @@ const server=http.createServer(async(req,res)=>{
 });
 server.listen(PORT,'0.0.0.0',()=>console.log('Tdarr Review listening on '+PORT));
 const previewTimer=setInterval(()=>{if(!previewMutationHolds&&!active&&!batchRunning&&!previewBusy&&!settingsBusy&&!reviewSessions.busy&&!resumeTask&&!recovery.length&&!state.pauses.length)void scan().then(preparePreviews).catch(error=>console.error('Preview preparation: '+error.message))},60000);previewTimer.unref();
+// A failed node restore is retried here with backoff, never as a side effect of a GET request.
+let resumeFailures=0,nextResumeAt=0;
+const resumeRetryTimer=setInterval(()=>{
+ if(stopping||!state.pauses.length||recovery.length||active||batchRunning||reviewSessions.busy||resumeTask||Date.now()<nextResumeAt)return;
+ void resume().catch(e=>console.error('Node restore: '+e.message)).then(()=>{if(state.pauses.length)nextResumeAt=Date.now()+resumeRetryDelay(resumeFailures++);else resumeFailures=nextResumeAt=0});
+},RESUME_RETRY_TICK_MS);resumeRetryTimer.unref();
 const previewStart=setTimeout(()=>{void scan().then(preparePreviews).catch(error=>console.error('Preview preparation: '+error.message))},1000);previewStart.unref();
 let stopping=false;
 for(const signal of ['SIGTERM','SIGINT'])process.once(signal,()=>{
- if(stopping)return;stopping=true;clearInterval(previewTimer);clearTimeout(previewStart);clearInterval(replacementTimer);
+ if(stopping)return;stopping=true;clearInterval(previewTimer);clearTimeout(previewStart);clearInterval(replacementTimer);clearInterval(resumeRetryTimer);
  const drained=new Promise(resolve=>server.close(resolve));server.closeIdleConnections();
  void Promise.all([previews.close(),drained]).then(async()=>{while(active||batchRunning||reviewSessions.busy||settingsBusy||resumeTask)await new Promise(resolve=>setTimeout(resolve,50));await saveChain;process.exit(0)}).catch(error=>{console.error('Review shutdown: '+error.message);process.exit(1)});
 });

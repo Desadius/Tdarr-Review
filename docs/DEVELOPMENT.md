@@ -1,11 +1,32 @@
 # Development and verification
 
-Use Linux and Node 24 for the full suite. Directory `fsync` and Linux path/filesystem semantics are part of the implementation; Windows is useful for editing and syntax checks, not the approval deployment target. There are no npm dependencies to install.
+Use Node 24. Linux remains the approval deployment target and provides the full suite, including directory `fsync` and Linux filesystem semantics. There are no npm dependencies to install.
 
 ```bash
 npm run check
 npm test
 ```
+
+On Windows, the native `npm test` run reports explicit skips for replacement/recovery transactions that require POSIX directory `fsync`, POSIX permission/ctime assertions and privileged symlink fixtures. The remaining tests still run; a skipped transaction test is not evidence that approval is supported on Windows. Production directory `fsync` remains mandatory.
+
+For the complete Linux checks on a Windows developer machine, install Docker Desktop with Linux containers. Download the test image once while network access is available, then run the isolated suite from the repository root:
+
+```bash
+docker pull --platform linux/amd64 node:24
+npm run test:docker
+```
+
+`test:docker` runs `npm run check && npm test` in `node:24` for Linux amd64. It mounts only this repository read-only, uses a read-only container root with disposable `/tmp` scratch space, drops capabilities and disables the container network. It neither forwards host settings/credentials nor mounts a Docker socket, media or runtime data. Fixtures use synthetic temporary files and loopback mocks. The image must already be present (`--pull=never`); the test invocation cannot fetch it. The disposable container is removed on exit, and failed checks/Docker errors return a nonzero status. Docker image smoke and generated-media integration checks remain separate commands below.
+
+To run the same complete suite with Node 24's built-in experimental coverage reporting:
+
+```bash
+npm run test:coverage
+```
+
+The command retains the same test discovery, sequential execution and failing-test exit status as `npm test`, adds no dependencies, and prints per-file line, branch and function coverage in the console. CI uses this command instead of a second plain unit-suite run. Only the explicit `--coverage` runner option is supported; unknown or repeated options fail instead of silently skipping tests. No minimum coverage is enforced until a representative Linux baseline has been measured and reviewed.
+
+Treat the report as collected execution evidence, not proof of safety. Files absent from it are unmeasured. In particular, `recovery/worker.mjs` runs in subprocesses launched by the Linux integration fixtures rather than as a test entrypoint: confirm its actual collected coverage in the Linux report before proposing a worker threshold. Separate Docker smoke and generated-media/HTTP fixture commands are outside this coverage run. Windows platform skips also make a native report unsuitable as the full Linux baseline. Prioritize uncovered branches in `review/core.mjs`, `review/radarr-replacement.mjs`, `review/cleanup.mjs` and `recovery/replacement-*.mjs` when reviewing the baseline. See [Node's coverage documentation](https://nodejs.org/docs/latest-v24.x/api/test.html#collecting-code-coverage).
 
 Tests cover path containment, source changes, copy/exchange recovery, metadata/profile checks, job matching, plain-text API replies, batch concurrency, configuration, artwork proxy limits, rejection evidence, audio alignment/A-B playback, quarantine retention, release/history binding, deferred quota and shared status. Fixtures are disposable fictional records, not live credentials or production repair approvals.
 
@@ -33,7 +54,7 @@ FFMPEG=/path/to/ffmpeg FFPROBE=/path/to/ffprobe node tools/test-preview-cache-ht
 
 The cache HTTP fixture starts an isolated Review server with generated original/transcode files and a loopback Tdarr mock. It checks background preparation, cache-only misses/hits, on-demand requests, language preferences and manual selections, persistent reuse after restart, source-change rejection and unchanged review evidence. These media/HTTP fixtures are separate from `npm test` and also run in Docker smoke against the exact built Review image; they never approve production films or use production settings.
 
-CI runs syntax and unit tests on Node 24 / Linux, builds the actual Linux amd64 images, and runs isolated image smoke and Review integration tests. Pushes to `main`, version tags and pull requests are tested with read-only repository permissions and never publish images. Docker publication uses a separate manually dispatched workflow for an approved full commit SHA already in `main`; it repeats tests and smoke checks before obtaining registry credentials. Updating `latest` is an explicit option, disabled by default. See [the release process](RELEASES.md). No production media or live Tdarr/Radarr endpoint is used. A complete new Unraid installation and Community Applications approval remain separate checks.
+CI runs syntax and unit tests on Node 24 / Linux, executes the same isolated `test:docker` command, builds the actual Linux amd64 images, and runs isolated image smoke and Review integration tests. Pushes to `main`, version tags and pull requests are tested with read-only repository permissions and never publish images. Docker publication uses a separate manually dispatched workflow for an approved full commit SHA already in `main`; it repeats tests and smoke checks before obtaining registry credentials. Updating `latest` is an explicit option, disabled by default. See [the release process](RELEASES.md). No production media or live Tdarr/Radarr endpoint is used. A complete new Unraid installation and Community Applications approval remain separate checks.
 
 To exercise built images locally on Linux:
 
