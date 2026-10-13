@@ -30,7 +30,8 @@ test('login limit allows twelve attempts per window and resets after it',()=>{
 test('server prunes sessions at start-up, on login and periodically, saving the pruned state',async()=>{
  const server=await fs.readFile(new URL('./server.mjs',import.meta.url),'utf8');
  assert.match(server,/new Map\(Object\.entries\(state\.sessions\|\|\{\}\)\);pruneSessions\(sessions\);state\.sessions=Object\.fromEntries\(sessions\)/);
- assert.match(server,/pruneSessions\(sessions\);sessions\.set\(hash\(token\),Date\.now\(\)\+SESSION_TTL_MS\)/);
  assert.match(server,/setInterval\(\(\)=>\{pruneAuthAttempts\(authAttempts\);if\(pruneSessions\(sessions\)\)\{state\.sessions=Object\.fromEntries\(sessions\);void save\(\)/);
- assert.match(server,/pruneAuthAttempts\(authAttempts,now\);if\(!registerAuthAttempt\(/);
+ const login=await fs.readFile(new URL('./routes/auth.mjs',import.meta.url),'utf8');
+ assert.match(login,/pruneSessions\(ctx\.sessions\);ctx\.sessions\.set\(hash\(token\),Date\.now\(\)\+SESSION_TTL_MS\)/);
+ assert.match(login,/pruneAuthAttempts\(ctx\.authAttempts,now\);if\(!registerAuthAttempt\(/);
 });

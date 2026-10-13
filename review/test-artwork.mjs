@@ -143,10 +143,13 @@ test('request records are read privately, with strict ID and record-size checks'
 
 test('server artwork routes follow authguard and add only the explicit model asset',async()=>{
  const server=await fs.readFile(new URL('./server.mjs',import.meta.url),'utf8');
- const guard=server.indexOf("if(url.pathname.startsWith('/api/')&&!authenticated)");
- const route=server.indexOf('const poster=');
- assert(guard>0&&route>guard);
- assert(server.includes("'/review-model.js':['review-model.js'"));
- assert(server.includes("'cache-control':'private, max-age=300'"));
- assert(server.includes('requestArtworkIdentity(DATA,visible)'));
+ const library=await fs.readFile(new URL('./routes/library.mjs',import.meta.url),'utf8');
+ const assets=await fs.readFile(new URL('./routes/static.mjs',import.meta.url),'utf8');
+ const guard=server.indexOf("if(url.pathname.startsWith('/api/')&&!authenticated(ctx,req))");
+ const dispatch=server.indexOf('for(const route of routes)');
+ assert(guard>0&&dispatch>guard);assert.match(server,/const routes=\[libraryRoutes,/);
+ assert(library.includes('const poster='));
+ assert(assets.includes("'/review-model.js':['review-model.js'"));
+ assert(library.includes("'cache-control':'private, max-age=300'"));
+ assert(library.includes('requestArtworkIdentity(ctx.DATA,visible)'));
 });

@@ -1,16 +1,14 @@
-import {extractPreview,PREVIEW_PROFILES} from './av-preview.mjs';
-import {SESSION_TTL_MS,pruneSessions,pruneAuthAttempts,registerAuthAttempt} from './auth-state.mjs';
-import {publishApproval,quarantineRetention} from './quarantine-retention.mjs';
+import {extractPreview} from './av-preview.mjs';
+import {pruneSessions,pruneAuthAttempts} from './auth-state.mjs';
+import {publishApproval} from './quarantine-retention.mjs';
 import {extractListeningAudio} from './audio-listen.mjs';
 import {assessment} from './assessment.mjs';
 import {extractAudio,alignment} from './audio-compare.mjs';
 import {remountOnly,durationException} from './recheck.mjs';
-import {statistics} from './stats.mjs';
-import {defaults,validate,checkPaths,mapReview} from './config.mjs';
+import {defaults,validate,mapReview} from './config.mjs';
 import {extractFrame} from './frames.mjs';
 import http from 'node:http';
 import fs from 'node:fs/promises';
-import {createReadStream} from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
@@ -21,13 +19,20 @@ import {appVersion} from './app-version.mjs';
 import {captureReceipt,cleanupReviewed} from './cleanup.mjs';
 import {resolveReviewSource} from './source-mapping.mjs';
 import {matchReviewJob} from './job-matching.mjs';
-import {createArtwork,requestArtworkIdentity} from './artwork.mjs';
+import {createArtwork} from './artwork.mjs';
 import {createReviewSessionStore,ReviewSessionError,reviewRequirements} from './review-session.mjs';
 import {createPreviewCache,PreviewCacheError,previewCacheKey} from './preview-cache.mjs';
 import {createPreviewRenderer} from './preview-render.mjs';
 import {defaultPreviewPlan} from './preview-plan.mjs';
 import {defaultPreviewSettings,validatePreviewSettings,previewLimits} from './preview-settings.mjs';
 import {busyFor as policyBusyFor,mutationKind} from './busy-guards.mjs';
+import {respond} from './routes/http.mjs';
+import {login,authenticated} from './routes/auth.mjs';
+import {libraryRoutes} from './routes/library.mjs';
+import {itemRoutes} from './routes/items.mjs';
+import {previewRoutes} from './routes/previews.mjs';
+import {settingsRoutes} from './routes/settings.mjs';
+import {staticRoutes} from './routes/static.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 const DATA=process.env.DATA_ROOT||'/data',PORT=Number(process.env.PORT||8270),APP_VERSION=await appVersion();
@@ -356,243 +361,53 @@ async function performBatch(items){
   }catch(e){state.batch.status='interrupted';state.batch.message=e.message;console.error(e)}
   finally{state.batch.ended=new Date().toISOString();await save();batchRunning=false;cache=null}
 }
-async function body(req){let b='';for await(const chunk of req){b+=chunk;if(b.length>32768)throw new Error('Požadavek je příliš velký.')}return JSON.parse(b||'{}')}
-function respond(res,status,data,headers={}){res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff',...headers});res.end(JSON.stringify(data))}
 const authAttempts=new Map();
 // Expired sessions and finished rate-limit windows are dropped hourly and on each login, so neither grows without bound.
 const authTimer=setInterval(()=>{pruneAuthAttempts(authAttempts);if(pruneSessions(sessions)){state.sessions=Object.fromEntries(sessions);void save().catch(e=>console.error('Session cleanup: '+e.message))}},3600000);authTimer.unref();
+// The one explicit server-state object handed to the route modules in routes/.
+// Getters/setters keep the module variables above authoritative, so the scan,
+// transaction and preview code shares exactly the state the routes change.
+const ctx={
+ ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,artwork,reviewSessions,previewPairs,previewPlans,previewAttempts,
+ get config(){return config},set config(value){config=value},
+ get previewSettings(){return previewSettings},set previewSettings(value){previewSettings=value},
+ get state(){return state},
+ get REVIEW(){return REVIEW},
+ get active(){return active},set active(value){active=value},
+ get batchRunning(){return batchRunning},
+ get cache(){return cache},set cache(value){cache=value},
+ get cacheAt(){return cacheAt},set cacheAt(value){cacheAt=value},
+ get settingsBusy(){return settingsBusy},set settingsBusy(value){settingsBusy=value},
+ get previewBusy(){return previewBusy},set previewBusy(value){previewBusy=value},
+ get statsCache(){return statsCache},set statsCache(value){statsCache=value},
+ get statsTask(){return statsTask},set statsTask(value){statsTask=value},
+ get mutationOwner(){return mutationOwner},set mutationOwner(value){mutationOwner=value},
+ applyConfig,save,busyFor,scan,perform,performBatch,replacementAction,resume,readRows,dbRows,verifyReviewItem,reviewMutationBlocked,
+ previewIdentity,previewPair,previewVersion,previewPreparation,planPreviewItem,preparePreviews,forgetPreviews,
+};
+const routes=[libraryRoutes,itemRoutes,previewRoutes,settingsRoutes,staticRoutes];
 const server=http.createServer(async(req,res)=>{
-  let releasePreviewBackground=false,requestMutation=null;
+  let releasePreviewBackground=false;const request={mutation:null};
   try {
     if(req.headers.host!==HOST)return respond(res,403,{error:'Nepovolená adresa serveru.'});
     const url=new URL(req.url,'http://'+HOST);
     if(req.method==='POST'&&req.headers.origin!==config.publicOrigin)return respond(res,403,{error:'Nepovolený původ požadavku.'});
     if(req.method==='POST'&&req.headers['content-type']!=='application/json')return respond(res,415,{error:'Vyžadován JSON.'});
-    if(url.pathname==='/api/login'&&req.method==='POST'){
-      const now=Date.now();pruneAuthAttempts(authAttempts,now);if(!registerAuthAttempt(authAttempts,req.socket.remoteAddress,now))return respond(res,429,{error:'Zkus přihlášení za minutu.'});
-      const b=await body(req);
-      if(hash(String(b.key||''))!==hash(KEY))return respond(res,401,{error:'Nesprávný přístupový klíč.'});
-      const token=crypto.randomBytes(32).toString('base64url');pruneSessions(sessions);sessions.set(hash(token),Date.now()+SESSION_TTL_MS);state.sessions=Object.fromEntries(sessions);await save();
-      return respond(res,200,{ok:true},{'set-cookie':`review_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000`});
-    }
-    const cookie=/review_session=([^;]+)/.exec(req.headers.cookie||'')?.[1];
-    const authenticated=cookie&&(sessions.get(hash(cookie))||0)>Date.now();
-    if(url.pathname.startsWith('/api/')&&!authenticated)return respond(res,401,{error:'Přihlas se přístupovým klíčem.'});
+    if(await login(ctx,req,res,url))return;
+    if(url.pathname.startsWith('/api/')&&!authenticated(ctx,req))return respond(res,401,{error:'Přihlas se přístupovým klíčem.'});
     const kind=mutationKind(req.method,url.pathname);
     if(kind){
       const blocked=busyFor(kind);
       if(blocked)return respond(res,409,{error:['recovery','pauses'].includes(blocked)?'Nejprve dokonči probíhající akci nebo obnovu.':'Právě probíhá jiná akce.'});
       // Claim before any await, including draining previews or reading a body.
       // Review writes retain their existing revision-aware serialization queue.
-      if(kind!=='reviewSession')mutationOwner=requestMutation={kind};
+      if(kind!=='reviewSession')mutationOwner=request.mutation={kind};
       previewMutationHolds++;releasePreviewBackground=true;await previews.pauseBackground({wait:true});
     }
-    const poster=/^\/api\/artwork\/(review|request)\/([a-f0-9]{24})$/.exec(url.pathname);
-    if(poster&&req.method==='GET'){
-      let record;
-      if(poster[1]==='review')record=(await scan()).find(item=>item.id===poster[2]);
-      else{
-        const visible=(await replacements.list()).find(item=>item.id===poster[2]);
-        if(visible)record=await requestArtworkIdentity(DATA,visible);
-      }
-      if(!record)return respond(res,404,{error:'Plakát není dostupný.'});
-      const image=await artwork.lookup(poster[1],record);
-      if(!image)return respond(res,404,{error:'Plakát není dostupný.'});
-      const headers={'content-type':image.mime,'cache-control':'private, max-age=300','x-content-type-options':'nosniff','x-artwork-status':image.status,'etag':image.etag,'content-security-policy':"default-src 'none'; frame-ancestors 'none'"};
-      if(req.headers['if-none-match']===image.etag){res.writeHead(304,headers);res.end();return;}
-      res.writeHead(200,{...headers,'content-length':image.body.length});res.end(image.body);return;
-    }
-    if(url.pathname==='/api/statistics'&&req.method==='GET'){
-      if(settingsBusy)return respond(res,409,{error:'Probíhá změna nastavení.'});
-      if(!statsCache||Date.now()-statsCache.at>60000){
-        if(!statsTask)statsTask=(async()=>{const result=await statistics({dbRows,config:structuredClone(config),data:DATA,items:await scan()});statsCache=result;return result})().finally(()=>{statsTask=null});
-        await statsTask;
-      }
-      return respond(res,200,statsCache);
-    }
-    if(url.pathname==='/api/quarantine'&&req.method==='GET'){
-      const parent=path.dirname(await fs.realpath(config.mediaRoot)),settings=await replacements.publicSettings();
-      const roots=[path.join(parent,'.tdarr-corrupt'),settings.quarantineRoot||path.join(parent,'.tdarr-review-quarantine'),path.join(await fs.realpath(config.reviewRoot),'.radarr-quarantine')];
-      const files=[],warnings=[];
-      for(const root of [...new Set(roots)]){
-        try{
-          if(await fs.realpath(root)!==root)throw Error('Karanténa nesmí být symlink.');
-          for(const entry of await fs.readdir(root,{withFileTypes:true})){
-            if(!entry.isDirectory()||entry.isSymbolicLink())continue;
-            const folder=path.join(root,entry.name);if(await fs.realpath(folder)!==folder)continue;
-            for(const name of await fs.readdir(folder)){
-              const file=path.join(folder,name),st=await fs.lstat(file);
-              if(st.isFile()&&!st.isSymbolicLink())files.push({caseId:entry.name,name,path:file,bytes:st.size});
-            }
-          }
-        }catch(e){if(e.code!=='ENOENT')warnings.push('Nelze načíst '+root+': '+e.message);}
-      }
-      return respond(res,200,{files,warnings,...quarantineRetention});
-    }
-    if(url.pathname==='/api/radarr/settings'&&req.method==='GET')return respond(res,200,await replacements.publicSettings());
-    if(['/api/radarr/settings','/api/radarr/settings/test'].includes(url.pathname)&&req.method==='POST'){
-      const b=await body(req);if(busyFor('radarrSettings',requestMutation))return respond(res,409,{error:'Právě probíhá jiná akce.'});settingsBusy=true;try{return respond(res,200,await replacements.settings(b,url.pathname.endsWith('/test')))}finally{settingsBusy=false}
-    }
-    if(url.pathname==='/api/radarr/requests'&&req.method==='GET')return respond(res,200,{requests:await replacements.list()});
-    const replaceRequest=/^\/api\/items\/([a-f0-9]{24})\/replace$/.exec(url.pathname);
-    if(replaceRequest&&req.method==='POST'){
-      const b=await body(req);let reason;try{reason=rejectionReason(b.reason)}catch(e){return respond(res,400,{error:e.message})}
-      const item=(await scan(true,null,requestMutation)).find(v=>v.id===replaceRequest[1]);
-      if(!item?.snapshot||item.snapshot!==b.snapshot)return respond(res,409,{error:'Položka se změnila. Obnov přehled.'});
-      if(busyFor('replace',requestMutation))return respond(res,409,{error:'Právě probíhá jiná akce.'});
-      void replacementAction(item,reason);return respond(res,202,{ok:true});
-    }
-    const restoreRequest=/^\/api\/radarr\/requests\/([a-f0-9]{24})\/restore$/.exec(url.pathname);
-    if(restoreRequest&&req.method==='POST'){
-      const b=await body(req);if(b.confirm!==true)return respond(res,400,{error:'Potvrď obnovení zachovaných kopií.'});
-      if(busyFor('restore',requestMutation))return respond(res,409,{error:'Právě probíhá jiná akce.'});
-      active={title:'Obnovení karantény',stage:'Ověřuji soubory',started:Date.now()};
-      try{const result=await replacements.restore(restoreRequest[1]);await forgetPreviews(result.itemId);delete state.items[result.itemId];delete state.reviewSessions[result.itemId];await save();return respond(res,200,result)}finally{active=null;cache=null}
-    }
-    if(url.pathname==='/api/preview-settings'&&req.method==='GET')return respond(res,200,{config:previewSettings,revision:hash(JSON.stringify(previewSettings)),stats:{...previews.stats(),queued:previews.stats().queue,running:previews.stats().busy}});
-    if(url.pathname==='/api/preview-settings'&&req.method==='POST'){
-      const b=await body(req);if(busyFor('previewSettings',requestMutation))return respond(res,409,{error:'Právě probíhá jiná akce.'});if(b.revision!==hash(JSON.stringify(previewSettings)))return respond(res,409,{error:'Nastavení se mezitím změnilo. Otevři ho znovu.'});
-      let candidate;try{candidate=validatePreviewSettings(b.config)}catch(error){return respond(res,400,{error:error.message})}
-      settingsBusy=true;
-      try{
-        await atomicJSON(previewSettingsFile,candidate);previewSettings=candidate;
-        await previews.updateLimits(previewLimits(candidate));
-        await previews.cancelBackground({all:true,wait:true});previewPlans.clear();previewAttempts.clear();
-        return respond(res,200,{config:previewSettings,revision:hash(JSON.stringify(previewSettings)),stats:previews.stats(),message:'Nastavení přípravy ukázek je uložené.'});
-      }finally{settingsBusy=false;void preparePreviews().catch(error=>console.error('Preview preparation: '+error.message))}
-    }
-    if(url.pathname==='/api/settings'&&req.method==='GET')return respond(res,200,{config,revision:hash(JSON.stringify(config))});
-    if(['/api/settings/test','/api/settings'].includes(url.pathname)&&req.method==='POST'){
-      const b=await body(req);
-      if(busyFor('settings',requestMutation))return respond(res,409,{error:'Nejprve dokonči probíhající akce, náhled nebo obnovu.'});
-      if(b.revision!==hash(JSON.stringify(config)))return respond(res,409,{error:'Nastavení se mezitím změnilo. Otevři ho znovu.'});
-      settingsBusy=true;
-      try{
-        const candidate=validate(b.config);await checkPaths(candidate);
-        const r=await fetch(candidate.tdarrUrl+'/api/v2/get-nodes',{signal:AbortSignal.timeout(12000)});
-        if(!r.ok)throw Error('Připojení k Tdarru selhalo: '+r.status);
-        const nodes=await r.json();if(!nodes||typeof nodes!=='object'||Array.isArray(nodes))throw Error('Neplatná odpověď Tdarru.');
-        const libraries=await readRows('librarysettingsjsondb',candidate);await readRows('jobsjsondb',candidate);
-        const matches=libraries.filter(l=>candidate.libraryId?l._id===candidate.libraryId:candidate.sourceRoots.includes(String(l.folder).replace(/\/$/,'')));
-        if(matches.length!==1||!candidate.sourceRoots.includes(String(matches[0].folder).replace(/\/$/,'')))throw Error('Vyber jednoznačnou knihovnu a její zdrojovou cestu v Tdarru.');
-        if(url.pathname==='/api/settings'){
-          await previews.invalidate({all:true});previewPairs.clear();previewPlans.clear();previewAttempts.clear();
-          await atomicJSON(configfile,candidate);config=candidate;applyConfig();statsCache=null;state.items={};state.reviewSessions={};cache=null;cacheAt=0;await save();
-        }
-        return respond(res,200,{ok:true,message:'Připojení, databáze a cesty jsou dostupné.',publicOrigin:candidate.publicOrigin,revision:hash(JSON.stringify(config))});
-      }finally{settingsBusy=false}
-    }
-    if(url.pathname==='/api/items'&&req.method==='GET'){
-      if(state.pauses.length&&!busyFor('resume'))await resume();
-      const items=await scan();
-      return respond(res,200,{version:APP_VERSION,label:config.label,serverTime:Date.now(),items,previews:Object.fromEntries(items.filter(item=>item.snapshot).map(item=>[item.id,previewPreparation(item.id,item.snapshot)])),reviewSessions:reviewSessions.list(items),active,batch:state.batch||null,batchRunning,history:state.history,recovery,restorePending:state.pauses.length});
-    }
-    const previewStatus=/^\/api\/items\/([a-f0-9]{24})\/preview-status$/.exec(url.pathname);
-    if(previewStatus&&req.method==='GET'){
-      const id=previewStatus[1],snapshot=url.searchParams.get('snapshot');await previewIdentity({itemId:id,snapshot,rendererVersion:previewVersion()});
-      return respond(res,200,{preparation:previewPreparation(id,snapshot)});
-    }
-    const reviewSession=/^\/api\/items\/([a-f0-9]{24})\/review-session$/.exec(url.pathname);
-    if(reviewSession&&req.method==='GET'){
-      const id=reviewSession[1],snapshot=url.searchParams.get('snapshot'),item=state.items[id];
-      if(!item||item.snapshot!==snapshot)return respond(res,409,{error:'Položka se změnila. Obnov přehled.'});
-      const verified=await verifyReviewItem(item,{id,snapshot},false);
-      return respond(res,200,reviewSessions.get(id,snapshot,verified.requirements));
-    }
-    if(reviewSession&&req.method==='POST'){
-      if(reviewMutationBlocked())return respond(res,409,{error:'Nejprve dokonči probíhající akci nebo obnovu.'});
-      const request=await body(req);
-      if(reviewMutationBlocked())return respond(res,409,{error:'Nejprve dokonči probíhající akci nebo obnovu.'});
-      const saved=await reviewSessions.write(reviewSession[1],request);void preparePreviews().catch(error=>console.error('Preview preparation: '+error.message));return respond(res,200,saved);
-    }
-    if(url.pathname==='/api/approve-batch'&&req.method==='POST'){
-      const b=await body(req);
-      if(!Array.isArray(b.items)||!b.items.length||b.items.length>100)return respond(res,400,{error:'Vyber 1 až 100 filmů.'});
-      if(new Set(b.items.map(x=>x.id)).size!==b.items.length)return respond(res,400,{error:'Stejný film je v dávce vícekrát.'});
-      const list=await scan(true,null,requestMutation),items=[];
-      for(const chosen of b.items){const item=list.find(x=>x.id===chosen.id);if(!item||item.status!=='ready'||item.snapshot!==chosen.snapshot)return respond(res,409,{error:'Některý vybraný film se změnil nebo ho nelze schválit. Obnov přehled.'});reviewSessions.approval(item.id,item.snapshot,chosen.reviewRevision);items.push({...item,reviewRevision:chosen.reviewRevision})}
-      if(busyFor('batch',requestMutation))return respond(res,409,{error:'Jiná akce nebo dávka právě probíhá.'});
-      void performBatch(items);
-      return respond(res,202,{ok:true,count:items.length});
-    }
-    const recheck=/^\/api\/items\/([a-f0-9]{24})\/recheck$/.exec(url.pathname);
-    if(recheck&&req.method==='POST'){
-      const b=await body(req),list=await scan(true,null,requestMutation),item=list.find(x=>x.id===recheck[1]);
-      if(!item?.canRecheck||item.snapshot!==b.snapshot)return respond(res,409,{error:'Tuto změnu nelze bezpečně znovu ověřit. Obnov přehled.'});
-      if(busyFor('recheck',requestMutation))return respond(res,409,{error:'Jiná akce právě probíhá.'});
-      const refreshed=(await scan(true,item.id,requestMutation)).find(x=>x.id===item.id);
-      return respond(res,200,{ok:true,item:refreshed});
-    }
-    const action=/^\/api\/items\/([a-f0-9]{24})\/(approve|reject)$/.exec(url.pathname);
-    if(action&&req.method==='POST'){
-      const b=await body(req);
-      let reason;if(action[2]==='reject'){try{reason=rejectionReason(b.reason)}catch(e){return respond(res,400,{error:e.message})}}
-      const list=await scan(true,null,requestMutation),item=list.find(x=>x.id===action[1]);
-      if(!item||!item.snapshot||item.snapshot!==b.snapshot)return respond(res,409,{error:'Položka se změnila. Obnov přehled.'});
-      const acceptDuration=action[2]==='approve'&&b.acceptDuration===true&&item.canApproveDuration===true;
-      if(action[2]==='approve'&&item.status!=='ready'&&!acceptDuration)return respond(res,409,{error:item.reason});
-      if(!state.items[item.id])return respond(res,409,{error:'Soubor nelze bezpečně přiřadit k originálu.'});
-      if(action[2]==='approve')reviewSessions.approval(item.id,item.snapshot,b.reviewRevision);
-      // Claim before yielding so two simultaneous clicks cannot start two transactions.
-      if(busyFor(action[2],requestMutation))return respond(res,409,{error:'Jiná akce nebo dávka právě probíhá.'});
-      void perform(action[2],{...item,reviewRevision:b.reviewRevision},acceptDuration,reason);
-      return respond(res,202,{ok:true});
-    }
-    const audio=/^\/api\/items\/([a-f0-9]{24})\/audio-compare$/.exec(url.pathname);
-    const frames=/^\/api\/items\/([a-f0-9]{24})\/frames$/.exec(url.pathname);
-    if((audio||frames)&&req.method==='POST'){
-      const request=await body(req),id=(audio||frames)[1],item=state.items[id];
-      if(!item||item.snapshot!==request.snapshot)return respond(res,409,{error:'Obnov přehled, soubory se změnily.'});
-      if(request.cachedOnly!==undefined&&typeof request.cachedOnly!=='boolean')return respond(res,400,{error:'Neplatný požadavek cache.'});
-      const readonly=request.cachedOnly===true||audio&&request.mode==='tracks';
-      if(!readonly){
-        if(busyFor('preview'))return respond(res,409,{error:'Právě probíhá jiná akce. Zkus to za chvíli.'});
-        mutationOwner=requestMutation={kind:'preview'};previewBusy=true;
-      }
-      try{
-        const mode=frames?'frames':request.mode||'wave';
-        if(!['frames','tracks','wave','listen','av'].includes(mode))return respond(res,400,{error:'Neplatný typ ukázky.'});
-        const normalized={itemId:id,snapshot:request.snapshot,mode,seconds:Number(request.seconds),originalIndex:frames?null:request.originalIndex,reviewIndex:frames?null:request.reviewIndex,profile:mode==='av'?request.previewProfile??'compact':null,rendererVersion:previewVersion()};
-        const pair=await previewPair(normalized),tracks=p=>(p.streams||[]).filter(s=>s.codec_type==='audio').map(s=>({index:s.index,label:`${s.index}: ${s.tags?.language||'und'} · ${s.codec_name} · ${s.channels} kan. · ${s.tags?.title||''}`}));
-        if(mode==='tracks'){
-          if(previewPlans.get(id)?.snapshot!==request.snapshot)await planPreviewItem(id,request.snapshot);
-          const preparation=previewPreparation(id,request.snapshot);
-          return respond(res,200,{original:tracks(pair.pa),review:tracks(pair.pb),defaultScope:preparation.defaultScope,preparation});
-        }
-        const duration=Math.min(Number(pair.pa.format?.duration),Number(pair.pb.format?.duration));
-        if(!Number.isFinite(normalized.seconds)||normalized.seconds<0||normalized.seconds>=duration||mode!=='frames'&&normalized.seconds+12>duration)return respond(res,400,{error:mode==='frames'?'Čas je mimo délku filmu.':'Vyber úsek alespoň 12 sekund před koncem filmu.'});
-        if(mode!=='frames'&&(!tracks(pair.pa).some(s=>s.index===normalized.originalIndex)||!tracks(pair.pb).some(s=>s.index===normalized.reviewIndex)))return respond(res,400,{error:'Vyber platné zvukové stopy.'});
-        if(mode==='av'&&!Object.hasOwn(PREVIEW_PROFILES,normalized.profile))return respond(res,400,{error:'Neplatný profil videonáhledu.'});
-        const ready=await previews.peek(normalized);
-        if(readonly){
-          if(ready===null)return respond(res,202,{pending:true,preparation:previewPreparation(id,request.snapshot)});
-          return respond(res,200,{...ready,cached:true});
-        }
-        const result=ready??await previews.request(normalized,{priority:'interactive'});
-        await previewIdentity(normalized);
-        // Only an explicit waveform request records a measured sample. Warm-up and cache-only loading do not.
-        if(mode==='wave'){
-          const sample={seconds:normalized.seconds,originalIndex:normalized.originalIndex,reviewIndex:normalized.reviewIndex,alignment:result.alignment,at:new Date().toISOString()};
-          item.audioSamples=[...(item.audioSamples||[]).filter(s=>!(s.seconds===sample.seconds&&s.originalIndex===sample.originalIndex&&s.reviewIndex===sample.reviewIndex)),sample].slice(-30);
-          await save();cacheAt=0;
-        }
-        return respond(res,200,{...result,cached:ready!==null});
-      }finally{if(!readonly)previewBusy=false}
-    }
-    const video=/^\/api\/items\/([a-f0-9]{24})\/video$/.exec(url.pathname);
-    if(video&&req.method==='GET'){
-      const item=(await scan()).find(x=>x.id===video[1]);if(!item)return respond(res,404,{error:'Soubor nenalezen.'});
-      const f=await safeFile(REVIEW,item.reviewRelative);
-      res.writeHead(200,{'content-type':'video/x-matroska','content-length':f.stat.size,'content-disposition':"attachment; filename*=UTF-8''"+encodeURIComponent(path.basename(f.path)),'cache-control':'no-store','x-content-type-options':'nosniff'});
-      const stream=createReadStream(f.path);res.on('close',()=>stream.destroy());stream.on('error',()=>res.destroy());stream.pipe(res);return;
-    }
-    const assets={'/review-workflow.js':['review-workflow.js','text/javascript; charset=utf-8'],'/av-player.js':['av-player.js','text/javascript; charset=utf-8'],'/':['index.html','text/html; charset=utf-8'],'/app.js':['app.js','text/javascript; charset=utf-8'],'/review-model.js':['review-model.js','text/javascript; charset=utf-8'],'/i18n.js':['i18n.js','text/javascript; charset=utf-8'],'/messages.en.js':['messages.en.js','text/javascript; charset=utf-8'],'/style.css':['style.css','text/css; charset=utf-8'],'/favicon.svg':['favicon.svg','image/svg+xml']};
-    if(req.method==='GET'&&assets[url.pathname]){
-      const [file,mime]=assets[url.pathname];res.writeHead(200,{'content-type':mime,'cache-control':'no-store','x-content-type-options':'nosniff','content-security-policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",'referrer-policy':'no-referrer'});res.end(await fs.readFile(path.join(ROOT,'public',file)));return;
-    }
+    for(const route of routes)if(await route(ctx,req,res,url,request))return;
     respond(res,404,{error:'Nenalezeno.'});
   }catch(e){console.error(e.message);if(!res.headersSent)respond(res,e instanceof ReviewSessionError?e.status:e instanceof PreviewCacheError?(['STALE','CANCELLED'].includes(e.code)?409:e.code==='INVALID_REQUEST'?400:500):500,{error:e.message});else res.destroy()}
-  finally{if(requestMutation&&mutationOwner===requestMutation)mutationOwner=null;if(releasePreviewBackground){previewMutationHolds--;if(!previewMutationHolds)previews.resumeBackground()}}
+  finally{if(request.mutation&&mutationOwner===request.mutation)mutationOwner=null;if(releasePreviewBackground){previewMutationHolds--;if(!previewMutationHolds)previews.resumeBackground()}}
 });
 server.listen(PORT,'0.0.0.0',()=>console.log('Tdarr Review listening on '+PORT));
 const previewTimer=setInterval(()=>{if(!busyFor('background'))void scan().then(preparePreviews).catch(error=>console.error('Preview preparation: '+error.message))},60000);previewTimer.unref();

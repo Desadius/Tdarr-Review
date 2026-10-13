@@ -23,6 +23,21 @@ Review stores transaction phases durably before continuing. The destination copy
 
 On restart, only a provably untouched original can be restored automatically. Installed or ambiguous transactions remain for inspection; their journal and temporary files must not be discarded. Concurrent approvals, rejections, settings changes and preview operations are guarded by the server, not just disabled buttons.
 
+### Server layout
+
+`review/server.mjs` loads configuration and state, recovers transactions, owns discovery (`scan`), the approval/rejection transaction (`perform`), node pausing/resuming and preview preparation, and runs the request pipeline. Every request first passes the Host check, the POST origin and JSON checks, login, authentication and, for a mutating request, the busy-policy reservation. Only then is it dispatched to the route modules in `review/routes/`:
+
+| Module | Routes |
+| --- | --- |
+| `auth.mjs` | Login and session check |
+| `items.mjs` | Item list, review sessions, approve, reject, batch, recheck, Radarr replacement request, review-file download |
+| `previews.mjs` | Sample preparation settings and status, on-demand frames, audio and AV samples |
+| `settings.mjs` | Tdarr connection and path settings |
+| `library.mjs` | Posters, statistics, quarantine listing, Radarr settings, requests and restore |
+| `static.mjs` | The fixed set of UI files in `review/public/` |
+
+Route modules receive one explicit server-state object (`ctx`). Its getters and setters read and write the server's own variables, so the busy flags, caches and settings that routes change are the same ones used by scanning, transactions and background preparation. A route returns `true` once it has answered; `review/routes.test.mjs` checks that every route is owned by exactly one module.
+
 ### Concurrent application actions
 
 `review/busy-guards.mjs` defines the server's named concurrency policies. After authentication, a mutating request reserves foreground work before reading its body, draining background previews or awaiting preflight. The reservation transfers to the existing active/batch flag when an asynchronous action starts, and releases on every response/error. An interactive preview reserves work after its body distinguishes an on-demand render from a cache-only/track-list read. Competing mutations receive HTTP 409.
