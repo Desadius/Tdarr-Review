@@ -39,7 +39,9 @@ test('authored server error literals have an English translation',async()=>{
     'Queue acknowledgement pending; handoff will be checked again.'
   ]);
   let count=0;
-  for(const file of (await fs.readdir(new URL('./',import.meta.url))).filter(name=>name.endsWith('.mjs')&&!name.includes('.test.')&&!/^test(?:-|\.)/.test(name)&&name!=='integration.mjs')){
+  // Route modules (review/routes/) hold most request errors once server.mjs is split.
+  const routes=(await fs.readdir(new URL('./routes/',import.meta.url)).catch(error=>{if(error.code==='ENOENT')return [];throw error})).map(name=>'routes/'+name);
+  for(const file of [...await fs.readdir(new URL('./',import.meta.url)),...routes].filter(name=>name.endsWith('.mjs')&&!name.includes('.test.')&&!/^test(?:-|\.)/.test(name)&&name!=='integration.mjs')){
     const source=await fs.readFile(new URL(file,import.meta.url),'utf8');
     for(const {value,concatenated,line} of errorLiterals(source)){
       count++;
