@@ -4,6 +4,13 @@
 
 Back up Review `/data`, Recovery `/data` if used, both source/configuration versions and the media-parent approval records. Review state includes its access key, sessions, history, transactions and Radarr requests. It is private operational data, not repository content.
 
+`state.json` keeps only the latest 150 history entries. The durable decision records are separate append-only files in Review `/data` (mode 0600, each record fsynced):
+
+- `decision-audit.jsonl`: one record per finished approval (success or failure) and per Radarr replacement request, with time, item, paths, snapshot, Tdarr job, the saved review evidence, transaction journal id, outcome, message and warning. At 10 MiB the file is renamed to `decision-audit-<UTC time>.jsonl` and a new one starts; archives are never deleted or rewritten by Review.
+- `rejection-decisions.jsonl`: rejection requests and results.
+
+Include these files in backups and remove old archives only deliberately. If a record cannot be written, the action keeps its result and the history entry shows a warning.
+
 Back up during an idle period. Keep media and quarantined originals protected by your normal storage backup policy. A Git commit of the application is not a backup of the movies or its transactional state.
 
 ## Update an existing deployment

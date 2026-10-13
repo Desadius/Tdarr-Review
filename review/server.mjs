@@ -18,6 +18,7 @@ import {safeFile,fingerprint,hash,atomicJSON,command,probe,inspect,replaceChecke
 import {measure} from './progress.mjs';
 import {appVersion} from './app-version.mjs';
 import {logEvent} from './log.mjs';
+import {recordDecision} from './decision-audit.mjs';
 import {isLoopback,recoveryStatusHealth,healthSummary} from './health-status.mjs';
 import {captureReceipt,cleanupReviewed} from './cleanup.mjs';
 import {resolveReviewSource} from './source-mapping.mjs';
@@ -214,6 +215,7 @@ const artwork=createArtwork({data:DATA,getConnection:async()=>JSON.parse(await f
 await replacements.recover();
 // Operator log of a finished approval, rejection or replacement request (never review evidence).
 const outcomeLog=o=>({id:o.id,title:o.title,action:o.action,outcome:o.status,message:o.message,warning:o.warning,requestId:o.requestId,jobId:o.jobId,reason:o.rejectionReason,elapsedSeconds:o.elapsedSeconds,savedBytes:o.savedBytes});
+const auditFailed=(outcome,error)=>{outcome.warning=[outcome.warning,'Uložení záznamu do auditu rozhodnutí selhalo: '+error.message].filter(Boolean).join(' ')};
 async function replacementAction(item,reason){
  logEvent('action.started',{action:'replace',id:item.id,title:item.title});
  active={id:item.id,title:item.title,action:'replace',stage:'Připravuji žádost Radarru',started:Date.now()};
@@ -221,7 +223,9 @@ async function replacementAction(item,reason){
  let outcome;
  try{const request=await replacements.run(item,reason);outcome={id:item.id,title:item.title,action:'replace',status:'success',requestId:request.id,rejectionReason:reason,time:new Date().toISOString(),savedBytes:0};delete state.items[item.id];delete state.reviewSessions[item.id];}
  catch(e){outcome={id:item.id,title:item.title,action:'replace',status:'error',message:e.message,rejectionReason:reason,time:new Date().toISOString()};}
- finally{state.history.unshift(outcome);state.history=state.history.slice(0,150);await save();active=null;cache=null;logEvent('action.finished',outcomeLog(outcome))}
+ finally{
+  try{await recordDecision(DATA,{event:'replacement',id:item.id,title:item.title,relative:item.relative,reviewRelative:item.reviewRelative,snapshot:item.snapshot,jobId:item.jobId,reason,requestId:outcome.requestId,outcome:outcome.status,message:outcome.message})}catch(e){auditFailed(outcome,e)}
+  state.history.unshift(outcome);state.history=state.history.slice(0,150);await save();active=null;cache=null;logEvent('action.finished',outcomeLog(outcome))}
 }
 const replacementTimer=setInterval(()=>{if(!busyFor('background'))void replacements.observe().then(()=>replacements.cleanup()).catch(e=>console.error('Radarr status: '+e.message));},60000);replacementTimer.unref();
 
@@ -354,7 +358,8 @@ async function perform(action,item,acceptDuration=false,reason){
   }catch(e){
     outcome={id:item.id,title:item.title,action,rejectionReason:action==='reject'?reason:undefined,jobId:item.jobId||previous?.jobId,reviewSession:reviewEvidence,status:'error',message:e.message,time:new Date().toISOString()};state.history.unshift(outcome);
     if(journal){const t=JSON.parse(await fs.readFile(journal,'utf8').catch(()=>'{"phase":"unknown"}'));if(!['aborted','complete'].includes(t.phase)){recovery.push(t.id||'unknown');logEvent('transaction.unresolved',{transaction:t.id||'unknown',phase:t.phase,id:item.id,title:item.title})}}
-  }finally{if(action==='reject'){try{await recordRejection(DATA,{event:'completed',...outcome})}catch(e){outcome.warning=[outcome.warning,'Uložení výsledku do archivu zamítnutí selhalo: '+e.message].filter(Boolean).join(' ');}}if(!recovery.length){progress('Obnovuji původní stav nodů',6,'resume');await resume()}state.history=state.history.slice(0,150);await save();active=null;cache=null;logEvent('action.finished',outcomeLog(outcome))}
+  }finally{if(action==='reject'){try{await recordRejection(DATA,{event:'completed',...outcome})}catch(e){outcome.warning=[outcome.warning,'Uložení výsledku do archivu zamítnutí selhalo: '+e.message].filter(Boolean).join(' ');}}
+    if(action==='approve'){try{await recordDecision(DATA,{event:'approval',id:item.id,title:item.title,relative:item.relative,outputRelative:item.outputRelative,reviewRelative:item.reviewRelative,snapshot:item.snapshot,jobId:outcome.jobId,originalBytes:item.originalBytes,reviewBytes:item.reviewBytes,reviewSession:reviewEvidence,acceptedDurationDifference:outcome.acceptedDurationDifference,transaction:journal?path.basename(journal,'.json'):null,outcome:outcome.status,message:outcome.message,warning:outcome.warning,savedBytes:outcome.savedBytes,elapsedSeconds:outcome.elapsedSeconds})}catch(e){auditFailed(outcome,e)}}if(!recovery.length){progress('Obnovuji původní stav nodů',6,'resume');await resume()}state.history=state.history.slice(0,150);await save();active=null;cache=null;logEvent('action.finished',outcomeLog(outcome))}
   return outcome;
 }
 async function performBatch(items){
