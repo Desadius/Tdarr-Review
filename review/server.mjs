@@ -25,6 +25,7 @@ import {createPreviewCache,PreviewCacheError,previewCacheKey} from './preview-ca
 import {createPreviewRenderer} from './preview-render.mjs';
 import {defaultPreviewPlan} from './preview-plan.mjs';
 import {defaultPreviewSettings,validatePreviewSettings,previewLimits} from './preview-settings.mjs';
+import {pruneAuthentication,allowAuthenticationAttempt} from './auth-state.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 const DATA=process.env.DATA_ROOT||'/data',PORT=Number(process.env.PORT||8270);
@@ -353,6 +354,13 @@ async function performBatch(items){
 async function body(req){let b='';for await(const chunk of req){b+=chunk;if(b.length>32768)throw new Error('Požadavek je příliš velký.')}return JSON.parse(b||'{}')}
 function respond(res,status,data,headers={}){res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff',...headers});res.end(JSON.stringify(data))}
 const authAttempts=new Map();
+async function pruneAuthState(now=Date.now()){
+  const {sessionsRemoved}=pruneAuthentication(sessions,authAttempts,now);
+  if(sessionsRemoved){state.sessions=Object.fromEntries(sessions);await save();}
+}
+await pruneAuthState();
+const authCleanupTimer=setInterval(()=>{void pruneAuthState().catch(error=>console.error('Authentication cleanup: '+error.message))},60000);
+authCleanupTimer.unref();
 const server=http.createServer(async(req,res)=>{
   let releasePreviewBackground=false;
   try {
@@ -361,8 +369,8 @@ const server=http.createServer(async(req,res)=>{
     if(req.method==='POST'&&req.headers.origin!==config.publicOrigin)return respond(res,403,{error:'Nepovolený původ požadavku.'});
     if(req.method==='POST'&&req.headers['content-type']!=='application/json')return respond(res,415,{error:'Vyžadován JSON.'});
     if(url.pathname==='/api/login'&&req.method==='POST'){
-      const ip=req.socket.remoteAddress,now=Date.now(),attempt=authAttempts.get(ip)||{at:now,count:0};
-      if(now-attempt.at>60000){attempt.at=now;attempt.count=0}if(++attempt.count>12)return respond(res,429,{error:'Zkus přihlášení za minutu.'});authAttempts.set(ip,attempt);
+      const now=Date.now();await pruneAuthState(now);
+      if(!allowAuthenticationAttempt(authAttempts,req.socket.remoteAddress,now))return respond(res,429,{error:'Zkus přihlášení za minutu.'});
       const b=await body(req);
       if(hash(String(b.key||''))!==hash(KEY))return respond(res,401,{error:'Nesprávný přístupový klíč.'});
       const token=crypto.randomBytes(32).toString('base64url');sessions.set(hash(token),Date.now()+30*86400000);state.sessions=Object.fromEntries(sessions);await save();
@@ -592,7 +600,7 @@ const previewTimer=setInterval(()=>{if(!previewMutationHolds&&!active&&!batchRun
 const previewStart=setTimeout(()=>{void scan().then(preparePreviews).catch(error=>console.error('Preview preparation: '+error.message))},1000);previewStart.unref();
 let stopping=false;
 for(const signal of ['SIGTERM','SIGINT'])process.once(signal,()=>{
- if(stopping)return;stopping=true;clearInterval(previewTimer);clearTimeout(previewStart);clearInterval(replacementTimer);
+ if(stopping)return;stopping=true;clearInterval(previewTimer);clearTimeout(previewStart);clearInterval(replacementTimer);clearInterval(authCleanupTimer);
  const drained=new Promise(resolve=>server.close(resolve));server.closeIdleConnections();
  void Promise.all([previews.close(),drained]).then(async()=>{while(active||batchRunning||reviewSessions.busy||settingsBusy||resumeTask)await new Promise(resolve=>setTimeout(resolve,50));await saveChain;process.exit(0)}).catch(error=>{console.error('Review shutdown: '+error.message);process.exit(1)});
 });

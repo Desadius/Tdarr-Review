@@ -38,6 +38,8 @@ Verify the container exists, its status, its mapped port, Unraid Autostart and s
 
 Use the persisted access key and exact configured `publicOrigin`. A different IP, hostname, port or reverse-proxy origin can fail mutation origin checks. Login expiration requires login again; it is not permission to disable protection. If using a proxy, configure it deliberately and verify origin/cookie behavior. Direct Internet exposure is outside this release's tested scope.
 
+Login sessions expire after 30 days. Review removes expired token hashes from memory and `state.json` on startup, during login and once a minute. Per-address login attempts are limited to 12 per 60-second window; expired address entries are removed during the same cleanup. Cleanup retains unexpired sessions and current rate-limit windows.
+
 ## Approval is slow
 
 Review copies the result into the destination filesystem and reads it again for SHA-256 verification. Large films, array/parity writes, mover, hashing and other I/O can dominate the time even when CPU load is low. Some stages provide byte progress and ETA; metadata/durable sync and short organizational steps do not have a reliable percentage.

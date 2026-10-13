@@ -2,6 +2,10 @@
 
 This records the implemented application features. Versions before 1.10.0 were deployed snapshots and are not published Git tags.
 
+## Unreleased
+
+- Prune expired login sessions from memory and persistent state on startup, login and once a minute; discard expired per-address login rate-limit windows without relaxing the 12-attempt limit.
+
 ## 1.10.5 — 2026-10-13
 
 - Prepare the existing picture/audio/synchronization samples for waiting Review films in advance, with persistent private cache and bounded low-priority background work.
