@@ -37,6 +37,7 @@ import {itemRoutes} from './routes/items.mjs';
 import {previewRoutes} from './routes/previews.mjs';
 import {settingsRoutes} from './routes/settings.mjs';
 import {staticRoutes} from './routes/static.mjs';
+import {nodeRoutes} from './routes/nodes.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 const DATA=process.env.DATA_ROOT||'/data',PORT=Number(process.env.PORT||8270),APP_VERSION=await appVersion();
@@ -201,13 +202,22 @@ async function pauseDispatch(item){
   let nodes=await tdarr('/api/v2/get-nodes');
   if(workerBusy(nodes,item))throw new Error('Tento film právě zpracovává Tdarr. Schválení počká na dokončení úlohy; zkus ho poté znovu.');
   for(const n of Object.values(nodes))if(!n.nodePaused){
-    state.pauses.push({name:n.nodeName});await save();
+    state.pauses.push({name:n.nodeName,pausedAt:new Date().toISOString(),for:{id:item.id,title:item.title}});await save();
     await tdarr('/api/v2/update-node',{nodeID:n._id,nodeUpdates:{nodePaused:true}});
     logEvent('node.paused',{node:n.nodeName,id:item.id,title:item.title});
   }
   await new Promise(r=>setTimeout(r,2000));
   await verifyPaused(item);
 }
+// The user confirmed that a node Review would restore was paused on purpose in Tdarr (e.g. for
+// maintenance). Review forgets it without contacting Tdarr, so no resume undoes that pause.
+async function keepNodePaused(name){
+  const index=state.pauses.findIndex(p=>p.name===name);if(index<0)return false;
+  const [entry]=state.pauses.splice(index,1);await save();
+  logEvent('node.kept-paused',{node:name,pausedAt:entry.pausedAt,id:entry.for?.id,title:entry.for?.title});
+  return true;
+}
+const pendingRestores=()=>state.pauses.map(p=>({name:p.name,pausedAt:p.pausedAt||null,title:p.for?.title||null}));
 async function verifyPaused(item){const nodes=await tdarr('/api/v2/get-nodes');if(Object.values(nodes).some(n=>!n.nodePaused)||workerBusy(nodes,item))throw new Error('Během výměny se změnil stav nodů. Originál nebyl vyměněn.');}
 
 const replacements=createReplacement({data:DATA,getConfig:()=>config,safeFile,hash,atomicJSON,tdarr,pauseDispatch,verifyPaused,isWorkerBusy:async item=>workerBusy(await tdarr('/api/v2/get-nodes'),item),resume,onProgress:stage=>progress(stage)});
@@ -399,10 +409,10 @@ const ctx={
  get statsCache(){return statsCache},set statsCache(value){statsCache=value},
  get statsTask(){return statsTask},set statsTask(value){statsTask=value},
  get mutationOwner(){return mutationOwner},set mutationOwner(value){mutationOwner=value},
- applyConfig,save,busyFor,scan,perform,performBatch,replacementAction,resume,readRows,dbRows,verifyReviewItem,reviewMutationBlocked,
+ applyConfig,save,busyFor,keepNodePaused,pendingRestores,scan,perform,performBatch,replacementAction,resume,readRows,dbRows,verifyReviewItem,reviewMutationBlocked,
  previewIdentity,previewPair,previewVersion,previewPreparation,planPreviewItem,preparePreviews,forgetPreviews,
 };
-const routes=[libraryRoutes,itemRoutes,previewRoutes,settingsRoutes,staticRoutes];
+const routes=[libraryRoutes,itemRoutes,previewRoutes,settingsRoutes,nodeRoutes,staticRoutes];
 const server=http.createServer(async(req,res)=>{
   let releasePreviewBackground=false;const request={mutation:null};
   try {

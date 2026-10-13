@@ -4,6 +4,7 @@ This records the implemented application features. Versions before 1.10.0 were d
 
 ## Unreleased
 
+- Review lists the Tdarr nodes it will resume, with the film and time they were paused for, and lets you keep a node you paused yourself paused (with confirmation), so a maintenance pause set during an action is no longer undone.
 - API errors carry a stable `code` (with optional `params`) next to the Czech `error` text, and the UI shows them in the selected language from a shared Czech/English message table instead of translating the Czech text.
 - Optional Recovery setting `fullSourceHash`: compare a full SHA-256 of the original at confirmation and right before the quarantine rename, at idle I/O priority with progress in the status file. Sampling remains the default.
 - Every finished approval and Radarr replacement request is appended to a durable `decision-audit.jsonl` in `/data` (fsynced, size-rotated into timestamped archives that are never deleted), in addition to the 150-entry history.

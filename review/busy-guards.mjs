@@ -31,6 +31,9 @@ export const BUSY_POLICIES=Object.freeze({
  // unresolved replacement recovery have finished. Pending pauses are its input.
  resume:Object.freeze([...foreground,...scan,'recovery']),
  background:Object.freeze([...foreground,...scan,...settled,'previewHolds']),
+ // Forgetting a pending node restore is allowed during an action (that is when a
+ // node paused by the user would be resumed) but never while a resume is running.
+ keepPaused:Object.freeze(['foreground','resumeTask']),
 });
 
 export function busyFor(kind,activities){
@@ -47,6 +50,7 @@ export function mutationKind(method,pathname){
  if(/^\/api\/radarr\/settings(?:\/test)?$/.test(pathname))return 'radarrSettings';
  if(pathname==='/api/preview-settings')return 'previewSettings';
  if(pathname==='/api/approve-batch')return 'batch';
+ if(pathname==='/api/node-restores/keep')return 'keepPaused';
  if(/^\/api\/radarr\/requests\/[a-f0-9]{24}\/restore$/.test(pathname))return 'restore';
  const action=/^\/api\/items\/[a-f0-9]{24}\/(approve|reject|replace|recheck|review-session)$/.exec(pathname)?.[1];
  return action==='review-session'?'reviewSession':action||null;

@@ -69,6 +69,16 @@ function askReplacement(item){
  confirmSetup('NÁHRADA PŘES RADARR',item.title,'Originál i tento převod se zachovají v karanténě a dočasně zmizí z knihovny. Radarr dostane vlastní profil se stejnou nebo vyšší kvalitou a zákazem původního vydání. České + anglické audio se upřednostní, pokud jsou jazyky ve vydání správně označené; dostupnost obou není zaručená. Po importu novou kopii zpracuje Tdarr. Uveď vlastní důvod; jde o tvé rozhodnutí, nikoli automatický důkaz poškození originálu.','Zachovat v karanténě a hledat náhradu',true);
  $('rejectReason').value=drafts.get(item.id+':replace')||'';$('confirm').showModal();
 }
+function askKeepPaused(name){
+ pending={action:'keepPaused',node:name};confirmSetup('NODE TDARRU',name,'Review tento node znovu nespustí a zapomene ho. Použij to jen pro node, který jsi v Tdarru pozastavil sám, například kvůli údržbě. Ostatní nody Review obnoví jako obvykle.','Ponechat node pozastavený');$('confirm').showModal();
+}
+// Nodes Review paused and will resume; each can be kept paused after a confirmation.
+function renderNodeRestores(nodes){
+ const box=$('nodeRestores');box.hidden=!nodes.length;if(!nodes.length){box.replaceChildren();return}
+ const head=el('div');head.append(el('strong','','Nody Tdarru, které Review po akci znovu spustí'));
+ keyed(box,[{name:'',head:true},...nodes],n=>n.head?'head':'node:'+n.name,n=>{if(n.head)return head;const row=el('div'),b=button('Ponechat pozastavený',()=>askKeepPaused(n.name));b.setAttribute('aria-label',tr('Ponechat pozastavený: '+n.name));b.dataset.focus='keep:'+n.name;
+  row.append(el('span','',n.name+(n.title||n.pausedAt?' · '+tr('Pozastaveno pro '+(n.title||'?')+' · '+date(n.pausedAt)):''),true),b);return row});
+}
 function askRestore(record){
  if(!caps(record).restore){error(Error(caps(record).reason||'Obnovení není dostupné.'));return}
  pending={record,action:'restore'};confirmSetup('OBNOVENÍ Z KARANTÉNY',record.title,'Vrátit originál i převod z karantény? Radarr nesmí mít aktivní stažení ani novou importovanou kopii. Server znovu ověří identitu souborů a stav Radarru.','Vrátit zachované kopie');$('confirm').showModal();
@@ -81,12 +91,14 @@ $('confirm').addEventListener('close',async()=>{
  try{
   if(actionInFlight)throw Error('Počkej na výsledek předchozího požadavku.');
   if(request.action==='batch')for(const item of request.items)writeItem(item,'approveBatch');
+  else if(request.action==='keepPaused'){if(!latest?.pendingRestores?.some(n=>n.name===request.node))throw Error('Tento node už Review neobnovuje. Obnov přehled.');}
   else if(request.action==='restore'){const current=requests.find(r=>r.id===request.record.id&&r.source===request.record.source);if(!current||!caps(current).restore)throw Error('Stav obnovy se změnil. Obnov údaje.');}
   else writeItem(request.item,request.action);
   if(request.action==='approve'&&latest?.reviewSessions?.[request.item.id]?.revision!==request.reviewRevision)throw Error('Posouzení se od otevření potvrzení změnilo. Znovu ověř uložené kontroly.');
   if(request.action==='batch'&&request.items.some(item=>latest?.reviewSessions?.[item.id]?.revision!==request.reviewRevisions[item.id]))throw Error('Posouzení vybraných filmů se změnilo. Znovu ověř uložené kontroly.');
   actionInFlight=true;updateGuards();
   if(request.action==='batch'){await api('/api/approve-batch',{items:request.items.map(x=>({id:x.id,snapshot:x.snapshot,reviewRevision:request.reviewRevisions[x.id]}))});selected.clear()}
+  else if(request.action==='keepPaused')await api('/api/node-restores/keep',{name:request.node,confirm:true});
   else if(request.action==='restore')await api('/api/radarr/requests/'+request.record.id+'/restore',{confirm:true});
   else await api(`/api/items/${request.item.id}/${request.action}`,{snapshot:request.item.snapshot,reviewRevision:request.action==='approve'?request.reviewRevision:undefined,acceptDuration:request.acceptDuration===true,reason:['reject','replace'].includes(request.action)?reason:undefined});
   if(request.item)drafts.delete(request.item.id+':'+request.action);
@@ -255,7 +267,7 @@ function updateGuards(){
   if(ui.detail.kind==='review'&&changed)reviewWorkspace?.invalidate();else{reviewWorkspace?.refreshGuard();if(ui.detail.kind==='review'){reviewWorkspace?.observe(latest.reviewSessions?.[item.id]);reviewWorkspace?.observePreparation(latest.previews?.[item.id],{authoritative:true})}}
   const guard=caps(item);$('detailGuard').hidden=!guard.writeBlocked&&!changed;$('detailGuard').textContent=tr(changed?'Akce čekají na nové posouzení aktuálního stavu.':guard.reason||'Zapisující akce jsou dočasně zablokované.');
  }
- if(pending){let enabled=!actionInFlight;if(pending.action==='batch')enabled&&=pending.items.every(x=>{const current=latest.items.find(i=>i.id===x.id&&i.snapshot===x.snapshot);return current&&caps(current).approveBatch&&latest.reviewSessions?.[x.id]?.revision===pending.reviewRevisions[x.id]});else if(pending.action==='restore'){const current=requests.find(r=>r.id===pending.record.id&&r.source===pending.record.source);enabled&&=!!current&&caps(current).restore;}else{const current=latest.items.find(x=>x.id===pending.item.id&&x.snapshot===pending.item.snapshot);enabled&&=!!current&&caps(current)[pending.action]&&(pending.action!=='approve'||latest.reviewSessions?.[pending.item.id]?.revision===pending.reviewRevision)}$('commit').disabled=!enabled;}
+ if(pending){let enabled=!actionInFlight;if(pending.action==='batch')enabled&&=pending.items.every(x=>{const current=latest.items.find(i=>i.id===x.id&&i.snapshot===x.snapshot);return current&&caps(current).approveBatch&&latest.reviewSessions?.[x.id]?.revision===pending.reviewRevisions[x.id]});else if(pending.action==='restore'){const current=requests.find(r=>r.id===pending.record.id&&r.source===pending.record.source);enabled&&=!!current&&caps(current).restore;}else if(pending.action==='keepPaused'){enabled&&=!!latest.pendingRestores?.some(n=>n.name===pending.node);}else{const current=latest.items.find(x=>x.id===pending.item.id&&x.snapshot===pending.item.snapshot);enabled&&=!!current&&caps(current)[pending.action]&&(pending.action!=='approve'||latest.reviewSessions?.[pending.item.id]?.revision===pending.reviewRevision)}$('commit').disabled=!enabled;}
 }
 function render(d){
  const priorSessions=latest?.reviewSessions||{};d.reviewSessions||={};for(const [id,record]of Object.entries(priorSessions)){const current=d.items.find(x=>x.id===id);if(current?.snapshot===record.snapshot&&record.revision>(d.reviewSessions[id]?.revision??-1))d.reviewSessions[id]=record}
@@ -264,7 +276,7 @@ function render(d){
  for(const id of selected)if(!d.items.some(x=>x.id===id&&caps(x).select))selected.delete(id);
  $('attentionCount').textContent=tr(d.items.length);$('recoveryCount').textContent=tr(projectRequests(requests,d.items,Date.now()).filter(x=>x.classification.category!=='done').length);
  const warningCount=historyWarnings(d.history||[]).length;$('historyCount').hidden=!warningCount;$('historyCount').textContent=tr(warningCount);
- $('notice').hidden=!(d.recovery?.length||d.restorePending);$('notice').textContent=tr(d.recovery?.length?'Nedokončená výměna vyžaduje kontrolu. Další změny jsou zablokované; soubory nepřesouvej ručně.':d.restorePending?'Obnova stavu nodů v Tdarru není dokončená. Změny jsou zablokované; ověř jejich pozastavení.':'');
+ renderNodeRestores(Array.isArray(d.pendingRestores)?d.pendingRestores:[]);$('notice').hidden=!(d.recovery?.length||d.restorePending);$('notice').textContent=tr(d.recovery?.length?'Nedokončená výměna vyžaduje kontrolu. Další změny jsou zablokované; soubory nepřesouvej ručně.':d.restorePending?'Obnova stavu nodů v Tdarru není dokončená. Změny jsou zablokované; ověř jejich pozastavení.':'');
  renderAttention();renderRecovery();renderHistory();renderBatch();paintProgress();updateGuards();handleHash();
 }
 function renderBatch(){const b=latest?.batch;$('batch').hidden=!b||b.status!=='running';$('batch').replaceChildren();if(b?.status==='running'){const p=el('progress','batch-meter');p.max=b.total;p.value=b.finished;p.setAttribute('aria-label',tr('Dokončené filmy dávky'));$('batch').append(el('strong','',`Hromadné schválení · ${b.finished} z ${b.total}`),p,el('span','details',`Chyby: ${b.failed}${b.message?' · '+b.message:''}`))}}

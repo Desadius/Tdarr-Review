@@ -1,5 +1,12 @@
 export default {
   "exact": {
+    "Potvrď, že node zůstane pozastavený.": "Confirm that the node stays paused.",
+    "Tento node už Review neobnovuje. Obnov přehled.": "Review no longer restores this node. Refresh the overview.",
+    "Nody Tdarru, které Review po akci znovu spustí": "Tdarr nodes Review will resume after the action",
+    "Ponechat pozastavený": "Keep paused",
+    "NODE TDARRU": "TDARR NODE",
+    "Review tento node znovu nespustí a zapomene ho. Použij to jen pro node, který jsi v Tdarru pozastavil sám, například kvůli údržbě. Ostatní nody Review obnoví jako obvykle.": "Review will not resume this node and forgets it. Use this only for a node you paused yourself in Tdarr, for example for maintenance. Review resumes the other nodes as usual.",
+    "Ponechat node pozastavený": "Keep the node paused",
     "Audit rozhodnutí není běžný soubor.": "The decision audit is not a regular file.",
     "Čas je mimo délku kontrolovaných souborů.": "The time is outside the duration of the reviewed files.",
     "Chybí obrazová stopa.": "The video track is missing.",
@@ -925,6 +932,8 @@ export default {
     "Uchování ukázek od vytvoření (dny)": "Sample retention from creation (days)"
   },
   "patterns": [
+    ["Pozastaveno pro {0} · {1}", "Paused for {0} · {1}", {"raw": [0, 1]}],
+    ["Ponechat pozastavený: {0}", "Keep paused: {0}", {"raw": [0]}],
     ["Neplatný limit přípravy: {0}", "Invalid preparation limit: {0}", {"raw": [0]}],
     [
       "Originál nemá právě jednu video stopu. Počet video stop: {0}",
