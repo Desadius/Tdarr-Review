@@ -27,7 +27,7 @@ async function rotate(directory,file,now){
 async function append(data,record,{maxBytes=AUDIT_MAX_BYTES,now=new Date()}={}){
  const file=path.join(data,AUDIT_FILE),line=JSON.stringify({...record,time:record.time||now.toISOString()})+'\n';
  const current=await fs.lstat(file).catch(e=>{if(e.code==='ENOENT')return null;throw e});
- if(current&&(!current.isFile()||current.isSymbolicLink()))throw Error('Decision audit is not a regular file');
+ if(current&&(!current.isFile()||current.isSymbolicLink()))throw Error('Audit rozhodnutí není běžný soubor.');
  if(current&&current.size>0&&current.size+Buffer.byteLength(line)>maxBytes)await rotate(data,file,now);
  const created=!current||current.size+Buffer.byteLength(line)>maxBytes;
  const handle=await fs.open(file,'a',0o600);

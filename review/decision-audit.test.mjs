@@ -43,7 +43,7 @@ test('concurrent records are serialized without interleaving',posix,()=>withDir(
 
 test('a symlinked audit file is refused and a failure does not block later records',posix,()=>withDir(async dir=>{
  const outside=path.join(dir,'outside.txt');await fs.writeFile(outside,'keep');await fs.symlink(outside,path.join(dir,AUDIT_FILE));
- await assert.rejects(recordDecision(dir,{event:'approval'}),/not a regular file/);
+ await assert.rejects(recordDecision(dir,{event:'approval'}),/není běžný soubor/);
  assert.equal(await fs.readFile(outside,'utf8'),'keep');
  await fs.unlink(path.join(dir,AUDIT_FILE));await recordDecision(dir,{event:'approval',n:1});
  assert.equal((await lines(path.join(dir,AUDIT_FILE)))[0].n,1);

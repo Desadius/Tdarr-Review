@@ -1,5 +1,15 @@
 export default {
   "exact": {
+    "Audit rozhodnutí není běžný soubor.": "The decision audit is not a regular file.",
+    "Čas je mimo délku kontrolovaných souborů.": "The time is outside the duration of the reviewed files.",
+    "Chybí obrazová stopa.": "The video track is missing.",
+    "Tuto kombinaci HDR nelze porovnat.": "This HDR combination cannot be compared.",
+    "Položku nelze bezpečně přiřadit k revizi. Obnov přehled.": "The item cannot be safely matched to the review. Refresh the overview.",
+    "Soubory nejsou dostupné nebo se změnily. Obnov přehled.": "The files are unavailable or have changed. Refresh the overview.",
+    "Soubory se během kontroly změnily. Obnov přehled.": "The files changed during verification. Refresh the overview.",
+    "Během ukládání začala jiná akce. Zkus revizi znovu.": "Another action started while saving. Try saving the review again.",
+    "Položka se během kontroly změnila. Obnov přehled.": "The item changed during verification. Refresh the overview.",
+    "Nelze ověřit délku kontrolovaných souborů.": "The duration of the reviewed files cannot be verified.",
     "Ukázky": "Samples",
     "Stav ukázek": "Sample status",
     "Připraveno": "Ready",
@@ -915,6 +925,7 @@ export default {
     "Uchování ukázek od vytvoření (dny)": "Sample retention from creation (days)"
   },
   "patterns": [
+    ["Neplatný limit přípravy: {0}", "Invalid preparation limit: {0}", {"raw": [0]}],
     [
       "Stavy filmů a žádostí najdeš v sekci Obnovy. Retence karantény běží {0} dní od doloženého schválení funkční náhrady.",
       "Movie and request statuses are in Recovery. Quarantine retention lasts {0} days after documented approval of a working replacement."
