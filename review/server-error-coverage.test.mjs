@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {ERROR_MESSAGES} from './public/error-messages.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import {errorLiterals} from '../tools/error-literals.mjs';
@@ -48,6 +49,8 @@ test('authored server error literals have an English translation',async()=>{
   for(const file of [...await fs.readdir(new URL('./',import.meta.url)),...routes].filter(name=>name.endsWith('.mjs')&&!name.includes('.test.')&&!/^test(?:-|\.)/.test(name)&&name!=='integration.mjs')){
     const source=await fs.readFile(new URL(file,import.meta.url),'utf8');
     for(const {value,concatenated,line} of errorLiterals(source)){
+      // Error codes (ReviewSessionError('item_changed')) are checked in error-codes.test.mjs.
+      if(!concatenated&&Object.hasOwn(ERROR_MESSAGES,value))continue;
       count++;
       const sample=value+(concatenated?'translation-fixture':'');
       if(!alreadyEnglish.has(value)&&en(sample)===sample)missing.push({file,line,value,concatenated});

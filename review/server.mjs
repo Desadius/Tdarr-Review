@@ -75,11 +75,11 @@ const previewVersion=()=>hash(previewCodeVersion+'|'+JSON.stringify([MEDIA,REVIE
 const previewPairs=new Map(),previewPlans=new Map(),previewAttempts=new Map();
 let previewMutationHolds=0,previewPlanning=null;
 async function previewIdentity(request){
- if(request.rendererVersion!==previewVersion())throw new ReviewSessionError('Nastavení náhledu se změnilo. Obnov přehled.',409);
+ if(request.rendererVersion!==previewVersion())throw new ReviewSessionError('preview_settings_changed',409);
  const item=state.items[request.itemId];
- if(!item||item.snapshot!==request.snapshot)throw new ReviewSessionError('Soubory ukázky se změnily. Obnov přehled.',409);
- let a,b;try{a=await safeFile(MEDIA,item.relative);b=await safeFile(REVIEW,item.reviewRelative)}catch{throw new ReviewSessionError('Soubory ukázky nejsou dostupné nebo se změnily. Obnov přehled.',409)}
- if(hash(a.fp+'|'+b.fp)!==request.snapshot)throw new ReviewSessionError('Soubory ukázky se změnily. Obnov přehled.',409);
+ if(!item||item.snapshot!==request.snapshot)throw new ReviewSessionError('preview_files_changed',409);
+ let a,b;try{a=await safeFile(MEDIA,item.relative);b=await safeFile(REVIEW,item.reviewRelative)}catch{throw new ReviewSessionError('preview_files_unavailable',409)}
+ if(hash(a.fp+'|'+b.fp)!==request.snapshot)throw new ReviewSessionError('preview_files_changed',409);
  return {a,b};
 }
 async function previewPair(request,{background=false}={}){
@@ -147,19 +147,19 @@ async function forgetPreviews(id){
 }
 function reviewMutationBlocked(){return busyFor('reviewSession')}
 async function verifyReviewItem(item,{id,snapshot},guard=true){
- if(guard&&reviewMutationBlocked())throw new ReviewSessionError('Nejprve dokonči probíhající akci nebo obnovu.',409);
- if(typeof item.reviewRelative!=='string'||hash(item.reviewRelative).slice(0,24)!==id||state.items[id]!==item||item.snapshot!==snapshot)throw new ReviewSessionError('Položku nelze bezpečně přiřadit k revizi. Obnov přehled.',409);
+ if(guard&&reviewMutationBlocked())throw new ReviewSessionError('finish_action_or_recovery',409);
+ if(typeof item.reviewRelative!=='string'||hash(item.reviewRelative).slice(0,24)!==id||state.items[id]!==item||item.snapshot!==snapshot)throw new ReviewSessionError('review_item_unmapped',409);
  let a,b;
- try{a=await safeFile(MEDIA,item.relative);b=await safeFile(REVIEW,item.reviewRelative)}catch{throw new ReviewSessionError('Soubory nejsou dostupné nebo se změnily. Obnov přehled.',409)}
- if(hash(a.fp+'|'+b.fp)!==snapshot)throw new ReviewSessionError('Soubory se změnily. Obnov přehled.',409);
+ try{a=await safeFile(MEDIA,item.relative);b=await safeFile(REVIEW,item.reviewRelative)}catch{throw new ReviewSessionError('review_files_unavailable',409)}
+ if(hash(a.fp+'|'+b.fp)!==snapshot)throw new ReviewSessionError('review_files_changed',409);
  const read=async file=>JSON.parse(await command(FFPROBE,['-v','error','-show_streams','-show_format','-of','json',file],{timeout:30000}));
  const [original,review]=await Promise.all([read(a.path),read(b.path)]);
  let unchanged=false;try{unchanged=(await safeFile(MEDIA,item.relative)).fp===a.fp&&(await safeFile(REVIEW,item.reviewRelative)).fp===b.fp}catch{}
- if(!unchanged)throw new ReviewSessionError('Soubory se během kontroly změnily. Obnov přehled.',409);
- if(guard&&reviewMutationBlocked())throw new ReviewSessionError('Během ukládání začala jiná akce. Zkus revizi znovu.',409);
- if(state.items[id]!==item||item.snapshot!==snapshot)throw new ReviewSessionError('Položka se během kontroly změnila. Obnov přehled.',409);
+ if(!unchanged)throw new ReviewSessionError('review_files_changed_during_check',409);
+ if(guard&&reviewMutationBlocked())throw new ReviewSessionError('review_action_started',409);
+ if(state.items[id]!==item||item.snapshot!==snapshot)throw new ReviewSessionError('review_item_changed_during_check',409);
  const duration=Math.min(Number(original.format?.duration),Number(review.format?.duration));
- if(!Number.isFinite(duration)||duration<=0)throw new ReviewSessionError('Nelze ověřit délku kontrolovaných souborů.',409);
+ if(!Number.isFinite(duration)||duration<=0)throw new ReviewSessionError('review_duration_unverifiable',409);
  const indexes=probe=>(probe.streams||[]).filter(stream=>stream.codec_type==='audio').map(stream=>stream.index);
  return {duration,originalIndexes:indexes(original),reviewIndexes:indexes(review),requirements:reviewRequirements(original,review)};
 }
@@ -427,7 +427,7 @@ const server=http.createServer(async(req,res)=>{
     }
     for(const route of routes)if(await route(ctx,req,res,url,request))return;
     respond(res,404,apiError('not_found'));
-  }catch(e){const status=e instanceof ReviewSessionError?e.status:e instanceof PreviewCacheError?(['STALE','CANCELLED'].includes(e.code)?409:e.code==='INVALID_REQUEST'?400:500):500;logEvent('request.error',{method:req.method,route:String(req.url||'').split('?')[0],status,message:e.message});if(!res.headersSent)respond(res,status,{error:e.message});else res.destroy()}
+  }catch(e){const status=e instanceof ReviewSessionError?e.status:e instanceof PreviewCacheError?(['STALE','CANCELLED'].includes(e.code)?409:e.code==='INVALID_REQUEST'?400:500):500;logEvent('request.error',{method:req.method,route:String(req.url||'').split('?')[0],status,code:e instanceof ReviewSessionError?e.code:undefined,message:e.message});if(!res.headersSent)respond(res,status,e instanceof ReviewSessionError&&e.code?apiError(e.code,e.params):{error:e.message});else res.destroy()}
   finally{if(request.mutation&&mutationOwner===request.mutation)mutationOwner=null;if(releasePreviewBackground){previewMutationHolds--;if(!previewMutationHolds)previews.resumeBackground()}}
 });
 server.listen(PORT,'0.0.0.0',()=>console.log('Tdarr Review listening on '+PORT));
