@@ -6,7 +6,8 @@ import {installComparisons,openComparison,openAudioComparison} from '/comparison
 import {installSettingsDialogs} from '/settings-dialogs.js?v=20261013-split1';
 import {installQuarantine,openQuarantine} from '/quarantine.js?v=20261013-split1';
 import {installStatistics,loadStatistics,statisticsLoadedAt} from '/statistics.js?v=20261013-split1';
-import {tr,locale,initializeLocale} from '/i18n.js?v=20261013-retention1';
+import {tr,locale,language,initializeLocale} from '/i18n.js?v=20261013-retention1';
+import {errorText} from '/error-messages.js?v=20261013-codes1';
 initializeLocale();
 
 const busy=d=>!!d?.active||!!d?.batchRunning;
@@ -20,6 +21,8 @@ const context=()=>({authenticated,fresh:!!receivedAt&&!dataError&&Date.now()-rec
 const caps=item=>capabilities(item,latest||{items:[],recovery:[]},context());
 function previewRenderSignature(data){return JSON.stringify({...data,serverTime:undefined,previews:Object.fromEntries(Object.entries(data.previews||{}).map(([id,value])=>[id,value?{...value,updated:undefined}:value]))})}
 
+// A known error code is rendered in the selected language; otherwise the server's text is used.
+const serverError=d=>(typeof d?.code==='string'&&errorText(d.code,d.params,language))||d?.error;
 async function api(route,body){
  if(body!==undefined){
   const preview=/^\/api\/items\/([a-f0-9]{24})\/(frames|audio-compare)$/.exec(route);
@@ -28,8 +31,8 @@ async function api(route,body){
  }
  const r=await fetch(route,{method:body===undefined?'GET':'POST',headers:body===undefined?{}:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
  let d;try{d=await r.json()}catch{throw Error('Server nevrátil platnou odpověď. Obnov údaje a ověř výsledek akce.')}
- if(r.status===401){authenticated=false;$('login').hidden=false;$('workspace').hidden=!latest;updateGuards();throw Error(d.error||'Přihlášení vypršelo. Poslední načtené údaje nejsou aktuální.')}
- if(!r.ok)throw Object.assign(Error(d.error||'Požadavek selhal.'),{status:r.status,data:d});
+ if(r.status===401){authenticated=false;$('login').hidden=false;$('workspace').hidden=!latest;updateGuards();throw Error(serverError(d)||'Přihlášení vypršelo. Poslední načtené údaje nejsou aktuální.')}
+ if(!r.ok)throw Object.assign(Error(serverError(d)||'Požadavek selhal.'),{status:r.status,code:d.code,data:d});
  return d;
 }
 function error(e){$('error').textContent=tr(e.message);$('error').hidden=false;const active=[...document.querySelectorAll('dialog[open]')].at(-1);if(active){let alert=active.querySelector('.dialog-error');if(!alert){alert=el('p','alert dialog-error');alert.setAttribute('role','alert');active.prepend(alert)}alert.textContent=tr(e.message);alert.tabIndex=-1;alert.focus();}}

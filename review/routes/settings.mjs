@@ -1,6 +1,6 @@
 import {hash,atomicJSON} from '../core.mjs';
 import {validate,checkPaths} from '../config.mjs';
-import {body,reply} from './http.mjs';
+import {body,reply,apiError} from './http.mjs';
 import {logEvent} from '../log.mjs';
 
 // Tdarr connection and path settings. Saving resets cached items, previews and review sessions.
@@ -8,8 +8,8 @@ export async function settingsRoutes(ctx,req,res,url,request){
  if(url.pathname==='/api/settings'&&req.method==='GET')return reply(res,200,{config:ctx.config,revision:hash(JSON.stringify(ctx.config))});
  if(['/api/settings/test','/api/settings'].includes(url.pathname)&&req.method==='POST'){
   const b=await body(req);
-  if(ctx.busyFor('settings',request.mutation))return reply(res,409,{error:'Nejprve dokonči probíhající akce, náhled nebo obnovu.'});
-  if(b.revision!==hash(JSON.stringify(ctx.config)))return reply(res,409,{error:'Nastavení se mezitím změnilo. Otevři ho znovu.'});
+  if(ctx.busyFor('settings',request.mutation))return reply(res,409,apiError('finish_actions_preview_recovery'));
+  if(b.revision!==hash(JSON.stringify(ctx.config)))return reply(res,409,apiError('settings_changed'));
   ctx.settingsBusy=true;
   try{
    const candidate=validate(b.config);await checkPaths(candidate);
