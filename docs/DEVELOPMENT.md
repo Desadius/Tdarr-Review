@@ -7,6 +7,16 @@ npm run check
 npm test
 ```
 
+To run the same complete suite with Node 24's built-in experimental coverage reporting:
+
+```bash
+npm run test:coverage
+```
+
+The command retains the same test discovery, sequential execution and failing-test exit status as `npm test`, adds no dependencies, and prints per-file line, branch and function coverage in the console. CI uses this command instead of a second plain unit-suite run. Only the explicit `--coverage` runner option is supported; unknown or repeated options fail instead of silently skipping tests. No minimum coverage is enforced until a representative Linux baseline has been measured and reviewed.
+
+Treat the report as collected execution evidence, not proof of safety. Files absent from it are unmeasured. In particular, `recovery/worker.mjs` runs in subprocesses launched by the Linux integration fixtures rather than as a test entrypoint: confirm its actual collected coverage in the Linux report before proposing a worker threshold. Separate Docker smoke and generated-media/HTTP fixture commands are outside this coverage run. Windows platform skips also make a native report unsuitable as the full Linux baseline. Prioritize uncovered branches in `review/core.mjs`, `review/radarr-replacement.mjs`, `review/cleanup.mjs` and `recovery/replacement-*.mjs` when reviewing the baseline. See [Node's coverage documentation](https://nodejs.org/docs/latest-v24.x/api/test.html#collecting-code-coverage).
+
 Tests cover path containment, source changes, copy/exchange recovery, metadata/profile checks, job matching, plain-text API replies, batch concurrency, configuration, artwork proxy limits, rejection evidence, audio alignment/A-B playback, quarantine retention, release/history binding, deferred quota and shared status. Fixtures are disposable fictional records, not live credentials or production repair approvals.
 
 Prepared-sample tests cover private atomic cache writes, restart reuse, source and renderer changes, size/count/expiry limits, background budget exhaustion, foreground priority and cancellation. Plan and settings fixtures verify ordered audio-language preferences, ambiguous track matching and saved manual pairs. Frontend fixtures verify cache-only loading without playback or review writes, polling cleanup, stale responses and progress updates that preserve the active workspace. AV regressions retain shared timestamps and fixed preview bounds, reject decoder errors and incomplete PCM samples, and limit the H.264 seek retry to its specific supported failure.

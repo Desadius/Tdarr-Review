@@ -20,7 +20,8 @@ jobs:
         with:
           node-version: '24'
       - run: npm run check
-      - run: npm test
+      - name: Run the complete suite and report Node coverage
+        run: npm run test:coverage
   docker-test:
     needs: unit
     runs-on: ubuntu-latest
