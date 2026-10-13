@@ -36,7 +36,8 @@ test('authored server error literals have an English translation',async()=>{
     'Radarr ','Invalid recovery status','Invalid recovery schema','Invalid Tdarr file binding',
     'Tdarr scan pending; handoff will be checked again.',
     'Unrecognized Tdarr state; handoff requires inspection.',
-    'Queue acknowledgement pending; handoff will be checked again.'
+    'Queue acknowledgement pending; handoff will be checked again.',
+    'Unknown busy policy: '
   ]);
   let count=0;
   // Route modules (review/routes/) hold most request errors once server.mjs is split.
