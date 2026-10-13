@@ -16,6 +16,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {fileURLToPath} from 'node:url';
 import {safeFile,fingerprint,hash,atomicJSON,command,probe,inspect,replaceChecked,recoverTransactions} from './core.mjs';
 import {measure} from './progress.mjs';
+import {appVersion} from './app-version.mjs';
 import {captureReceipt,cleanupReviewed} from './cleanup.mjs';
 import {resolveReviewSource} from './source-mapping.mjs';
 import {matchReviewJob} from './job-matching.mjs';
@@ -27,7 +28,7 @@ import {defaultPreviewPlan} from './preview-plan.mjs';
 import {defaultPreviewSettings,validatePreviewSettings,previewLimits} from './preview-settings.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
-const DATA=process.env.DATA_ROOT||'/data',PORT=Number(process.env.PORT||8270);
+const DATA=process.env.DATA_ROOT||'/data',PORT=Number(process.env.PORT||8270),APP_VERSION=await appVersion();
 const configfile=path.join(DATA,'settings.json');
 let config=validate(JSON.parse(await fs.readFile(configfile,'utf8').catch(e=>{if(e.code!=='ENOENT')throw e;return JSON.stringify(defaults())})));
 let MEDIA,REVIEW,TDARR,DB,FFPROBE,HOST;
@@ -475,7 +476,7 @@ const server=http.createServer(async(req,res)=>{
     if(url.pathname==='/api/items'&&req.method==='GET'){
       if(state.pauses.length&&!recovery.length&&!active&&!batchRunning&&!reviewSessions.busy)await resume();
       const items=await scan();
-      return respond(res,200,{version:'1.10.5',label:config.label,serverTime:Date.now(),items,previews:Object.fromEntries(items.filter(item=>item.snapshot).map(item=>[item.id,previewPreparation(item.id,item.snapshot)])),reviewSessions:reviewSessions.list(items),active,batch:state.batch||null,batchRunning,history:state.history,recovery,restorePending:state.pauses.length});
+      return respond(res,200,{version:APP_VERSION,label:config.label,serverTime:Date.now(),items,previews:Object.fromEntries(items.filter(item=>item.snapshot).map(item=>[item.id,previewPreparation(item.id,item.snapshot)])),reviewSessions:reviewSessions.list(items),active,batch:state.batch||null,batchRunning,history:state.history,recovery,restorePending:state.pauses.length});
     }
     const previewStatus=/^\/api\/items\/([a-f0-9]{24})\/preview-status$/.exec(url.pathname);
     if(previewStatus&&req.method==='GET'){
