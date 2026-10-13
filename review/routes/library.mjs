@@ -3,7 +3,7 @@ import path from 'node:path';
 import {requestArtworkIdentity} from '../artwork.mjs';
 import {statistics} from '../stats.mjs';
 import {quarantineRetention} from '../quarantine-retention.mjs';
-import {body,reply} from './http.mjs';
+import {body,reply,apiError} from './http.mjs';
 import {logEvent} from '../log.mjs';
 
 // Posters, statistics, quarantine listing and Radarr replacement requests/settings.
@@ -16,15 +16,15 @@ export async function libraryRoutes(ctx,req,res,url,request){
    const visible=(await ctx.replacements.list()).find(item=>item.id===poster[2]);
    if(visible)record=await requestArtworkIdentity(ctx.DATA,visible);
   }
-  if(!record)return reply(res,404,{error:'Plakát není dostupný.'});
+  if(!record)return reply(res,404,apiError('poster_unavailable'));
   const image=await ctx.artwork.lookup(poster[1],record);
-  if(!image)return reply(res,404,{error:'Plakát není dostupný.'});
+  if(!image)return reply(res,404,apiError('poster_unavailable'));
   const headers={'content-type':image.mime,'cache-control':'private, max-age=300','x-content-type-options':'nosniff','x-artwork-status':image.status,'etag':image.etag,'content-security-policy':"default-src 'none'; frame-ancestors 'none'"};
   if(req.headers['if-none-match']===image.etag){res.writeHead(304,headers);res.end();return true;}
   res.writeHead(200,{...headers,'content-length':image.body.length});res.end(image.body);return true;
  }
  if(url.pathname==='/api/statistics'&&req.method==='GET'){
-  if(ctx.settingsBusy)return reply(res,409,{error:'Probíhá změna nastavení.'});
+  if(ctx.settingsBusy)return reply(res,409,apiError('settings_changing'));
   if(!ctx.statsCache||Date.now()-ctx.statsCache.at>60000){
    if(!ctx.statsTask)ctx.statsTask=(async()=>{const result=await statistics({dbRows:ctx.dbRows,config:structuredClone(ctx.config),data:ctx.DATA,items:await ctx.scan()});ctx.statsCache=result;return result})().finally(()=>{ctx.statsTask=null});
    await ctx.statsTask;
@@ -52,13 +52,13 @@ export async function libraryRoutes(ctx,req,res,url,request){
  }
  if(url.pathname==='/api/radarr/settings'&&req.method==='GET')return reply(res,200,await ctx.replacements.publicSettings());
  if(['/api/radarr/settings','/api/radarr/settings/test'].includes(url.pathname)&&req.method==='POST'){
-  const b=await body(req);if(ctx.busyFor('radarrSettings',request.mutation))return reply(res,409,{error:'Právě probíhá jiná akce.'});ctx.settingsBusy=true;try{const testOnly=url.pathname.endsWith('/test'),result=await ctx.replacements.settings(b,testOnly);if(!testOnly)logEvent('radarr-settings.saved',{url:b.url,mediaRoot:b.mediaRoot,quarantineRoot:b.quarantineRoot,preferCzechEnglish:b.preferCzechEnglish});return reply(res,200,result)}finally{ctx.settingsBusy=false}
+  const b=await body(req);if(ctx.busyFor('radarrSettings',request.mutation))return reply(res,409,apiError('busy'));ctx.settingsBusy=true;try{const testOnly=url.pathname.endsWith('/test'),result=await ctx.replacements.settings(b,testOnly);if(!testOnly)logEvent('radarr-settings.saved',{url:b.url,mediaRoot:b.mediaRoot,quarantineRoot:b.quarantineRoot,preferCzechEnglish:b.preferCzechEnglish});return reply(res,200,result)}finally{ctx.settingsBusy=false}
  }
  if(url.pathname==='/api/radarr/requests'&&req.method==='GET')return reply(res,200,{requests:await ctx.replacements.list()});
  const restoreRequest=/^\/api\/radarr\/requests\/([a-f0-9]{24})\/restore$/.exec(url.pathname);
  if(restoreRequest&&req.method==='POST'){
-  const b=await body(req);if(b.confirm!==true)return reply(res,400,{error:'Potvrď obnovení zachovaných kopií.'});
-  if(ctx.busyFor('restore',request.mutation))return reply(res,409,{error:'Právě probíhá jiná akce.'});
+  const b=await body(req);if(b.confirm!==true)return reply(res,400,apiError('restore_confirm_required'));
+  if(ctx.busyFor('restore',request.mutation))return reply(res,409,apiError('busy'));
   ctx.active={title:'Obnovení karantény',stage:'Ověřuji soubory',started:Date.now()};
   try{const result=await ctx.replacements.restore(restoreRequest[1]);logEvent('quarantine.restored',{requestId:restoreRequest[1],id:result.itemId});await ctx.forgetPreviews(result.itemId);delete ctx.state.items[result.itemId];delete ctx.state.reviewSessions[result.itemId];await ctx.save();return reply(res,200,result)}finally{ctx.active=null;ctx.cache=null}
  }

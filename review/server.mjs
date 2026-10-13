@@ -30,7 +30,7 @@ import {createPreviewRenderer} from './preview-render.mjs';
 import {defaultPreviewPlan} from './preview-plan.mjs';
 import {defaultPreviewSettings,validatePreviewSettings,previewLimits} from './preview-settings.mjs';
 import {busyFor as policyBusyFor,mutationKind} from './busy-guards.mjs';
-import {respond} from './routes/http.mjs';
+import {respond,apiError} from './routes/http.mjs';
 import {login,authenticated} from './routes/auth.mjs';
 import {libraryRoutes} from './routes/library.mjs';
 import {itemRoutes} from './routes/items.mjs';
@@ -406,27 +406,27 @@ const routes=[libraryRoutes,itemRoutes,previewRoutes,settingsRoutes,staticRoutes
 const server=http.createServer(async(req,res)=>{
   let releasePreviewBackground=false;const request={mutation:null};
   try {
-    if(req.headers.host!==HOST)return respond(res,403,{error:'Nepovolená adresa serveru.'});
+    if(req.headers.host!==HOST)return respond(res,403,apiError('host_forbidden'));
     const url=new URL(req.url,'http://'+HOST);
-    if(req.method==='POST'&&req.headers.origin!==config.publicOrigin)return respond(res,403,{error:'Nepovolený původ požadavku.'});
-    if(req.method==='POST'&&req.headers['content-type']!=='application/json')return respond(res,415,{error:'Vyžadován JSON.'});
+    if(req.method==='POST'&&req.headers.origin!==config.publicOrigin)return respond(res,403,apiError('origin_forbidden'));
+    if(req.method==='POST'&&req.headers['content-type']!=='application/json')return respond(res,415,apiError('json_required'));
     if(url.pathname==='/health'&&req.method==='GET'){
-      if(!isLoopback(req.socket.remoteAddress))return respond(res,404,{error:'Nenalezeno.'});
+      if(!isLoopback(req.socket.remoteAddress))return respond(res,404,apiError('not_found'));
       return respond(res,200,healthSummary({pendingTransactions:recovery.length,restorePending:state.pauses.length,recoveryStatus:await recoveryStatusHealth(path.join(path.dirname(config.mediaRoot),'.tdarr-recovery-status.json'))}));
     }
     if(await login(ctx,req,res,url))return;
-    if(url.pathname.startsWith('/api/')&&!authenticated(ctx,req))return respond(res,401,{error:'Přihlas se přístupovým klíčem.'});
+    if(url.pathname.startsWith('/api/')&&!authenticated(ctx,req))return respond(res,401,apiError('login_required'));
     const kind=mutationKind(req.method,url.pathname);
     if(kind){
       const blocked=busyFor(kind);
-      if(blocked)return respond(res,409,{error:['recovery','pauses'].includes(blocked)?'Nejprve dokonči probíhající akci nebo obnovu.':'Právě probíhá jiná akce.'});
+      if(blocked)return respond(res,409,apiError(['recovery','pauses'].includes(blocked)?'finish_action_or_recovery':'busy'));
       // Claim before any await, including draining previews or reading a body.
       // Review writes retain their existing revision-aware serialization queue.
       if(kind!=='reviewSession')mutationOwner=request.mutation={kind};
       previewMutationHolds++;releasePreviewBackground=true;await previews.pauseBackground({wait:true});
     }
     for(const route of routes)if(await route(ctx,req,res,url,request))return;
-    respond(res,404,{error:'Nenalezeno.'});
+    respond(res,404,apiError('not_found'));
   }catch(e){const status=e instanceof ReviewSessionError?e.status:e instanceof PreviewCacheError?(['STALE','CANCELLED'].includes(e.code)?409:e.code==='INVALID_REQUEST'?400:500):500;logEvent('request.error',{method:req.method,route:String(req.url||'').split('?')[0],status,message:e.message});if(!res.headersSent)respond(res,status,{error:e.message});else res.destroy()}
   finally{if(request.mutation&&mutationOwner===request.mutation)mutationOwner=null;if(releasePreviewBackground){previewMutationHolds--;if(!previewMutationHolds)previews.resumeBackground()}}
 });

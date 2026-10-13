@@ -11,3 +11,7 @@ Switching language reloads the page. Server-saved review progress remains bound 
 Movie titles, release names, paths, IDs, configured installation names, user-entered notes/reasons/devices and unknown technical logs retain their original text. The interface language does not change Radarr's Czech/English audio preference, checklist requirements, snapshot/revision checks or file operations. Changing the actual review method or device has its normal confirmation-reset effect; changing language does not.
 
 The release source has been prepared and tested, including reopening saved review progress in the UI. Registry image publication uses the repository's separate release workflow; an older installed image does not acquire the English interface or new review workspace merely by opening `?lang=en`.
+
+## Server error messages (for developers)
+
+Request errors from Review's API have a stable `code`, optional `params` and the Czech `error` text, for example `{"code":"item_changed","error":"Položka se změnila. Obnov přehled."}`. The UI shows the message for `code` in the selected language from `review/public/error-messages.js`, which holds both the Czech and the English text. Errors without a code (thrown validation and file-check messages, and dynamic reasons such as a blocked film's reason) use `error` and the English catalogue in `messages.en.js`. Add a new route error as a code in `error-messages.js` and answer with `apiError('code')`; `review/error-codes.test.mjs` fails on a literal error response or an unknown code.
