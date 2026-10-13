@@ -147,3 +147,11 @@ test('all current authored Czech HTML text and accessible attributes have an Eng
  assert.deepEqual(missing,[],'Untranslated static UI text or accessible name');
  assert.match(html,/data-i18n="ignore">Čeština<\/option>/,'Native language name must be explicitly exempted');
 });
+
+test('quarantine retention text uses the server-provided number of days',async()=>{
+ assert.equal(en('Schválená lhůta pro následný úklid je 14 dní.'),'The approved retention period before cleanup is 14 days.');
+ assert.equal(en('Stavy filmů a žádostí najdeš v sekci Obnovy. Retence karantény běží 7 dní od doloženého schválení funkční náhrady.'),'Movie and request statuses are in Recovery. Quarantine retention lasts 7 days after documented approval of a working replacement.');
+ for(const text of ['Automatický úklid karantény je vypnutý.','Starší případy bez důkazu zůstávají zachované.','Stavy filmů a žádostí najdeš v sekci Obnovy.'])assert.notEqual(en(text),text);
+ const app=await fs.readFile(new URL('./public/app.js',import.meta.url),'utf8');
+ assert.doesNotMatch(app,/(úklid|Retence karantény)[^'"]*\b7 dní/);assert.match(app,/d\.retentionDays/);assert.match(app,/d\.cleanupEnabled/);assert.match(app,/c\.retentionDays/);
+});
