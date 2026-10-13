@@ -1,5 +1,18 @@
 # Repository verification — 2026-10-13
 
+## 1.11.0 — node restore choice, decision audit, error codes and Recovery signals
+
+Source `ef4b281` (`main` with every change merged since `v1.10.5`, PRs #31–#64) passed CI on Linux with Node 24: `npm run check` including the version-consistency check, the pinned type check, and all 470 regression tests without failures or skips. Line coverage was 96.06 %, branches 83.60 %, functions 84.38 %. The same 470 tests passed in the network-less Docker suite (read-only repository, disposable `/tmp`). Both images were built and passed the Docker smoke checks with fresh volumes, synthetic fixtures and container loopback only. That includes the new health check, which requires `/health`, `/` and `/app.js`.
+
+New behaviour is covered by tests against the real server or worker:
+- HTTP concurrency for every mutating route, and keeping a node paused during an approval (Tdarr receives the pause but never a resume);
+- the Recovery worker with `fullSourceHash`: a matching digest quarantines the original; a different one stops before any Hold or rename;
+- edited Recovery configurations against a real approval registry.
+
+The UI parts (module split, Recovery notices, node-restore list, error codes in English) were also checked in a browser against synthetic API data. On Windows, `npm test` reports 418 passes and 52 explicit Linux-only skips.
+
+Not run for this release: `npm run test:integration` (needs FFmpeg) and any test against a real installation. Publishing images and updating the running installation are separate, approved steps.
+
 ## 1.10.5 — prepared samples and clean Recovery stop
 
 The prepared-samples change (`626bb44`, merged as `05e8179`) was verified on Linux with Node 24 after merging the then-current `main`: 380 regression tests without failures or skips, both Docker images, real FFmpeg previews, the new preview-cache HTTP test (generated media, local mock Tdarr; now part of CI) covering preparation, cached reuse and restart, packaged approval integration and the Recovery tests. The hashes of all 120 packaged files matched the manifest. The Review and Recovery images built from `05e8179` were installed on the existing deployment.
