@@ -8,6 +8,8 @@ This records the implemented application features. Versions before 1.10.0 were d
 - Document that Review can undo a manual Tdarr node pause applied during its action, including pending resume retries and the maintenance pause procedure.
 - Document and regression-test Review blocking a Recovery-returned hardlinked original while keeping its quarantine protection intact.
 - Recovery detects edits to `config.json` made after start-up: it logs that a restart is required and reports `configChange` (with a validity flag) in the shared status file. The running worker still applies configuration only at start-up. Documented in Configuration and Operations.
+- Add `npm run test:docker` for the full Linux/Node 24 syntax and regression suite from Windows, with a read-only repository, disposable scratch space and no container network.
+- Report Windows-only POSIX directory-fsync, permission and symlink test limitations explicitly while retaining platform-independent coverage and mandatory production durability checks.
 
 ## 1.10.5 — 2026-10-13
 
