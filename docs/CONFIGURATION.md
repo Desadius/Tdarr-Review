@@ -50,7 +50,7 @@ The manual replacement workflow clones the quality profile for that movie, retai
 
 ### Recovery mode
 
-The `RECOVERY_MODE` environment variable of the Recovery container is the only switch that decides what the worker may do:
+The `RECOVERY_MODE` environment variable of the Recovery container is the only switch that decides what the worker may do. The mode is one of `off`, `verify` and `repair`, and `off` is the default ([ADR 0001](adr/0001-recovery-runs-inside-review.md)). `off` means the worker is not started at all, so the worker itself runs only in `verify` or `repair`:
 
 | `RECOVERY_MODE` | Behaviour |
 | --- | --- |
@@ -61,13 +61,17 @@ The worker refuses to start before contacting any API, exits with code `78` and 
 
 | Reason | Cause |
 | --- | --- |
-| `invalid-mode` | `RECOVERY_MODE` is missing or is not exactly `verify` or `repair` |
+| `invalid-mode` | `RECOVERY_MODE` is missing or is not exactly `off`, `verify` or `repair`. The worker never assumes the default `off` itself (fail closed) |
 | `mode-off` | `RECOVERY_MODE` is `off`; Recovery does not run |
 | `mode-conflict` | `config.json` still contains `enabled` and it disagrees with the mode |
 | `missing-config` | `/data/config.json` does not exist |
+| `unreadable-config` | `/data/config.json` exists but cannot be read (for example its permissions or type) |
 | `invalid-config` | `config.json` is not a JSON object, or `enabled` is present but not `true`/`false` |
+| `registry-refused` | The private approval registry `pending-approvals.json` refuses the configuration or state; the log line before the reason names the rule, never a value |
 
 The reason line never contains configuration keys or values. Any other non-zero exit is a crash.
+
+With the Compose `recovery` service, keep Recovery off by not starting that service (leave out `--profile recovery`, or `docker compose stop recovery`); setting `RECOVERY_MODE=off` there only produces a `mode-off` refusal. The service uses `restart: unless-stopped`, so Docker restarts a refusing worker with its own growing delay until the cause is fixed. Look for `RECOVERY_REFUSED` in `docker compose logs recovery`, stop the service, fix the cause and start it again.
 
 `enabled` in `config.json` is **deprecated**. A matching value (`false` with `verify`, `true` with `repair`) is accepted so existing configurations keep working; remove it when convenient. To migrate, set `RECOVERY_MODE=verify` where you had `"enabled": false` and `RECOVERY_MODE=repair` where you had `"enabled": true`. Changing the mode, like any configuration change, takes effect after a restart.
 

@@ -191,9 +191,9 @@ test('offline CLI performs only explicit migration and does not print private ev
 });
 
 test('a config edit that changes a frozen registry value is reported invalid before any restart',async t=>{
- const {detectConfigChange,configDigest}=await import('./config-watch.mjs');
+ const {detectConfigChange,configDigest,startupValidator}=await import('./config-watch.mjs');
  const f=await fixture(t);await f.write(f.target,f.registry);const file=path.join(f.data,'config.json'),loaded=configDigest(await fs.readFile(file,'utf8'));
- const validate=async value=>{try{await loadApprovalRegistry({data:f.data,cfg:value,state:structuredClone(f.state)});return null}catch(e){return e?.code==='RECOVERY_APPROVAL_REGISTRY'?e.message:'config.json would not pass the start-up checks'}};
+ const validate=startupValidator({data:f.data,mode:'repair',getState:()=>f.state});
  assert.equal(Object.hasOwn(f.registry.config,'pollSeconds'),false);await f.write(file,{...f.cfg,pollSeconds:600});const allowed=await detectConfigChange({file,loadedDigest:loaded,validate});assert.equal(allowed.valid,true,allowed.error);
  for(const edit of [{maxRepairsPerDay:5},{libraryId:'another-library'}]){await f.write(file,{...f.cfg,...edit});const frozen=await detectConfigChange({file,loadedDigest:loaded,validate});assert.equal(frozen.valid,false,JSON.stringify(edit));assert.equal(frozen.error,'Recovery approval registry: frozen configuration differs');}
  const {libraryId,...withoutLibrary}=f.cfg;await f.write(file,withoutLibrary);const refused=await detectConfigChange({file,loadedDigest:loaded,validate});
@@ -209,7 +209,7 @@ test('offline CLI reads config.json with RECOVERY_MODE exactly as the worker doe
  let f=await fixture(t);await f.write(f.source,f.registry);await f.write(path.join(f.data,'config.json'),withoutEnabled);
  const migrated=await run(f,'repair');assert.equal(migrated.code,0,migrated.stderr);assert.equal(JSON.parse(migrated.stdout).caseCount,1);
  // A config the worker would refuse must not be migrated either, and nothing is installed.
- for(const [mode,pattern] of [['verify',/disagrees with RECOVERY_MODE/],[undefined,/RECOVERY_MODE must be verify or repair/],['off',/RECOVERY_MODE is off/]]){
+ for(const [mode,pattern] of [['verify',/disagrees with RECOVERY_MODE/],[undefined,/RECOVERY_MODE must be off, verify or repair/],['off',/RECOVERY_MODE is off/]]){
   f=await fixture(t);await f.write(f.source,f.registry);const refused=await run(f,mode);
   assert.notEqual(refused.code,0,String(mode));assert.match(refused.stderr,pattern);assert.doesNotMatch(refused.stderr+refused.stdout,/fixture-library|DISPOSABLE/);await assert.rejects(fs.stat(f.target),{code:'ENOENT'});
  }

@@ -8,8 +8,8 @@ import {ensureHandoff} from './replacement-handoff.mjs';
 import {cooldownFor,deferConfirmedReplacement,inspectDeferredReplacement,reconcileDeferredIntent} from './replacement-gate.mjs';
 import {quotaFor,deferConfirmedLimit,inspectDeferredLimit,reconcileDeferredLimitIntent} from './deferred-limit.mjs';
 import {loadApprovalRegistry,registryHasApproval} from './approval-registry.mjs';
-import {configDigest,detectConfigChange} from './config-watch.mjs';
-import {RecoveryRefusal,readRecoveryConfig,applyMode,exitRefused} from './recovery-mode.mjs';
+import {configDigest,detectConfigChange,startupValidator} from './config-watch.mjs';
+import {RecoveryRefusal,readRecoveryConfig,exitRefused} from './recovery-mode.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -283,11 +283,8 @@ for(const c of Object.values(state.cases))if(!['manual','no_action','dry_run','w
 console.log('Tdarr recovery started; mode='+mode);
 const pause=ms=>new Promise(r=>{const t=setTimeout(r,ms);wake=()=>{clearTimeout(t);r();};});
 // Edits to config.json apply only after a restart; report them instead of applying them mid-case.
-// The same gate as start-up: an edit that the approval registry would refuse is reported invalid.
-async function validateEditedConfig(value){
-  try{await loadApprovalRegistry({data:DATA,cfg:applyMode(value,mode),state:structuredClone(state)});return null;}
-  catch(e){return e instanceof RecoveryRefusal||e?.code==='RECOVERY_APPROVAL_REGISTRY'?e.message:'config.json would not pass the start-up checks';}
-}
+// The same gate as start-up: an edit that the mode or the approval registry would refuse is reported invalid.
+const validateEditedConfig=startupValidator({data:DATA,mode,getState:()=>state});
 async function noteConfigChange(){
   const change=await detectConfigChange({file:configFile,loadedDigest:loadedConfigDigest,previous:state.configChange,validate:validateEditedConfig});
   if(change&&change!==state.configChange)console.error('Recovery: config.json changed since start-up; restart the worker to apply it'+(change.valid?'':' after fixing it ('+change.error+')'));

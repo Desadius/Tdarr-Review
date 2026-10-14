@@ -7,7 +7,7 @@ export const REFUSED_EXIT=78; // EX_CONFIG: a refusal, not a crash (docs/CONFIGU
 const MODES=['verify','repair'];
 
 const REASONS={
- 'invalid-mode':'RECOVERY_MODE must be verify or repair',
+ 'invalid-mode':'RECOVERY_MODE must be off, verify or repair, and the worker runs only in verify or repair',
  'mode-off':'RECOVERY_MODE is off; Recovery does not run',
  'mode-conflict':'enabled in config.json disagrees with RECOVERY_MODE; remove it or make it match',
  'missing-config':'config.json does not exist',
@@ -29,28 +29,30 @@ export function resolveMode(mode){
 
 // Returns the configuration the worker runs with. enabled is derived from the mode, so the
 // modules that read cfg.enabled keep their meaning; a deprecated enabled key must match it.
-export function applyMode(value,mode){
+export function applyMode(value,mode){return withMode(value,resolveMode(mode));}
+function withMode(value,mode){
  if(!value||typeof value!=='object'||Array.isArray(value))throw new RecoveryRefusal('invalid-config');
- const enabled=resolveMode(mode)==='repair';
+ const enabled=mode==='repair';
  if(Object.hasOwn(value,'enabled')){
   if(typeof value.enabled!=='boolean')throw new RecoveryRefusal('invalid-config');
   if(value.enabled!==enabled)throw new RecoveryRefusal('mode-conflict');
  }
  return {...value,enabled};
 }
+function parse(text){try{return JSON.parse(text);}catch{throw new RecoveryRefusal('invalid-config');}}
 
+// The mode is always checked before the configuration.
 export function resolveRecoveryConfig({mode,text}){
  mode=resolveMode(mode);
- let value;try{value=JSON.parse(text);}catch{throw new RecoveryRefusal('invalid-config');}
- return {mode,cfg:applyMode(value,mode)};
+ return {mode,cfg:withMode(parse(text),mode)};
 }
 
 export async function readRecoveryConfig({file,mode}){
- resolveMode(mode);
+ mode=resolveMode(mode);
  let text;
  try{text=await fs.readFile(file,'utf8');}
  catch(e){throw new RecoveryRefusal(e?.code==='ENOENT'?'missing-config':'unreadable-config');}
- return {...resolveRecoveryConfig({mode,text}),text};
+ return {mode,cfg:withMode(parse(text),mode),text};
 }
 
 // Ends the process with the refusal contract: exit 78 and a last stderr line that names only the reason.
