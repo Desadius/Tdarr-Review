@@ -81,3 +81,12 @@ test('public snapshots expose useful deferred/diagnostic state while excluding p
  const serialized=JSON.stringify(record);assert(!serialized.includes('/storage'));assert(!serialized.includes('secret'));assert(!serialized.includes('deferredCooldown'));assert.equal(record.canRestore,false);
  f.c.status='no_action';f.c.originalCheckKind='healthy';await f.live.phaseChanged(f.c);assert.equal(f.last('case').originalCheckKind,'healthy');await f.live.close();
 });
+
+test('the live publisher keeps the restart notice for a config.json edit in the shared status',async()=>{
+ const f=fixture();
+ await f.live.refresh();assert.equal(f.snapshots.at(-1).configChange,null);
+ f.state.configChange={digest:'private-digest',detectedAt:new Date(NOW).toISOString(),restartRequired:true,valid:false,error:'config.json is not valid JSON'};
+ await f.live.refresh();
+ assert.deepEqual(f.snapshots.at(-1).configChange,{detectedAt:new Date(NOW).toISOString(),restartRequired:true,valid:false,error:'config.json is not valid JSON'});
+ assert(!JSON.stringify(f.snapshots.at(-1)).includes('private-digest'));
+});

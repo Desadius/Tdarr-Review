@@ -51,7 +51,8 @@ export function createLiveStatusPublisher({getState, publish, readTdarrFiles, cl
 
   function decorate(snapshot) {
     const now = clock(), state = getState();
-    return projectReplacementFollowups({version: snapshot.version, updated: iso(now), cases: (snapshot.cases || []).map(entry => {
+    // configChange is already reduced to its public fields by the exporter.
+    return projectReplacementFollowups({version: snapshot.version, updated: iso(now), configChange: snapshot.configChange ?? null, cases: (snapshot.cases || []).map(entry => {
       const c = state.cases?.[entry.id] || {}, phase = phases.get(entry.id), decode = decodes.get(entry.id);
       const previous = retention.get(entry.id), retentionKey = JSON.stringify([c.cleanup?.approvedAt, c.cleanup?.deleteAfter, c.cleanup?.complete, c.cleanup?.completedAt, c.retentionError]);
       if (!previous) retention.set(entry.id, {key: retentionKey, changedAt: Math.max(timestamp(c.cleanup?.approvedAt) ?? 0, timestamp(c.cleanup?.completedAt) ?? 0)});
