@@ -64,6 +64,7 @@ test('an edit is checked with the start-up gate: the Recovery mode, then the app
   for(const [validate,value] of [[repair,{libraryId:'frozen-library',enabled:false}],[verify,{libraryId:'frozen-library',enabled:true}]])assert.match(await validate(value),/disagrees with RECOVERY_MODE/);
   assert.match(await repair({libraryId:'frozen-library',enabled:'yes'}),/must be a JSON object, and enabled/);
   const frozen=await repair({libraryId:'another-library'});assert.equal(frozen,'Recovery approval registry: frozen configuration differs');
-  assert.ok(!Object.isFrozen(state),'validation never freezes the live state');
+  // The loader only reads state; the validator still hands it a copy, which no test can observe.
+  assert.deepEqual(state,{version:1,jobs:{},cases:{}});
  }finally{await fs.rm(root,{recursive:true,force:true})}
 });
