@@ -11,6 +11,14 @@ This records the implemented application features. Versions before 1.10.0 were d
 - The offline registry migration utility checks `config.json` with the same `RECOVERY_MODE` as the worker; run it with the mode the worker will use.
 - Fix: the running worker now actually publishes the `configChange` restart notice introduced in 1.11.0. Its live status publisher dropped the field, so Review never showed the notice for edits made while the worker ran.
 
+### Development and tests
+
+- `npm test` ends with a list of every skipped test and its reason, so a green run on Windows no longer hides the Linux-only tests that did not run.
+- Add the manually dispatched `Linux tests (manual)` workflow, which runs chosen suite files (optionally filtered by test name) on Linux without the Docker jobs, and `tools/test-select.mjs` behind it.
+- `npm run check` refuses new tests that read implementation source text instead of exercising behaviour; existing ones are allowlisted until they are rewritten.
+- Add `CODING_STANDARDS.md` for reviewers (behaviour tests, a red per behaviour, every reader of a changed file) and a list of the readers of Recovery's `config.json` and approval registry in `docs/ARCHITECTURE.md`.
+- Rename the domain glossary `CONTEXT.md` to `GLOSSARY.md`, following the agent skills' new convention.
+
 ## 1.11.0 — 2026-10-13
 
 ### Review: workflow and interface

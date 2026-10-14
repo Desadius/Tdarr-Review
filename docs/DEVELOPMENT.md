@@ -7,7 +7,20 @@ npm run check
 npm test
 ```
 
-On Windows, the native `npm test` run reports explicit skips for replacement/recovery transactions that require POSIX directory `fsync`, POSIX permission/ctime assertions and privileged symlink fixtures. The remaining tests still run; a skipped transaction test is not evidence that approval is supported on Windows. Production directory `fsync` remains mandatory.
+On Windows, the native `npm test` run reports explicit skips for replacement/recovery transactions that require POSIX directory `fsync`, POSIX permission/ctime assertions and privileged symlink fixtures. The remaining tests still run; a skipped transaction test is not evidence that approval is supported on Windows. Production directory `fsync` remains mandatory. After the normal report, `npm test` lists every skipped test with its reason on stderr, so a green summary cannot hide tests that never ran.
+
+`npm run check` also refuses a new test that reads implementation source text (for example `fs.readFile(new URL('./server.mjs', import.meta.url))`) instead of exercising behaviour. Existing reads are listed in `SOURCE_TEXT_ALLOWLIST` in `tools/source-text-tests.mjs`; when you rewrite one of those tests, remove its entry, because the check also fails on an entry that no longer matches.
+
+### Linux tests without Docker
+
+The **Linux tests (manual)** workflow (`.github/workflows/linux-tests.yml`) runs chosen suite files on GitHub's Linux runner without the Docker jobs. Push your branch, then dispatch it:
+
+```bash
+gh workflow run linux-tests.yml --ref <branch> -f files="recovery/worker.integration.test.mjs" -f name_pattern="verify mode"
+gh run watch "$(gh run list --workflow linux-tests.yml --branch <branch> --limit 1 --json databaseId -q '.[0].databaseId')"
+```
+
+`files` takes space-separated suite files; only files that `npm test` runs are accepted. Empty `files` runs the whole suite. `name_pattern` is a regular expression passed to `--test-name-pattern`. The same selection runs locally with `TEST_FILES=… TEST_NAME_PATTERN=… node tools/test-select.mjs`. The workflow has read-only repository permissions and runs only the unit/regression suite; the pull-request CI still has to pass before merging.
 
 For the complete Linux checks on a Windows developer machine, install Docker Desktop with Linux containers. Download the test image once while network access is available, then run the isolated suite from the repository root:
 
