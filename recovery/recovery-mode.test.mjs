@@ -36,12 +36,12 @@ test('the mode is checked before the configuration',()=>{
  assert.throws(()=>resolveRecoveryConfig({mode:'nope',text:'{'}),refused('invalid-mode'));
 });
 
-test('a missing config.json is a named refusal; other read errors are not hidden',async()=>{
+test('a missing or unreadable config.json is a named refusal',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'recovery-mode-'));
  try{
   await assert.rejects(readRecoveryConfig({file:path.join(dir,'config.json'),mode:'verify'}),refused('missing-config'));
   await assert.rejects(readRecoveryConfig({file:path.join(dir,'config.json'),mode:'off'}),refused('mode-off'));
-  await assert.rejects(readRecoveryConfig({file:dir,mode:'verify'}),e=>!(e instanceof RecoveryRefusal));
+  await assert.rejects(readRecoveryConfig({file:dir,mode:'verify'}),refused('unreadable-config'));
   await fs.writeFile(path.join(dir,'config.json'),'{"enabled":false}');
   const loaded=await readRecoveryConfig({file:path.join(dir,'config.json'),mode:'verify'});
   assert.equal(loaded.text,'{"enabled":false}');assert.deepEqual(loaded.cfg,{enabled:false});
@@ -50,11 +50,13 @@ test('a missing config.json is a named refusal; other read errors are not hidden
 
 // The actual worker process: every refusal exits 78 before any loopback API request,
 // and its last stderr line names only the reason, never a configuration key or value.
-async function refusal({mode,config}){
+async function refusal({mode,config,configDirectory=false,registry}){
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'recovery-refusal-')),data=path.join(root,'data');await fs.mkdir(data);
  const requests=[];const server=http.createServer((req,res)=>{requests.push(req.url);res.writeHead(500);res.end();});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;
  try{
+  if(configDirectory)await fs.mkdir(path.join(data,'config.json'));
+  if(registry!==undefined)await fs.writeFile(path.join(data,'pending-approvals.json'),JSON.stringify(registry),{mode:0o600});
   if(config!==undefined)await fs.writeFile(path.join(data,'config.json'),typeof config==='string'?config:JSON.stringify({radarrUrl:base,tdarrUrl:base,radarrApiKey:'fixture-secret-key',libraryId:'fixture-library',database:path.join(root,'missing.sqlite'),pollSeconds:300,...config}));
   const env={...process.env,DATA_ROOT:data};delete env.RECOVERY_MODE;if(mode!==undefined)env.RECOVERY_MODE=mode;
   const exit=await new Promise((resolve,reject)=>{
@@ -75,15 +77,31 @@ for(const [name,setup,reason] of [
  ['enabled false in repair mode',{mode:'repair',config:{enabled:false}},'mode-conflict'],
  ['a non-boolean enabled',{mode:'repair',config:{enabled:'true'}},'invalid-config'],
  ['a missing config.json',{mode:'verify'},'missing-config'],
+ ['a config.json that cannot be read',{mode:'verify',configDirectory:true},'unreadable-config'],
  ['config.json that is not JSON',{mode:'verify',config:'{"radarrApiKey":"fixture-secret-key"'},'invalid-config'],
  ['config.json that is not an object',{mode:'repair',config:'["fixture-secret-key"]'},'invalid-config'],
+ ['an approval registry that does not match',{mode:'verify',config:{},registry:{version:99,config:{radarrApiKey:'fixture-secret-key'},cases:[]}},'registry-refused'],
+ ['an approval registry frozen to the other mode',{mode:'verify',config:{},registry:{version:1,config:{enabled:true},cases:[]}},'registry-refused'],
 ]){
  test('the actual worker refuses '+name+' with exit 78 and RECOVERY_REFUSED '+reason,async()=>{
   const r=await refusal(setup);
   assert.equal(r.signal,null,r.stderr);assert.equal(r.code,REFUSED_EXIT,r.stderr);
   assert.equal(r.stderr.trimEnd().split('\n').at(-1),'RECOVERY_REFUSED '+reason);
   assert.deepEqual(r.requests,[],'refusal must happen before any API request');
-  assert.deepEqual(r.files,setup.config===undefined?[]:['config.json'],'a refusing worker writes nothing');
+  assert.deepEqual(r.files,[...(setup.config===undefined&&!setup.configDirectory?[]:['config.json']),...(setup.registry===undefined?[]:['pending-approvals.json'])],'a refusing worker writes nothing');
   for(const leaked of ['fixture-secret-key','radarrApiKey','fixture-library','127.0.0.1'])assert.ok(!(r.stdout+r.stderr).includes(leaked),'output leaks '+leaked);
  });
 }
+
+test('the reason line arrives last even after a large earlier stderr write',async()=>{
+ // Pins the contract against an exit that cuts off queued stderr. Stderr pipes are synchronous on
+ // Linux and Windows, so this cannot show a loss there; it fails if the reason is not written last.
+ const module=new URL('./recovery-mode.mjs',import.meta.url).href;
+ const script=`import {RecoveryRefusal,exitRefused} from ${JSON.stringify(module)};process.stderr.write('x'.repeat(8*1024*1024)+'\\n');exitRefused(new RecoveryRefusal('mode-conflict'));`;
+ const exit=await new Promise((resolve,reject)=>{
+  const child=spawn(process.execPath,['--input-type=module','-e',script],{stdio:['ignore','pipe','pipe']});
+  let stderr='';const timer=setTimeout(()=>child.kill('SIGKILL'),20000);child.stderr.on('data',b=>stderr+=b);child.on('error',reject);
+  child.on('close',(code,signal)=>{clearTimeout(timer);resolve({code,signal,stderr});});
+ });
+ assert.equal(exit.code,REFUSED_EXIT);assert.equal(exit.stderr.trimEnd().split('\n').at(-1),'RECOVERY_REFUSED mode-conflict');
+});

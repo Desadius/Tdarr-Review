@@ -30,7 +30,7 @@ const loadedConfigDigest=configDigest(configText);
 const stateFile=path.join(DATA,'state.json');
 let state=JSON.parse(await fs.readFile(stateFile,'utf8').catch(e=>{if(e.code!=='ENOENT')throw e;return '{"version":1,"jobs":{},"cases":{}}'}));
 // Validate persistent authorization before DB reads, APIs or restart recovery.
-const pendingApprovals=await loadApprovalRegistry({data:DATA,cfg,state});
+const pendingApprovals=await loadApprovalRegistry({data:DATA,cfg,state}).catch(e=>{if(e?.code==='RECOVERY_APPROVAL_REGISTRY')exitRefused(new RecoveryRefusal('registry-refused',e.message));throw e;});
 const isApprovedCase=c=>registryHasApproval(pendingApprovals,c);
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 import {atomicJson as atomic} from './atomic-json.mjs';

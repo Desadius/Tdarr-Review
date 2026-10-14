@@ -11,12 +11,15 @@ const REASONS={
  'mode-off':'RECOVERY_MODE is off; Recovery does not run',
  'mode-conflict':'enabled in config.json disagrees with RECOVERY_MODE; remove it or make it match',
  'missing-config':'config.json does not exist',
+ 'unreadable-config':'config.json exists but cannot be read; check its type and permissions',
  'invalid-config':'config.json must be a JSON object, and enabled, if present, true or false',
+ 'registry-refused':'the private approval registry does not match this configuration or state',
 };
 
-// The message and reason never contain configuration values or keys from config.json.
+// The message and reason never contain configuration values or keys from config.json; a detail
+// is only ever a rule text that is itself free of values (such as an approval registry error).
 export class RecoveryRefusal extends Error{
- constructor(reason){super('Recovery refused to start: '+REASONS[reason]);this.name='RecoveryRefusal';this.reason=reason;}
+ constructor(reason,detail){super('Recovery refused to start: '+REASONS[reason]+(detail?' ('+detail+')':''));this.name='RecoveryRefusal';this.reason=reason;}
 }
 
 export function resolveMode(mode){
@@ -46,7 +49,7 @@ export async function readRecoveryConfig({file,mode}){
  resolveMode(mode);
  let text;
  try{text=await fs.readFile(file,'utf8');}
- catch(e){if(e.code==='ENOENT')throw new RecoveryRefusal('missing-config');throw e;}
+ catch(e){throw new RecoveryRefusal(e?.code==='ENOENT'?'missing-config':'unreadable-config');}
  return {...resolveRecoveryConfig({mode,text}),text};
 }
 

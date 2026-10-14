@@ -12,10 +12,12 @@ Migration validates the old registry, current config and stored approvals withou
 
 ## Offline command
 
+The utility checks `config.json` exactly as the worker will start with it, so it needs the same `RECOVERY_MODE` (`verify` or `repair`) the worker will run with. A missing or invalid mode, or an `enabled` in `config.json` that disagrees with it, stops the migration before anything is written (see [Recovery mode](CONFIGURATION.md#recovery-mode)).
+
 From a source checkout on Linux with Node 24, use explicit absolute paths:
 
 ```bash
-node tools/migrate-recovery-registry.mjs \
+RECOVERY_MODE=verify node tools/migrate-recovery-registry.mjs \
   --source /absolute/old-app/pending-approvals.json \
   --data /absolute/recovery/data
 ```
@@ -26,6 +28,7 @@ The new Recovery image includes the same utility at `/tools/migrate-recovery-reg
 docker run --rm --network none --read-only --cap-drop ALL \
   --security-opt no-new-privileges --cpus 1 --memory 256m --pids-limit 64 \
   --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+  -e RECOVERY_MODE=verify \
   --mount type=bind,source=/absolute/recovery/data,target=/data \
   --mount type=bind,source=/absolute/old-app/pending-approvals.json,target=/legacy/pending-approvals.json,readonly \
   --entrypoint /usr/bin/node \

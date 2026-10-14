@@ -184,7 +184,7 @@ test('migration refuses a symlink source and requires absolute explicit source',
 });
 test('offline CLI performs only explicit migration and does not print private evidence on failure',async t=>{
  const f=await fixture(t);await f.write(f.source,f.registry);const tool=fileURLToPath(new URL('../tools/migrate-recovery-registry.mjs',import.meta.url));
- const run=args=>new Promise((resolve,reject)=>{const child=spawn(process.execPath,[tool,...args],{stdio:['ignore','pipe','pipe']});let stdout='',stderr='';child.stdout.on('data',b=>stdout+=b);child.stderr.on('data',b=>stderr+=b);child.on('error',reject);child.on('close',code=>resolve({code,stdout,stderr}));});
+ const run=args=>new Promise((resolve,reject)=>{const child=spawn(process.execPath,[tool,...args],{env:{...process.env,RECOVERY_MODE:'repair'},stdio:['ignore','pipe','pipe']});let stdout='',stderr='';child.stdout.on('data',b=>stdout+=b);child.stderr.on('data',b=>stderr+=b);child.on('error',reject);child.on('close',code=>resolve({code,stdout,stderr}));});
  const ok=await run(['--source',f.source,'--data',f.data]);assert.equal(ok.code,0,ok.stderr);assert.equal(JSON.parse(ok.stdout).caseCount,1);assert(!ok.stdout.includes(f.a.sourceTitle));
  await f.write(f.target,'invalid SECRET-PRIVATE-EVIDENCE');const failed=await run(['--source',f.source,'--data',f.data]);assert.equal(failed.code,1);assert(!failed.stdout.includes('SECRET'));assert(!failed.stderr.includes('SECRET'));assert.equal(await fs.readFile(f.target,'utf8'),'invalid SECRET-PRIVATE-EVIDENCE');
  const missing=await run([]);assert.equal(missing.code,1);assert.equal(missing.stdout,'');
@@ -199,4 +199,18 @@ test('a config edit that changes a frozen registry value is reported invalid bef
  const {libraryId,...withoutLibrary}=f.cfg;await f.write(file,withoutLibrary);const refused=await detectConfigChange({file,loadedDigest:loaded,validate});
  assert.equal(refused.valid,false);assert.match(refused.error,/^Recovery approval registry: /);assert.doesNotMatch(refused.error,/fixture-library/,'no config value is echoed');
  assert.ok(!Object.isFrozen(f.state.cases[f.a.id]),'validation never freezes the live state');
+});
+
+test('offline CLI reads config.json with RECOVERY_MODE exactly as the worker does',async t=>{
+ const tool=fileURLToPath(new URL('../tools/migrate-recovery-registry.mjs',import.meta.url));
+ const run=(f,mode)=>new Promise((resolve,reject)=>{const env={...process.env};delete env.RECOVERY_MODE;if(mode!==undefined)env.RECOVERY_MODE=mode;const child=spawn(process.execPath,[tool,'--source',f.source,'--data',f.data],{env,stdio:['ignore','pipe','pipe']});let stdout='',stderr='';child.stdout.on('data',b=>stdout+=b);child.stderr.on('data',b=>stderr+=b);child.on('error',reject);child.on('close',code=>resolve({code,stdout,stderr}));});
+ // The registry froze enabled:true. Removing the deprecated key under RECOVERY_MODE=repair is what the docs advise.
+ const {enabled,...withoutEnabled}=evidence().cfg;assert.equal(enabled,true);
+ let f=await fixture(t);await f.write(f.source,f.registry);await f.write(path.join(f.data,'config.json'),withoutEnabled);
+ const migrated=await run(f,'repair');assert.equal(migrated.code,0,migrated.stderr);assert.equal(JSON.parse(migrated.stdout).caseCount,1);
+ // A config the worker would refuse must not be migrated either, and nothing is installed.
+ for(const [mode,pattern] of [['verify',/disagrees with RECOVERY_MODE/],[undefined,/RECOVERY_MODE must be verify or repair/],['off',/RECOVERY_MODE is off/]]){
+  f=await fixture(t);await f.write(f.source,f.registry);const refused=await run(f,mode);
+  assert.notEqual(refused.code,0,String(mode));assert.match(refused.stderr,pattern);assert.doesNotMatch(refused.stderr+refused.stdout,/fixture-library|DISPOSABLE/);await assert.rejects(fs.stat(f.target),{code:'ENOENT'});
+ }
 });

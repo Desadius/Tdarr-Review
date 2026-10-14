@@ -176,7 +176,7 @@ test('missing or malformed persistent approval authority stops the actual worker
   const f=await fixture();try{
    if(malformed)await fs.writeFile(f.data+'/pending-approvals.json',JSON.stringify({version:99,config:{},cases:[]}),{mode:0o600});
    else f.parent.approval={id:f.parent.id,authorization:'Not authorization from a registry'};
-   await f.write();const stateBefore=await fs.readFile(f.data+'/state.json');await assert.rejects(f.run(),/Recovery approval registry/);assert.equal(f.requests.length,0);assert.deepEqual(await fs.readFile(f.data+'/state.json'),stateBefore);await assert.rejects(fs.stat(f.data+'/decode-calls'),{code:'ENOENT'});await f.unchanged();
+   await f.write();const stateBefore=await fs.readFile(f.data+'/state.json');await assert.rejects(f.run(),/Recovery approval registry[^\n]*\nRECOVERY_REFUSED registry-refused\s*$/);assert.equal(f.requests.length,0);assert.deepEqual(await fs.readFile(f.data+'/state.json'),stateBefore);await assert.rejects(fs.stat(f.data+'/decode-calls'),{code:'ENOENT'});await f.unchanged();
   }finally{await f.cleanup();}
  }
 });
