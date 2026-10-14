@@ -112,7 +112,7 @@ The movie cooldown no longer prevents read-only diagnosis of the new edition. Re
 
 `defer_cooldown_intent` after interruption is reconciled only if the exact acknowledged Hold and original binding are still present; unknown results are not replayed. Changed source/history, a released Hold or incomplete historical evidence goes to `manual`. Existing manual cases are not automatically migrated or reactivated by installing this version.
 
-`no_action` with a healthy result means a full original decode completed cleanly; it is a diagnostic completion, not Review approval. Operational/ambiguous results remain visible for inspection and never trigger replacement downloads. `dry_run` means decoding confirmed an error but external repair changes are disabled.
+`no_action` with a healthy result means a full original decode completed cleanly; it is a diagnostic completion, not Review approval. Operational/ambiguous results remain visible for inspection and never trigger replacement downloads. `dry_run` means decoding confirmed an error but the worker runs with `RECOVERY_MODE=verify`, so it makes no external repair changes.
 
 ## Daily-limit cases do not continue
 

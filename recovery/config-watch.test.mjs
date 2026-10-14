@@ -42,7 +42,7 @@ test('the shared status file carries the restart notice but not the config diges
 test('the worker checks for config edits on every poll before its work',async()=>{
  const worker=await fs.readFile(new URL('./worker.mjs',import.meta.url),'utf8');
  assert.match(worker,/while\(!stopping\)\{try\{await noteConfigChange\(\);await tick\(\);/);
- assert.match(worker,/const cfg=JSON\.parse\(configText\);/);
+ assert.match(worker,/const \{mode,cfg,text:configText\}=await readRecoveryConfig\(\{file:configFile,mode:process\.env\.RECOVERY_MODE\}\)/);
 });
 
 test('an edit that parses is checked once against the start-up rules; their error marks it invalid',async()=>{
@@ -61,7 +61,8 @@ test('an edit that parses is checked once against the start-up rules; their erro
 
 test('the worker validates edits with the same approval-registry gate as start-up',async()=>{
  const worker=await fs.readFile(new URL('./worker.mjs',import.meta.url),'utf8');
- assert.match(worker,/await loadApprovalRegistry\(\{data:DATA,cfg:value,state:structuredClone\(state\)\}\)/);
- assert.match(worker,/e\?\.code==='RECOVERY_APPROVAL_REGISTRY'\?e\.message:'config\.json would not pass the start-up checks'/);
+ // applyMode makes an edit whose enabled conflicts with RECOVERY_MODE invalid, as at start-up.
+ assert.match(worker,/await loadApprovalRegistry\(\{data:DATA,cfg:applyMode\(value,mode\),state:structuredClone\(state\)\}\)/);
+ assert.match(worker,/e instanceof RecoveryRefusal\|\|e\?\.code==='RECOVERY_APPROVAL_REGISTRY'\?e\.message:'config\.json would not pass the start-up checks'/);
  assert.match(worker,/detectConfigChange\(\{[^}]*validate:validateEditedConfig\}\)/);
 });

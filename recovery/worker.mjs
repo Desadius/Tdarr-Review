@@ -9,6 +9,7 @@ import {cooldownFor,deferConfirmedReplacement,inspectDeferredReplacement,reconci
 import {quotaFor,deferConfirmedLimit,inspectDeferredLimit,reconcileDeferredLimitIntent} from './deferred-limit.mjs';
 import {loadApprovalRegistry,registryHasApproval} from './approval-registry.mjs';
 import {configDigest,detectConfigChange} from './config-watch.mjs';
+import {RecoveryRefusal,readRecoveryConfig,applyMode,exitRefused} from './recovery-mode.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -22,8 +23,10 @@ const DATA=process.env.DATA_ROOT||'/data';
 // A stop ends an idle wait at once; work already in progress is never cut short here.
 let stopping=false,wake=()=>{};
 for(const signal of ['SIGTERM','SIGINT'])process.on(signal,()=>{if(stopping)return;stopping=true;console.log('Recovery: '+signal+' received; stopping after the current step');wake();});
-const configFile=path.join(DATA,'config.json'),configText=await fs.readFile(configFile,'utf8'),loadedConfigDigest=configDigest(configText);
-const cfg=JSON.parse(configText);
+// Refuse (exit 78) before any state, registry or API access when the mode or config.json is unusable.
+const configFile=path.join(DATA,'config.json');
+const {mode,cfg,text:configText}=await readRecoveryConfig({file:configFile,mode:process.env.RECOVERY_MODE}).catch(e=>{if(e instanceof RecoveryRefusal)exitRefused(e);throw e;});
+const loadedConfigDigest=configDigest(configText);
 const stateFile=path.join(DATA,'state.json');
 let state=JSON.parse(await fs.readFile(stateFile,'utf8').catch(e=>{if(e.code!=='ENOENT')throw e;return '{"version":1,"jobs":{},"cases":{}}'}));
 // Validate persistent authorization before DB reads, APIs or restart recovery.
@@ -109,7 +112,7 @@ async function repair(c,{reuseConfirmedEvidence=false}={}){
 }
   if(cfg.fullSourceHash===true&&!c.evidence.fullSHA256){c.evidence.fullSHA256=await fullSourceHash(c,'confirmation');await save();}
   await phase(c,'confirmed','Same structural decoding error reproduced twice in unchanged original');
-  if(!cfg.enabled){await phase(c,'dry_run','Confirmed; external changes disabled');return;}
+  if(!cfg.enabled){await phase(c,'dry_run','Confirmed; verify mode makes no external changes');return;}
   if(cooldownFor({cfg,state,c})){
    if(await deferConfirmedReplacement({cfg,state,c,td,phase,idle,safeSource,sample,readBinding}))return;
    throw Error('Movie repair cooldown; confirmed source preserved for manual review');
@@ -277,13 +280,13 @@ async function tick(){
 }
 // Never replay uncertain API mutations after restart. The journal stays reviewable.
 for(const c of Object.values(state.cases))if(!['manual','no_action','dry_run','waiting_replacement','waiting_source_kept','replacement_imported','replacement_queue_intent','deferred_limit','defer_limit_intent','deferred_cooldown','defer_cooldown_intent'].includes(c.status))await phase(c,'manual','Interrupted '+c.status+'; inspect journal before any retry');
-console.log('Tdarr recovery started; enabled='+cfg.enabled);
+console.log('Tdarr recovery started; mode='+mode);
 const pause=ms=>new Promise(r=>{const t=setTimeout(r,ms);wake=()=>{clearTimeout(t);r();};});
 // Edits to config.json apply only after a restart; report them instead of applying them mid-case.
 // The same gate as start-up: an edit that the approval registry would refuse is reported invalid.
 async function validateEditedConfig(value){
-  try{await loadApprovalRegistry({data:DATA,cfg:value,state:structuredClone(state)});return null;}
-  catch(e){return e?.code==='RECOVERY_APPROVAL_REGISTRY'?e.message:'config.json would not pass the start-up checks';}
+  try{await loadApprovalRegistry({data:DATA,cfg:applyMode(value,mode),state:structuredClone(state)});return null;}
+  catch(e){return e instanceof RecoveryRefusal||e?.code==='RECOVERY_APPROVAL_REGISTRY'?e.message:'config.json would not pass the start-up checks';}
 }
 async function noteConfigChange(){
   const change=await detectConfigChange({file:configFile,loadedDigest:loadedConfigDigest,previous:state.configChange,validate:validateEditedConfig});

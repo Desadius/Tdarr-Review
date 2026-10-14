@@ -35,6 +35,9 @@ services:
       dockerfile: Dockerfile.recovery
     image: "ghcr.io/desadius/tdarr-recovery:${RECOVERY_IMAGE_TAG:-latest}"
     user: "${PUID:-99}:${PGID:-100}"
+    environment:
+      # verify for "enabled": false, repair for "enabled": true; a conflicting enabled refuses start.
+      RECOVERY_MODE: "${RECOVERY_MODE:?Set RECOVERY_MODE to verify or repair}"
     volumes:
       - "${RECOVERY_DATA_HOST:?Set RECOVERY_DATA_HOST}:/data"
       - "${MEDIA_HOST:?Set MEDIA_HOST}:/storage"

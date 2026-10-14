@@ -48,13 +48,38 @@ The manual replacement workflow clones the quality profile for that movie, retai
 
 ## Recovery configuration
 
+### Recovery mode
+
+The `RECOVERY_MODE` environment variable of the Recovery container is the only switch that decides what the worker may do:
+
+| `RECOVERY_MODE` | Behaviour |
+| --- | --- |
+| `verify` | Confirms corrupted originals with two independent decodes and stops at `dry_run`; changes nothing outside Recovery (no Tdarr Hold, quarantine, blocklist or search) |
+| `repair` | May act on a confirmed corruption within the limits below |
+
+The worker refuses to start before contacting any API, exits with code `78` and ends its log with `RECOVERY_REFUSED <reason>` when:
+
+| Reason | Cause |
+| --- | --- |
+| `invalid-mode` | `RECOVERY_MODE` is missing or is not exactly `verify` or `repair` |
+| `mode-off` | `RECOVERY_MODE` is `off`; Recovery does not run |
+| `mode-conflict` | `config.json` still contains `enabled` and it disagrees with the mode |
+| `missing-config` | `/data/config.json` does not exist |
+| `invalid-config` | `config.json` is not a JSON object, or `enabled` is present but not `true`/`false` |
+
+The reason line never contains configuration keys or values. Any other non-zero exit is a crash.
+
+`enabled` in `config.json` is **deprecated**. A matching value (`false` with `verify`, `true` with `repair`) is accepted so existing configurations keep working; remove it when convenient. To migrate, set `RECOVERY_MODE=verify` where you had `"enabled": false` and `RECOVERY_MODE=repair` where you had `"enabled": true`. Changing the mode, like any configuration change, takes effect after a restart.
+
+### config.json
+
 The worker reads `/data/config.json`. Unlike Review, it currently has no configuration UI or general schema validator; use the supplied complete example and verify values before enabling it.
 
-The worker reads `config.json` only when it starts. Edits, including `enabled`, limits and `approvedImportRepairs`, take effect after the Recovery container is restarted. While the worker runs it checks the file once per poll: if the content differs from what it loaded, it logs that a restart is required and adds `configChange` (`detectedAt`, `restartRequired`, `valid`, `error`) to the shared `.tdarr-recovery-status.json`. `valid: false` means the next start would fail: the file is not a JSON object, or the worker's start-up approval-registry check refuses it (for example a value frozen in `pending-approvals.json`, such as a library root, `libraryId` or a limit, was changed). `error` names the rule but never a value; fix the file before restarting. Settings outside these checks can still be wrong in ways only the running worker notices. The running worker keeps using the configuration it started with and never applies an edit in the middle of a case. Restart only while the worker is idle (see [Operations](OPERATIONS.md)).
+The worker reads `config.json` only when it starts. Edits, including limits and `approvedImportRepairs`, take effect after the Recovery container is restarted. While the worker runs it checks the file once per poll: if the content differs from what it loaded, it logs that a restart is required and adds `configChange` (`detectedAt`, `restartRequired`, `valid`, `error`) to the shared `.tdarr-recovery-status.json`. `valid: false` means the next start would fail: the file is not a JSON object, its `enabled` disagrees with `RECOVERY_MODE`, or the worker's start-up approval-registry check refuses it (for example a value frozen in `pending-approvals.json`, such as a library root, `libraryId` or a limit, was changed). `error` names the rule but never a value; fix the file before restarting. Settings outside these checks can still be wrong in ways only the running worker notices. The running worker keeps using the configuration it started with and never applies an edit in the middle of a case. Restart only while the worker is idle (see [Operations](OPERATIONS.md)).
 
 | Setting | Default example / purpose |
 | --- | --- |
-| `enabled` | `false`: verify only; `true`: allow confirmed repairs |
+| `enabled` | Deprecated; use `RECOVERY_MODE`. If present it must match the mode |
 | `tdarrUrl`, `radarrUrl`, `radarrApiKey` | API connections; keep the key private |
 | `libraryId`, `sourceRoot` | Production Tdarr library and server path |
 | `mediaRoot`, `radarrRoot`, `reviewRoot` | Roots in the worker, Radarr and worker respectively |
