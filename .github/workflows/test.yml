@@ -37,9 +37,7 @@ jobs:
         run: docker pull --platform linux/amd64 node:24
       - name: Run the developer suite with a read-only repository and no network
         run: npm run test:docker
-      - name: Build both Linux amd64 images
-        run: |
-          docker build --platform linux/amd64 -t tdarr-review:smoke .
-          docker build --platform linux/amd64 -f Dockerfile.recovery -t tdarr-recovery:smoke .
+      - name: Build the Linux amd64 image
+        run: docker build --platform linux/amd64 -t tdarr-review:smoke .
       - name: Test images without production data or external network
         run: bash tools/docker-smoke.sh

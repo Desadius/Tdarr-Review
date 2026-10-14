@@ -4,7 +4,7 @@ cd -- "$(dirname -- "$0")/.."
 export SMOKE_PREFIX="tdarr-review-smoke-$$-$(date +%s)-${RANDOM}-${RANDOM}"
 cleanup() {
   # Exact names AND ownership labels; never enumerate or remove unrelated objects.
-  for suffix in review integration recovery; do
+  for suffix in review integration recovery migration; do
     name="${SMOKE_PREFIX}-${suffix}"
     owner="$(docker inspect --format '{{index .Config.Labels "org.tdarr-review.smoke"}}' "$name" 2>/dev/null || true)"
     if [[ "$owner" == "$SMOKE_PREFIX" ]]; then docker rm -f "$name" >/dev/null 2>&1 || true; fi
