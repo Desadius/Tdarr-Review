@@ -297,26 +297,37 @@ async function snapshot(root){
 // mount keeps Recovery out of Review's data any more. This comparison does.
 test('a complete repair case writes nothing in the review-results root or in Review\'s other data',{skip:process.platform!=='linux'},async()=>{
  const f=await fixture({mode:'repair'});try{
-  const results=f.cfg.reviewRoot,reviewData=path.join(f.root,'review-data');
+  const rel=p=>path.relative(f.root,p).split(path.sep).join('/'),results=f.cfg.reviewRoot,reviewData=path.join(f.root,'review-data'),approvals=path.join(path.dirname(f.cfg.mediaRoot),'.tdarr-approvals');
   // With a prefix the worker looks for a review result of the case's own film.
   f.cfg.reviewPrefixes=['Reviewed'];
   for(const [file,bytes] of [[results+'/Reviewed/Other Film/other.mkv','REVIEWED TRANSCODE'],[results+'/Reviewed/Other Film/other.json','{"decision":"approved"}'],[reviewData+'/settings.json','{"language":"en"}'],[reviewData+'/review.sqlite','REVIEW DATABASE'],[reviewData+'/journal/approval.json','{"phase":"done"}']]){await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,bytes);}
-  await fs.mkdir(results+'/Reviewed/Fixture',{recursive:true});
-  const guarded=async()=>({results:await snapshot(results),reviewData:await snapshot(reviewData)}),before=await guarded();
+  await fs.mkdir(results+'/Reviewed/Fixture',{recursive:true});await fs.mkdir(approvals);
+  const snapshotReview=async()=>({results:await snapshot(results),reviewData:await snapshot(reviewData),approvals:await snapshot(approvals)});
+  // Everything else a scan changes must be Recovery's data root, the shared status file,
+  // the original-language cache, quarantine or the repaired film itself.
+  // The Tdarr database stands in for Tdarr; only the loopback mock writes it.
+  const allowedFiles=[path.join(path.dirname(f.cfg.mediaRoot),'.tdarr-recovery-status.json'),path.join(f.cfg.mediaRoot,'.tdarr-original-languages.json'),f.source,f.cfg.database].map(rel),allowedTrees=[f.data,f.cfg.quarantineRoot].map(p=>rel(p)+'/');
+  const outside=[],touched=new Set();
+  async function scan(){const before=await snapshot(f.root);await f.run();const after=await snapshot(f.root);
+   for(const k of new Set([...Object.keys(before),...Object.keys(after)]))if(JSON.stringify(before[k])!==JSON.stringify(after[k])){touched.add(k);if(!allowedFiles.includes(k)&&!allowedTrees.some(t=>k.startsWith(t)))outside.push(k);}
+   return f.result();}
   // No cooldown parent, so the first scan confirms the original, quarantines it and requests a replacement.
-  f.parent.movieId=2;f.allowRepair();await f.write();const whole=await snapshot(f.root);await f.run();let result=await f.result(),c=result.state.cases[f.id];
+  f.parent.movieId=2;f.allowRepair();await f.write();const reviewBefore=await snapshotReview();
+  let result=await scan(),c=result.state.cases[f.id];
   assert.equal(result.state.lastError,null);assert.equal(c.status,'waiting_replacement');assert.equal(await fs.readFile(c.quarantine,'utf8'),f.sourceBytes);
   // Radarr imports a replacement at the same path; the next scan hands it to Tdarr.
-  await fs.writeFile(f.source,'DISPOSABLE REPLACEMENT BYTES');const size=(await fs.stat(f.source)).size;
-  Object.assign(f.movie,{movieFileId:12,movieFile:{id:12,path:f.cfg.radarrRoot+'/'+f.relative,size,sceneName:'Fixture.Replacement.Release'}});
-  await f.run();result=await f.result();c=result.state.cases[f.id];
+  await fs.writeFile(f.source,'DISPOSABLE REPLACEMENT BYTES');const installed=await fs.stat(f.source);
+  Object.assign(f.movie,{movieFileId:12,movieFile:{id:12,path:f.cfg.radarrRoot+'/'+f.relative,size:installed.size,sceneName:'Fixture.Replacement.Release'}});
+  result=await scan();c=result.state.cases[f.id];
   assert.equal(result.state.lastError,null);assert.equal(c.status,'replacement_imported');assert.equal(c.handoffStatus,'Queued');assert.equal(f.row.TranscodeDecisionMaker,'Queued');
-  assert.deepEqual(await guarded(),before,'the worker wrote in the review-results root or in Review\'s other data');
-  // Everything else the worker changed is its own data root, the shared status file,
-  // the original-language cache, quarantine or the repaired film itself.
-  // db.sqlite stands in for Tdarr's database, which only the loopback mock writes.
-  const after=await snapshot(f.root),allowed=k=>/^(data|quarantine)\//.test(k)||['media/.tdarr-recovery-status.json','media/movies/.tdarr-original-languages.json','media/movies/'+f.relative,'db.sqlite'].includes(k);
-  const changed=[...new Set([...Object.keys(whole),...Object.keys(after)])].filter(k=>JSON.stringify(whole[k])!==JSON.stringify(after[k]));
-  assert.deepEqual(changed.filter(k=>!allowed(k)),[]);assert.ok(changed.includes('media/.tdarr-recovery-status.json')&&changed.some(k=>k.startsWith('quarantine/')));
+  // Review approved the replacement more than the retention period ago; the next scan purges the quarantined original.
+  const evidence=path.join(approvals,crypto.createHash('sha256').update(c.replacementRelative+'\0'+c.replacementSourceFP).digest('hex')+'.json');
+  await fs.writeFile(evidence,JSON.stringify({version:1,relative:c.replacementRelative,sourceFP:c.replacementSourceFP,installedRelative:f.relative,installedFP:fp(installed),approvedAt:new Date(Date.now()-8*86400000).toISOString()}));
+  const reviewApproved=await snapshotReview();
+  result=await scan();c=result.state.cases[f.id];
+  assert.equal(result.state.lastError,null);assert.equal(c.retentionError,undefined);assert.equal(c.cleanup?.complete,true);await assert.rejects(fs.stat(c.quarantine),{code:'ENOENT'});
+  assert.deepEqual(await snapshotReview(),reviewApproved,'the worker wrote in the review-results root or in Review\'s other data');
+  assert.deepEqual({results:reviewApproved.results,reviewData:reviewApproved.reviewData},{results:reviewBefore.results,reviewData:reviewBefore.reviewData},'the worker wrote in the review-results root or in Review\'s other data');
+  assert.deepEqual(outside,[]);assert.ok(touched.has(allowedFiles[0])&&[...touched].some(k=>k.startsWith(allowedTrees[1])));
  }finally{await f.cleanup();}
 });
