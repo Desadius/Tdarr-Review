@@ -11,8 +11,13 @@ This records the implemented application features. Versions before 1.10.0 were d
 - The offline registry migration utility checks `config.json` with the same `RECOVERY_MODE` as the worker; run it with the mode the worker will use.
 - Fix: the running worker now actually publishes the `configChange` restart notice introduced in 1.11.0. Its live status publisher dropped the field, so Review never showed the notice for edits made while the worker ran.
 
+### Container image
+
+- The Review image now contains Recovery and the offline registry migration utility (`/tools/migrate-recovery-registry.mjs`). Its entrypoint is tini, which runs the supervisor; the supervisor starts Review and, when `RECOVERY_MODE` is `verify` or `repair`, the Recovery worker at the lowest CPU and I/O priority with its data in `/data/recovery/`. Unset or `off`, the default, behaves as before: only Review runs. The read-only root, dropped capabilities and UID 99:100 are unchanged.
+
 ### Development and tests
 
+- Docker smoke builds and tests only the Review image: tini and the supervisor at the default entrypoint, no Recovery process by default, the actual worker under `ionice`/`nice` in `verify`, a missing Recovery config reported as `refused` while Review stays healthy, the packaged migration utility, and a container stop within 10 seconds. `npm test` fails when the image would miss a module that the migration utility, the supervisor or the worker imports.
 - `npm test` ends with a list of every skipped test and its reason, so a green run on Windows no longer hides the Linux-only tests that did not run.
 - Add the manually dispatched `Linux tests (manual)` workflow, which runs chosen suite files (optionally filtered by test name) on Linux without the Docker jobs, and `tools/test-select.mjs` behind it.
 - `npm run check` refuses new tests that read implementation source text instead of exercising behaviour; existing ones are allowlisted until they are rewritten.

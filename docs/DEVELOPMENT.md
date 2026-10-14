@@ -79,11 +79,10 @@ To exercise built images locally on Linux:
 
 ```bash
 docker build --platform linux/amd64 -t tdarr-review:smoke .
-docker build --platform linux/amd64 -f Dockerfile.recovery -t tdarr-recovery:smoke .
 bash tools/docker-smoke.sh
 ```
 
-The smoke script creates uniquely named disposable containers and volumes and removes only those resources afterward. Review is tested with a new writable `/data` volume and a read-only container root, including login and the configured Host header. Generated-media AV timing, AV HTTP and preview-cache HTTP fixtures then exercise modules from that exact image, using only writable temporary files and loopback API mocks. The cache fixture has a 240-second process timeout; the AV fixtures retain 180 seconds. Recovery runs a single disabled pass with empty fixture tables and a loopback-only mock. Its repair and original decoding policies are covered by unit tests, not by live downloads in the smoke test.
+The smoke script creates uniquely named disposable containers and volumes and removes only those resources afterward. Review is tested with a new writable `/data` volume and a read-only container root, including login and the configured Host header. Generated-media AV timing, AV HTTP and preview-cache HTTP fixtures then exercise modules from that exact image, using only writable temporary files and loopback API mocks. The cache fixture has a 240-second process timeout; the AV fixtures retain 180 seconds. Every container starts through the image's own entrypoint, without `docker run --init`. The default container must run tini as PID 1, the supervisor under it and no Recovery process. A second container with `RECOVERY_MODE=verify` must first report the missing `config.json` as `refused` while Review stays healthy. After a fixture `config.json` and a restart, the actual worker must run under `ionice`/`nice` with `/data/recovery` as its data root and complete dry-run passes against empty fixture tables and a loopback-only mock started inside the container. `docker stop` must then end the container within 10 seconds with exit code 0, after Recovery logged the SIGTERM. A third container runs the packaged registry migration utility on the stopped data. Recovery's repair and original decoding policies are covered by unit tests, not by live downloads in the smoke test.
 
 ## Browser automation for coding agents
 
@@ -103,7 +102,7 @@ The public pending-evidence worker retains strict identity/history/evidence chec
 
 - The interface supports English and Czech; other interface languages are not implemented. Audio-language preferences select preview tracks and are separate from the interface language.
 - First public packaging is marked beta. Community Applications inclusion requires separate submission and catalog acceptance; see [packaging status](COMMUNITY-APPS.md).
-- Review and optional Recovery run as separate single processes/containers. No shared supervisor or multiple-writer deployment support.
+- The Review image can run Recovery under its supervisor (`RECOVERY_MODE`), but the Unraid template and Compose file do not offer that yet; Compose still runs Recovery as a separate service. No multiple-writer deployment support.
 - Tdarr API authentication support is not implemented; changed future API/schema versions require testing.
 - Recovery configuration is a private JSON file, not part of Review's settings UI.
 - Original-decode ETA is an estimate for the current pass only. Unknown duration, missing/stalled measurements and cached Tdarr jobs have no reliable percentage or ETA.
