@@ -53,6 +53,7 @@ When a change is user-visible, add an entry to `CHANGELOG.md` under an unrelease
 ## Working alongside other agents
 
 - Work on your own branch (for example `codex/<topic>` or `claude/<topic>`) and propose changes through a pull request into `main`. Do not push directly to `main`.
+- Keep the main checkout on `main`. Create every branch (implementation, documentation, a PR from a grilling session) in a new git worktree beside it, for example `git worktree add ../Tdarr-Review-<topic> -b claude/<topic> origin/main`, and remove that worktree with `git worktree remove` once its PR is merged.
 - Do not work on a branch another agent is currently using. To continue someone else's work, start from their branch or PR only when the maintainer asks.
 - Keep pull requests focused on one change and describe what was tested.
 
