@@ -91,6 +91,16 @@ When no replacement is available, automatic Recovery may return the protected or
 
 The hardlink return deliberately gives the preserved source two directory entries (`nlink = 2`): one in quarantine and one in the library. Review's `safeFile()` requires `nlink === 1` for both the original and result, so any result paired with that hardlinked edition is blocked with the multiple-hardlinks reason. Manual review completion supplies no exception. An exclusive-copy fallback does not trigger this guard, but does not release Recovery's Tdarr Hold or supply approval evidence. After Recovery removes its recorded library path and Radarr imports a distinct replacement, that new source must pass the normal independent Review checks. Never weaken the hardlink guard or remove the preserved quarantine entry to make an old result approvable.
 
+### Readers of `config.json` and the approval registry
+
+Recovery's `config.json` and the persistent approval registry (`pending-approvals.json`) each have several readers. They must accept and refuse the same files, so a change to how one of them interprets either file needs the matching change, and a test, in every other reader:
+
+- `recovery/recovery-mode.mjs` (`readRecoveryConfig`) is the single parser of `config.json` together with `RECOVERY_MODE`. A refusal exits with code 78 and a final `RECOVERY_REFUSED <reason>` line.
+- `recovery/worker.mjs` reads both at start-up, before any state, registry or API access: `config.json` through `readRecoveryConfig`, the registry through `loadApprovalRegistry` in `recovery/approval-registry.mjs`.
+- `recovery/config-watch.mjs` (`startupValidator`) re-runs the same start-up checks on every later edit of `config.json`. The result is published as `configChange` by `recovery/live-status.mjs` and shown by Review (`review/radarr-replacement.mjs`).
+- `tools/migrate-recovery-registry.mjs` is the offline migration utility. It reads `config.json` with the same `RECOVERY_MODE` through `readRecoveryConfig` and installs the registry through `migrateApprovalRegistry`. The Recovery image ships it at `/tools/`, and `Dockerfile.recovery` copies the `recovery/` modules it imports into `/recovery/` by hand: a new import needs a new entry there.
+- `tools/docker-smoke.mjs` writes a synthetic `config.json` to start the built image.
+
 ## Shared lifecycle
 
 Recovery atomically publishes a versioned, allowlisted status file. It includes deferred limits, verification, quarantine, release exclusion, search/download, import and the replacement's Tdarr database state. It does not publish keys or unrestricted quarantine paths.

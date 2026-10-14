@@ -16,10 +16,10 @@ Read `docs/ARCHITECTURE.md` before changing replacement, quarantine, journal or 
 
 ## Build and test
 
-There are no npm dependencies to install. Use Linux and Node 24.
+There are no npm dependencies to install. Use Node 24. Tests that need Linux (directory `fsync`, POSIX modes) skip on other systems, and `npm test` lists them at the end; run them through the `Linux tests (manual)` workflow (`docs/DEVELOPMENT.md`, *Linux tests without Docker*).
 
 ```bash
-npm run check   # JavaScript syntax check
+npm run check   # syntax, version and source-text-test checks
 npm run typecheck   # JSDoc type check (installs pinned dev-only TypeScript into .typecheck/)
 npm test        # full unit/regression suite (review + recovery)
 ```
@@ -68,11 +68,11 @@ Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-
 
 ### Domain docs
 
-Single-context: one root `CONTEXT.md` plus `docs/adr/`, created lazily. See `docs/agents/domain.md`.
+Single-context: one root `GLOSSARY.md` plus `docs/adr/`, created lazily. See `docs/agents/domain.md`.
 
 ## Style
 
 - ES modules (`.mjs`) by default; keep existing `.cjs` files as they are.
-- Follow the surrounding code style; avoid adding dependencies.
+- Avoid adding dependencies.
 - UI text exists in English and Czech: update both message sets (see `docs/UI-LANGUAGES.md`) when changing interface strings.
 - Code, comments and documentation are written in English; `docs/README-CS.md` is the Czech overview.
