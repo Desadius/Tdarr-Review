@@ -1,18 +1,18 @@
 import {mountReviewWorkflow,classifyPreparation,preparationSummary} from '/review-workflow.js?v=20261013-prepared2';
-import {capabilities, classifyRecovery, recoveryProgress, downloadProgress, liveRecoveryRecord, projectRequests, historyWarnings, historyFollowup, recoveryFollowup, recoveryConfigNotice, fullHashProgress} from '/review-model.js?v=20261013-signals1';
-import {$,el,fmt,date,elapsedText,etaText,poster,button,badge,keyed,makeTabs,detailsFacts} from '/ui-kit.js?v=20261013-split1';
-import {decodeProgressView,downloadProgressView,fullHashProgressView,recoveryDetails} from '/recovery-view.js?v=20261013-signals1';
+import {capabilities, classifyRecovery, recoveryProgress, downloadProgress, liveRecoveryRecord, projectRequests, historyWarnings, historyFollowup, recoveryFollowup, fullHashProgress} from '/review-model.js?v=20261014-runtime1';
+import {$,el,fmt,date,elapsedText,etaText,poster,button,badge,keyed,makeTabs,detailsFacts} from '/ui-kit.js?v=20261014-runtime1';
+import {decodeProgressView,downloadProgressView,fullHashProgressView,recoveryDetails,recoveryRuntimeView,recoveryRestartWarningView,recoveryConfigNoticeView} from '/recovery-view.js?v=20261014-runtime1';
 import {installComparisons,openComparison,openAudioComparison} from '/comparison.js?v=20261013-split1';
 import {installSettingsDialogs} from '/settings-dialogs.js?v=20261013-split1';
 import {installQuarantine,openQuarantine} from '/quarantine.js?v=20261013-split1';
 import {installStatistics,loadStatistics,statisticsLoadedAt} from '/statistics.js?v=20261013-split1';
-import {tr,locale,language,initializeLocale} from '/i18n.js?v=20261013-retention1';
+import {tr,locale,language,initializeLocale} from '/i18n.js?v=20261014-runtime1';
 import {errorText} from '/error-messages.js?v=20261013-codes1';
 initializeLocale();
 
 const busy=d=>!!d?.active||!!d?.batchRunning;
 let latest=null,pending=null,loading=false,lastRender='',receivedAt=0,serverAt=Date.now();
-let recoveryConfig=null,authenticated=false,actionInFlight=false,requests=[],requestsReceived=0,requestsLoading=false,requestsError='',dataError='',confirmOrigin=null;
+let recoveryConfig=null,recoveryRuntime=null,authenticated=false,actionInFlight=false,requests=[],requestsReceived=0,requestsLoading=false,requestsError='',dataError='',confirmOrigin=null;
 const selected=new Set();
 const ui={view:'attention',filter:'running',tab:'review',detail:null,selection:false,layout:'work',historyPage:0};
 let reviewWorkspace=null;
@@ -164,7 +164,9 @@ function renderRecovery(){
  makeTabs($('recoveryFilters'),categories.map(([key,title])=>[key,`${title} (${projects.filter(p=>p.classification.category===key).length})`]),ui.filter,id=>navigate('recovery',{filter:id}));
  $('recoveryPanel').setAttribute('aria-labelledby','recoveryFilters-'+ui.filter);
  const query=$('recoverySearch').value.trim().toLocaleLowerCase(),visible=projects.filter(p=>p.classification.category===ui.filter&&(p.record||p.raw||p).title.toLocaleLowerCase().includes(query));
- const configNotice=recoveryConfigNotice(recoveryConfig);$('recoveryConfig').hidden=!configNotice;$('recoveryConfig').classList.toggle('failure',configNotice?.kind==='failure');$('recoveryConfig').textContent=configNotice?[tr(configNotice.kind==='failure'?'Konfigurace Recovery byla změněna a není platná. Oprav config.json před restartem, jinak se Recovery nespustí.':'Konfigurace Recovery byla změněna. Změna se projeví až po restartu kontejneru Recovery; restartuj ho, až bude nečinný.'),configNotice.detectedAt?tr('Zjištěno:')+' '+date(configNotice.detectedAt):'',configNotice.error?'('+configNotice.error+')':''].filter(Boolean).join(' '):'';$('recoveryError').hidden=!requestsError;$('recoveryError').textContent=tr(requestsError?'Stav obnov není dostupný. Poslední údaje zůstávají zobrazené: '+requestsError:'');
+ $('recoveryRuntime').replaceChildren(recoveryRuntimeView(recoveryRuntime));
+ const restartWarning=recoveryRestartWarningView(requests,recoveryRuntime);$('recoveryRestartWarning').hidden=!restartWarning;$('recoveryRestartWarning').replaceChildren(...(restartWarning?[restartWarning]:[]));
+ const configNotice=recoveryConfigNoticeView(recoveryConfig);$('recoveryConfig').hidden=!configNotice;$('recoveryConfig').replaceChildren(...(configNotice?[configNotice]:[]));$('recoveryError').hidden=!requestsError;$('recoveryError').textContent=tr(requestsError?'Stav obnov není dostupný. Poslední údaje zůstávají zobrazené: '+requestsError:'');
  $('recoverySummary').textContent=tr(`${visible.length} případů · poslední načtení ${requestsReceived?date(requestsReceived):'dosud nepotvrzeno'}`);
  keyed($('recoveryList'),visible,p=>p.key,recoveryRow);if(!visible.length)$('recoveryList').replaceChildren(el('p','empty',requestsReceived?'V tomto výběru není žádná obnova.':'Načítám případy obnovy…'));
 }
@@ -283,7 +285,7 @@ function render(d){
 }
 function renderBatch(){const b=latest?.batch;$('batch').hidden=!b||b.status!=='running';$('batch').replaceChildren();if(b?.status==='running'){const p=el('progress','batch-meter');p.max=b.total;p.value=b.finished;p.setAttribute('aria-label',tr('Dokončené filmy dávky'));$('batch').append(el('strong','',`Hromadné schválení · ${b.finished} z ${b.total}`),p,el('span','details',`Chyby: ${b.failed}${b.message?' · '+b.message:''}`))}}
 async function load(){if(loading)return;loading=true;try{const d=await api('/api/items');receivedAt=Date.now();serverAt=d.serverTime||receivedAt;authenticated=true;dataError='';$('lastUpdate').textContent=tr(date(receivedAt));$('lastUpdate').dateTime=new Date(receivedAt).toISOString();const sig=previewRenderSignature(d);if(sig!==lastRender||$('workspace').hidden||!$('login').hidden){render(d);lastRender=sig}else{if(latest)latest.previews=d.previews||{};updateGuards()}}catch(e){dataError=e.message;updateGuards();if(!latest)error(e)}finally{loading=false}}
-async function loadRequests(force=false){if(requestsLoading||!authenticated||(!force&&Date.now()-requestsReceived<30000))return;requestsLoading=true;try{const d=await api('/api/radarr/requests');requests=d.requests;recoveryConfig=d.recoveryConfig||null;requestsReceived=Date.now();requestsError='';if(latest){renderAttention();renderRecovery();$('recoveryCount').textContent=tr(projectRequests(requests,latest.items,Date.now()).filter(x=>x.classification.category!=='done').length);const live=ui.detail?.kind==='request'?liveRecoveryRecord(ui.detail.record,requests):null;if(live){ui.detail.record=live;$('detailSubtitle').textContent=tr(classifyRecovery(live).label);renderDetailTab();}updateGuards();handleHash()}}catch(e){requestsError=e.message;renderRecovery();updateGuards()}finally{requestsLoading=false}}
+async function loadRequests(force=false){if(requestsLoading||!authenticated||(!force&&Date.now()-requestsReceived<30000))return;requestsLoading=true;try{const d=await api('/api/radarr/requests');requests=d.requests;recoveryConfig=d.recoveryConfig||null;recoveryRuntime=d.recoveryRuntime||null;requestsReceived=Date.now();requestsError='';if(latest){renderAttention();renderRecovery();$('recoveryCount').textContent=tr(projectRequests(requests,latest.items,Date.now()).filter(x=>x.classification.category!=='done').length);const live=ui.detail?.kind==='request'?liveRecoveryRecord(ui.detail.record,requests):null;if(live){ui.detail.record=live;$('detailSubtitle').textContent=tr(classifyRecovery(live).label);renderDetailTab();}updateGuards();handleHash()}}catch(e){requestsError=e.message;if(authenticated){try{recoveryRuntime=await api('/api/recovery/runtime')}catch{}}renderRecovery();updateGuards()}finally{requestsLoading=false}}
 function parseHash(){const [view,query='']=location.hash.slice(1).split('?');return {view:['attention','recovery','history','savings','settings'].includes(view)?view:'attention',params:new URLSearchParams(query)}}
 function navigate(view,params={}){if(view==='recovery'&&!params.filter)params.filter=ui.filter;const query=new URLSearchParams(params).toString(),hash='#'+view+(query?'?'+query:'');if(location.hash===hash)handleHash();else location.hash=hash}
 function handleHash(){

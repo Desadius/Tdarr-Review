@@ -6,7 +6,7 @@ import {fileURLToPath} from 'node:url';
 // Probe the local listener while retaining the application's configured Host.
 // Saved settings override environment defaults, as they do in server.mjs.
 // The loopback-only /health summary is printed into Docker's health log. Conditions
-// needing an operator (pending transaction, node restore, stale Recovery status) are
+// needing an operator (pending transaction, node restore, Recovery status/runtime) are
 // reported but do not fail the check, so no restart policy interrupts them. The check
 // fails only when the server does not answer or the UI itself is not served.
 export const UI_PATHS=['/','/app.js'];

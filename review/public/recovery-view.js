@@ -1,7 +1,30 @@
 // Recovery progress and detail renderers. Pure: they read only the record passed in.
-import {tr,locale} from '/i18n.js?v=20261013-retention1';
-import {downloadProgress} from '/review-model.js?v=20261013-signals1';
-import {el,fmt,date,elapsedText,etaText,detailsFacts} from '/ui-kit.js?v=20261013-split1';
+import {tr,locale} from './i18n.js?v=20261014-runtime1';
+import {downloadProgress,recoveryIsBusy,recoveryConfigNotice} from './review-model.js?v=20261014-runtime1';
+import {el,fmt,date,elapsedText,etaText,detailsFacts} from './ui-kit.js?v=20261014-runtime1';
+
+export function recoveryRuntimeView(runtime,translate=tr){
+ const labels={off:'Off',running:'Běží',restarting:'Restartuje se',refused:'Spuštění odmítnuto',stopped:'Zastaveno',unreadable:'Stav nelze přečíst'};
+ const state=runtime?.present===false?'off':runtime?.state;
+ const label=runtime?labels[state]||labels.unreadable:'Načítám…';
+ const mode=state!=='off'&&['verify','repair'].includes(runtime?.mode)?' · '+(runtime.mode==='verify'?'Verify':'Repair'):'';
+ const reason=typeof runtime?.reason==='string'&&/^[a-z0-9-]{1,64}$/.test(runtime.reason)?runtime.reason:null;
+ const box=el('div','alert'+(['restarting','refused','stopped','unreadable'].includes(state)||reason==='crash-loop'?' failure':''));box.setAttribute('role','status');
+ box.append(el('strong','',translate('Stav Recovery')+': '+translate(label)+mode,true));
+ if(reason)box.append(el('p','details',translate('Důvod: ')+reason,true));
+ return box;
+}
+
+export function recoveryRestartWarningView(requests,runtime,translate=tr){
+ if(!recoveryIsBusy(requests,runtime))return null;
+ const box=el('p','alert',translate('Restart nebo aktualizace kontejneru s Review přeruší Recovery. Počkej na dokončení kontroly originálu nebo změn prováděných Recovery. Přerušená kontrola není důkazem poškození.'),true);box.setAttribute('role','status');return box;
+}
+
+export function recoveryConfigNoticeView(change,translate=tr){
+ const notice=recoveryConfigNotice(change);if(!notice)return null;
+ const message=notice.kind==='failure'?'Konfigurace Recovery byla změněna a není platná. Oprav config.json před restartem, jinak se Recovery nespustí.':'Konfigurace Recovery byla změněna. Změna se projeví až po restartu kontejneru s Review; restartuj ho, až budou Review i Recovery nečinné.';
+ const box=el('p','alert'+(notice.kind==='failure'?' failure':''),[translate(message),notice.detectedAt?translate('Zjištěno:')+' '+date(notice.detectedAt):'',notice.error?'('+notice.error+')':''].filter(Boolean).join(' '),true);box.setAttribute('role','status');return box;
+}
 
 export function downloadProgressView(p,detail=true){
  const box=el('div','decode-progress');box.append(el('strong','',p.label));if(detail&&p.title)box.append(el('p','details',p.title,true));

@@ -4,12 +4,13 @@ import {listTestFiles} from './test-options.mjs';
 // Ratchet: tests exercise behaviour instead of matching implementation source text (CODING_STANDARDS.md).
 // Each entry lists, once per read, the source files a suite file still reads. Shrink it as tests are rewritten.
 export const SOURCE_TEXT_ALLOWLIST={
+ // This suite executes app.js and its real import graph in a browser-module VM.
+ 'review/app-runtime.test.mjs':['public/app.js'],
  'review/app-version.test.mjs':['server.mjs','routes/items.mjs'],
  'review/audio-listen.test.mjs':['public/comparison.js'],
  'review/auth-state.test.mjs':['server.mjs','routes/auth.mjs'],
  'review/decision-audit.test.mjs':['server.mjs'],
  'review/error-codes.test.mjs':['public/app.js','routes/static.mjs'],
- 'review/health-status.test.mjs':['server.mjs'],
  'review/i18n.test.mjs':['public/quarantine.js','public/settings-dialogs.js','public/app.js'],
  'review/prepared-frontend.test.mjs':['public/comparison.js'],
  'review/radarr-replacement.test.mjs':['routes/library.mjs'],

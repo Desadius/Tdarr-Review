@@ -18,8 +18,8 @@ Back up during an idle period. Keep media and quarantined originals protected by
 Source publication, Docker image publication and updating a running deployment are separate decisions. Pushing a commit or version tag runs tests only. Use [the release process](RELEASES.md) for approved image publication; installing it still requires the idle checks below.
 
 1. Inspect authenticated `/api/items` or the UI. Wait for `active`, `batchRunning`, `restorePending` and unresolved exchange transactions (`recovery`) to clear. These exchange transactions are distinct from the background movie-replacement list. A non-zero `restorePending` means Review could not yet unpause the Tdarr nodes it paused; the server retries on its own with backoff (15 s, doubling to at most 10 minutes) while no action is running. Reading `/api/items` does not trigger the retry.
-2. Check that the background worker is not in a mutating phase. A long decode is read-only but restarting it leaves an interrupted case requiring deliberate inspection.
-   On SIGTERM (`docker stop`) the worker leaves an idle wait at once and exits with code 0. If a check is in progress it first finishes that step; when the step outlasts the stop timeout, Docker kills the worker (exit code 137) and the case becomes manual on the next start. Stop the worker while it is idle rather than raising the timeout to cover a multi-hour decode.
+2. Check the worker runtime state and case warnings in Review's **Recovery** view. Wait for original decoding and mutating Recovery phases to finish; refresh stale or unavailable case information and inspect worker logs before treating it as idle. A long decode is read-only, but interrupting it can leave a case requiring deliberate inspection. Runtime **Running** alone does not mean idle.
+   In the unified container, stopping Review also stops Recovery. The supervisor forwards the stop signal and gives Recovery up to eight seconds before SIGKILL. An idle worker exits promptly; an interrupted or uncertain mutation retains its journal and must be inspected before retrying. Stop the container while both applications are idle rather than raising the timeout to cover a multi-hour decode.
 3. Back up code/images and private persistent data. Record the previous Git commit.
    If an older Recovery installation stores a private pending registry in its application directory, [migrate that registry](MIGRATE-RECOVERY-REGISTRY.md) with the worker stopped before replacing its source/image. Preserving state alone does not preserve authorization.
 4. Stop only the affected service, pull/build the chosen commit, and start it with the same data/mappings.
@@ -69,7 +69,7 @@ Inspect the film's detail and durable journal. Preserve `.tdarr-review-*.old`, `
 
 ## Recovery configuration was edited
 
-Recovery applies `/data/config.json` only at start-up. After an edit the worker logs `config.json changed since start-up; restart the worker to apply it` and the shared status file shows `configChange.restartRequired: true`. If `configChange.valid` is `false`, correct the file first: a restart with invalid JSON, or with a change the approval registry refuses (`error` names the rule), stops the worker. Then restart the Recovery container while it is idle, as described in step 2 of *Update an existing deployment*. Review shows the same notice in the Recovery view (red when the edited file is invalid). Reverting the edit clears the notice without a restart.
+Recovery applies its private `config.json` only at start-up (`/data/recovery/config.json` in the unified container). After an edit the worker logs `config.json changed since start-up; restart the worker to apply it` and the shared status file shows `configChange.restartRequired: true`. If `configChange.valid` is `false`, correct the file first: a restart with invalid JSON, or with a change the approval registry refuses (`error` names the rule), stops the worker. Then restart the Review container while both applications are idle, as described in step 2 of *Update an existing deployment*. Review shows the same notice in the Recovery view (red when the edited file is invalid), together with warnings about original decoding or mutating work. Reverting the edit clears the configuration notice without a restart.
 
 ## Review event log
 
@@ -92,13 +92,15 @@ docker logs tdarr-review 2>&1 | grep '"source":"review"'
 
 ## Container health
 
-The Review container health check reads `GET /health`, which answers only requests from loopback inside the container (other clients get 404) and needs no login. It returns `pendingTransactions`, `restorePending`, the shared Recovery status (`present`, `updated`, `stale` after 12 minutes) and an `attention` list (`pending-transaction`, `node-restore-pending`, `recovery-status-stale`). The check prints `OK` or `Attention: …` with the summary into Docker's health log:
+The Review container health check reads `GET /health`, which answers only requests from loopback inside the container (other clients get 404) and needs no login. It returns `pendingTransactions`, `restorePending`, the shared Recovery case status (`present`, `updated`, `stale` after 12 minutes), the worker's `recoveryRuntime` and an `attention` list: `pending-transaction`, `node-restore-pending`, `recovery-status-stale`, `recovery-refused`, `recovery-crash-loop` and `recovery-runtime-unreadable`. The check prints `OK` or `Attention: …` with the summary into Docker's health log:
 
 ```bash
 docker inspect --format '{{json .State.Health.Log}}' tdarr-review
 ```
 
-These conditions are reported, not treated as failures: the container stays healthy so that a restart policy or auto-heal tool does not restart Review during a pending transaction or node restore. The check fails only when the server does not answer or the UI is not served: it also requests `/` and `/app.js` and needs a 200 for each. A missing Recovery status file (Recovery not installed) is not flagged.
+These conditions are reported, not treated as failures: the container stays healthy so that a restart policy or auto-heal tool does not restart Review during a pending transaction or node restore. The check fails only when Review does not answer or its UI is not served: it also requests `/` and `/app.js` and needs a 200 for each. Recovery exiting or refusing startup does not stop Review or fail the container check. A missing runtime-state file is shown as **Off** without attention, and a missing Recovery case-status file is not flagged.
+
+The supervisor writes `/data/recovery/runtime-state.json` at startup and on state changes. Its timestamp has no heartbeat freshness threshold. **Refused** remains until the container is restarted after correcting the reported cause; **Restarting** follows the supervisor's backoff. `crash-loop` remains visible during restarts and running attempts until the worker has run continuously for ten minutes. The authenticated `GET /api/recovery/runtime` diagnostics remain available if the separate film-case status cannot be read; the UI keeps that case-data error and does not mark old cases fresh. Runtime status never changes approval, file-exchange recovery or quarantine decisions. See [Recovery worker status](USER-GUIDE.md#recovery-worker-status) for the state meanings.
 
 ## Recovery status is stale
 

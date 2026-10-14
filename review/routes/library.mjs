@@ -5,6 +5,7 @@ import {statistics} from '../stats.mjs';
 import {quarantineRetention} from '../quarantine-retention.mjs';
 import {body,reply,apiError} from './http.mjs';
 import {logEvent} from '../log.mjs';
+import {readRecoveryRuntime} from '../recovery-runtime.mjs';
 
 // Posters, statistics, quarantine listing and Radarr replacement requests/settings.
 export async function libraryRoutes(ctx,req,res,url,request){
@@ -55,6 +56,8 @@ export async function libraryRoutes(ctx,req,res,url,request){
   const b=await body(req);if(ctx.busyFor('radarrSettings',request.mutation))return reply(res,409,apiError('busy'));ctx.settingsBusy=true;try{const testOnly=url.pathname.endsWith('/test'),result=await ctx.replacements.settings(b,testOnly);if(!testOnly)logEvent('radarr-settings.saved',{url:b.url,mediaRoot:b.mediaRoot,quarantineRoot:b.quarantineRoot,preferCzechEnglish:b.preferCzechEnglish});return reply(res,200,result)}finally{ctx.settingsBusy=false}
  }
  if(url.pathname==='/api/radarr/requests'&&req.method==='GET')return reply(res,200,await ctx.replacements.overview());
+ // Runtime diagnostics remain readable even when the separate case snapshot fails.
+ if(url.pathname==='/api/recovery/runtime'&&req.method==='GET')return reply(res,200,await readRecoveryRuntime(path.join(ctx.DATA,'recovery','runtime-state.json')));
  const restoreRequest=/^\/api\/radarr\/requests\/([a-f0-9]{24})\/restore$/.exec(url.pathname);
  if(restoreRequest&&req.method==='POST'){
   const b=await body(req);if(b.confirm!==true)return reply(res,400,apiError('restore_confirm_required'));

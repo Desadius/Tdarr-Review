@@ -5,8 +5,94 @@ import os from 'node:os';
 import path from 'node:path';
 import {isLoopback,recoveryStatusHealth,healthSummary} from './health-status.mjs';
 import {RECOVERY_STALE_MS} from './public/review-model.js';
+import {readRecoveryRuntime} from './recovery-runtime.mjs';
 
 const NOW=Date.parse('2026-10-13T12:00:00Z');
+const runtime={version:1,mode:'repair',state:'refused',restarts:0,lastExitCode:78,lastExitSignal:null,lastStartedAt:'2026-10-13T11:00:00.000Z',lastExitedAt:'2026-10-13T11:00:01.000Z',reason:'missing-config',updated:'2026-10-13T11:00:01.000Z'};
+
+test('Recovery refusal includes its worker reason and only adds health attention',async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'recovery-runtime-')),file=path.join(root,'runtime-state.json');
+ try{
+  await fs.writeFile(file,JSON.stringify(runtime));
+  const recoveryRuntime=await readRecoveryRuntime(file);
+  assert.deepEqual(recoveryRuntime,{present:true,...runtime});
+  const summary=healthSummary({pendingTransactions:0,restorePending:0,recoveryStatus:{present:false,stale:false},recoveryRuntime});
+  assert.equal(summary.ok,true);assert.deepEqual(summary.attention,['recovery-refused']);
+  assert.equal(summary.recoveryRuntime.reason,'missing-config');
+  const {checkHealth}=await import('./healthcheck.mjs');
+  const check=await checkHealth(async route=>({status:200,text:route==='/health'?JSON.stringify(summary):'<html>'}));
+  assert.equal(check.ok,true);assert.match(check.line,/recovery-refused/);
+ }finally{await fs.rm(root,{recursive:true,force:true})}
+});
+
+test('Recovery crash-loop attention persists during restarts and running without failing Review health',async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'recovery-runtime-')),file=path.join(root,'runtime-state.json');
+ try{
+  const {checkHealth}=await import('./healthcheck.mjs');
+  for(const state of ['restarting','running']){
+   await fs.writeFile(file,JSON.stringify({...runtime,state,restarts:5,lastExitCode:1,reason:'crash-loop'}));
+   const recoveryRuntime=await readRecoveryRuntime(file);
+   const summary=healthSummary({pendingTransactions:0,restorePending:0,recoveryStatus:{present:false,stale:false},recoveryRuntime});
+   assert.equal(summary.recoveryRuntime.state,state);assert.equal(summary.ok,true);
+   assert.deepEqual(summary.attention,['recovery-crash-loop']);
+   assert.equal((await checkHealth(async route=>({status:200,text:route==='/health'?JSON.stringify(summary):'<html>'}))).ok,true);
+  }
+ }finally{await fs.rm(root,{recursive:true,force:true})}
+});
+
+test('an unreadable Recovery runtime snapshot raises attention without exposing file contents or failing health',async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'recovery-runtime-')),file=path.join(root,'runtime-state.json');
+ try{
+  const {checkHealth}=await import('./healthcheck.mjs');
+  for(const value of ['{"apiKey":"SECRET"',JSON.stringify({...runtime,version:2}),JSON.stringify({...runtime,reason:'secret /private/config'}),JSON.stringify({...runtime,padding:'x'.repeat(16385)})]){
+   await fs.writeFile(file,value);
+   const recoveryRuntime=await readRecoveryRuntime(file);
+   assert.deepEqual(recoveryRuntime,{present:true,state:'unreadable',reason:null});
+   const summary=healthSummary({pendingTransactions:0,restorePending:0,recoveryStatus:{present:false,stale:false},recoveryRuntime});
+   assert.deepEqual(summary.attention,['recovery-runtime-unreadable']);assert.equal(summary.ok,true);
+   assert.doesNotMatch(JSON.stringify(summary),/SECRET|private/);
+   assert.equal((await checkHealth(async route=>({status:200,text:route==='/health'?JSON.stringify(summary):'<html>'}))).ok,true);
+  }
+ }finally{await fs.rm(root,{recursive:true,force:true})}
+});
+
+test('missing or Off Recovery runtime adds no attention, and old running/stopped snapshots retain their state',async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'recovery-runtime-')),file=path.join(root,'runtime-state.json');
+ const summary=recoveryRuntime=>healthSummary({pendingTransactions:0,restorePending:0,recoveryStatus:{present:false,stale:false},recoveryRuntime});
+ try{
+  const missing=await readRecoveryRuntime(file);
+  assert.deepEqual(missing,{present:false,mode:'off',state:'off',reason:null});assert.deepEqual(summary(missing).attention,[]);
+  for(const [state,mode,reason] of [['off','off',null],['running','verify',null],['restarting','repair','crash'],['stopped','repair','shutdown'],['stopped','repair','review-exited']]){
+   await fs.writeFile(file,JSON.stringify({...runtime,state,mode,reason}));
+   const current=await readRecoveryRuntime(file);
+   assert.equal(current.state,state);assert.equal(current.reason,reason);assert.deepEqual(summary(current).attention,[]);
+  }
+ }finally{await fs.rm(root,{recursive:true,force:true})}
+});
+
+test('Recovery runtime validates the supervisor schema and strips unrelated fields',async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'recovery-runtime-')),file=path.join(root,'runtime-state.json');
+ try{
+  for(const reason of ['missing-config','mode-conflict','invalid-mode','registry-refused','unknown-refusal','future-refusal']){
+   await fs.writeFile(file,JSON.stringify({...runtime,reason,apiKey:'SECRET',stderr:'SECRET'}));
+   assert.deepEqual(await readRecoveryRuntime(file),{present:true,...runtime,reason});
+  }
+  const invalid=[null,[],{}, {...runtime,version:2},{...runtime,mode:'SECRET'},{...runtime,state:'SECRET'},{...runtime,restarts:-1},{...runtime,restarts:1.5},{...runtime,lastExitCode:256},{...runtime,lastExitSignal:'SECRET'},{...runtime,lastStartedAt:'SECRET'},{...runtime,lastExitedAt:0},{...runtime,updated:null},{...runtime,reason:'SECRET /private'}];
+  for(const value of invalid){await fs.writeFile(file,JSON.stringify(value));assert.deepEqual(await readRecoveryRuntime(file),{present:true,state:'unreadable',reason:null})}
+  await fs.rm(file);await fs.mkdir(file);
+  assert.deepEqual(await readRecoveryRuntime(file),{present:true,state:'unreadable',reason:null},'a directory is not a state file');
+ }finally{await fs.rm(root,{recursive:true,force:true})}
+});
+
+test('Recovery runtime timestamps accept ISO dates and reject parseable arbitrary text',async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'recovery-runtime-')),file=path.join(root,'runtime-state.json');
+ try{
+  for(const field of ['lastStartedAt','lastExitedAt','updated']){
+   await fs.writeFile(file,JSON.stringify({...runtime,[field]:'private note 1'}));
+   assert.deepEqual(await readRecoveryRuntime(file),{present:true,state:'unreadable',reason:null},field);
+  }
+ }finally{await fs.rm(root,{recursive:true,force:true})}
+});
 
 test('only loopback addresses may read the health summary',()=>{
  for(const address of ['127.0.0.1','::1','::ffff:127.0.0.1'])assert.equal(isLoopback(address),true);
@@ -33,14 +119,6 @@ test('the summary flags operator conditions but always stays ok',()=>{
  assert.deepEqual(healthSummary({pendingTransactions:0,restorePending:0,recoveryStatus:{present:false,stale:false}}).attention,[],'Recovery not installed is not a problem');
  const all=healthSummary({pendingTransactions:1,restorePending:2,recoveryStatus:{...fresh,stale:true}});
  assert.equal(all.ok,true);assert.deepEqual(all.attention,['pending-transaction','node-restore-pending','recovery-status-stale']);
-});
-
-test('server serves /health before authentication to loopback only; the health check reports without failing',async()=>{
- const server=await fs.readFile(new URL('./server.mjs',import.meta.url),'utf8');
- const health=server.indexOf("if(url.pathname==='/health'&&req.method==='GET'){"),auth=server.indexOf("if(url.pathname.startsWith('/api/')&&!authenticated(ctx,req))");
- assert.ok(health>0&&health<auth);
- assert.match(server.slice(health,health+400),/if\(!isLoopback\(req\.socket\.remoteAddress\)\)return respond\(res,404/);
- assert.ok(server.indexOf("if(req.headers.host!==HOST)")<health,'Host check still applies');
 });
 
 test('the container health check needs /health and the UI, but only reports operator conditions',async()=>{

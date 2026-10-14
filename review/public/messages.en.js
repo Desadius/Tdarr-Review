@@ -1,6 +1,13 @@
 export default {
   "exact": {
-    "Konfigurace Recovery byla změněna. Změna se projeví až po restartu kontejneru Recovery; restartuj ho, až bude nečinný.": "The Recovery configuration was changed. The change takes effect only after the Recovery container restarts; restart it while it is idle.",
+    "Restart nebo aktualizace kontejneru s Review přeruší Recovery. Počkej na dokončení kontroly originálu nebo změn prováděných Recovery. Přerušená kontrola není důkazem poškození.": "Restarting or updating the container running Review interrupts Recovery. Wait for the original check or changes made by Recovery to finish. An interrupted check is not evidence of corruption.",
+    "Stav Recovery": "Recovery status",
+    "Běží": "Running",
+    "Restartuje se": "Restarting",
+    "Spuštění odmítnuto": "Startup refused",
+    "Zastaveno": "Stopped",
+    "Stav nelze přečíst": "Status cannot be read",
+    "Konfigurace Recovery byla změněna. Změna se projeví až po restartu kontejneru s Review; restartuj ho, až budou Review i Recovery nečinné.": "The Recovery configuration was changed. The change takes effect after restarting the container running Review; restart it when Review and Recovery are idle.",
     "Konfigurace Recovery byla změněna a není platná. Oprav config.json před restartem, jinak se Recovery nespustí.": "The Recovery configuration was changed and is not valid. Fix config.json before restarting, otherwise Recovery will not start.",
     "Zjištěno:": "Detected:",
     "Úplný kontrolní součet originálu": "Full checksum of the original",

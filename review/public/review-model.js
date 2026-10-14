@@ -298,6 +298,19 @@ export function recoveryConfigNotice(change) {
   return {kind: change.valid === false ? 'failure' : 'warning', detectedAt: finiteTime(change.detectedAt), error: change.valid === false ? text(change.error) || null : null};
 }
 
+/** A container restart interrupts Recovery's original checks and journaled mutations. */
+const RECOVERY_MUTATION_PHASES=new Set(['profile_intent','holding','quarantine_intent','quarantined','blocklist_intent','blocked','search_intent','defer_limit_intent','defer_cooldown_intent','replacement_queue_intent','restore_source_intent','remove_kept_source_intent','replacement_download_intent']);
+export function recoveryIsBusy(requests,runtime){
+  if(runtime?.state!=='running')return false;
+  return list(requests).some(r=>{
+    if(r?.source!=='recovery')return false;
+    if(r.phase==='verifying'||RECOVERY_MUTATION_PHASES.has(r.phase))return true;
+    if(!['candidate','confirmed'].includes(r.phase))return false;
+    const hash=fullHashProgress(r);
+    return hash!==null&&hash.done!==null&&hash.total>0&&hash.done<hash.total;
+  });
+}
+
 const FULL_HASH_STAGES = {confirmation: 'při potvrzení chyby', before_quarantine: 'před přesunem do karantény'};
 // Optional full SHA-256 of an original that Recovery is reading (case `fullHash`, setting fullSourceHash).
 export function fullHashProgress(record, now = Date.now()) {

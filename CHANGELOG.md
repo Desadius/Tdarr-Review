@@ -4,6 +4,11 @@ This records the implemented application features. Versions before 1.10.0 were d
 
 ## Unreleased
 
+### Review: Recovery runtime status
+
+- Show Recovery's supervisor state (**Off**, **Running**, **Restarting**, **Refused**, **Stopped**) and reason in Review, separately from film cases and unfinished file-exchange transactions. Missing runtime state shows **Off** without attention; invalid or unreadable state is reported without exposing configuration or stderr.
+- Add refused-worker, crash-loop and unreadable-runtime attention to the operational health summary while keeping container health tied to Review availability. Warn before restarting or updating the unified container while Recovery reports original decoding or a mutating phase.
+
 ### Recovery worker
 
 - The Recovery mode now comes only from the `RECOVERY_MODE` environment variable: `verify` confirms corrupted originals without changing anything outside Recovery (the former `enabled: false`), `repair` may act on a confirmed corruption (the former `enabled: true`). The Compose `recovery` service requires `RECOVERY_MODE`; set it from your current `enabled` value before updating.

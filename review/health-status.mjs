@@ -20,10 +20,13 @@ export async function recoveryStatusHealth(file,now=Date.now()){
  }
 }
 
-export function healthSummary({pendingTransactions,restorePending,recoveryStatus}){
+export function healthSummary({pendingTransactions,restorePending,recoveryStatus,recoveryRuntime}){
  const attention=[];
  if(pendingTransactions)attention.push('pending-transaction');
  if(restorePending)attention.push('node-restore-pending');
  if(recoveryStatus.present&&recoveryStatus.stale)attention.push('recovery-status-stale');
- return {ok:true,attention,pendingTransactions,restorePending,recoveryStatus};
+ if(recoveryRuntime?.state==='refused')attention.push('recovery-refused');
+ if(recoveryRuntime?.reason==='crash-loop')attention.push('recovery-crash-loop');
+ if(recoveryRuntime?.state==='unreadable')attention.push('recovery-runtime-unreadable');
+ return {ok:true,attention,pendingTransactions,restorePending,recoveryStatus,...(recoveryRuntime?{recoveryRuntime}: {})};
 }
