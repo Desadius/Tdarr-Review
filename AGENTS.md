@@ -40,6 +40,14 @@ Run `npm run check` and `npm test` before every commit you propose. CI (`.github
 - Never commit credentials, API keys, `.env`, journals, databases, settings or media files (see `.gitignore`).
 - Add a regression test for every meaningful behaviour change.
 
+## Production
+
+The production installation is the maintainer's Unraid server, reachable over SSH. Connection details are private and are not part of this repository.
+
+- Ask the maintainer before every access to production, even a read-only one.
+- When reading, never print configuration values, secrets or the contents of the approval registry. Report only what the maintainer asked for.
+- Never change anything on production (files, containers, configuration) unless the maintainer explicitly asks for that change in the current conversation.
+
 ## Releases and deployment
 
 Source publication, Docker image publication and updating a running installation are three separate steps, each needing the maintainer's explicit approval (`docs/RELEASES.md`). Agents must not:
