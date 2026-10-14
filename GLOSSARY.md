@@ -13,8 +13,16 @@ The optional, opt-in part of Review that automatically repairs a confirmed corru
 _Avoid_: recovery worker container, tdarr-recovery (as a separate product), repair
 
 **Recovery mode**:
-One of three explicitly chosen states of Recovery: **Off** (does not run; the default), **Verify** (confirms corrupted originals but changes nothing outside itself) or **Repair** (may act on a confirmed corruption).
+One of three explicitly chosen states of Recovery: **Off** (does not run; the default), **Verify** (confirms corrupted originals and changes nothing outside itself except the protective steps of in-flight repairs) or **Repair** (may act on a confirmed corruption).
 _Avoid_: enabled/disabled, dry run
+
+**In-flight repair**:
+A repair that has already changed the library, Tdarr or Radarr and has not finished yet. In Verify it is paused: only its protective steps continue.
+_Avoid_: running case, pending case (pending means a frozen approval)
+
+**Protective step**:
+A step of an in-flight repair that puts the original back into the library or keeps Tdarr from transcoding it again. Removing a film from the library, requesting a download, handing a file to Tdarr and purging quarantine are not protective.
+_Avoid_: safe step
 
 **Transaction recovery**:
 Completing or rolling back an interrupted replacement after a restart, from its durable journal. A different concept from Recovery; never shorten it to "recovery".
