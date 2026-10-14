@@ -152,10 +152,10 @@ async function recoveryRunning(){
     assert.match(await run('/usr/bin/ionice',['-p',String(recovery.pid)],{quiet:true}),/^best-effort: prio 7$/m);
     const environment=(await fs.readFile(`/proc/${recovery.pid}/environ`,'utf8')).split('\0');
     assert.ok(environment.includes('DATA_ROOT=/data/recovery'));assert.ok(environment.includes('RECOVERY_MODE=verify'));
-    // The first pass may have run before the mock listened; wait for one that reached it.
-    await eventually('a Recovery pass against the loopback mock',()=>requests.length>0);
-    const state=await eventually('a successful Recovery pass',async()=>{const s=await readState('/data/recovery/state.json');return s.lastError===null&&s;});
-    assert.equal(state.languageMetadataError,undefined);assert.deepEqual(state.cases,{});assert.deepEqual(state.jobs,{});
+    // A pass that ran before the mock listened records a failed Radarr request, and the saved
+    // state may still be from that pass; wait for one whose requests all reached the mock.
+    const state=await eventually('a successful Recovery pass',async()=>{const s=await readState('/data/recovery/state.json');return requests.length>0&&s.lastError===null&&!('languageMetadataError' in s)&&s;});
+    assert.deepEqual(state.cases,{});assert.deepEqual(state.jobs,{});
     assert.ok(requests.every(r=>r.method==='GET'&&r.url==='/api/v3/movie'),JSON.stringify(requests));
     const before=await readState(fixtureRoot+'/sentinel.json'),after=await fs.stat(sentinel);
     for(const k of Object.keys(before))assert.equal(after[k],before[k],`Sentinel changed: ${k}`);
