@@ -270,7 +270,8 @@ test('the running worker reports a config.json edit whose enabled conflicts with
  const f=await fixture({mode:'repair'});try{
   f.state.jobs['fixture-job']='manual: operator review';f.cfg.pollSeconds=1;await f.write();
   const worker=f.daemon(),status=async()=>JSON.parse(await fs.readFile(path.join(f.data,'../media/.tdarr-recovery-status.json'),'utf8').catch(()=>'{}'));
-  await until(async()=>JSON.parse(await fs.readFile(f.data+'/state.json','utf8')).updated);
+  // The first completed cycle publishes the shared status with no pending config change.
+  await until(async()=>(await status()).updated);
   assert.equal((await status()).configChange,null);
   await fs.writeFile(f.data+'/config.json',JSON.stringify({...f.cfg,enabled:false}));
   await until(async()=>(await status()).configChange);

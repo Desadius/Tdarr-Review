@@ -93,9 +93,9 @@ for(const [name,setup,reason] of [
  });
 }
 
-test('the reason line arrives last even after a large earlier stderr write',async()=>{
- // Pins the contract against an exit that cuts off queued stderr. Stderr pipes are synchronous on
- // Linux and Windows, so this cannot show a loss there; it fails if the reason is not written last.
+test('the reason line still arrives last when stderr is backed up at the moment of refusal',async()=>{
+ // On Linux a full pipe queues the rest of a write, and an immediate process.exit dropped it, so the
+ // reason never arrived (seen in CI). Windows pipes block instead, so there this only pins the order.
  const module=new URL('./recovery-mode.mjs',import.meta.url).href;
  const script=`import {RecoveryRefusal,exitRefused} from ${JSON.stringify(module)};process.stderr.write('x'.repeat(8*1024*1024)+'\\n');exitRefused(new RecoveryRefusal('mode-conflict'));`;
  const exit=await new Promise((resolve,reject)=>{

@@ -56,8 +56,10 @@ export async function readRecoveryConfig({file,mode}){
 }
 
 // Ends the process with the refusal contract: exit 78 and a last stderr line that names only the reason.
+// A full stderr pipe queues writes and process.exit would drop them, so exit only once stderr has
+// taken both lines. The returned promise never settles: callers return it so nothing runs meanwhile.
 export function exitRefused(refusal){
- console.error(refusal.message);
- console.error('RECOVERY_REFUSED '+refusal.reason);
- process.exit(REFUSED_EXIT);
+ process.exitCode=REFUSED_EXIT;
+ process.stderr.write(refusal.message+'\nRECOVERY_REFUSED '+refusal.reason+'\n',()=>process.exit(REFUSED_EXIT));
+ return new Promise(()=>{});
 }

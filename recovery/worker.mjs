@@ -25,12 +25,12 @@ let stopping=false,wake=()=>{};
 for(const signal of ['SIGTERM','SIGINT'])process.on(signal,()=>{if(stopping)return;stopping=true;console.log('Recovery: '+signal+' received; stopping after the current step');wake();});
 // Refuse (exit 78) before any state, registry or API access when the mode or config.json is unusable.
 const configFile=path.join(DATA,'config.json');
-const {mode,cfg,text:configText}=await readRecoveryConfig({file:configFile,mode:process.env.RECOVERY_MODE}).catch(e=>{if(e instanceof RecoveryRefusal)exitRefused(e);throw e;});
+const {mode,cfg,text:configText}=await readRecoveryConfig({file:configFile,mode:process.env.RECOVERY_MODE}).catch(e=>{if(e instanceof RecoveryRefusal)return exitRefused(e);throw e;});
 const loadedConfigDigest=configDigest(configText);
 const stateFile=path.join(DATA,'state.json');
 let state=JSON.parse(await fs.readFile(stateFile,'utf8').catch(e=>{if(e.code!=='ENOENT')throw e;return '{"version":1,"jobs":{},"cases":{}}'}));
 // Validate persistent authorization before DB reads, APIs or restart recovery.
-const pendingApprovals=await loadApprovalRegistry({data:DATA,cfg,state}).catch(e=>{if(e?.code==='RECOVERY_APPROVAL_REGISTRY')exitRefused(new RecoveryRefusal('registry-refused',e.message));throw e;});
+const pendingApprovals=await loadApprovalRegistry({data:DATA,cfg,state}).catch(e=>{if(e?.code==='RECOVERY_APPROVAL_REGISTRY')return exitRefused(new RecoveryRefusal('registry-refused',e.message));throw e;});
 const isApprovedCase=c=>registryHasApproval(pendingApprovals,c);
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 import {atomicJson as atomic} from './atomic-json.mjs';
