@@ -5,6 +5,7 @@ import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {atomicJSON} from './core.mjs';
+import {REFUSED_EXIT} from '../recovery/recovery-mode.mjs';
 
 export const STATE_FILE='runtime-state.json';
 
@@ -14,14 +15,18 @@ export const STATE_FILE='runtime-state.json';
  * @param {{mode?:string,dataRoot:string,review:string[],recovery:string[],restart?:RestartPolicy,stopGraceMs?:number,lowPriority?:string[]}} options
  * @returns {Promise<number>}
  */
-export async function supervise({mode,dataRoot,review,recovery,restart=RESTART,stopGraceMs=30000,lowPriority=LOW_PRIORITY}){
+export async function supervise({mode,dataRoot,review,recovery,restart=RESTART,stopGraceMs=8000,lowPriority=LOW_PRIORITY}){
  // Only the supervisor applies the default. Any other value than off still goes to Recovery,
  // which refuses it (fail closed); the state file records it only as invalid.
  mode=mode||'off';
  const recoveryData=path.join(dataRoot,'recovery');
  const state={version:1,mode:['off','verify','repair'].includes(mode)?mode:'invalid',state:'off',restarts:0,lastExitCode:null,lastExitSignal:null,lastStartedAt:null,lastExitedAt:null,reason:null,updated:''};
- const update=changes=>{Object.assign(state,changes);return publish(recoveryData,state);};
- await update({});
+ // The state file is informational: a failed write is logged and never affects Review.
+ // Writes are serialized, because each one goes through the same temporary file.
+ let writes=Promise.resolve();
+ const update=changes=>{Object.assign(state,changes);return writes=writes.then(()=>publish(recoveryData,{...state,updated:new Date().toISOString()}));};
+ // Not awaited: the signal handlers below must be in place at once, because PID 1 ignores signals without one.
+ void update({});
  const reviewChild=spawn(review[0],review.slice(1),{stdio:'inherit'});
  const reviewExit=new Promise(resolve=>{
   reviewChild.on('exit',(code,signal)=>resolve(code??128+(signal?os.constants.signals[signal]:0)));
@@ -35,13 +40,13 @@ export async function supervise({mode,dataRoot,review,recovery,restart=RESTART,s
  let workerExit=null;
  /** @type {import('node:child_process').ChildProcess|null} */
  let worker=null;
- const looping=()=>crashes>=restart.crashLoopAfter?'crash-loop':null;
+ const crashLoopReason=()=>crashes>=restart.crashLoopAfter?'crash-loop':null;
  const startRecovery=()=>{
   const child=worker=spawn(lowPriority[0],[...lowPriority.slice(1),...recovery],{stdio:['ignore','inherit','pipe'],env:{...process.env,DATA_ROOT:recoveryData,RECOVERY_MODE:mode}});
   // stderr still reaches the container log; its tail may hold the refusal line.
   let tail='';
   const drained=new Promise(resolve=>{child.stderr?.on('data',chunk=>{process.stderr.write(chunk);tail=(tail+chunk).slice(-4096);});child.stderr?.on('end',resolve);});
-  void update({state:'running',reason:looping(),lastStartedAt:new Date().toISOString()});
+  void update({state:'running',reason:crashLoopReason(),lastStartedAt:new Date().toISOString()});
   const stable=setTimeout(()=>{crashes=0;void update({reason:null});},restart.stableMs);
   workerExit=new Promise(resolve=>{
    // A command that cannot be spawned emits only error; it counts as an exit without code.
@@ -57,7 +62,7 @@ export async function supervise({mode,dataRoot,review,recovery,restart=RESTART,s
     }
     crashes++;
     const delay=Math.min(restart.initialMs*2**(crashes-1),restart.maxMs);
-    void update({state:'restarting',reason:looping()??'crash',...exited});
+    void update({state:'restarting',reason:crashLoopReason()??'crash',...exited});
     restartTimer=setTimeout(()=>{state.restarts++;startRecovery();},delay);
     resolve();
    });
@@ -92,7 +97,6 @@ const SIGNALS=['SIGTERM','SIGINT'];
 
 // A refusal (recovery/recovery-mode.mjs) exits 78 with a last stderr line `RECOVERY_REFUSED <reason>`.
 // It is never restarted. Only a well-formed reason code is recorded, never other stderr text.
-const REFUSED_EXIT=78;
 function refusalReason(stderr){
  const last=stderr.trimEnd().split('\n').at(-1)??'';
  return /^RECOVERY_REFUSED ([a-z0-9-]{1,64})$/.exec(last)?.[1]??'unknown-refusal';
@@ -104,17 +108,11 @@ const RESTART={initialMs:10000,maxMs:300000,crashLoopAfter:5,stableMs:600000};
 // Recovery runs at the lowest best-effort I/O priority (7) and CPU niceness 19, so reviewing stays responsive.
 const LOW_PRIORITY=['/usr/bin/ionice','-c','2','-n','7','/usr/bin/nice','-n','19'];
 
-// The state file is informational: a failed write is logged and never affects Review.
-// Writes are serialized, because each one goes through the same temporary file.
-let writes=Promise.resolve();
-function publish(directory,state){
- const snapshot={...state,updated:new Date().toISOString()};
- return writes=writes.then(async()=>{
-  try{
-   await fs.mkdir(directory,{recursive:true,mode:0o700});
-   await atomicJSON(path.join(directory,STATE_FILE),snapshot);
-  }catch(e){console.error('Supervisor: cannot write the Recovery runtime state: '+(e instanceof Error?e.message:e));}
- });
+async function publish(directory,snapshot){
+ try{
+  await fs.mkdir(directory,{recursive:true,mode:0o700});
+  await atomicJSON(path.join(directory,STATE_FILE),snapshot);
+ }catch(e){console.error('Supervisor: cannot write the Recovery runtime state: '+(e instanceof Error?e.message:e));}
 }
 
 // Production: Review's server and the Recovery worker beside it, with RECOVERY_MODE and DATA_ROOT from the container.
