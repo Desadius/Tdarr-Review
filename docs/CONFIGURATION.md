@@ -73,7 +73,7 @@ The reason line never contains configuration keys or values. Any other non-zero 
 
 ### config.json
 
-The worker reads `/data/config.json`. Unlike Review, it currently has no configuration UI or general schema validator; use the supplied complete example and verify values before enabling it.
+The worker reads `/data/config.json`. Unlike Review, it currently has no configuration UI or general schema validator; use the supplied complete example and verify values before switching to `repair`.
 
 The worker reads `config.json` only when it starts. Edits, including limits and `approvedImportRepairs`, take effect after the Recovery container is restarted. While the worker runs it checks the file once per poll: if the content differs from what it loaded, it logs that a restart is required and adds `configChange` (`detectedAt`, `restartRequired`, `valid`, `error`) to the shared `.tdarr-recovery-status.json`. `valid: false` means the next start would fail: the file is not a JSON object, its `enabled` disagrees with `RECOVERY_MODE`, or the worker's start-up approval-registry check refuses it (for example a value frozen in `pending-approvals.json`, such as a library root, `libraryId` or a limit, was changed). `error` names the rule but never a value; fix the file before restarting. Settings outside these checks can still be wrong in ways only the running worker notices. The running worker keeps using the configuration it started with and never applies an edit in the middle of a case. Restart only while the worker is idle (see [Operations](OPERATIONS.md)).
 

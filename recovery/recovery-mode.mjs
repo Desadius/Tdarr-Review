@@ -3,8 +3,8 @@ import fs from 'node:fs/promises';
 // RECOVERY_MODE is the only source of truth for the Recovery mode. The worker runs only in
 // verify (confirm corrupted originals, change nothing outside Recovery) or repair (may act on
 // a confirmed corruption). Anything else refuses start before any API contact (fail closed).
-export const REFUSED_EXIT=78; // EX_CONFIG: a refusal, not a crash; see the supervisor contract.
-export const MODES=['verify','repair'];
+export const REFUSED_EXIT=78; // EX_CONFIG: a refusal, not a crash (docs/CONFIGURATION.md, Recovery mode).
+const MODES=['verify','repair'];
 
 const REASONS={
  'invalid-mode':'RECOVERY_MODE must be verify or repair',
