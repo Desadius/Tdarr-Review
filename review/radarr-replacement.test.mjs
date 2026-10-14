@@ -76,6 +76,22 @@ async function importedFixture(){
  const journal=path.join(f.data,'radarr-replacements',c.id+'.json');
  return {...f,file,journal,readJournal:async()=>JSON.parse(await fs.readFile(journal,'utf8'))};
 }
+
+test('Recovery overview reads supervisor runtime from Review data independently of Radarr configuration',async()=>{
+ const f=await fixture();
+ try{
+  await fs.rm(path.join(f.data,'radarr.json'));
+  assert.deepEqual((await f.service.overview()).recoveryRuntime,{present:false,mode:'off',state:'off',reason:null});
+  const runtime={version:1,mode:'invalid',state:'refused',restarts:0,lastExitCode:78,lastExitSignal:null,lastStartedAt:null,lastExitedAt:'2026-10-14T12:00:00.000Z',updated:'2026-10-14T12:00:00.000Z',reason:'invalid-mode'};
+  await fs.mkdir(path.join(f.data,'recovery'));await fs.writeFile(path.join(f.data,'recovery','runtime-state.json'),JSON.stringify({...runtime,apiKey:'SECRET'}));
+  const overview=await f.service.overview();
+  assert.deepEqual(overview.recoveryRuntime,{present:true,...runtime});assert.deepEqual(overview.requests,[]);
+  assert.doesNotMatch(JSON.stringify(overview),/SECRET|apiKey/);
+  await fs.writeFile(path.join(f.data,'recovery','runtime-state.json'),'{broken');
+  assert.deepEqual((await f.service.overview()).recoveryRuntime,{present:true,state:'unreadable',reason:null});
+  assert.deepEqual(await f.service.list(),[],'runtime failure does not prevent loading cases');
+ }finally{await f.cleanup()}
+});
 test('Review preserves per-case Recovery freshness instead of replacing it with another case heartbeat',async()=>{
  const f=await fixture();try{
   const now=Date.now(),old=new Date(now-20*60000).toISOString(),fresh=new Date(now).toISOString(),file=path.join(path.dirname(f.media),'.tdarr-recovery-status.json');

@@ -20,6 +20,7 @@ import {appVersion} from './app-version.mjs';
 import {logEvent} from './log.mjs';
 import {recordDecision} from './decision-audit.mjs';
 import {isLoopback,recoveryStatusHealth,healthSummary} from './health-status.mjs';
+import {readRecoveryRuntime} from './recovery-runtime.mjs';
 import {captureReceipt,cleanupReviewed} from './cleanup.mjs';
 import {resolveReviewSource} from './source-mapping.mjs';
 import {matchReviewJob} from './job-matching.mjs';
@@ -424,7 +425,7 @@ const server=http.createServer(async(req,res)=>{
     if(req.method==='POST'&&req.headers['content-type']!=='application/json')return respond(res,415,apiError('json_required'));
     if(url.pathname==='/health'&&req.method==='GET'){
       if(!isLoopback(req.socket.remoteAddress))return respond(res,404,apiError('not_found'));
-      return respond(res,200,healthSummary({pendingTransactions:recovery.length,restorePending:state.pauses.length,recoveryStatus:await recoveryStatusHealth(path.join(path.dirname(config.mediaRoot),'.tdarr-recovery-status.json'))}));
+      return respond(res,200,healthSummary({pendingTransactions:recovery.length,restorePending:state.pauses.length,recoveryStatus:await recoveryStatusHealth(path.join(path.dirname(config.mediaRoot),'.tdarr-recovery-status.json')),recoveryRuntime:await readRecoveryRuntime(path.join(DATA,'recovery','runtime-state.json'))}));
     }
     if(await login(ctx,req,res,url))return;
     if(url.pathname.startsWith('/api/')&&!authenticated(ctx,req))return respond(res,401,apiError('login_required'));

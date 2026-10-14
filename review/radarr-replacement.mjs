@@ -1,4 +1,5 @@
 import {downloadQueue} from './download-queue.mjs';
+import {readRecoveryRuntime} from './recovery-runtime.mjs';
 import {ensureHandoff} from './replacement-handoff.mjs';
 import {retainCase,fp as retentionFP,quarantineRetention} from './quarantine-retention.mjs';
 import fs from 'node:fs/promises';
@@ -224,7 +225,7 @@ export function createReplacement({data,getConfig,safeFile,hash,atomicJSON,tdarr
  async function overview(){
   let status=null,statusError=null;try{status=await readRecoveryStatus()}catch(e){statusError=e}
   const own=(await list()).map(visible);if(statusError)throw statusError;
-  return {requests:[...own,...await recoveryPublic(status)],recoveryConfig:configNotice(status)};
+  return {requests:[...own,...await recoveryPublic(status)],recoveryConfig:configNotice(status),recoveryRuntime:await readRecoveryRuntime(path.join(data,'recovery','runtime-state.json'))};
  }
  return {cleanup,settings,publicSettings,prepare,run,restore,observe,overview,recoveryConfig:async()=>configNotice(await readRecoveryStatus().catch(()=>null)),list:async()=>(await overview()).requests,recover:async()=>{for(const c of await list())if(!canResume(c))await persist(c,'manual','Operace byla přerušená ve fázi '+c.phase+'. Neopakuj ji bez kontroly; zachované kopie nebyly smazané.');}};
 }

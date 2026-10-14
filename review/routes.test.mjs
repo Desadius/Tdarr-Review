@@ -16,6 +16,7 @@ const ROUTES=[
  ['GET','/api/statistics','libraryRoutes'],['GET','/api/quarantine','libraryRoutes'],
  ['GET','/api/radarr/settings','libraryRoutes'],['POST','/api/radarr/settings','libraryRoutes'],['POST','/api/radarr/settings/test','libraryRoutes'],
  ['GET','/api/radarr/requests','libraryRoutes'],['POST','/api/radarr/requests/'+ID+'/restore','libraryRoutes'],
+ ['GET','/api/recovery/runtime','libraryRoutes'],
  ['GET','/api/items','itemRoutes'],['POST','/api/items/'+ID+'/replace','itemRoutes'],
  ['GET','/api/items/'+ID+'/review-session','itemRoutes'],['POST','/api/items/'+ID+'/review-session','itemRoutes'],
  ['POST','/api/approve-batch','itemRoutes'],['POST','/api/items/'+ID+'/recheck','itemRoutes'],

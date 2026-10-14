@@ -33,7 +33,7 @@ On restart, only a provably untouched original can be restored automatically. In
 | `items.mjs` | Item list, review sessions, approve, reject, batch, recheck, Radarr replacement request, review-file download |
 | `previews.mjs` | Sample preparation settings and status, on-demand frames, audio and AV samples |
 | `settings.mjs` | Tdarr connection and path settings |
-| `library.mjs` | Posters, statistics, quarantine listing, Radarr settings, requests and restore |
+| `library.mjs` | Posters, statistics, quarantine listing, Radarr settings, requests and restore, Recovery runtime diagnostics |
 | `static.mjs` | The fixed set of UI files in `review/public/` |
 
 Route modules receive one explicit server-state object (`ctx`). Its getters and setters read and write the server's own variables, so the busy flags, caches and settings that routes change are the same ones used by scanning, transactions and background preparation. A route returns `true` once it has answered; `review/routes.test.mjs` checks that every route is owned by exactly one module.

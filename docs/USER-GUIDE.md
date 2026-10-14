@@ -102,6 +102,24 @@ Keep the quarantine and recorded library link/copy intact. Recovery validates bo
 
 Do not interpret `replacement_imported` as approved. Watch the Tdarr state, complete the new result's own Review checklist, then approve it. Quarantine becomes eligible for cleanup seven days after that explicit identified approval.
 
+## Recovery worker status
+
+The **Recovery** view shows the worker's runtime state separately from its film cases. In the unified container, Recovery runs alongside Review; stopping or updating that container affects both.
+
+| State | Meaning |
+| --- | --- |
+| **Off** | The supervisor does not start Recovery, or this installation has no runtime-state file. This alone needs no attention. |
+| **Running** | The worker process has started. This does not prove that a case completed or that a replacement was approved. |
+| **Restarting** | The worker exited unexpectedly and the supervisor is waiting before starting it again. |
+| **Refused** | Startup checks stopped the worker. Correct the reported configuration or registry problem before restarting the container. |
+| **Stopped** | Recovery stopped because Review exited or the container is shutting down. |
+
+The reason explains the state: `crash` means an unexpected exit, `crash-loop` means repeated crashes, `review-exited` means Review stopped and `shutdown` means the container received a stop signal. Refusal reasons include `missing-config`, `mode-conflict`, `invalid-mode`, `registry-refused` and `unknown-refusal`. A refused worker, a crash loop or an unreadable runtime-state file needs operator attention. Check the container log for diagnosis; the UI never displays configuration values or arbitrary worker stderr through this status.
+
+Before restarting or updating, wait for an original decode or a mutating Recovery phase to finish. Review shows a warning while such work is reported. If case information is stale or unavailable, refresh it and check the worker log before treating it as idle. An old runtime timestamp alone does not mean the worker stopped: runtime state is written on state changes, while film progress has its own freshness checks.
+
+Transaction recovery handles Review's unfinished file-exchange transactions separately from Recovery. Those transactions still require inspection and block further changes. Recovery warnings also appear in the container health log without making Review unhealthy; see [Container health](OPERATIONS.md#container-health).
+
 ## Statistics
 
 Savings are logical byte differences supported by completed jobs/transactions and current matching file sizes. The Review-approved figure is a subset of the library figure. Pending savings are potential savings, not already reclaimed space. Tdarr's global reported figure is separate and must not be added to overlapping Review/library totals.

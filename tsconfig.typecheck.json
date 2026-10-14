@@ -21,6 +21,7 @@
   "files": [
     "review/core.mjs",
     "recovery/policy.mjs",
-    "review/supervisor.mjs"
+    "review/supervisor.mjs",
+    "review/recovery-runtime.mjs"
   ]
 }
