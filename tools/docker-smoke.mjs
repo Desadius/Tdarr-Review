@@ -134,7 +134,7 @@ async function host(){
     await run('docker',['run','--rm','--name',names.integration,...common,'-e','FFMPEG='+decoder+'ffmpeg','-e','FFPROBE='+decoder+'ffprobe','--entrypoint','/usr/bin/node','tdarr-review:smoke','/review-app/integration.mjs'],{timeout:180000});
     // Start a fixture process so exec can write into its disposable tmpfs;
     // the application entrypoint is then spawned by the fixture script.
-    await run('docker',['run','-d','--name',names.recovery,...common,'--mount',`type=volume,source=${volumes[1]},target=/data`,'-e','SMOKE_ENTRYPOINT='+JSON.stringify(info.Config.Entrypoint),'-e','SMOKE_CMD='+JSON.stringify(info.Config.Cmd),'--entrypoint','/usr/bin/node','tdarr-recovery:smoke','-e',"setInterval(()=>{},1000)"],{quiet:true});
+    await run('docker',['run','-d','--name',names.recovery,...common,'--mount',`type=volume,source=${volumes[1]},target=/data`,'-e','RECOVERY_MODE=verify','-e','SMOKE_ENTRYPOINT='+JSON.stringify(info.Config.Entrypoint),'-e','SMOKE_CMD='+JSON.stringify(info.Config.Cmd),'--entrypoint','/usr/bin/node','tdarr-recovery:smoke','-e',"setInterval(()=>{},1000)"],{quiet:true});
     await copyScript(names.recovery);
     await run('docker',['exec',names.recovery,'/usr/bin/node','/tmp/docker-smoke.mjs','inside-recovery'],{timeout:60000});
     console.log('Docker smoke passed. Tests used only fresh volumes, synthetic fixtures and container loopback.');

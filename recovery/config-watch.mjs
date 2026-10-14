@@ -1,5 +1,7 @@
 import fs from 'node:fs/promises';
 import crypto from 'node:crypto';
+import {loadApprovalRegistry} from './approval-registry.mjs';
+import {RecoveryRefusal,applyMode} from './recovery-mode.mjs';
 
 // The worker applies config.json only at start-up. This detects a later edit so the
 // status file and log can say a restart is required; it never applies the new values.
@@ -28,4 +30,13 @@ export async function detectConfigChange({file,loadedDigest,previous=null,now=ne
 function describe(previous,digest,error,now){
  if(previous?.digest===digest)return previous;
  return {digest,detectedAt:now.toISOString(),restartRequired:true,valid:!error,error:error||null};
+}
+
+// The validate function for detectConfigChange: the same gate as start-up, first the Recovery mode
+// (a conflicting enabled), then the approval registry against a copy of the live state.
+export function startupValidator({data,mode,getState}){
+ return async value=>{
+  try{await loadApprovalRegistry({data,cfg:applyMode(value,mode),state:structuredClone(getState())});return null;}
+  catch(e){return e instanceof RecoveryRefusal||e?.code==='RECOVERY_APPROVAL_REGISTRY'?e.message:'config.json would not pass the start-up checks';}
+ };
 }

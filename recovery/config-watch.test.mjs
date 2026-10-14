@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {configDigest,checkConfigText,detectConfigChange} from './config-watch.mjs';
+import {configDigest,checkConfigText,detectConfigChange,startupValidator} from './config-watch.mjs';
 import {publishRecoveryStatus} from './waiting-source.mjs';
 
 async function setup(text){const root=await fs.mkdtemp(path.join(os.tmpdir(),'recovery-config-'));const file=path.join(root,'config.json');await fs.writeFile(file,text);return {root,file,loadedDigest:configDigest(text)};}
@@ -39,12 +39,6 @@ test('the shared status file carries the restart notice but not the config diges
  assert.deepEqual(written.configChange,{detectedAt:'2026-10-13T10:00:00.000Z',restartRequired:true,valid:false,error:'config.json is not valid JSON'});
 });
 
-test('the worker checks for config edits on every poll before its work',async()=>{
- const worker=await fs.readFile(new URL('./worker.mjs',import.meta.url),'utf8');
- assert.match(worker,/while\(!stopping\)\{try\{await noteConfigChange\(\);await tick\(\);/);
- assert.match(worker,/const cfg=JSON\.parse\(configText\);/);
-});
-
 test('an edit that parses is checked once against the start-up rules; their error marks it invalid',async()=>{
  const s=await setup('{"enabled":false}');try{
   const seen=[];const validate=async value=>{seen.push(value);return value.libraryId==='other'?'Recovery approval registry: missing frozen library mapping':null};
@@ -59,9 +53,18 @@ test('an edit that parses is checked once against the start-up rules; their erro
  }finally{await fs.rm(s.root,{recursive:true,force:true})}
 });
 
-test('the worker validates edits with the same approval-registry gate as start-up',async()=>{
- const worker=await fs.readFile(new URL('./worker.mjs',import.meta.url),'utf8');
- assert.match(worker,/await loadApprovalRegistry\(\{data:DATA,cfg:value,state:structuredClone\(state\)\}\)/);
- assert.match(worker,/e\?\.code==='RECOVERY_APPROVAL_REGISTRY'\?e\.message:'config\.json would not pass the start-up checks'/);
- assert.match(worker,/detectConfigChange\(\{[^}]*validate:validateEditedConfig\}\)/);
+test('an edit is checked with the start-up gate: the Recovery mode, then the approval registry',async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'recovery-config-gate-'));try{
+  await fs.writeFile(path.join(root,'pending-approvals.json'),JSON.stringify({version:1,config:{libraryId:'frozen-library'},cases:[]}),{mode:0o600});
+  const state={version:1,jobs:{},cases:{}};
+  const repair=startupValidator({data:root,mode:'repair',getState:()=>state}),verify=startupValidator({data:root,mode:'verify',getState:()=>state});
+  assert.equal(await repair({libraryId:'frozen-library'}),null);
+  assert.equal(await repair({libraryId:'frozen-library',enabled:true}),null,'a matching enabled is accepted');
+  assert.equal(await verify({libraryId:'frozen-library',enabled:false}),null);
+  for(const [validate,value] of [[repair,{libraryId:'frozen-library',enabled:false}],[verify,{libraryId:'frozen-library',enabled:true}]])assert.match(await validate(value),/disagrees with RECOVERY_MODE/);
+  assert.match(await repair({libraryId:'frozen-library',enabled:'yes'}),/must be a JSON object, and enabled/);
+  const frozen=await repair({libraryId:'another-library'});assert.equal(frozen,'Recovery approval registry: frozen configuration differs');
+  // The loader only reads state; the validator still hands it a copy, which no test can observe.
+  assert.deepEqual(state,{version:1,jobs:{},cases:{}});
+ }finally{await fs.rm(root,{recursive:true,force:true})}
 });

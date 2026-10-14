@@ -13,11 +13,11 @@ import {DEFERRED_HOLD_UNTIL} from './replacement-gate.mjs';
 
 // Exercise the actual journal/worker wiring, using only disposable files,
 // loopback APIs and a synthetic decoder. No production media or API contacts.
-async function fixture({terminalHeader=false}={}){
+async function fixture({terminalHeader=false,mode='repair'}={}){
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'recovery-worker-')),data=root+'/data',media=root+'/media/movies',relative='Fixture/new.mkv',source=media+'/'+relative,file='/media/movies/'+relative;
  for(const dir of [data,path.dirname(source),root+'/review',root+'/quarantine',root+'/reports/fixture',root+'/decoder'])await fs.mkdir(dir,{recursive:true});
  const sourceBytes=(terminalHeader?'\x1b[0m':'')+'DISPOSABLE SOURCE BYTES';await fs.writeFile(source,sourceBytes);const before=await fs.stat(source),sourceFP=fp(before),size=before.size;
- const cfg={enabled:true,libraryId:'fixture-library',sourceRoot:'/media/movies',mediaRoot:media,radarrRoot:'/radarr/movies',reviewRoot:root+'/review',reviewPrefixes:[],quarantineRoot:root+'/quarantine',database:root+'/db.sqlite',reports:root+'/reports',ffmpeg:root+'/decoder/ffmpeg',stableMinutes:0,decodeTimeoutHours:1,confirmDelaySeconds:0,maxRepairsPerDay:3,movieCooldownDays:30,pollSeconds:300,detectTerminalHeaders:false,since:0,approvedImportRepairs:{}};
+ const cfg={libraryId:'fixture-library',sourceRoot:'/media/movies',mediaRoot:media,radarrRoot:'/radarr/movies',reviewRoot:root+'/review',reviewPrefixes:[],quarantineRoot:root+'/quarantine',database:root+'/db.sqlite',reports:root+'/reports',ffmpeg:root+'/decoder/ffmpeg',stableMinutes:0,decodeTimeoutHours:1,confirmDelaySeconds:0,maxRepairsPerDay:3,movieCooldownDays:30,pollSeconds:300,detectTerminalHeaders:false,since:0,approvedImportRepairs:{}};
  const movie={id:1,monitored:true,movieFileId:11,movieFile:{id:11,path:cfg.radarrRoot+'/'+relative,size,sceneName:'Fixture.New.Release'}};
  const history=[{id:21,eventType:'downloadFolderImported',movieId:1,downloadId:'fixture-download',sourceTitle:movie.movieFile.sceneName,data:{fileId:'11',importedPath:movie.movieFile.path,size:String(size)}},{id:22,eventType:'grabbed',movieId:1,downloadId:'fixture-download',sourceTitle:movie.movieFile.sceneName,data:{publishedDate:'2026-10-11T00:00:00Z',indexer:'Fixture',size:String(size),protocol:'1'}}];
  const parent={id:'a'.repeat(24),status:'manual',movieId:1,mutationStarted:Date.now()-1000,binding:{movieFileId:10,sourceTitle:'Fixture.Old.Release'},replacement:{movieFileId:11},replacementRelative:relative,replacementSourceFP:sourceFP,quarantine:root+'/quarantine/old.mkv',message:'Preserved historical quarantine'};
@@ -57,9 +57,9 @@ async function fixture({terminalHeader=false}={}){
  }catch(e){forbidden=true;res.writeHead(500);res.end(JSON.stringify({error:e.message}));}});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;cfg.radarrUrl=base;cfg.tdarrUrl=base;cfg.radarrApiKey='fixture-only';
  async function write(){db.prepare('UPDATE filejsondb SET json_data=?').run(JSON.stringify(row));await fs.writeFile(data+'/config.json',JSON.stringify(cfg));await fs.writeFile(data+'/state.json',JSON.stringify(state));}
- async function run(){return new Promise((resolve,reject)=>{const child=spawn(process.execPath,['--require',preload,new URL('./worker.mjs',import.meta.url).pathname,'--once'],{env:{...process.env,DATA_ROOT:data},stdio:['ignore','pipe','pipe']});let output='';const timer=setTimeout(()=>child.kill('SIGKILL'),20000);child.stdout.on('data',b=>output+=b);child.stderr.on('data',b=>output+=b);child.on('error',reject);child.on('close',(code,signal)=>{clearTimeout(timer);if(code!==0||signal)return reject(Error('Worker fixture failed: '+output));resolve(output)});});}
+ async function run(){return new Promise((resolve,reject)=>{const child=spawn(process.execPath,['--require',preload,new URL('./worker.mjs',import.meta.url).pathname,'--once'],{env:{...process.env,DATA_ROOT:data,RECOVERY_MODE:mode},stdio:['ignore','pipe','pipe']});let output='';const timer=setTimeout(()=>child.kill('SIGKILL'),20000);child.stdout.on('data',b=>output+=b);child.stderr.on('data',b=>output+=b);child.on('error',reject);child.on('close',(code,signal)=>{clearTimeout(timer);if(code!==0||signal)return reject(Error('Worker fixture failed: '+output));resolve(output)});});}
  // Long-running worker as in the container: no --once, stopped only by a signal.
- function daemon(){const child=spawn(process.execPath,['--require',preload,new URL('./worker.mjs',import.meta.url).pathname],{env:{...process.env,DATA_ROOT:data},stdio:['ignore','pipe','pipe']});let output='';const timer=setTimeout(()=>child.kill('SIGKILL'),20000);child.stdout.on('data',b=>output+=b);child.stderr.on('data',b=>output+=b);const closed=new Promise((resolve,reject)=>{child.on('error',reject);child.on('close',(code,signal)=>{clearTimeout(timer);resolve({code,signal,output})});});return {child,closed};}
+ function daemon(){const child=spawn(process.execPath,['--require',preload,new URL('./worker.mjs',import.meta.url).pathname],{env:{...process.env,DATA_ROOT:data,RECOVERY_MODE:mode},stdio:['ignore','pipe','pipe']});let output='';const timer=setTimeout(()=>child.kill('SIGKILL'),20000);child.stdout.on('data',b=>output+=b);child.stderr.on('data',b=>output+=b);const closed=new Promise((resolve,reject)=>{child.on('error',reject);child.on('close',(code,signal)=>{clearTimeout(timer);resolve({code,signal,output})});});return {child,closed};}
  async function result(){assert.equal((await fs.stat(root+'/media/.tdarr-recovery-status.json')).mode&0o777,0o644);assert.equal((await fs.stat(data+'/state.json')).mode&0o777,0o600);return {state:JSON.parse(await fs.readFile(data+'/state.json')),public:JSON.parse(await fs.readFile(root+'/media/.tdarr-recovery-status.json'))};}
  async function unchanged(){assert.equal(fp(await fs.stat(source)),sourceFP);assert.equal(await fs.readFile(source,'utf8'),sourceBytes);assert.equal(await fs.readFile(parent.quarantine,'utf8'),'PRESERVED PARENT');assert.equal(forbidden,false,'worker attempted an unexpected download or API mutation');}
  async function cleanup(){db.close();await new Promise(r=>server.close(r));assert(root.startsWith(path.resolve(os.tmpdir())+path.sep)&&path.basename(root).startsWith('recovery-worker-'));await fs.rm(root,{recursive:true,force:true});}
@@ -176,7 +176,7 @@ test('missing or malformed persistent approval authority stops the actual worker
   const f=await fixture();try{
    if(malformed)await fs.writeFile(f.data+'/pending-approvals.json',JSON.stringify({version:99,config:{},cases:[]}),{mode:0o600});
    else f.parent.approval={id:f.parent.id,authorization:'Not authorization from a registry'};
-   await f.write();const stateBefore=await fs.readFile(f.data+'/state.json');await assert.rejects(f.run(),/Recovery approval registry/);assert.equal(f.requests.length,0);assert.deepEqual(await fs.readFile(f.data+'/state.json'),stateBefore);await assert.rejects(fs.stat(f.data+'/decode-calls'),{code:'ENOENT'});await f.unchanged();
+   await f.write();const stateBefore=await fs.readFile(f.data+'/state.json');await assert.rejects(f.run(),/Recovery approval registry[^\n]*\nRECOVERY_REFUSED registry-refused\s*$/);assert.equal(f.requests.length,0);assert.deepEqual(await fs.readFile(f.data+'/state.json'),stateBefore);await assert.rejects(fs.stat(f.data+'/decode-calls'),{code:'ENOENT'});await f.unchanged();
   }finally{await f.cleanup();}
  }
 });
@@ -231,5 +231,52 @@ test('a full-file hash that differs from the confirmation keeps the original in 
   assert.notEqual(c.status,'waiting_replacement');assert.match(JSON.stringify(c)+String(result.state.lastError),/Full source hash changed before quarantine/);
   assert.equal(c.quarantine,undefined);await f.unchanged();
   assert.equal(f.requests.filter(r=>r.url==='/api/v3/command'&&r.method==='POST').length,0,'no Radarr search after a refused rename');
+ }finally{await f.cleanup();}
+});
+
+test('verify mode reaches only the confirmation phase and changes nothing outside Recovery',{skip:process.platform!=='linux'},async()=>{
+ for(const enabled of [undefined,false]){
+  const f=await fixture({mode:'verify'});try{
+   // No cooldown parent: in repair mode this case would quarantine the original at once.
+   f.parent.movieId=2;if(enabled!==undefined)f.cfg.enabled=enabled;f.allowRepair();await f.write();const output=await f.run();const result=await f.result(),c=result.state.cases[f.id];
+   assert.match(output,/Tdarr recovery started; mode=verify/);assert.equal(result.state.lastError,null);
+   assert.equal(c.status,'dry_run');assert.equal(c.evidence.checks.length,2);assert.equal(await fs.readFile(f.data+'/decode-calls','utf8'),'1\n1\n');
+   assert.equal(f.row.TranscodeDecisionMaker,'Transcode error');assert.deepEqual(f.requests.filter(r=>r.method!=='GET'),[],'verify mode must not hold, blocklist or search');
+   assert.equal(c.quarantine,undefined);await f.unchanged();
+  }finally{await f.cleanup();}
+ }
+});
+
+test('repair mode with a matching enabled key repairs like the enabled worker',{skip:process.platform!=='linux'},async()=>{
+ const f=await fixture({mode:'repair'});try{
+  f.parent.movieId=2;f.cfg.enabled=true;f.allowRepair();await f.write();const output=await f.run();const result=await f.result(),c=result.state.cases[f.id];
+  assert.match(output,/Tdarr recovery started; mode=repair/);assert.equal(result.state.lastError,null);
+  assert.equal(c.status,'waiting_replacement');assert.equal(await fs.readFile(c.quarantine,'utf8'),f.sourceBytes);await assert.rejects(fs.stat(f.source),{code:'ENOENT'});
+  assert.equal(f.requests.filter(r=>r.url==='/api/v3/history/failed/22').length,1);assert.equal(f.requests.filter(r=>r.method==='POST'&&r.body?.name==='MoviesSearch').length,1);
+ }finally{await f.cleanup();}
+});
+
+test('the actual worker refuses an enabled key that conflicts with its mode before any API',{skip:process.platform!=='linux'},async()=>{
+ for(const [mode,enabled] of [['verify',true],['repair',false]]){
+  const f=await fixture({mode});try{
+   f.cfg.enabled=enabled;await f.write();const stateBefore=await fs.readFile(f.data+'/state.json');
+   await assert.rejects(f.run(),/RECOVERY_REFUSED mode-conflict\s*$/);assert.deepEqual(f.requests,[]);assert.deepEqual(await fs.readFile(f.data+'/state.json'),stateBefore);
+   await assert.rejects(fs.stat(f.data+'/decode-calls'),{code:'ENOENT'});await f.unchanged();
+  }finally{await f.cleanup();}
+ }
+});
+
+test('the running worker reports a config.json edit whose enabled conflicts with its mode as invalid',{skip:process.platform!=='linux'},async()=>{
+ const f=await fixture({mode:'repair'});try{
+  f.state.jobs['fixture-job']='manual: operator review';f.cfg.pollSeconds=1;await f.write();
+  const worker=f.daemon(),status=async()=>JSON.parse(await fs.readFile(path.join(f.data,'../media/.tdarr-recovery-status.json'),'utf8').catch(()=>'{}'));
+  // The first completed cycle publishes the shared status with no pending config change.
+  await until(async()=>(await status()).updated);
+  assert.equal((await status()).configChange,null);
+  await fs.writeFile(f.data+'/config.json',JSON.stringify({...f.cfg,enabled:false}));
+  await until(async()=>(await status()).configChange);
+  const change=(await status()).configChange;assert.equal(change.restartRequired,true);assert.equal(change.valid,false);assert.match(change.error,/disagrees with RECOVERY_MODE/);
+  worker.child.kill('SIGTERM');const exit=await worker.closed;assert.equal(exit.code,0,exit.output);assert.match(exit.output,/restart the worker to apply it after fixing it/);
+  assert.deepEqual(f.requests.filter(r=>r.method!=='GET'),[]);await f.unchanged();
  }finally{await f.cleanup();}
 });

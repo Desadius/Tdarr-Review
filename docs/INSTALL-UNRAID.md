@@ -137,13 +137,15 @@ chmod 770 /mnt/user/media/.tdarr-corrupt
 
 Use the parent of your actual movie library if it differs. It must be writable by Recovery and outside Plex's movie root, but within the same mounted media tree.
 
+Set `RECOVERY_MODE=verify` in the `.env` file next to `compose.yaml`. Compose refuses to start the `recovery` service without it.
+
 ```bash
 docker compose --profile recovery pull recovery
 docker compose --profile recovery up -d --no-build recovery
 docker compose logs --tail 40 recovery
 ```
 
-The example starts with `enabled:false`. This allows verification but disables automatic external repairs. Dry-run cases are not automatically replayed when you later enable it; inspect them deliberately. Do not enable repairs until the mappings and Radarr history are confirmed.
+`RECOVERY_MODE=verify` confirms corrupted originals but makes no automatic external repairs. `dry_run` cases are not automatically replayed when you later switch to `repair`; inspect them deliberately. Do not switch to `repair` until the mappings and Radarr history are confirmed. The worker refuses to start (exit code 78, `RECOVERY_REFUSED <reason>` in its log) when the mode is missing or invalid, when `config.json` is missing or invalid, or when an `enabled` value left in `config.json` disagrees with the mode; see [Recovery mode](CONFIGURATION.md#recovery-mode). An existing configuration with `"enabled": false` needs `RECOVERY_MODE=verify`, one with `"enabled": true` needs `RECOVERY_MODE=repair`.
 
 A fresh installation needs no frozen pending approvals. The empty `examples/recovery-approval-registry.example.json` may be copied privately to Recovery `/data/pending-approvals.json`; it does not authorize repairs. Existing installations with historical approvals must follow [the registry migration guide](MIGRATE-RECOVERY-REGISTRY.md) before replacing Recovery source/image.
 

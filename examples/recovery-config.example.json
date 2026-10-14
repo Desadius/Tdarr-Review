@@ -1,5 +1,4 @@
 {
-  "enabled": false,
   "tdarrUrl": "http://YOUR_UNRAID_IP:8266",
   "radarrUrl": "http://YOUR_UNRAID_IP:7878",
   "radarrApiKey": "REPLACE_WITH_YOUR_RADARR_API_KEY",
