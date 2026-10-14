@@ -86,6 +86,7 @@ async function reviewReady(){
   await run(process.execPath,['/review-app/healthcheck.mjs'],{quiet:true});
 }
 const readState=async file=>JSON.parse(await fs.readFile(file,'utf8'));
+const waitForRecovery=state=>eventually('Recovery '+state,async()=>{const s=await readState(runtimeState);return s.state===state&&s;});
 async function review(){
   await runtime();
   await reviewReady();
@@ -109,7 +110,7 @@ async function review(){
 // RECOVERY_MODE=verify on a fresh volume: no config.json yet.
 async function recoveryRefused(){
   await runtime();
-  const state=await eventually('the missing-config refusal',async()=>{const s=await readState(runtimeState);return s.state==='refused'&&s;});
+  const state=await waitForRecovery('refused');
   assert.equal(state.mode,'verify');assert.equal(state.reason,'missing-config');assert.equal(state.lastExitCode,78);assert.equal(state.restarts,0);
   await reviewReady();
   const {list}=await supervisorTree();assert.deepEqual(workers(list),[]);
@@ -141,12 +142,12 @@ async function recoveryRunning(){
   await new Promise(r=>mock.listen(mockPort,'127.0.0.1',r));
   try{
     const {supervisor}=await supervisorTree();
-    const running=await eventually('Recovery running',async()=>{const s=await readState(runtimeState);return s.state==='running'&&s;});
+    const running=await waitForRecovery('running');
     assert.equal(running.mode,'verify');assert.equal(running.reason,null);
-    const [recovery]=workers(await processes());
-    assert.ok(recovery,'The supervisor did not start the Recovery worker');
-    // ionice and nice replace themselves with node: the worker is the supervisor's child.
-    assert.equal(recovery.ppid,supervisor.pid);assert.deepEqual(recovery.argv.slice(1),[worker]);
+    // ionice and nice replace themselves with node, so the worker is the supervisor's child once
+    // both have run; until then the same process still shows ionice or nice with the worker path.
+    const recovery=await eventually('the Recovery worker',async()=>(await processes()).find(p=>p.argv[1]===worker));
+    assert.equal(recovery.ppid,supervisor.pid);assert.equal(recovery.argv.length,2);
     assert.equal(recovery.nice,19);
     assert.match(await run('/usr/bin/ionice',['-p',String(recovery.pid)],{quiet:true}),/^best-effort: prio 7$/m);
     const environment=(await fs.readFile(`/proc/${recovery.pid}/environ`,'utf8')).split('\0');

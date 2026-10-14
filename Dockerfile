@@ -12,6 +12,7 @@ LABEL org.opencontainers.image.title="Tdarr Review" \
 USER root
 # tini runs as PID 1: it reaps orphaned processes (such as an ffmpeg whose parent died) and passes
 # SIGTERM to the supervisor. Unraid users do not set docker run --init, so the image brings its own.
+# The binary is for amd64, the only platform the image is built for.
 ADD --checksum=sha256:c5b0666b4cb676901f90dfcb37106783c5fe2077b04590973b885950611b30ee --chmod=0755 https://github.com/krallin/tini/releases/download/v0.19.0/tini-static-amd64 /usr/bin/tini
 RUN mkdir -p /data && chown 99:100 /data
 WORKDIR /review-app
