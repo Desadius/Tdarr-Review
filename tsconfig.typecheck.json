@@ -20,6 +20,7 @@
   },
   "files": [
     "review/core.mjs",
-    "recovery/policy.mjs"
+    "recovery/policy.mjs",
+    "review/supervisor.mjs"
   ]
 }

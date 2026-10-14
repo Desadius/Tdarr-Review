@@ -101,6 +101,31 @@ Recovery's `config.json` and the persistent approval registry (`pending-approval
 - `tools/migrate-recovery-registry.mjs` is the offline migration utility. It reads `config.json` with the same `RECOVERY_MODE` through `readRecoveryConfig` and installs the registry through `migrateApprovalRegistry`. The Recovery image ships it at `/tools/`, and `Dockerfile.recovery` copies the `recovery/` modules it imports into `/recovery/` by hand: a new import needs a new entry there.
 - `tools/docker-smoke.mjs` writes a synthetic `config.json` to start the built image.
 
+## Supervisor
+
+`review/supervisor.mjs` is the entrypoint that runs Review and Recovery in one container ([ADR 0001](adr/0001-recovery-runs-inside-review.md)). It always starts Review (`review/server.mjs`). When the Recovery mode (`RECOVERY_MODE`) is `off` or unset, it never starts Recovery. Any other value starts the Recovery worker (`recovery/worker.mjs`) through `ionice -c 2 -n 7` and `nice -n 19`, with `DATA_ROOT` set to `<DATA_ROOT>/recovery` and the mode passed on unchanged. The worker itself refuses a value other than `verify` or `repair`, so the supervisor never decides that repairs are allowed.
+
+- **Crash.** Recovery exiting for any reason other than a refusal or a stop is restarted after 10 s, doubling with each consecutive crash up to 5 minutes. From the fifth consecutive crash the state file reports `crash-loop`. A run that lasts 10 minutes resets the count. Review is never signalled or restarted because of Recovery, and a Recovery command that cannot be spawned counts as a crash.
+- **Refusal.** Exit code 78 with a last stderr line `RECOVERY_REFUSED <reason>` (see [Readers of `config.json`](#readers-of-configjson-and-the-approval-registry)) is not restarted. Recovery's stderr still reaches the container log; only a reason matching `[a-z0-9-]{1,64}` is copied into the state file, anything else is recorded as `unknown-refusal`.
+- **Review exits.** The supervisor cancels a pending restart, sends Recovery SIGTERM, sends SIGKILL if it is still running 8 seconds later (within Docker's default 10-second stop timeout), and exits with Review's status (128 + signal number when Review died of a signal, 127 when Review could not be started).
+- **SIGTERM/SIGINT.** The first signal is forwarded to both children; a repeated one is not forwarded again, so Review's own shutdown handler is never cut short. The supervisor exits with Review's status after both have exited, with the same 8-second limit for Recovery. The handlers are in place before the first state write, because the supervisor runs as PID 1, which ignores signals without a handler. An interrupted original decode is retried, never counted as corruption evidence.
+
+### Recovery runtime state file
+
+The supervisor publishes `<DATA_ROOT>/recovery/runtime-state.json` (mode 0600) at start and on every change. Each write goes to a temporary file that is synced and renamed over the old one, followed by a directory `fsync`, so a reader never sees a partial file. A write failure is logged and never affects Review. The file holds exactly these fields and never contains configuration values, keys or other stderr text:
+
+| Field | Value |
+| --- | --- |
+| `version` | `1`. A change of meaning or removal of a field needs a new version. |
+| `mode` | `off`, `verify`, `repair`, or `invalid` for any other `RECOVERY_MODE` value. |
+| `state` | `off` (mode is off; Recovery is never started), `running`, `restarting` (waiting for the next start after a crash), `refused` (exit 78; not restarted until the container restarts) or `stopped` (stopped because Review exited or the container is stopping; `off` and `refused` stay as they are). |
+| `restarts` | Number of restarts since the supervisor started. |
+| `lastExitCode` | Exit code of the last Recovery exit, or `null` (never exited, killed by a signal, or could not be spawned). |
+| `lastExitSignal` | Signal name such as `SIGKILL` that ended the last Recovery run, or `null`. |
+| `lastStartedAt`, `lastExitedAt` | ISO 8601 times of the last start and exit, or `null`. |
+| `reason` | `null`, or a reason code: `crash` (restarting after a crash), `crash-loop` (five or more consecutive crashes, reported while restarting and running until a run lasts 10 minutes), the refusal reason (for example `missing-config`, `mode-conflict`, `invalid-mode`, `registry-refused`, or `unknown-refusal`), `review-exited` or `shutdown`. |
+| `updated` | ISO 8601 time of this write. |
+
 ## Shared lifecycle
 
 Recovery atomically publishes a versioned, allowlisted status file. It includes deferred limits, verification, quarantine, release exclusion, search/download, import and the replacement's Tdarr database state. It does not publish keys or unrestricted quarantine paths.
