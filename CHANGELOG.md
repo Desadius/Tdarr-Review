@@ -28,6 +28,8 @@ This records the implemented application features. Versions before 1.10.0 were d
 - `npm run check` refuses new tests that read implementation source text instead of exercising behaviour; existing ones are allowlisted until they are rewritten.
 - Add `CODING_STANDARDS.md` for reviewers (behaviour tests, a red per behaviour, every reader of a changed file) and a list of the readers of Recovery's `config.json` and approval registry in `docs/ARCHITECTURE.md`.
 - Rename the domain glossary `CONTEXT.md` to `GLOSSARY.md`, following the agent skills' new convention.
+- Development moves to WSL2: `AGENTS.md` and `docs/DEVELOPMENT.md` describe Linux tests, the local image build, Docker smoke and `test:docker` there, and the Windows-only instructions are removed. `npm run test:docker` downloads `node:24` once on the host when it is missing instead of failing, and stops with the command to retry when the download fails.
+- `tools/test-select.test.mjs` no longer fails when `FORCE_COLOR` colours the test reporter output.
 
 ## 1.11.0 — 2026-10-13
 

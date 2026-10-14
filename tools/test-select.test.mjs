@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {stripVTControlCharacters} from 'node:util';
 import {listTestFiles,testRunnerFlags} from './test-options.mjs';
 import {selectedRunnerArgs} from './test-select.mjs';
 const available=['recovery/worker.integration.test.mjs','review/test.mjs','tools/test-options.test.mjs'];
@@ -32,7 +33,8 @@ test('the command runs only the selected tests and reports their result',()=>{
   const run=spawnSync(process.execPath,['tools/test-select.mjs'],{cwd:root,encoding:'utf8',
     env:{...process.env,NODE_TEST_CONTEXT:undefined,TEST_FILES:'tools/test-options.test.mjs',TEST_NAME_PATTERN:'^coverage enables'}});
   assert.equal(run.status,0,run.stderr);
-  assert.match(run.stdout,/ℹ pass 1\n/);
+  // FORCE_COLOR in the developer's environment colours the reporter output.
+  assert.match(stripVTControlCharacters(run.stdout),/ℹ pass 1\n/);
   const refused=spawnSync(process.execPath,['tools/test-select.mjs'],{cwd:root,encoding:'utf8',env:{...process.env,NODE_TEST_CONTEXT:undefined,TEST_FILES:'review/server.mjs'}});
   assert.notEqual(refused.status,0);
   assert.match(refused.stderr,/review\/server\.mjs/);

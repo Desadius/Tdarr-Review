@@ -16,12 +16,15 @@ Read `docs/ARCHITECTURE.md` before changing replacement, quarantine, journal or 
 
 ## Build and test
 
-There are no npm dependencies to install. Use Node 24. Tests that need Linux (directory `fsync`, POSIX modes) skip on other systems, and `npm test` lists them at the end; run them through the `Linux tests (manual)` workflow (`docs/DEVELOPMENT.md`, *Linux tests without Docker*).
+There are no npm dependencies to install. Use Node 24. The development environment is WSL2 (Ubuntu, Node 24, Docker Engine inside the distribution) with the clone in the Linux filesystem, not under `/mnt/c`. There `npm test` runs the Linux-only tests too (directory `fsync`, POSIX modes); on other systems they skip, `npm test` lists them at the end, and the `Linux tests (manual)` workflow runs them (`docs/DEVELOPMENT.md`).
 
 ```bash
 npm run check   # syntax, version and source-text-test checks
 npm run typecheck   # JSDoc type check (installs pinned dev-only TypeScript into .typecheck/)
 npm test        # full unit/regression suite (review + recovery)
+npm run test:docker   # same suite in an isolated node:24 container (downloads node:24 once if missing)
+docker build --platform linux/amd64 -t tdarr-review:smoke .   # local Review image for the smoke test
+bash tools/docker-smoke.sh   # smoke test of that image with disposable containers and volumes
 ```
 
 Approval-flow changes also need the isolated integration test, which generates short synthetic media and uses a local mock Tdarr API on port 18270:
