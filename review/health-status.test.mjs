@@ -142,6 +142,7 @@ async function outsideSummary(t,{age,updatedAgo=60000,patch={}}){
  const {checkHealth}=await import('./healthcheck.mjs');
  const check=await checkHealth(async route=>({status:200,text:route==='/health'?JSON.stringify(summary):'<html>'}));
  assert.equal(summary.ok,true);assert.equal(check.ok,true,'the notice never fails the container health check');
+ assert.equal(summary.recoveryStatus.originalsOutsideLibrary,summary.attention.includes('recovery-original-outside-library')?1:0,'the published count follows the same rule as the code');
  return summary.attention;
 }
 test('the original outside the library just past 24 h in Verify raises attention without failing health',async t=>{
