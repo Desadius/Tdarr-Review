@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {OLD_RECOVERY_IMAGE} from './old-recovery-image.mjs';
 
 const root=new URL('../',import.meta.url);
 const read=file=>fs.readFile(new URL(file,root),'utf8');
@@ -38,8 +39,7 @@ test('relative links in Markdown documents point to existing files',async()=>{
 test('only the migration guide and historical records describe a separate Recovery container',async()=>{
  // Historical records: release history, recorded image digests, the decision record and the glossary's "avoid" list.
  const history=new Set([GUIDE,'CHANGELOG.md','docs/VERIFICATION.md','docs/adr/0001-recovery-runs-inside-review.md','GLOSSARY.md']);
- // .tdarr-recovery-status.json is the shared status file, not the image.
- const separate=/tdarr-recovery(?!-status)|Dockerfile\.recovery|RECOVERY_IMAGE_TAG|RECOVERY_DATA_HOST|--profile recovery|compose \w+ recovery\b/;
+ const separate=new RegExp(OLD_RECOVERY_IMAGE.source+/|--profile recovery|compose \w+ recovery\b/.source);
  for(const file of await markdownFiles()){
   if(history.has(file))continue;
   const line=(await read(file)).split('\n').find(text=>separate.test(text));
@@ -76,4 +76,27 @@ test('the guide\'s registry inspection prints key names and the frozen enabled f
  ''].join('\n'));
  await fs.writeFile(path.join(dir,'pending-approvals.json'),JSON.stringify({version:1,config:{libraryId:'LIBRARY-VALUE'},cases:[]}));
  assert.match(await run(dir),/^registry frozen enabled: not frozen$/m);
+});
+
+test('the guide\'s step 2 comparison ignores only the runtime state of an earlier 2.0 start',{skip:process.platform==='win32'&&'needs diff'},async t=>{
+ const {execFile}=await import('node:child_process');
+ const os=await import('node:os');
+ const command=(await read(GUIDE)).split('\n').find(line=>line.startsWith('diff -rq '));
+ assert.ok(command,'comparison command');
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'migrate-diff-'));
+ t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ const old=path.join(dir,'old'),copy=path.join(dir,'copy');
+ const compare=()=>new Promise(resolve=>execFile('sh',['-c',command.replaceAll('/mnt/cache/appdata/tdarr-recovery/data',old).replaceAll('/mnt/cache/appdata/tdarr-review/data/recovery',copy)],(error,stdout)=>resolve(stdout)));
+ for(const target of [old,copy]){
+  await fs.mkdir(path.join(target,'cache'),{recursive:true});
+  await fs.writeFile(path.join(target,'state.json'),'{"version":1}');
+  await fs.writeFile(path.join(target,'cache','languages.json'),'{}');
+ }
+ await fs.writeFile(path.join(copy,'runtime-state.json'),'{"state":"off"}');
+ assert.equal(await compare(),'');
+ await fs.writeFile(path.join(copy,'state.json'),'{"version":2}');
+ assert.match(await compare(),/state\.json/);
+ await fs.writeFile(path.join(copy,'state.json'),'{"version":1}');
+ await fs.rm(path.join(copy,'cache','languages.json'));
+ assert.match(await compare(),/languages\.json/);
 });

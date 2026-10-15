@@ -18,7 +18,7 @@ Review and Recovery become one container. Installations that ran the separate Re
 
 ### Documentation
 
-- Add [the 2.0 migration guide](docs/MIGRATE-TO-2.0.md): stop and back up while idle, copy the old Recovery data to `/data/recovery/`, keep `/storage` paths with a mapping, derive `RECOVERY_MODE` from the old `enabled` (including a mode pinned by the registry), remove the old container, verify health, runtime state and status file, delete old data later, and roll back. It includes a command that lists which keys the registry freezes without printing values.
+- Add [the 2.0 migration guide](docs/MIGRATE-TO-2.0.md): stop and back up while idle, copy the old Recovery data to `/data/recovery/`, keep `/storage` paths with a mapping, map `/reports` or point `reports` at `/tdarr/JobReports`, derive `RECOVERY_MODE` from the old `enabled` (including a mode pinned by the registry), remove the old container, verify health, runtime state and status file, delete old data later, and roll back, recreating the old Recovery container from its kept Unraid template or the listed 1.11 settings. It includes a command that lists which keys the registry freezes without printing values.
 - Installation, configuration, operations, Community Applications, architecture, release and registry migration documents and the Czech overview describe the single container.
 
 ### Review: Recovery runtime status

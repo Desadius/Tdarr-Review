@@ -100,6 +100,8 @@ Recovery's `config.json` and the persistent approval registry (`pending-approval
 - `recovery/config-watch.mjs` (`startupValidator`) re-runs the same start-up checks on every later edit of `config.json`. The result is published as `configChange` by `recovery/live-status.mjs` and shown by Review (`review/radarr-replacement.mjs`).
 - `tools/migrate-recovery-registry.mjs` is the offline migration utility. It reads `config.json` with the same `RECOVERY_MODE` through `readRecoveryConfig` and installs the registry through `migrateApprovalRegistry`. The Review image ships it at `/tools/` beside the whole `recovery/` directory at `/recovery/`. `tools/image-layout.test.mjs` loads it from the files the `Dockerfile` copies, so a module missing from the image fails `npm test`.
 - `tools/docker-smoke.mjs` writes a synthetic `config.json` to `/data/recovery/` to start the built image in `verify`.
+- The inspection command in [the 2.0 migration guide](MIGRATE-TO-2.0.md#check-what-the-old-configuration-and-registry-freeze) reads both files of a 1.11 installation and prints only key names, counts and the `enabled` flags; `tools/docs.test.mjs` runs it. A change to the registry shape or to the meaning of `enabled` updates it too.
+- `examples/recovery-config.example.json` uses Review's mappings (`/media`, `/review`, `/tdarr`); `tools/packaging.test.mjs` passes it through `resolveRecoveryConfig` and `loadApprovalRegistry` in both modes.
 
 ## Supervisor
 

@@ -82,19 +82,21 @@ mkdir -p /mnt/cache/appdata/tdarr-review/data/recovery
 cp -a /mnt/cache/appdata/tdarr-recovery/data/. /mnt/cache/appdata/tdarr-review/data/recovery/
 chown -R 99:100 /mnt/cache/appdata/tdarr-review/data/recovery
 chmod 700 /mnt/cache/appdata/tdarr-review/data/recovery
-diff -rq /mnt/cache/appdata/tdarr-recovery/data /mnt/cache/appdata/tdarr-review/data/recovery
+diff -rq -x runtime-state.json /mnt/cache/appdata/tdarr-recovery/data /mnt/cache/appdata/tdarr-review/data/recovery
 ```
 
-The first command must print nothing, or only `runtime-state.json` if a 2.0 Review already started once. `diff -rq` must print nothing. Leave `config.json` unchanged for now: every frozen key must still match it, and its `enabled` is accepted while it matches the mode chosen in step 4.
+The first command must print nothing, or only `runtime-state.json` if a 2.0 Review already started once. `diff -rq` must print nothing; it skips that `runtime-state.json`, which the old directory never had. Leave `config.json` unchanged for now: every frozen key must still match it, and its `enabled` is accepted while it matches the mode chosen in step 4.
 
 ## 3. Keep the old paths with an extra mapping
 
 The old Recovery container saw the media parent as `/storage` and the Tdarr job reports as `/reports`. The 2.0 defaults are `/media/movies`, `/media/.tdarr-corrupt` and `/tdarr/JobReports`, but **never rewrite a frozen path** to reach them: a changed frozen value refuses Recovery's start (`registry-refused`), and the frozen evidence would no longer describe your library.
 
 - **`/storage`.** If `config.json` or a non-empty registry uses `/storage` (step 1), add a path mapping: container path `/storage`, host path the **same** media parent as `/media` (`/mnt/user/media`), read/write. Recovery then writes quarantine and its status file `.tdarr-recovery-status.json` to the same host files as before, where Review reads them.
-- **`/reports`.** If the registry freezes `reports`, add a read-only mapping from the old reports host folder to `/reports`. Otherwise you may instead set `"reports": "/tdarr/JobReports"` in `/data/recovery/config.json` when the reports folder is `JobReports` inside the DB2 directory, which Review already mounts at `/tdarr`.
+- **`/reports`.** A 1.11 `config.json` has `"reports": "/reports"`, and Review has no `/reports` mapping, so **one of these two is required**; without either, Recovery cannot read any Tdarr job report:
+  - add a read-only mapping from the old reports host folder (the 1.11 `TDARR_REPORTS_HOST`) to `/reports`. This is the only choice when the registry freezes `reports` (step 1 lists it under *registry frozen keys*);
+  - or, only when the registry does not freeze `reports` and the reports folder is `JobReports` inside the DB2 directory, which Review already mounts at `/tdarr`, set `"reports": "/tdarr/JobReports"` in `/data/recovery/config.json`.
 
-Unraid: **Docker → tdarr-review → Edit → Add another Path, Port, Variable, Label or Device**, Config Type **Path**, Container Path `/storage`, Host Path `/mnt/user/media`, Access Mode **Read/Write**. Add `/reports` the same way with **Read Only** if needed.
+Unraid: **Docker → tdarr-review → Edit → Add another Path, Port, Variable, Label or Device**, Config Type **Path**, Container Path `/storage`, Host Path `/mnt/user/media`, Access Mode **Read/Write**. Add `/reports` the same way with **Read Only** unless you changed `reports` in `config.json`.
 
 Compose: `compose.yaml` has one `review` service. Add the mappings in a `compose.override.yaml` next to it, which Compose merges automatically:
 
@@ -103,7 +105,7 @@ services:
   review:
     volumes:
       - "${MEDIA_HOST:?Set MEDIA_HOST}:/storage"
-      # Only when the registry freezes "reports":
+      # Unless config.json now uses "reports": "/tdarr/JobReports":
       - "/mnt/cache/appdata/tdarr/server/Tdarr/DB2/JobReports:/reports:ro"
 ```
 
@@ -125,11 +127,13 @@ Also update the Review container itself:
 
 ## 5. Remove the old Recovery container
 
-Two Recovery instances must never act on one library. Remove the stopped old container (its host data stays where it is), or at least disable its autostart:
+Two Recovery instances must never act on one library. Remove the stopped old container; its host data stays where it is:
 
 ```bash
 docker rm tdarr-recovery
 ```
+
+Unraid: **keep its template** (`/boot/config/plugins/dockerMan/templates-user/my-tdarr-recovery.xml`, or whatever name it was saved under) until step 7. A rollback recreates the container from it ([step 8](#8-roll-back)). Removing a container on Unraid keeps its template unless you delete it.
 
 Compose users run this from the **old** checkout, before `git pull`, because the new `compose.yaml` has no `recovery` service:
 
@@ -137,7 +141,7 @@ Compose users run this from the **old** checkout, before `git pull`, because the
 docker compose --profile recovery rm --stop --force recovery
 ```
 
-Check that nothing named after the old image remains: `docker ps -a --filter ancestor=ghcr.io/desadius/tdarr-recovery` must list no container. If it was a container you created by hand on Unraid, also delete its template so it is not added again.
+Check that nothing named after the old image remains: `docker ps -a --filter ancestor=ghcr.io/desadius/tdarr-recovery` must list no container.
 
 ## 6. Start and verify
 
@@ -161,7 +165,7 @@ If Recovery is refused, stop the container, fix the cause and start it again. Do
 
 ## 7. Delete the old Recovery data later
 
-Keep `/mnt/cache/appdata/tdarr-recovery/data` and the backups from step 1 until the new installation has run through at least one full Recovery pass and you no longer need to roll back. Then delete them deliberately. Keep the `/storage` (and `/reports`) mapping for as long as the registry or `config.json` uses those paths.
+Keep `/mnt/cache/appdata/tdarr-recovery/data` and the backups from step 1 until the new installation has run through at least one full Recovery pass and you no longer need to roll back. Then delete them deliberately, together with the old Recovery template on Unraid (**Docker → Add Container**, select the template under *User templates* and delete it, or remove its `my-*.xml` file). Keep the `/storage` (and `/reports`) mapping for as long as the registry or `config.json` uses those paths.
 
 ## 8. Roll back
 
@@ -169,6 +173,9 @@ Roll back only while both applications are idle, as in step 1.
 
 1. Stop the 2.0 container. Never run the old Recovery container while a 2.0 Review runs with `RECOVERY_MODE` set to `verify` or `repair`.
 2. Unraid: set Repository back to `ghcr.io/desadius/tdarr-review:1.11.0`; the added variable and mappings are ignored by 1.11.0. Compose: `git checkout v1.11.0` and restore the saved `.env`.
-3. Start Review and the old Recovery container with its untouched data directory: Compose `docker compose up -d --no-build review` and `docker compose --profile recovery up -d --no-build recovery`.
+3. Start Review (Unraid: **Apply**; Compose: `docker compose up -d --no-build review`).
+4. Recreate and start the old Recovery container, which step 5 removed, with its untouched data directory:
+   - **Unraid:** **Docker → Add Container**, select the saved Recovery template under *User templates* and **Apply**. If the template is gone, add the container by hand with the settings of the 1.11 Compose `recovery` service: Repository `ghcr.io/desadius/tdarr-recovery:1.11.0`; variable `RECOVERY_MODE` (`verify` for `enabled: false`, `repair` for `true`); paths `/data` → the old Recovery data directory (`/mnt/cache/appdata/tdarr-recovery/data`, read/write), `/storage` → the media parent (`/mnt/user/media`, read/write), `/review` → the results folder Review maps to `/review` (read-only), `/tdarr` → the Tdarr DB2 directory (read-only) and `/reports` → the Tdarr job reports folder (read-only); Extra Parameters `--user=99:100 --read-only --tmpfs=/tmp:rw,noexec,nosuid,size=64m --cap-drop=ALL --security-opt=no-new-privileges --cpus=2 --memory=1g --pids-limit=128`; no port.
+   - **Compose:** the 1.11 `compose.yaml` from item 2 defines the service again: `docker compose --profile recovery up -d --no-build recovery`.
 
 The old directory holds the Recovery state from the moment you stopped it in step 1. If the 2.0 Recovery has since moved a case past confirmation (Hold, quarantine, release exclusion, search or import), that old state no longer matches the library. Do not roll back Recovery then; keep the 2.0 container and inspect the case, or ask for help in an [issue](https://github.com/Desadius/Tdarr-Review/issues) without private values. Review's own `/data` stays compatible: 1.11.0 ignores the `recovery/` directory.
