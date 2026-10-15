@@ -63,10 +63,19 @@ Source publication, Docker image publication and updating a running installation
 
 When a change is user-visible, add an entry to `CHANGELOG.md` under an unreleased heading and update the relevant document in `docs/`.
 
+## Pracovní režim
+
+These rules apply to both Claude Code and Codex.
+
+1. At the start of work on a ticket or a set of tickets, read all of them and collect every question requiring a maintainer decision. Ask those questions together in one round, then work independently within the agreed scope.
+2. Resolve routine uncertainties with reasonable assumptions and record those assumptions in the PR description. Do not ask the maintainer about routine work.
+3. Stop and ask only before an irreversible action or production access, when encountering a conflict with the specification or an ADR, when changing the ticket scope, or when an assumption has two reasonably plausible outcomes and neither is clearly preferable.
+4. The maintainer always handles merges, issue closure and deletion. Finish with an open PR containing a summary and an explicit list of assumptions (or state that there were none).
+
 ## Working alongside other agents
 
 - Work on your own branch (for example `codex/<topic>` or `claude/<topic>`) and propose changes through a pull request into `main`. Do not push directly to `main`.
-- Keep the main checkout on `main`. Create every branch (implementation, documentation, a PR from a grilling session) in a new git worktree beside it, for example `git worktree add ../Tdarr-Review-<topic> -b claude/<topic> origin/main`, and remove that worktree with `git worktree remove` once its PR is merged.
+- Keep the main checkout on `main`. Create every branch (implementation, documentation, a PR from a grilling session) in a new git worktree beside it, for example `git worktree add ../Tdarr-Review-<topic> -b claude/<topic> origin/main`, and leave removal of that worktree after its PR is merged to the maintainer.
 - Do not work on a branch another agent is currently using. To continue someone else's work, start from their branch or PR only when the maintainer asks.
 - Keep pull requests focused on one change and describe what was tested.
 - Claude Code and Codex share one command allowlist (`.claude/settings.json`, `.codex/rules/tdarr-review.rules`); change both together, see [Agent command allowlist](docs/DEVELOPMENT.md#agent-command-allowlist). A human always merges pull requests: never run `gh pr merge`.
