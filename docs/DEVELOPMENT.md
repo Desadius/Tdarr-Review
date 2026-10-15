@@ -27,6 +27,12 @@ docker build --platform linux/amd64 -t tdarr-review:smoke .
 bash tools/docker-smoke.sh
 ```
 
+Agents need two extra packages in the distribution. Install the GitHub CLI from GitHub's official apt repository ([instructions](https://github.com/cli/cli/blob/trunk/docs/install_linux.md#debian)), not from Ubuntu's archive: Ubuntu's `gh` 2.45 is broken. Codex sandboxes its commands with bubblewrap:
+
+```bash
+sudo apt install bubblewrap
+```
+
 `docker build` builds the Review image locally under the tag `tdarr-review:smoke`, which `tools/docker-smoke.sh` expects; see [Docker image smoke](#docker-image-smoke) for what the smoke test checks. Neither command publishes anything.
 
 ### Linux tests without a local Linux
@@ -43,6 +49,31 @@ gh run watch "$(gh run list --workflow linux-tests.yml --branch <branch> --limit
 ### Isolated Docker suite
 
 `npm run test:docker` runs `npm run check && npm test` in `node:24` for Linux amd64. It mounts only this repository read-only, uses a read-only container root with disposable `/tmp` scratch space (mounted with `exec`, because the HTTP fixtures run stand-in `ffprobe`/`ffmpeg` scripts that Review checks for execute permission), drops capabilities and disables the container network. It neither forwards host settings/credentials nor mounts a Docker socket, media or runtime data. Fixtures use synthetic temporary files and loopback mocks. The test container itself never fetches anything (`--pull=never`). When `node:24` is not present locally, the command first downloads it once on the host with `docker pull --platform linux/amd64 node:24` and says so; if that download fails, it stops before starting a container and names the command to retry. The disposable container is removed on exit, and failed checks/Docker errors return a nonzero status. Docker image smoke and generated-media integration checks remain separate commands below.
+
+### Agent command allowlist
+
+Claude Code and Codex run the same set of commands without asking:
+
+- `gh pr view`, `list`, `checks`, `diff`, `create`, `comment`, `edit`
+- `gh issue view`, `list`, `comment`, `edit`
+- `gh run view`, `list`
+- `git add`, `git commit`
+- `git fetch origin`, `git push origin` (also with `-u`/`--set-upstream`)
+
+Everything else keeps the normal approval prompt. `gh pr merge`, pushes to `main`, force pushes and remote branch deletion are refused outright: a human always merges. `gh issue close`, `rm`, `ssh`, `scp` and `rsync` always ask, even if broader approval was granted earlier in a session.
+
+The lists live in two files that must change together:
+
+- Claude Code: `permissions` in `.claude/settings.json` (project settings, read automatically). `gh` commands with `--repo`/`-R` always ask, so the allowlist cannot reach another repository. Personal additions belong in the ignored `.claude/settings.local.json`.
+- Codex: `.codex/rules/tdarr-review.rules`. Codex loads project rules only when the project is trusted; trust each worktree path when Codex asks, or add `[projects."<path>"] trust_level = "trusted"` to `~/.codex/config.toml`. Rules you approve during a session go to `~/.codex/rules/default.rules`, not to the repository.
+
+Codex's `prefix_rule` matches command prefixes only, so a forbidden option placed later in the command (`git push origin topic --force`) is not caught by the rules and relies on the normal sandbox prompt and on branch protection for `main`. Verify the rules after every change; the file's `match`/`not_match` examples are checked when the rules load:
+
+```bash
+codex execpolicy check --pretty --rules .codex/rules/tdarr-review.rules -- gh pr view 1        # allow
+codex execpolicy check --pretty --rules .codex/rules/tdarr-review.rules -- gh pr merge 1       # forbidden
+codex execpolicy check --pretty --rules .codex/rules/tdarr-review.rules -- ssh tower           # prompt
+```
 
 ## Type checking
 

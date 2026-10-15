@@ -17,6 +17,8 @@ CLAUDE.local.md
 AGENTS.local.md
 .claude/settings.local.json
 settings.json
+# Shared agent command allowlist (docs/DEVELOPMENT.md); not runtime settings
+!/.claude/settings.json
 radarr.json
 state.json
 config.json

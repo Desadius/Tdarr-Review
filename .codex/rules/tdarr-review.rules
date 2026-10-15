@@ -1,0 +1,106 @@
+# Shared command allowlist for Codex. Keep it in step with
+# .claude/settings.json; see "Agent command allowlist" in docs/DEVELOPMENT.md.
+# Codex applies the most restrictive matching decision:
+# forbidden > prompt > allow. Unlisted commands keep the normal prompt.
+
+prefix_rule(
+    pattern = ["gh", "pr", ["view", "list", "checks", "diff", "create", "comment", "edit"]],
+    decision = "allow",
+    justification = "Pull request reads and edits in this repository",
+    match = ["gh pr view 101", "gh pr create --fill", "gh pr checks 101"],
+    not_match = ["gh pr merge 101", "gh pr close 101"],
+)
+
+prefix_rule(
+    pattern = ["gh", "issue", ["view", "list", "comment", "edit"]],
+    decision = "allow",
+    justification = "Issue reads, comments and label edits in this repository",
+    match = ["gh issue view 42 --comments", "gh issue edit 42 --add-label \"in progress\""],
+    not_match = ["gh issue close 42", "gh issue delete 42"],
+)
+
+prefix_rule(
+    pattern = ["gh", "run", ["view", "list"]],
+    decision = "allow",
+    justification = "Read GitHub Actions runs",
+    match = ["gh run list --limit 5", "gh run view 123 --log-failed"],
+    not_match = ["gh run rerun 123", "gh run delete 123"],
+)
+
+prefix_rule(
+    pattern = ["git", ["add", "commit"]],
+    decision = "allow",
+    justification = "Stage and commit on the agent's own branch",
+    match = ["git add CHANGELOG.md", "git commit -m message"],
+    not_match = ["git rm file", "git reset --hard"],
+)
+
+prefix_rule(
+    pattern = ["git", "fetch", "origin"],
+    decision = "allow",
+    justification = "Fetch from this repository's origin only",
+    match = ["git fetch origin", "git fetch origin main"],
+    not_match = ["git fetch https://example.invalid/other.git"],
+)
+
+prefix_rule(
+    pattern = ["git", "push", "origin"],
+    decision = "allow",
+    justification = "Push the agent's branch to origin",
+    match = ["git push origin codex/topic"],
+    not_match = ["git push upstream codex/topic", "git push --force origin codex/topic"],
+)
+
+prefix_rule(
+    pattern = ["git", "push", ["-u", "--set-upstream"], "origin"],
+    decision = "allow",
+    justification = "Push the agent's new branch to origin",
+    match = ["git push -u origin codex/topic", "git push --set-upstream origin codex/topic"],
+    not_match = ["git push -u upstream codex/topic"],
+)
+
+# A human always merges; force pushes, branch deletion and pushes to main are refused.
+prefix_rule(
+    pattern = ["gh", "pr", "merge"],
+    decision = "forbidden",
+    justification = "The maintainer merges pull requests (AGENTS.md)",
+    match = ["gh pr merge 101 --squash"],
+)
+
+prefix_rule(
+    pattern = ["git", "push", "origin", ["main", "--delete", "-d", "--force", "-f", "--force-with-lease", "--mirror", "--prune"]],
+    decision = "forbidden",
+    justification = "No pushes to main, force pushes or remote branch deletion",
+    match = ["git push origin main", "git push origin --delete codex/topic"],
+    not_match = ["git push origin codex/topic"],
+)
+
+prefix_rule(
+    pattern = ["git", "push", ["-u", "--set-upstream"], "origin", ["main", "--delete", "-d", "--force", "-f", "--force-with-lease", "--mirror", "--prune"]],
+    decision = "forbidden",
+    justification = "No pushes to main, force pushes or remote branch deletion",
+    match = ["git push -u origin main", "git push --set-upstream origin --force"],
+    not_match = ["git push -u origin codex/topic"],
+)
+
+prefix_rule(
+    pattern = ["git", "push", ["--force", "-f", "--force-with-lease", "--delete", "-d", "--mirror", "--prune"]],
+    decision = "forbidden",
+    justification = "No force pushes or remote branch deletion",
+    match = ["git push --force origin codex/topic", "git push -d origin codex/topic"],
+)
+
+# Always ask: closing issues, deleting files and remote access (production rules in AGENTS.md).
+prefix_rule(
+    pattern = [["ssh", "scp", "rsync", "rm"]],
+    decision = "prompt",
+    justification = "Deletion and remote access need the maintainer's approval",
+    match = ["ssh tower", "rm -rf build"],
+)
+
+prefix_rule(
+    pattern = ["gh", "issue", ["close", "delete"]],
+    decision = "prompt",
+    justification = "Closing or deleting an issue needs the maintainer's approval",
+    match = ["gh issue close 42"],
+)

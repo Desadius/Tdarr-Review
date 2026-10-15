@@ -69,6 +69,7 @@ When a change is user-visible, add an entry to `CHANGELOG.md` under an unrelease
 - Keep the main checkout on `main`. Create every branch (implementation, documentation, a PR from a grilling session) in a new git worktree beside it, for example `git worktree add ../Tdarr-Review-<topic> -b claude/<topic> origin/main`, and remove that worktree with `git worktree remove` once its PR is merged.
 - Do not work on a branch another agent is currently using. To continue someone else's work, start from their branch or PR only when the maintainer asks.
 - Keep pull requests focused on one change and describe what was tested.
+- Claude Code and Codex share one command allowlist (`.claude/settings.json`, `.codex/rules/tdarr-review.rules`); change both together, see [Agent command allowlist](docs/DEVELOPMENT.md#agent-command-allowlist). A human always merges pull requests: never run `gh pr merge`.
 - Record reusable project procedures in the relevant repository documentation and link them from these instructions when needed; private agent memory must not be their only source.
 
 ## Agent skills
