@@ -4,7 +4,7 @@ Review and approve Tdarr transcodes before replacing the files in your media lib
 
 Choose **English** or **Čeština** in the interface; Czech is the initial default. This is a community project, independent of Tdarr, Radarr and Plex.
 
-Release version: **[1.11.0](https://github.com/Desadius/Tdarr-Review/releases/tag/v1.11.0)**. Use the explicit Linux amd64 `1.11.0` image tags for this source release. Moving `latest` is a separate publication choice. Source publication, image publication and updating a running installation remain separate operations. Personal configuration, credentials, journals, film files and one-off repair approvals are excluded from the repository and images.
+Release version: **[2.0.0](https://github.com/Desadius/Tdarr-Review/releases/tag/v2.0.0)**. Use the explicit Linux amd64 `2.0.0` image tag for this source release. Moving `latest` is a separate publication choice. Source publication, image publication and updating a running installation remain separate operations. Personal configuration, credentials, journals, film files and one-off repair approvals are excluded from the repository and images.
 
 ## What is included
 
@@ -50,14 +50,14 @@ git clone https://github.com/Desadius/Tdarr-Review.git
 cd Tdarr-Review
 cp .env.example .env
 # Edit .env, create its host directories and set write permissions first.
-# Set REVIEW_IMAGE_TAG=1.11.0 for this release.
+# Set REVIEW_IMAGE_TAG=2.0.0 for this release.
 docker compose pull review
 docker compose up -d --no-build review
 ```
 
-Follow [the installation guide](docs/INSTALL-UNRAID.md) before enabling file replacement. The Linux amd64 image is `ghcr.io/desadius/tdarr-review:1.11.0`. The next release, 2.0.0, puts optional Recovery into this one image, controlled by `RECOVERY_MODE`; installations that run the separate Recovery container of 1.11.0 move with [the 2.0 migration guide](docs/MIGRATE-TO-2.0.md). To build locally instead, use `docker compose build review` and `docker compose up -d review`. The default bind address is localhost. Set it to your server's LAN address and set `PUBLIC_ORIGIN` to the exact address used in your browser.
+Follow [the installation guide](docs/INSTALL-UNRAID.md) before enabling file replacement. The Linux amd64 image is `ghcr.io/desadius/tdarr-review:2.0.0`. It contains optional Recovery, Off by default and controlled by `RECOVERY_MODE` (`off`, `verify`, `repair`); the separate Recovery image and the Compose `recovery` service are discontinued. Installations that run the separate Recovery container of 1.11.0 move with [the 2.0 migration guide](docs/MIGRATE-TO-2.0.md). To build locally instead, use `docker compose build review` and `docker compose up -d review`. The default bind address is localhost. Set it to your server's LAN address and set `PUBLIC_ORIGIN` to the exact address used in your browser.
 
-The 1.11.0 changes let you keep a Tdarr node you paused yourself paused, show which strict video rule blocks a film, show Recovery's restart-required notice and optional full-file hash progress, add a durable decision audit and structured JSON logs, return stable error codes rendered in the selected language, and make the health check report pending work without restarting the container. Manual assessment and approval protections remain unchanged. Regression tests and isolated image checks are recorded in [verification](docs/VERIFICATION.md). These checks do not themselves publish an image or update another installation.
+The 2.0.0 changes run Review and Recovery in one container under a supervisor, take the Recovery mode only from `RECOVERY_MODE` and refuse a conflicting or missing configuration before any API contact, show Recovery's runtime state and attention in Review, pause non-protective steps of in-flight repairs in Verify, accept Verify against an approval registry frozen for Repair, and raise the shared resource limits. Manual assessment and approval protections remain unchanged. Regression tests and isolated image checks are recorded in [verification](docs/VERIFICATION.md). These checks do not themselves publish an image or update another installation.
 
 ## Project layout
 

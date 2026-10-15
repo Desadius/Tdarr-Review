@@ -2,7 +2,7 @@
 
 This records the implemented application features. Versions before 1.10.0 were deployed snapshots and are not published Git tags.
 
-## 2.0.0 — Unreleased
+## 2.0.0 — 2026-10-15
 
 Review and Recovery become one container. Installations that ran the separate Recovery container follow [the 2.0 migration guide](docs/MIGRATE-TO-2.0.md), which copies the old Recovery data and keeps frozen approval evidence unchanged.
 
@@ -31,7 +31,6 @@ Review and Recovery become one container. Installations that ran the separate Re
 
 - Fix: a registry approved for Repair (frozen `enabled: true`) no longer refuses `RECOVERY_MODE=verify`, because Verify is strictly narrower. A registry frozen to Verify still refuses Repair, and every other frozen key still needs an exact match. The start-up check, the per-poll pending-approval check, the `configChange` validation and the offline migration utility use one shared rule. The status file reports the modes the registry allows as `registryAllowedModes`.
 - Verify now pauses non-protective steps of in-flight repairs: kept-source removal and replacement requests, Tdarr handoff, and quarantine purge. Protective restoration with its existing conditions and read-only observation continue. Review shows the paused step and original location/time in English and Czech; Repair resumes from fresh checks.
-
 - The Recovery mode now comes only from the `RECOVERY_MODE` environment variable: `verify` confirms corrupted originals and continues only protective steps of in-flight repairs (the former `enabled: false`), `repair` may act on a confirmed corruption (the former `enabled: true`). Set it from your current `enabled` value when updating.
 - `enabled` in `config.json` is deprecated. A matching value is still accepted. A conflicting one, a missing or invalid mode, a missing, unreadable or invalid `config.json`, and an approval registry that refuses the configuration stop the worker before any API contact with exit code 78 and a final `RECOVERY_REFUSED <reason>` log line that never contains configuration values. A running worker reports a `config.json` edit whose `enabled` conflicts with the mode as invalid.
 - The offline registry migration utility checks `config.json` with the same `RECOVERY_MODE` as the worker; run it with the mode the worker will use.

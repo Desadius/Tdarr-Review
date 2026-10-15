@@ -15,7 +15,7 @@ Every path, host and tag below is an example. Replace them with your own, and ne
 | `/mnt/user/media` | Media parent, mapped to Review `/media` and to old Recovery `/storage` (`MEDIA_HOST`) |
 | `/mnt/cache/appdata/tdarr/server/Tdarr/DB2` | Tdarr DB2 directory, mapped read-only to `/tdarr` (`TDARR_DB_HOST`) |
 | `tdarr-review`, `tdarr-recovery` | Container names; Compose names them after the project and service |
-| `2.0.0` | The approved 2.0 image tag; until it is published, a locally built image |
+| `2.0.0` | The approved 2.0 image tag, or a locally built image |
 
 ## 1. Back up and stop both containers while idle
 

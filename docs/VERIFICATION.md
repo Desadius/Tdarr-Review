@@ -1,4 +1,12 @@
-# Repository verification — 2026-10-13
+# Repository verification — 2026-10-15
+
+## 2.0.0 — one container with Recovery under a supervisor
+
+Source `311f6ae` (`main` with every change merged since `v1.11.0`, PRs #66–#107) passed CI on Linux with Node 24 ([run 38789793271](https://github.com/Desadius/Tdarr-Review/actions/runs/38789793271)): `npm run check` including the version-consistency and source-text-test checks, the pinned type check, and all 679 regression tests without failures or skips. Line coverage was 86.97 %, branches 82.20 %, functions 75.05 %. The same 679 tests passed in the network-less Docker suite (read-only repository, disposable `/tmp`). The single Review image was built and passed the Docker smoke checks with fresh volumes, synthetic fixtures and container loopback only: tini and the supervisor at the default entrypoint, no Recovery process with `RECOVERY_MODE` unset, the worker under `ionice`/`nice` in `verify`, a missing Recovery configuration reported as refused while Review stays healthy, the packaged registry migration utility, and a stop within 10 seconds.
+
+The release commit changes only version numbers and documentation; it passed `npm run check` and `npm test` on WSL2 (Linux, Node 24) before the pull request.
+
+Not run for this release: `npm run test:integration` (needs FFmpeg), the [2.0 migration](MIGRATE-TO-2.0.md) on a real installation, and any test against a real installation. Publishing the image and updating the running installation are separate, approved steps.
 
 ## 1.11.0 — node restore choice, decision audit, error codes and Recovery signals
 
