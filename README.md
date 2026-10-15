@@ -16,7 +16,7 @@ Release version: **[1.11.0](https://github.com/Desadius/Tdarr-Review/releases/ta
 - Server-enforced completed review, current file snapshot and review revision for individual and batch approval; persistent replacement journals and file identity checks.
 - Technical assessment that distinguishes verified, failed and unknown evidence. It is not a probability that a film is flawless.
 - Optional Radarr replacement request, preserving originals in quarantine and restricting the replacement profile to the same or higher quality.
-- Optional Recovery worker: repeated confirmation of known original decoding errors, precise release exclusion, replacement tracking and shared status in Review.
+- Optional Recovery inside the same container, Off by default (`RECOVERY_MODE` `off`, `verify` or `repair`): repeated confirmation of known original decoding errors, precise release exclusion, replacement tracking and shared status in Review.
 - Quarantine retention: seven days **after explicit Review approval of the identified replacement**, with identity checks before deletion.
 
 Loading or playing a preview never checks a review box. Browser AV clips use H.264 and mono AAC, with Detail previews bounded to 1920 × 1080 and Compact previews to 960 × 540. Supported HDR is converted to SDR; native quality, HDR and surround playback require a suitable external device. Review does not automatically approve films or repeat a complete video/audio decode during normal approval. Tdarr performs the health check; the viewer judges the result.
@@ -35,6 +35,7 @@ Loading or playing a preview never checks a review box. Browser AV clips use H.2
 | [Tdarr integration](docs/TDARR-INTEGRATION.md) | Flow placement, health checks and receipt format |
 | [Architecture and safety](docs/ARCHITECTURE.md) | Replacement transaction, lifecycle and quarantine |
 | [Operations](docs/OPERATIONS.md) | Updates, backup, restart and troubleshooting |
+| [Migration to 2.0](docs/MIGRATE-TO-2.0.md) | Moving a two-container installation to one container |
 | [Release process](docs/RELEASES.md) | Separate source publication, Docker publication and deployment |
 | [Development and verification](docs/DEVELOPMENT.md) | Tests, fixtures and compatibility limits |
 | [Český přehled](docs/README-CS.md) | Rychlý rozcestník v češtině |
@@ -54,7 +55,7 @@ docker compose pull review
 docker compose up -d --no-build review
 ```
 
-Follow [the installation guide](docs/INSTALL-UNRAID.md) before enabling file replacement. The Linux amd64 image is `ghcr.io/desadius/tdarr-review:1.11.0`; optional Recovery is `ghcr.io/desadius/tdarr-recovery:1.11.0`, selected separately with `RECOVERY_IMAGE_TAG`. To build locally instead, use `docker compose build review` and `docker compose up -d review`. The default bind address is localhost. Set it to your server's LAN address and set `PUBLIC_ORIGIN` to the exact address used in your browser.
+Follow [the installation guide](docs/INSTALL-UNRAID.md) before enabling file replacement. The Linux amd64 image is `ghcr.io/desadius/tdarr-review:1.11.0`. The next release, 2.0.0, puts optional Recovery into this one image, controlled by `RECOVERY_MODE`; installations that run the separate Recovery container of 1.11.0 move with [the 2.0 migration guide](docs/MIGRATE-TO-2.0.md). To build locally instead, use `docker compose build review` and `docker compose up -d review`. The default bind address is localhost. Set it to your server's LAN address and set `PUBLIC_ORIGIN` to the exact address used in your browser.
 
 The 1.11.0 changes let you keep a Tdarr node you paused yourself paused, show which strict video rule blocks a film, show Recovery's restart-required notice and optional full-file hash progress, add a durable decision audit and structured JSON logs, return stable error codes rendered in the selected language, and make the health check report pending work without restarting the container. Manual assessment and approval protections remain unchanged. Regression tests and isolated image checks are recorded in [verification](docs/VERIFICATION.md). These checks do not themselves publish an image or update another installation.
 
@@ -67,7 +68,7 @@ examples/     Configuration and Tdarr custom-function examples
 docs/         Installation, user and operator documentation
 tools/        Syntax and test runners
 Dockerfile    Review image using the deployed Tdarr runtime
-compose.yaml  Review, plus opt-in Recovery profile
+compose.yaml  One Review service; Recovery is selected with RECOVERY_MODE
 ```
 
 Linux is required for the file replacement implementation, including directory synchronization. The supplied runtime has Node 24.15.0 and Jellyfin FFmpeg 7.1.4. The application was used with the Rust Tdarr engine and its existing API/database schema; future Tdarr releases and authenticated Tdarr API installations require separate compatibility verification.

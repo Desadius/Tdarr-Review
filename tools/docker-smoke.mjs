@@ -185,9 +185,9 @@ async function migration(){
 async function host(){
   const prefix=process.env.SMOKE_PREFIX||'tdarr-review-smoke-'+process.pid;
   assert.match(prefix,/^tdarr-review-smoke-[A-Za-z0-9-]+$/);
-  const names={review:prefix+'-review',integration:prefix+'-integration',recovery:prefix+'-recovery',migration:prefix+'-migration'},volumes=[prefix+'-review-data',prefix+'-recovery-data'];
+  const names={review:prefix+'-review',integration:prefix+'-integration',reviewVerify:prefix+'-review-verify',migration:prefix+'-migration'},volumes=[prefix+'-review-data',prefix+'-review-verify-data'];
   const script=fileURLToPath(import.meta.url),label='org.tdarr-review.smoke',image='tdarr-review:smoke';
-  const common=['--label',label+'='+prefix,'--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--memory','1g','--cpus','1','--pids-limit','128','--tmpfs','/tmp:rw,noexec,nosuid,size=128m'];
+  const common=['--label',label+'='+prefix,'--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--memory','2g','--cpus','2','--pids-limit','256','--tmpfs','/tmp:rw,noexec,nosuid,size=128m'];
   const reviewEnv=['-e','PUBLIC_ORIGIN=http://review.example.invalid:48270','-e','TDARR_URL=http://127.0.0.1:1'];
   // Docker's copy API rejects a readonly rootfs even for a writable tmpfs.
   // Write only the disposable tmpfs file through the unprivileged process.
@@ -212,23 +212,23 @@ async function host(){
       await run('docker',['exec','-e','FFMPEG='+decoder+'ffmpeg','-e','FFPROBE='+decoder+'ffprobe',names.review,'/usr/bin/node','/tmp/av-smoke.mjs'],{timeout:fixture==='test-preview-cache-http.mjs'?240000:180000});
     }
     await run('docker',['run','--rm','--name',names.integration,...common,'-e','FFMPEG='+decoder+'ffmpeg','-e','FFPROBE='+decoder+'ffprobe','--entrypoint','/usr/bin/node',image,'/review-app/integration.mjs'],{timeout:180000});
-    // Recovery in the same image, started through its own entrypoint with RECOVERY_MODE=verify.
-    await run('docker',['run','-d','--name',names.recovery,...common,'--mount',`type=volume,source=${volumes[1]},target=/data`,...reviewEnv,'-e','RECOVERY_MODE=verify',image],{quiet:true});
-    await copyScript(names.recovery);
-    await inside(names.recovery,'inside-recovery-refused');
+    // The same Review image with RECOVERY_MODE=verify: the supervisor starts Recovery beside Review.
+    await run('docker',['run','-d','--name',names.reviewVerify,...common,'--mount',`type=volume,source=${volumes[1]},target=/data`,...reviewEnv,'-e','RECOVERY_MODE=verify',image],{quiet:true});
+    await copyScript(names.reviewVerify);
+    await inside(names.reviewVerify,'inside-recovery-refused');
     // A restart starts the supervisor, and so the worker, again; tmpfs starts empty.
-    await run('docker',['restart','--time','10',names.recovery],{quiet:true});
-    await copyScript(names.recovery);
-    await inside(names.recovery,'inside-recovery-running');
+    await run('docker',['restart','--time','10',names.reviewVerify],{quiet:true});
+    await copyScript(names.reviewVerify);
+    await inside(names.reviewVerify,'inside-recovery-running');
     // SIGTERM reaches tini, then the supervisor, then Review and Recovery. Docker kills the
     // container (exit 137) if it is still running after 10 s; Review exits 0 after a SIGTERM.
     const started=Date.now();
-    await run('docker',['stop','--time','10',names.recovery],{quiet:true});
+    await run('docker',['stop','--time','10',names.reviewVerify],{quiet:true});
     const elapsed=Date.now()-started;
-    const exit=JSON.parse(await run('docker',['inspect','--format','{{json .State}}',names.recovery],{quiet:true}));
+    const exit=JSON.parse(await run('docker',['inspect','--format','{{json .State}}',names.reviewVerify],{quiet:true}));
     assert.equal(exit.ExitCode,0,'The container did not exit after SIGTERM by itself');assert.equal(exit.OOMKilled,false);
     assert.ok(elapsed<10000,`The container took ${elapsed} ms to stop`);
-    assert.match(await run('docker',['logs','--since',new Date(started-1000).toISOString(),names.recovery],{quiet:true,includeStderr:true}),/Recovery: SIGTERM received/);
+    assert.match(await run('docker',['logs','--since',new Date(started-1000).toISOString(),names.reviewVerify],{quiet:true,includeStderr:true}),/Recovery: SIGTERM received/);
     console.log(`Recovery: SIGTERM through tini stopped Review and Recovery in ${elapsed} ms.`);
     await run('docker',['run','-d','--name',names.migration,...common,'--mount',`type=volume,source=${volumes[1]},target=/data`,'-e','RECOVERY_MODE=verify','--entrypoint','/usr/bin/node',image,'-e',"setInterval(()=>{},1000)"],{quiet:true});
     await copyScript(names.migration);

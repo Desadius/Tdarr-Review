@@ -11,7 +11,7 @@ test('type-check tools are pinned exactly and stay out of package.json and the i
  for(const field of ['dependencies','devDependencies','optionalDependencies','peerDependencies'])assert.equal(pkg[field],undefined,field);
  assert.equal(pkg.scripts.typecheck,'node tools/typecheck.mjs');
  assert.match(await read('.gitignore'),/^\.typecheck\/$/m);
- for(const dockerfile of ['Dockerfile','Dockerfile.recovery'])assert.doesNotMatch(await read(dockerfile),/typecheck|typescript|tsconfig/i);
+ assert.doesNotMatch(await read('Dockerfile'),/typecheck|typescript|tsconfig/i);
  assert.match(await read('.github/workflows/test.yml'),/run: npm run typecheck/);
 });
 

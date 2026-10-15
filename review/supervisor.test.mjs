@@ -14,6 +14,14 @@ const linux={skip:process.platform!=='linux'?'Requires Linux signals, ionice and
 // is ready, then fails every time instead of now and then. supervisor-delayed.test.mjs runs this file so.
 const test=(name,...rest)=>nodeTest(DELAY_MS?name+' (stand-ins delayed '+DELAY_MS+' ms)':name,...rest);
 
+// Waits for n Recovery restarts and returns the time from each recorded exit to the next recorded start:
+// the supervisor's restart delay plus noise, without the stand-in's run or test pause (#98).
+const restartGaps=(run,n)=>waitFor(async()=>{
+ const recovery=(await run.readEvents()).filter(e=>e.name==='recovery');
+ const starts=recovery.filter(e=>e.event==='start'),exits=recovery.filter(e=>e.event==='exit');
+ return starts.length>n&&starts.slice(1,n+1).map((s,i)=>s.time-exits[i].time);
+},20000);
+
 test('the stand-ins run with the configured test delay',async t=>{
  const run=await start({mode:'off',review:'exit:0'});t.after(()=>stop(run));
  const [review]=await started(run,'review');
@@ -58,13 +66,13 @@ for(const mode of ['verify','repair'])test('Recovery mode '+mode+' starts Recove
 });
 
 test('a Recovery crash is restarted with growing, capped delays and Review is untouched',linux,async t=>{
- const run=await start({mode:'verify',recovery:'crash'});t.after(()=>stop(run));
- const starts=await waitFor(async()=>{const s=(await run.readEvents()).filter(e=>e.name==='recovery'&&e.event==='start');return s.length>=5&&s;});
+ const run=await start({mode:'verify',recovery:'crash-after:300',restart:{initialMs:300,maxMs:1200,crashLoopAfter:3,stableMs:60000}});t.after(()=>stop(run));
+ const gaps=await restartGaps(run,4);
  await started(run,'review');
- const gaps=starts.slice(1).map((s,i)=>s.time-starts[i].time);
- // Delays 200, 400, 800 and then the 800 ms cap, each plus the stand-in's start-up time.
- assert.ok(gaps[0]>=200&&gaps[1]>=gaps[0]+150&&gaps[2]>=gaps[1]+300,'growing delays: '+gaps);
- assert.ok(gaps[3]>=800&&gaps[3]<gaps[2]+300,'capped delay: '+gaps);
+ // Delays 300, 600, 1200 and then the 1200 ms cap. Each gap adds the noticing of the exit and the next
+ // stand-in's start-up, but stays below the next doubling. Recovery crashes only after 300 ms, so the first
+ // exit is not noticed late while Review's stand-in is still starting.
+ assert.ok(gaps.every((gap,i)=>gap>=[300,600,1200,1200][i]-5&&gap<[600,1200,2400,2400][i]),'growing, capped delays: '+gaps);
  const review=(await run.readEvents()).filter(e=>e.name==='review');
  assert.deepEqual(review.map(e=>e.event),['start']);
  assert.equal(run.child.exitCode,null);
@@ -83,11 +91,10 @@ test('repeated Recovery crashes are reported as a crash loop in the state file',
 });
 
 test('a Recovery run that lasted stableMs restarts the crash count',linux,async t=>{
- const run=await start({mode:'verify',recovery:'crash-after:400',restart:{initialMs:200,maxMs:800,crashLoopAfter:2,stableMs:300}});t.after(()=>stop(run));
- const starts=await waitFor(async()=>{const s=(await run.readEvents()).filter(e=>e.name==='recovery'&&e.event==='start');return s.length>=4&&s;});
- const gaps=starts.slice(1).map((s,i)=>s.time-starts[i].time);
- // Each gap is the 400 ms run plus the initial 200 ms delay; it never grows.
- assert.ok(gaps.every(gap=>gap<gaps[0]+150),'gaps: '+gaps);
+ const run=await start({mode:'verify',recovery:'crash-after:400',restart:{initialMs:300,maxMs:1200,crashLoopAfter:2,stableMs:300}});t.after(()=>stop(run));
+ const gaps=await restartGaps(run,3);
+ // Every 400 ms run outlasts stableMs, so each restart waits the initial 300 ms again and never the doubled 600 ms.
+ assert.ok(gaps.every(gap=>gap>=295&&gap<600),'gaps: '+gaps);
  assert.notEqual((await run.readState()).reason,'crash-loop');
 });
 

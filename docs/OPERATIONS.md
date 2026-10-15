@@ -2,7 +2,7 @@
 
 ## Persistent data and backups
 
-Back up Review `/data`, Recovery `/data` if used, both source/configuration versions and the media-parent approval records. Review state includes its access key, sessions, history, transactions and Radarr requests. It is private operational data, not repository content.
+Back up Review `/data` (it includes Recovery's `config.json`, state and private approval registry in `/data/recovery/`), the source/configuration version and the media-parent approval records. Review state includes its access key, sessions, history, transactions and Radarr requests. It is private operational data, not repository content.
 
 `state.json` keeps only the latest 150 history entries. The durable decision records are separate append-only files in Review `/data` (mode 0600, each record fsynced):
 
@@ -21,8 +21,8 @@ Source publication, Docker image publication and updating a running deployment a
 2. Check the worker runtime state and case warnings in Review's **Recovery** view. Wait for original decoding and mutating Recovery phases to finish; refresh stale or unavailable case information and inspect worker logs before treating it as idle. A long decode is read-only, but interrupting it can leave a case requiring deliberate inspection. Runtime **Running** alone does not mean idle.
    In the unified container, stopping Review also stops Recovery. The supervisor forwards the stop signal and gives Recovery up to eight seconds before SIGKILL. An idle worker exits promptly; an interrupted or uncertain mutation retains its journal and must be inspected before retrying. Stop the container while both applications are idle rather than raising the timeout to cover a multi-hour decode.
 3. Back up code/images and private persistent data. Record the previous Git commit.
-   If an older Recovery installation stores a private pending registry in its application directory, [migrate that registry](MIGRATE-RECOVERY-REGISTRY.md) with the worker stopped before replacing its source/image. Preserving state alone does not preserve authorization.
-4. Stop only the affected service, pull/build the chosen commit, and start it with the same data/mappings.
+   An installation that still runs the separate Recovery container of 1.11.0 or earlier moves to the single container with [the 2.0 migration guide](MIGRATE-TO-2.0.md). If an older Recovery installation stores a private pending registry in its application directory, [migrate that registry](MIGRATE-RECOVERY-REGISTRY.md) with the worker stopped before updating. Preserving state alone does not preserve authorization.
+4. Stop the container, pull/build the chosen commit, and start it with the same data/mappings and `RECOVERY_MODE`.
 5. Verify login, API state, expected results and replacement records. Do not approve a real film simply to test an update.
 
 With the supplied Compose example, after the idle checks and backup:
@@ -104,7 +104,7 @@ The supervisor writes `/data/recovery/runtime-state.json` at startup and on stat
 
 ## Recovery status is stale
 
-Check worker logs and its private `state.json` for `lastError` or `statusPublicationError`. Verify both services map the same media parent and Radarr is configured in Review. Idle publication is roughly five minutes. During a full original decode the worker publishes a 30-second heartbeat and measured progress at most every 15 seconds. Review displays the current pass, media position, elapsed time and an ETA when duration/rate are available. With no known duration the bar stays indeterminate. The decoder measurement time and worker heartbeat are shown separately; a responding worker can still be waiting for I/O. A stale/no-advance warning is not proof of film damage.
+Check worker logs and its private `state.json` for `lastError` or `statusPublicationError`. Verify that Recovery's media root and Review's media root resolve to the same host media parent (with a migrated `/storage` mapping, the same host folder as `/media`) and Radarr is configured in Review. Idle publication is roughly five minutes. During a full original decode the worker publishes a 30-second heartbeat and measured progress at most every 15 seconds. Review displays the current pass, media position, elapsed time and an ETA when duration/rate are available. With no known duration the bar stays indeterminate. The decoder measurement time and worker heartbeat are shown separately; a responding worker can still be waiting for I/O. A stale/no-advance warning is not proof of film damage.
 
 Manual replacement requests created in Review continue checking the imported file's exact Tdarr record and library. A fresh status timestamp means that observation ran, not that Tdarr approved the film. Observation and quarantine retention errors are reported separately. Quarantine deletion still requires explicit Review approval evidence and the seven-day retention period.
 
@@ -136,7 +136,7 @@ Check that the exact replacement was approved through Review and that its approv
 
 ## Thread and resource limits
 
-Review comparison extraction and Recovery decoding use conservative decoder thread settings. CPU limits do not guarantee an exact OS thread count: FFmpeg may create auxiliary threads. The supplied optional worker uses two CPU quota units plus low scheduler/I/O priority. Encoding worker/pool choices remain in your Tdarr flow and node configuration; do not apply powerful-PC settings to a smaller Unraid server indiscriminately.
+Review comparison extraction and Recovery decoding use conservative decoder thread settings. CPU limits do not guarantee an exact OS thread count: FFmpeg may create auxiliary threads. Review and the optional worker share the container's two CPU quota units, 2 GiB memory and 256 processes; the worker runs at the lowest CPU priority (niceness 19) and best-effort I/O priority 7, so reviewing stays responsive during a long decode. Encoding worker/pool choices remain in your Tdarr flow and node configuration; do not apply powerful-PC settings to a smaller Unraid server indiscriminately.
 
 ## A newly imported replacement also fails
 
