@@ -311,3 +311,14 @@ test('Verify-paused in-flight repairs are waiting, preserve errors and are not a
  }
  assert.equal(recoveryIsBusy([{source:'recovery',phase:'restore_source_intent',verifyPausedStep:'tdarr_handoff'}],{state:'running',mode:'verify'}),true,'a real protective mutation still warns before restart');
 });
+
+test('a Verify pause that keeps the original outside the library over 24 h needs attention',async()=>{
+ const {RECOVERY_ORIGINAL_OUTSIDE_MS,originalOutsideTooLong}=await import('./public/review-model.js');
+ const record=age=>({source:'recovery',phase:'waiting_replacement',verifyPausedStep:'replacement_request',originalOutsideLibrary:true,originalOutsideSince:new Date(NOW-age).toISOString(),statusUpdated:freshTime});
+ const past=classifyRecovery(record(RECOVERY_ORIGINAL_OUTSIDE_MS+1000),NOW);
+ assert.equal(past.category,'attention');assert.equal(past.label,'Originál je déle než 24 hodin mimo knihovnu');assert.match(past.nextStep,/odstraň ho v Radarru/);
+ assert.equal(originalOutsideTooLong(record(RECOVERY_ORIGINAL_OUTSIDE_MS+1000),NOW),true);
+ assert.equal(classifyRecovery(record(RECOVERY_ORIGINAL_OUTSIDE_MS-1000),NOW).category,'waiting');
+ assert.equal(classifyRecovery({...record(RECOVERY_ORIGINAL_OUTSIDE_MS+1000),statusUpdated:new Date(NOW-RECOVERY_STALE_MS-1000).toISOString()},NOW).category,'unverified','a stale status is not evidence for the notice');
+ for(const patch of [{verifyPausedStep:null},{originalOutsideLibrary:false},{verifyPausedStep:'tdarr_handoff'},{originalOutsideSince:'invalid'}])assert.equal(originalOutsideTooLong({...record(RECOVERY_ORIGINAL_OUTSIDE_MS+1000),...patch},NOW),false,JSON.stringify(patch));
+});

@@ -1,7 +1,7 @@
 // Recovery progress and detail renderers. Pure: they read only the record passed in.
-import {tr,locale} from './i18n.js?v=20261015-verify1';
-import {downloadProgress,recoveryIsBusy,recoveryConfigNotice} from './review-model.js?v=20261015-verify1';
-import {el,fmt,date,elapsedText,etaText,detailsFacts} from './ui-kit.js?v=20261015-verify1';
+import {tr,locale} from './i18n.js?v=20261015-outside1';
+import {downloadProgress,recoveryIsBusy,recoveryConfigNotice,originalOutsideTooLong} from './review-model.js?v=20261015-outside1';
+import {el,fmt,date,elapsedText,etaText,detailsFacts} from './ui-kit.js?v=20261015-outside1';
 
 export function recoveryRuntimeView(runtime,translate=tr){
  const labels={off:'Off',running:'Běží',restarting:'Restartuje se',refused:'Spuštění odmítnuto',stopped:'Zastaveno',unreadable:'Stav nelze přečíst'};
@@ -41,11 +41,12 @@ export function decodeProgressView(p,detail=true){
  return box;
 }
 
-export function recoveryVerifyPauseView(r,translate=tr){
+export function recoveryVerifyPauseView(r,translate=tr,now=Date.now()){
  const steps={replacement_request:'Čeká: odebrání zachovaného originálu a vyžádání náhrady.',tdarr_handoff:'Čeká: předání náhrady Tdarru.',quarantine_purge:'Čeká: úklid karantény.'};
  if(!steps[r.verifyPausedStep])return null;
- const box=el('div','alert');box.setAttribute('role','status');
+ const late=originalOutsideTooLong(r,now),box=el('div','alert'+(late?' failure':''));box.setAttribute('role','status');
  box.append(el('strong','',translate('Pozastaveno režimem Verify; pokračují pouze ochranné kroky.'),true),el('p','',translate(steps[r.verifyPausedStep]),true));
+ if(late)box.append(el('p','',translate('Originál je mimo knihovnu déle než 24 hodin. Pokud stahování náhrady v Radarru visí, odstraň ho v Radarru; Recovery pak při příští kontrole vrátí originál do knihovny.'),true));
  const outside=r.originalOutsideLibrary,location=outside===true?'Originál je mimo knihovnu, zachovaný v karanténě.':outside===false?'Originál je v knihovně.':'Umístění originálu není doloženo.';
  box.append(el('p','details',translate(location),true));
  if(typeof outside==='boolean'){

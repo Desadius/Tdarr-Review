@@ -1,6 +1,9 @@
 export default {
   "exact": {
     "Pozastaveno režimem Verify": "Paused by Verify",
+    "Originál je déle než 24 hodin mimo knihovnu": "Original outside the library for over 24 hours",
+    "Pokud stahování v Radarru visí, odstraň ho v Radarru; Recovery při příští kontrole vrátí originál do knihovny.": "If the download in Radarr is stuck, remove it in Radarr; Recovery returns the original to the library on its next poll.",
+    "Originál je mimo knihovnu déle než 24 hodin. Pokud stahování náhrady v Radarru visí, odstraň ho v Radarru; Recovery pak při příští kontrole vrátí originál do knihovny.": "The original has been outside the library for more than 24 hours. If the replacement download in Radarr is stuck, remove it in Radarr; Recovery then returns the original to the library on its next poll.",
     "Pozastaveno režimem Verify; pokračují pouze ochranné kroky.": "Paused by Verify; only protective steps continue.",
     "Čeká: odebrání zachovaného originálu a vyžádání náhrady.": "Waiting to remove the kept original and request a replacement.",
     "Čeká: předání náhrady Tdarru.": "Waiting to hand the replacement to Tdarr.",

@@ -114,3 +114,11 @@ for(const language of ['cs','en'])test('Verify pause does not claim quarantine i
  assert.ok(text.includes(language==='en'?'The original location is not recorded.':'Umístění originálu není doloženo.'));
  assert.equal(text.includes('zachovaná v karanténě'),false);assert.equal(text.includes('preserved in quarantine'),false);
 }));
+
+for(const [language,instruction] of [['cs','Originál je mimo knihovnu déle než 24 hodin. Pokud stahování náhrady v Radarru visí, odstraň ho v Radarru; Recovery pak při příští kontrole vrátí originál do knihovny.'],['en','The original has been outside the library for more than 24 hours. If the replacement download in Radarr is stuck, remove it in Radarr; Recovery then returns the original to the library on its next poll.']])test('a Verify pause over 24 h outside the library is highlighted with the manual step in '+language,()=>withDocument(()=>{
+ const translate=createTranslator(language),record=age=>({verifyPausedStep:'replacement_request',originalOutsideLibrary:true,originalOutsideSince:new Date(Date.now()-age).toISOString()});
+ const late=recoveryVerifyPauseView(record(25*3600000),translate);
+ assert.ok(textContent(late).includes(instruction));assert.match(late.className,/failure/);
+ const early=recoveryVerifyPauseView(record(23*3600000),translate);
+ assert.equal(textContent(early).includes(instruction),false);assert.doesNotMatch(early.className,/failure/);
+}));

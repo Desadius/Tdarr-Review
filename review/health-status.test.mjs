@@ -131,3 +131,28 @@ test('the container health check needs /health and the UI, but only reports oper
  assert.equal((await checkHealth(async route=>({status:200,text:route==='/health'?'not json':''}))).line,'OK (unreadable summary)');
  await assert.rejects(checkHealth(async()=>{throw Error('ECONNREFUSED')}),'no answer is a failure of the check');
 });
+
+// #89: an in-flight repair paused by Verify that keeps the original outside the library for over 24 h.
+import {RECOVERY_ORIGINAL_OUTSIDE_MS} from './public/review-model.js';
+async function outsideSummary(t,{age,updatedAgo=60000,patch={}}){
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'recovery-outside-')),file=path.join(root,'status.json');t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ const record={id:'a'.repeat(24),source:'recovery',phase:'waiting_replacement',verifyPausedStep:'replacement_request',originalOutsideLibrary:true,originalOutsideSince:new Date(NOW-age).toISOString(),originalRestoredAt:null,...patch};
+ await fs.writeFile(file,JSON.stringify({version:1,updated:new Date(NOW-updatedAgo).toISOString(),configChange:null,cases:[record]}));
+ const summary=healthSummary({pendingTransactions:0,restorePending:0,recoveryStatus:await recoveryStatusHealth(file,NOW)});
+ const {checkHealth}=await import('./healthcheck.mjs');
+ const check=await checkHealth(async route=>({status:200,text:route==='/health'?JSON.stringify(summary):'<html>'}));
+ assert.equal(summary.ok,true);assert.equal(check.ok,true,'the notice never fails the container health check');
+ return summary.attention;
+}
+test('the original outside the library just past 24 h in Verify raises attention without failing health',async t=>{
+ assert.deepEqual(await outsideSummary(t,{age:RECOVERY_ORIGINAL_OUTSIDE_MS+1000}),['recovery-original-outside-library']);
+});
+test('no outside-the-library attention before 24 h, in Repair, with the original in the library or for a stale status',async t=>{
+ const past=RECOVERY_ORIGINAL_OUTSIDE_MS+1000;
+ assert.deepEqual(await outsideSummary(t,{age:RECOVERY_ORIGINAL_OUTSIDE_MS-1000}),[],'just before 24 h');
+ assert.deepEqual(await outsideSummary(t,{age:past,patch:{verifyPausedStep:null}}),[],'Repair exports no pause');
+ assert.deepEqual(await outsideSummary(t,{age:past,patch:{originalOutsideLibrary:false,originalOutsideSince:null,originalRestoredAt:new Date(NOW).toISOString()}}),[],'original back in the library');
+ assert.deepEqual(await outsideSummary(t,{age:past,patch:{originalOutsideLibrary:null}}),[],'unknown location');
+ assert.deepEqual(await outsideSummary(t,{age:past,updatedAgo:RECOVERY_STALE_MS+1000}),['recovery-status-stale'],'a stale status raises only the stale code');
+ for(const step of ['tdarr_handoff','quarantine_purge'])assert.deepEqual(await outsideSummary(t,{age:past,patch:{verifyPausedStep:step,phase:step==='quarantine_purge'?'replacement_imported':'replacement_queue_intent'}}),[],step+': the replacement is already in the library');
+});

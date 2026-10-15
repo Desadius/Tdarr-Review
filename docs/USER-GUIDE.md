@@ -102,6 +102,8 @@ Keep the quarantine and recorded library link/copy intact. Recovery validates bo
 
 Do not interpret `replacement_imported` as approved. Watch the Tdarr state, complete the new result's own Review checklist, then approve it. Quarantine becomes eligible for cleanup seven days after that explicit identified approval.
 
+In **Verify**, an in-flight repair is paused and the Recovery detail says which step waits and whether the original is in the library or in quarantine. If a paused replacement request keeps the original outside the library for more than 24 hours, the case appears under **Needs attention** (**Vyžaduje zásah**) with a red notice: a replacement download probably hangs in Radarr. Remove that download in Radarr; Recovery then returns the original to the library on its next poll ([Operations](OPERATIONS.md#original-outside-the-library-for-over-24-hours)).
+
 ## Recovery worker status
 
 The **Recovery** view shows the worker's runtime state separately from its film cases. In the unified container, Recovery runs alongside Review; stopping or updating that container affects both.

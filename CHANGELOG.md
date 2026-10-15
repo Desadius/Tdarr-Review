@@ -24,6 +24,7 @@ Review and Recovery become one container. Installations that ran the separate Re
 ### Review: Recovery runtime status
 
 - Show Recovery's supervisor state (**Off**, **Running**, **Restarting**, **Refused**, **Stopped**) and reason in Review, separately from film cases and unfinished file-exchange transactions. Missing runtime state shows **Off** without attention; invalid or unreadable state is reported without exposing configuration or stderr.
+- Add `recovery-original-outside-library` attention when a replacement request paused by Verify has kept the original outside the library for more than 24 hours. The Recovery view moves the case to **Needs attention** and tells the user to remove the stuck download in Radarr, after which Recovery returns the original on its next poll (English and Czech). The health check result does not change.
 - Add refused-worker, crash-loop and unreadable-runtime attention to the operational health summary while keeping container health tied to Review availability. Warn before restarting or updating the unified container while Recovery reports original decoding or a mutating phase.
 
 ### Recovery worker
