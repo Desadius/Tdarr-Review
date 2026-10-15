@@ -85,6 +85,9 @@ const RADARR_RUNNING = {
 };
 
 /** Classify structured facts; labels/messages are never completion evidence. */
+const VERIFY_PAUSED_PHASES={replacement_request:['waiting_source_kept','waiting_replacement'],tdarr_handoff:['waiting_replacement','replacement_queue_intent'],quarantine_purge:['replacement_imported']};
+const verifyPaused=r=>r?.source==='recovery'&&VERIFY_PAUSED_PHASES[r.verifyPausedStep]?.includes(r.phase)&&!r.cleanupComplete;
+
 export function classifyRecovery(record, now = Date.now()) {
   const r = record || {};
   const clock = Number.isFinite(now) ? now : Date.now();
@@ -137,7 +140,7 @@ export function classifyRecovery(record, now = Date.now()) {
     if(sourceRecovery&&itemId(followup?.id)&&followup.id===r.replacementFollowupId&&followup.id!==r.id&&followup.source==='recovery'){
       // A later case concerns this exact replacement, not the preserved parent.
       // Do not inherit its completion/approval or use the parent's DB freshness.
-      const next=classifyRecovery({source:'recovery',phase:followup.phase,statusUpdated:followup.statusUpdated,originalCheckKind:followup.originalCheckKind,nextSearchAt:followup.nextSearchAt,tdarrStatus:followup.tdarrStatus,error:followup.hasError?'Navazující obnova vyžaduje kontrolu.':null},clock);
+      const next=classifyRecovery({source:'recovery',phase:followup.phase,statusUpdated:followup.statusUpdated,originalCheckKind:followup.originalCheckKind,verifyPausedStep:followup.verifyPausedStep,nextSearchAt:followup.nextSearchAt,tdarrStatus:followup.tdarrStatus,error:followup.hasError?'Navazující obnova vyžaduje kontrolu.':null},clock);
       category=next.category==='done'?'attention':next.category;
       label='Kontrola náhrady: '+next.label;
       nextStep=next.category==='done'?'Otevři navazující případ; dokončení diagnostiky není schválením náhrady.':next.nextStep;
@@ -177,6 +180,7 @@ export function classifyRecovery(record, now = Date.now()) {
     if (running) { category = 'running'; [label, nextStep] = running; }
     else unknown = true;
   }
+  if(verifyPaused(r)){category='waiting';label='Pozastaveno režimem Verify';nextStep='Po přepnutí na Repair Recovery znovu ověří aktuální stav a automaticky pokračuje.';unknown=false;}
   if (warnings.some(w => w !== 'Stav je starší než 12 minut; obnov aktuální údaje.' && w !== 'Čas posledního ověření stavu není dostupný.')) {
     category = 'attention'; nextStep = 'Zkontroluj upozornění v detailu případu.';
     if(blockedImport){label='Staženo; Radarr blokuje import';nextStep='Otevři frontu Radarru a přiřaď stažený soubor správnému filmu přes ruční import. Nové stahování není potřeba.';}
@@ -303,7 +307,7 @@ const RECOVERY_MUTATION_PHASES=new Set(['profile_intent','holding','quarantine_i
 export function recoveryIsBusy(requests,runtime){
   if(runtime?.state!=='running')return false;
   return list(requests).some(r=>{
-    if(r?.source!=='recovery')return false;
+    if(r?.source!=='recovery'||verifyPaused(r))return false;
     if(r.phase==='verifying'||RECOVERY_MUTATION_PHASES.has(r.phase))return true;
     if(!['candidate','confirmed'].includes(r.phase))return false;
     const hash=fullHashProgress(r);

@@ -64,3 +64,10 @@ test('follow-up visibility never supplies mutation or approval capability to the
  assert.equal(classifyRecovery(r,now).category,'unverified');
  }
  });
+
+test('linked replacement followups retain Verify pause and original-location display evidence',()=>{
+ const parentId='a'.repeat(24),childId='b'.repeat(24),fields={verifyPausedStep:'tdarr_handoff',originalOutsideLibrary:true,originalOutsideSince:'2026-10-13T10:00:00.000Z',originalRestoredAt:null};
+ const out=projectReplacementFollowups({cases:[{id:parentId,source:'recovery',phase:'replacement_imported',replacementFollowupId:childId},{id:childId,source:'recovery',phase:'replacement_queue_intent',statusUpdated:'2026-10-13T10:00:00.000Z',...fields}]}).cases[0];
+ for(const [key,value]of Object.entries(fields))assert.equal(out.replacementFollowup[key],value,key);
+ assert.equal(classifyRecovery(out,Date.parse('2026-10-13T10:01:00.000Z')).category,'waiting');
+});

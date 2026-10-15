@@ -1,12 +1,12 @@
 import {mountReviewWorkflow,classifyPreparation,preparationSummary} from '/review-workflow.js?v=20261013-prepared2';
-import {capabilities, classifyRecovery, recoveryProgress, downloadProgress, liveRecoveryRecord, projectRequests, historyWarnings, historyFollowup, recoveryFollowup, fullHashProgress} from '/review-model.js?v=20261014-runtime1';
-import {$,el,fmt,date,elapsedText,etaText,poster,button,badge,keyed,makeTabs,detailsFacts} from '/ui-kit.js?v=20261014-runtime1';
-import {decodeProgressView,downloadProgressView,fullHashProgressView,recoveryDetails,recoveryRuntimeView,recoveryRestartWarningView,recoveryConfigNoticeView} from '/recovery-view.js?v=20261014-runtime1';
+import {capabilities, classifyRecovery, recoveryProgress, downloadProgress, liveRecoveryRecord, projectRequests, historyWarnings, historyFollowup, recoveryFollowup, fullHashProgress} from '/review-model.js?v=20261015-verify1';
+import {$,el,fmt,date,elapsedText,etaText,poster,button,badge,keyed,makeTabs,detailsFacts} from '/ui-kit.js?v=20261015-verify1';
+import {decodeProgressView,downloadProgressView,fullHashProgressView,recoveryDetails,recoveryRuntimeView,recoveryRestartWarningView,recoveryConfigNoticeView} from '/recovery-view.js?v=20261015-verify1';
 import {installComparisons,openComparison,openAudioComparison} from '/comparison.js?v=20261013-split1';
 import {installSettingsDialogs} from '/settings-dialogs.js?v=20261013-split1';
 import {installQuarantine,openQuarantine} from '/quarantine.js?v=20261013-split1';
 import {installStatistics,loadStatistics,statisticsLoadedAt} from '/statistics.js?v=20261013-split1';
-import {tr,locale,language,initializeLocale} from '/i18n.js?v=20261014-runtime1';
+import {tr,locale,language,initializeLocale} from '/i18n.js?v=20261015-verify1';
 import {errorText} from '/error-messages.js?v=20261013-codes1';
 initializeLocale();
 

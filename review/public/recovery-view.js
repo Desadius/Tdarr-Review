@@ -1,7 +1,7 @@
 // Recovery progress and detail renderers. Pure: they read only the record passed in.
-import {tr,locale} from './i18n.js?v=20261014-runtime1';
-import {downloadProgress,recoveryIsBusy,recoveryConfigNotice} from './review-model.js?v=20261014-runtime1';
-import {el,fmt,date,elapsedText,etaText,detailsFacts} from './ui-kit.js?v=20261014-runtime1';
+import {tr,locale} from './i18n.js?v=20261015-verify1';
+import {downloadProgress,recoveryIsBusy,recoveryConfigNotice} from './review-model.js?v=20261015-verify1';
+import {el,fmt,date,elapsedText,etaText,detailsFacts} from './ui-kit.js?v=20261015-verify1';
 
 export function recoveryRuntimeView(runtime,translate=tr){
  const labels={off:'Off',running:'Běží',restarting:'Restartuje se',refused:'Spuštění odmítnuto',stopped:'Zastaveno',unreadable:'Stav nelze přečíst'};
@@ -41,11 +41,26 @@ export function decodeProgressView(p,detail=true){
  return box;
 }
 
-export function recoveryDetails(r){
- const box=el('div');box.append(el('strong','',r.pipelineLabel||r.message));if(r.statusUpdated){box.append(el('p','details','Stav aktualizován: '+new Date(r.statusUpdated).toLocaleString(locale)));if(Date.now()-Date.parse(r.statusUpdated)>12*60000)box.append(el('p','failure','Stav je starší než 12 minut; spojení s Recovery může být přerušené.'));}if(r.replacementTitle)box.append(el('p','details','Náhrada: '+r.replacementTitle));if(r.tdarrStatus)box.append(el('p','details','Tdarr: '+r.tdarrStatus));if(r.quarantineRetained)box.append(el('p','details','Původní kopie je zachovaná v karanténě.'));if(r.deleteAfter)box.append(el('p','details','Úklid karantény po schválení: '+new Date(r.deleteAfter).toLocaleString(locale)));for(const q of downloadProgress(r))box.append(downloadProgressView(q));if(r.phase==='waiting_source_kept')box.append(el('strong','failure','Vydání vyřazeno z převodů — náhrada zatím nenalezena'),el('p','','Film zůstává v Plexu. Jeho původní zvuk má potvrzenou chybu; toto vydání se nebude znovu převádět.'));
+export function recoveryVerifyPauseView(r,translate=tr){
+ const steps={replacement_request:'Čeká: odebrání zachovaného originálu a vyžádání náhrady.',tdarr_handoff:'Čeká: předání náhrady Tdarru.',quarantine_purge:'Čeká: úklid karantény.'};
+ if(!steps[r.verifyPausedStep])return null;
+ const box=el('div','alert');box.setAttribute('role','status');
+ box.append(el('strong','',translate('Pozastaveno režimem Verify; pokračují pouze ochranné kroky.'),true),el('p','',translate(steps[r.verifyPausedStep]),true));
+ const outside=r.originalOutsideLibrary,location=outside===true?'Originál je mimo knihovnu, zachovaný v karanténě.':outside===false?'Originál je v knihovně.':'Umístění originálu není doloženo.';
+ box.append(el('p','details',translate(location),true));
+ if(typeof outside==='boolean'){
+  const since=outside?r.originalOutsideSince:r.originalRestoredAt;
+  box.append(el('p','details',translate(outside?'Mimo knihovnu od:':'Vráceno do knihovny:')+' '+(since&&Number.isFinite(Date.parse(since))?date(since):translate('Čas není doložen')),true));
+ }
+ box.append(el('p','details',translate('Po přepnutí na Repair Recovery znovu ověří aktuální stav a automaticky pokračuje.'),true));
+ return box;
+}
+
+export function recoveryDetails(r,translate=tr){
+ const box=el('div'),pause=recoveryVerifyPauseView(r,translate);if(pause)box.append(pause);box.append(el('strong','',r.pipelineLabel||r.message));if(r.statusUpdated){box.append(el('p','details','Stav aktualizován: '+new Date(r.statusUpdated).toLocaleString(locale)));if(Date.now()-Date.parse(r.statusUpdated)>12*60000)box.append(el('p','failure','Stav je starší než 12 minut; spojení s Recovery může být přerušené.'));}if(r.replacementTitle)box.append(el('p','details','Náhrada: '+r.replacementTitle));if(r.tdarrStatus)box.append(el('p','details','Tdarr: '+r.tdarrStatus));if(r.quarantineRetained&&!r.verifyPausedStep)box.append(el('p','details','Původní kopie je zachovaná v karanténě.'));if(r.deleteAfter)box.append(el('p','details','Úklid karantény po schválení: '+new Date(r.deleteAfter).toLocaleString(locale)));for(const q of downloadProgress(r))box.append(downloadProgressView(q));if(r.phase==='waiting_source_kept')box.append(el('strong','failure','Vydání vyřazeno z převodů — náhrada zatím nenalezena'),el('p','','Film zůstává v Plexu. Jeho původní zvuk má potvrzenou chybu; toto vydání se nebude znovu převádět.'));
  if(r.edition)box.append(el('p','details','Vyřazené vydání: '+r.edition));
  if(r.lastSearchAt)box.append(el('p','details','Poslední hledání: '+new Date(r.lastSearchAt).toLocaleString(locale)));
- if(r.nextSearchAt)box.append(el('p','details','Další automatické hledání: '+new Date(r.nextSearchAt).toLocaleString(locale)));
+ if(r.nextSearchAt&&!r.verifyPausedStep)box.append(el('p','details','Další automatické hledání: '+new Date(r.nextSearchAt).toLocaleString(locale)));
  if(r.error)box.append(el('p','failure','Kontrola náhrady: '+r.error));
  if(r.radarrMovieUrl){const link=el('a','secondary','Otevřít film v Radarru — ruční hledání');link.href=r.radarrMovieUrl;link.target='_blank';link.rel='noopener noreferrer';box.append(link);}
  box.append(el('p','details','Můžeš nezávisle hledat jiné vydání přes interaktivní hledání v Radarru. Vybírej stejnou nebo vyšší kvalitu; vyřazené vydání znovu nestahuj. Před nahrazením ověř stav obnovy; původní kopie se uchová podle pravidel karantény.'));

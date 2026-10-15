@@ -253,6 +253,8 @@ test('repair mode with a matching enabled key repairs like the enabled worker',{
   f.parent.movieId=2;f.cfg.enabled=true;f.allowRepair();await f.write();const output=await f.run();const result=await f.result(),c=result.state.cases[f.id];
   assert.match(output,/Tdarr recovery started; mode=repair/);assert.equal(result.state.lastError,null);
   assert.equal(c.status,'waiting_replacement');assert.equal(await fs.readFile(c.quarantine,'utf8'),f.sourceBytes);await assert.rejects(fs.stat(f.source),{code:'ENOENT'});
+  assert.ok(Date.parse(c.originalOutsideSince)>=c.mutationStarted,'new quarantine records the actual original removal time');
+  assert.equal(result.public.cases.find(x=>x.id===c.id).originalOutsideSince,c.originalOutsideSince);
   assert.equal(f.requests.filter(r=>r.url==='/api/v3/history/failed/22').length,1);assert.equal(f.requests.filter(r=>r.method==='POST'&&r.body?.name==='MoviesSearch').length,1);
  }finally{await f.cleanup();}
 });

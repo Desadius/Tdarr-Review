@@ -263,3 +263,12 @@ test('the request list and the restart notice come from one status-file snapshot
   assert.match(route,/\/api\/radarr\/requests'&&req\.method==='GET'\)return reply\(res,200,await ctx\.replacements\.overview\(\)\);/);
  }finally{await f.cleanup();}
 });
+
+test('Review preserves Verify pause and original-location fields from the shared status',async()=>{
+ const f=await fixture();try{
+  const fields={verifyPausedStep:'tdarr_handoff',originalOutsideLibrary:true,originalOutsideSince:'2026-10-13T10:00:00.000Z',originalRestoredAt:null};
+  await f.atomicJSON(path.join(path.dirname(f.media),'.tdarr-recovery-status.json'),{version:1,updated:new Date().toISOString(),cases:[{id:'b'.repeat(24),phase:'replacement_queue_intent',...fields}]});
+  const record=(await f.service.overview()).requests[0];
+  for(const [key,value]of Object.entries(fields))assert.equal(record[key],value,key);
+ }finally{await f.cleanup();}
+});

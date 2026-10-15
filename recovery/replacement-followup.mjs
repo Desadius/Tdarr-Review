@@ -25,7 +25,7 @@ export function projectReplacementFollowups(snapshot){
   const matches=cases.filter(x=>x.id===id&&x.id!==c.id&&x.source==='recovery');
   if(typeof id!=='string'||!/^[a-f0-9]{24}$/.test(id)||matches.length!==1)return c;
   const child=matches[0];
-  const fields=['id','source','phase','statusUpdated','originalCheckKind','sourceRetained','nextRetryAt','nextSearchAt','tdarrStatus','progress'];
+  const fields=['verifyPausedStep','originalOutsideLibrary','originalOutsideSince','originalRestoredAt','id','source','phase','statusUpdated','originalCheckKind','sourceRetained','nextRetryAt','nextSearchAt','tdarrStatus','progress'];
   return {...c,replacementFollowup:{...Object.fromEntries(fields.filter(k=>Object.hasOwn(child,k)).map(k=>[k,child[k]])),hasError:!!child.error}};
  })};
 }

@@ -142,6 +142,14 @@ The worker normally waits five minutes between passes. During an original decode
 
 Worker heartbeat, last decoder measurement and last Tdarr database observation have separate timestamps. A heartbeat does not refresh the timestamp of a cached imported record. Review preserves these per-case timestamps and labels snapshots older than 12 minutes as stale. Database `Queued`/`Transcoding` status is not a per-worker percentage. Status publication failure is reported separately and cannot change a source's decoding classification.
 
+### Verify pause and original location
+
+The waiting-source path gates only replacement requests/source removal on `cfg.enabled === false`; its protective restoration and read-only import observation continue. Import observation records current metadata while preserving a paused handoff phase. The worker gates Tdarr handoff and quarantine retention separately. No mutation plan or release selection is persisted for use after a pause; Repair re-enters the existing identity, queue/movie, Tdarr and approval checks.
+
+The version-1 public case projection adds `verifyPausedStep` (`replacement_request`, `tdarr_handoff`, `quarantine_purge`, or `null`), `originalOutsideLibrary` (boolean, or `null` when location cannot be checked), `originalOutsideSince`, and `originalRestoredAt`. They are allowlisted by the live publisher, retained in linked followups and passed to Review's case API and Recovery view. No paths or configuration values are included. The pause marker is derived from the active mode and current phase, never repair authority. Location checks compare both the recorded library source and quarantine identities, including a restored copy/link. A differently named replacement does not imply the old original vanished; missing or changed quarantine is shown as unknown location.
+
+New library removals and restorations record their location times in the private journal. For old quarantined cases that never recorded restoration, the original mutation start is the historical fallback; after an observed restoration, an unknown later removal time remains unknown. Snapshot publication does not advance these timestamps. The fields support the later 24-hour attention rule; they do not themselves change health or approval.
+
 ## Quarantine retention
 
 Seven days are counted from a verified Review approval of the identified replacement, not from download, import, job success or original quarantine time. Cleanup validates approval evidence, installed file identity, the recorded quarantine identity, containment, regular files, no symlinks and appropriate hardlink count.

@@ -108,6 +108,14 @@ Check worker logs and its private `state.json` for `lastError` or `statusPublica
 
 Manual replacement requests created in Review continue checking the imported file's exact Tdarr record and library. A fresh status timestamp means that observation ran, not that Tdarr approved the film. Observation and quarantine retention errors are reported separately. Quarantine deletion still requires explicit Review approval evidence and the seven-day retention period.
 
+## In-flight repairs paused by Verify
+
+Verify pauses an in-flight repair while continuing its protective steps. Review's Recovery detail shows what waits, whether the original is still in the library or outside it in quarantine, and the recorded location time. An unknown historical time is shown explicitly; a heartbeat never resets the outside-the-library clock.
+
+The original returns only after Radarr has no movie file, the movie's queue is empty, the search has finished and its quarantine identity still matches. If a download hangs, inspect and remove it in Radarr yourself; Recovery never cancels it. On the next poll the original can return with a Tdarr Hold and confirming Rescan. It is not restored earlier to race an import.
+
+Kept-source removal, replacement requests, Tdarr handoff and quarantine purge wait in Verify, even after human approval and retention expiry. Once Repair is selected and the worker restarts with an accepted configuration, each paused step resumes automatically from fresh checks. A changed identity or approval can keep the step waiting or require manual inspection. Existing startup approval-registry checks still apply to mode changes; frozen configuration must not be rewritten to bypass them. The separate 24-hour attention notice is not part of this change.
+
 ## A replacement also fails decoding
 
 The movie cooldown no longer prevents read-only diagnosis of the new edition. Recovery requires two matching recognized errors, unchanged source identity/sample and exact current Radarr history before holding it. `deferred_cooldown` means the confirmed bad edition remains in Plex and is held in Tdarr; the next permitted repair time appears in Review. It does not authorize another download during the cooldown or change an older quarantine's approval/retention state. After the cooldown and daily limit expire, verified frozen evidence can continue the normal recovery path without repeating the decode.
