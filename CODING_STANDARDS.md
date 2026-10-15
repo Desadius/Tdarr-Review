@@ -18,7 +18,7 @@ Every behaviour a diff adds or changes has a test that was seen **red** because 
 - A test that already passes against the stub (a negative case such as "prints nothing" or "refuses X") is proven by a **mutation**: break the implementation on purpose, show that this test goes red, then restore it.
 - A refactor or an existing behaviour without a new test is covered the same way: a mutation per behaviour, run against the tests that claim to cover it.
 - Tests that skip outside Linux are proven red on Linux: locally in WSL2, or through the `Linux tests (manual)` workflow (`docs/DEVELOPMENT.md`).
-- Evidence belongs in the pull request: per behaviour, the failing assertion that was seen (or the mutation and the test it turned red). A behaviour without that evidence is a finding.
+- Evidence belongs in a pull request **comment**: per behaviour, the failing assertion that was seen (or the mutation and the test it turned red). Follow [the verification procedure](docs/agents/verification.md). A behaviour without that evidence is a finding.
 
 ## One meaning, every reader
 

@@ -9,6 +9,8 @@ npm test
 
 Tests that need Linux (directory `fsync`, POSIX permission/ctime assertions, symlink fixtures) skip on other systems. After the normal report, `npm test` lists every skipped test with its reason on stderr, so a green summary cannot hide tests that never ran. On Linux, including WSL2, nothing should be skipped.
 
+Agents capturing red → green or mutation evidence, locally or in CI, follow [the verification procedure](agents/verification.md). Publish the evidence in a comment on the relevant PR; keep reusable procedures in repository documentation. For literal text replacements and multiline GitHub bodies, see [editing safely](agents/editing.md).
+
 `npm run check` also refuses a new test that reads implementation source text (for example `fs.readFile(new URL('./server.mjs', import.meta.url))`) instead of exercising behaviour. Existing reads are listed in `SOURCE_TEXT_ALLOWLIST` in `tools/source-text-tests.mjs`; when you rewrite one of those tests, remove its entry, because the check also fails on an entry that no longer matches.
 
 ### Development in WSL2
