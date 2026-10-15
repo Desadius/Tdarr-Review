@@ -1,5 +1,17 @@
 export default {
   "exact": {
+    "Pozastaveno režimem Verify": "Paused by Verify",
+    "Pozastaveno režimem Verify; pokračují pouze ochranné kroky.": "Paused by Verify; only protective steps continue.",
+    "Čeká: odebrání zachovaného originálu a vyžádání náhrady.": "Waiting to remove the kept original and request a replacement.",
+    "Čeká: předání náhrady Tdarru.": "Waiting to hand the replacement to Tdarr.",
+    "Čeká: úklid karantény.": "Waiting to purge quarantine.",
+    "Originál je mimo knihovnu, zachovaný v karanténě.": "The original is outside the library, preserved in quarantine.",
+    "Originál je v knihovně.": "The original is in the library.",
+    "Umístění originálu není doloženo.": "The original location is not recorded.",
+    "Mimo knihovnu od:": "Outside the library since:",
+    "Vráceno do knihovny:": "Returned to the library:",
+    "Po přepnutí na Repair Recovery znovu ověří aktuální stav a automaticky pokračuje.": "After switching to Repair, Recovery revalidates the current state and resumes automatically.",
+
     "Restart nebo aktualizace kontejneru s Review přeruší Recovery. Počkej na dokončení kontroly originálu nebo změn prováděných Recovery. Přerušená kontrola není důkazem poškození.": "Restarting or updating the container running Review interrupts Recovery. Wait for the original check or changes made by Recovery to finish. An interrupted check is not evidence of corruption.",
     "Stav Recovery": "Recovery status",
     "Běží": "Running",

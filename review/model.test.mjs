@@ -300,3 +300,14 @@ test('full-hash progress is shown only for a known stage and goes stale without 
  assert.equal(fullHashProgress({...rec,fullHash:{...rec.fullHash,done:-1}},now).done,null);
  for(const bad of [{...rec,source:'radarr'},{...rec,fullHash:null},{...rec,fullHash:{...rec.fullHash,stage:'other'}},{...rec,fullHash:'x'}])assert.equal(fullHashProgress(bad,now),null);
 });
+
+test('Verify-paused in-flight repairs are waiting, preserve errors and are not active mutations',async()=>{
+ const {recoveryIsBusy}=await import('./public/review-model.js');
+ for(const [phase,verifyPausedStep]of [['waiting_source_kept','replacement_request'],['waiting_replacement','tdarr_handoff'],['replacement_queue_intent','tdarr_handoff'],['replacement_imported','quarantine_purge']]){
+  const record={source:'recovery',phase,verifyPausedStep,statusUpdated:freshTime};
+  const result=classifyRecovery(record,NOW);assert.equal(result.category,'waiting');assert.equal(result.label,'Pozastaveno režimem Verify');assert.equal(result.unknown,false);
+  assert.equal(classifyRecovery({...record,error:'Identity changed'},NOW).category,'attention');
+  assert.equal(recoveryIsBusy([record],{state:'running',mode:'verify'}),false);
+ }
+ assert.equal(recoveryIsBusy([{source:'recovery',phase:'restore_source_intent',verifyPausedStep:'tdarr_handoff'}],{state:'running',mode:'verify'}),true,'a real protective mutation still warns before restart');
+});

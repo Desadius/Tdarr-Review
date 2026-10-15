@@ -145,6 +145,7 @@ async function repair(c,{reuseConfirmedEvidence=false}={}){
   c.quarantine=path.join(qdir,path.basename(c.relative));
   await phase(c,'quarantine_intent','Preserving original outside the media library');
   await fs.rename(c.source,c.quarantine);
+  c.originalOutsideSince=new Date().toISOString();
   if((await fs.stat(c.quarantine)).size!==c.size)throw Error('Quarantine size mismatch');
   await phase(c,'quarantined','Original preserved in quarantine');
   await command({name:'RescanMovie',movieId:c.movieId});
@@ -175,6 +176,7 @@ async function observe(){
    if(c.status==='replacement_queue_intent'&&(rel!==c.replacementRelative||s.fp!==c.replacementSourceFP||m.movieFileId!==c.replacement?.movieFileId))throw Object.assign(Error('Replacement identity changed after handoff intent'),{code:'TDARR_HANDOFF_BINDING'});
    c.replacement={movieFileId:m.movieFileId,path:m.movieFile.path,size:m.movieFile.size};
    c.replacementRelative=rel;c.replacementSourceFP=s.fp;
+   if(cfg.enabled===false){delete c.observationError;continue;} // Observe the import, but preserve the paused phase.
    const file=cfg.sourceRoot+'/'+rel;
    await phase(c,'replacement_queue_intent','Replacement imported; refreshing Tdarr entry');
    // A newer case may already have held this exact imported source after its
@@ -186,7 +188,7 @@ async function observe(){
   delete c.observationError;
   } catch(e) {
    c.observationError=e.message;
-   if(c.status==='replacement_queue_intent'&&['TDARR_HANDOFF_BINDING','TDARR_HANDOFF_STATE'].includes(e.code))await phase(c,'manual',e.message);
+   if(cfg.enabled!==false&&c.status==='replacement_queue_intent'&&['TDARR_HANDOFF_BINDING','TDARR_HANDOFF_STATE'].includes(e.code))await phase(c,'manual',e.message);
    // A temporarily unavailable replacement must not stop checks for other films.
   }
  }
@@ -239,7 +241,7 @@ async function tick(){
  await resumeDailyLimit();
  await processPending({approvals:pendingApprovals,cfg,state,safeSource,identity,phase,repair});
  await publishNow(()=>liveStatus.refresh());
- for(const c of Object.values(state.cases).filter(c=>c.status==='replacement_imported')){try{await retainCase(c,{mediaRoot:cfg.mediaRoot,quarantineRoot:cfg.quarantineRoot,atomicCase:save});delete c.retentionError;}catch(e){c.retentionError=e.message;}}
+ for(const c of Object.values(state.cases).filter(c=>c.status==='replacement_imported'&&cfg.enabled!==false)){try{await retainCase(c,{mediaRoot:cfg.mediaRoot,quarantineRoot:cfg.quarantineRoot,atomicCase:save});delete c.retentionError;}catch(e){c.retentionError=e.message;}}
  // Catch these files even when Tdarr has silently classified them Not required.
  if(cfg.detectTerminalHeaders){
   for(const f of rows('filejsondb').filter(f=>f.DB===cfg.libraryId&&['Queued','Not required','Transcode error','Hold'].includes(f.TranscodeDecisionMaker)&&String(f._id).toLowerCase().endsWith('.mkv'))){

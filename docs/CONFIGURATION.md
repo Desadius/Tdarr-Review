@@ -54,8 +54,14 @@ The `RECOVERY_MODE` environment variable of the Recovery container is the only s
 
 | `RECOVERY_MODE` | Behaviour |
 | --- | --- |
-| `verify` | Confirms corrupted originals with two independent decodes and stops at `dry_run`; changes nothing outside Recovery (no Tdarr Hold, quarantine, blocklist or search) |
+| `verify` | Confirms corrupted originals with two independent decodes and stops new cases at `dry_run`. In-flight repairs pause; only their protective steps continue (see below) |
 | `repair` | May act on a confirmed corruption within the limits below |
+
+In Verify, an [in-flight repair](../GLOSSARY.md) may return its original from quarantine and apply the protective Tdarr Hold and confirming Radarr `RescanMovie`. This uses the existing conditions: Radarr has no movie file, its queue for the movie is empty, its search has finished, and the quarantine identity is unchanged. Recovery never cancels a download or restores across an active search or download.
+
+Other steps wait: removing a kept original, requesting a replacement release or search, handing an imported file to Tdarr (including a pending handoff), and purging quarantine. Import and download observation continue. Review shows the step paused by Verify and whether the original is in the library or outside it, with its recorded time. Switching back to Repair resumes paused steps without another confirmation, after checking the current file, Radarr, Tdarr and approval state again. These paused steps never grant approval.
+
+This does not change approval-registry compatibility: a mode switch that conflicts with frozen configuration still refuses startup. Do not rewrite frozen evidence to bypass it.
 
 The worker refuses to start before contacting any API, exits with code `78` and ends its log with `RECOVERY_REFUSED <reason>` when:
 

@@ -11,7 +11,9 @@ This records the implemented application features. Versions before 1.10.0 were d
 
 ### Recovery worker
 
-- The Recovery mode now comes only from the `RECOVERY_MODE` environment variable: `verify` confirms corrupted originals without changing anything outside Recovery (the former `enabled: false`), `repair` may act on a confirmed corruption (the former `enabled: true`). The Compose `recovery` service requires `RECOVERY_MODE`; set it from your current `enabled` value before updating.
+- Verify now pauses non-protective steps of in-flight repairs: kept-source removal and replacement requests, Tdarr handoff, and quarantine purge. Protective restoration with its existing conditions and read-only observation continue. Review shows the paused step and original location/time in English and Czech; Repair resumes from fresh checks.
+
+- The Recovery mode now comes only from the `RECOVERY_MODE` environment variable: `verify` confirms corrupted originals and continues only protective steps of in-flight repairs (the former `enabled: false`), `repair` may act on a confirmed corruption (the former `enabled: true`). The Compose `recovery` service requires `RECOVERY_MODE`; set it from your current `enabled` value before updating.
 - `enabled` in `config.json` is deprecated. A matching value is still accepted. A conflicting one, a missing or invalid mode, a missing, unreadable or invalid `config.json`, and an approval registry that refuses the configuration stop the worker before any API contact with exit code 78 and a final `RECOVERY_REFUSED <reason>` log line that never contains configuration values. A running worker reports a `config.json` edit whose `enabled` conflicts with the mode as invalid.
 - The offline registry migration utility checks `config.json` with the same `RECOVERY_MODE` as the worker; run it with the mode the worker will use.
 - Fix: the running worker now actually publishes the `configChange` restart notice introduced in 1.11.0. Its live status publisher dropped the field, so Review never showed the notice for edits made while the worker ran.

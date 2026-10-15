@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createTranslator} from './public/i18n.js';
-import {recoveryRuntimeView,recoveryRestartWarningView,recoveryConfigNoticeView} from './public/recovery-view.js';
+import {recoveryRuntimeView,recoveryRestartWarningView,recoveryConfigNoticeView,recoveryVerifyPauseView,recoveryDetails} from './public/recovery-view.js';
 
 class Element {
  constructor(tag){this.tagName=tag.toUpperCase();this.children=[];this.attributes={};this.className='';this.textContent=''}
@@ -87,3 +87,30 @@ for(const [runtime,czech,english]of runtimeStates){
   }));
  }
 }
+
+for(const [step,cs,en]of [
+ ['replacement_request','Čeká: odebrání zachovaného originálu a vyžádání náhrady.','Waiting to remove the kept original and request a replacement.'],
+ ['tdarr_handoff','Čeká: předání náhrady Tdarru.','Waiting to hand the replacement to Tdarr.'],
+ ['quarantine_purge','Čeká: úklid karantény.','Waiting to purge quarantine.']
+])for(const language of ['cs','en'])test('Verify pause '+step+' renders its step and original location in '+language,()=>withDocument(()=>{
+ const record={verifyPausedStep:step,originalOutsideLibrary:true,originalOutsideSince:'2026-10-13T10:00:00.000Z'};
+ const view=recoveryVerifyPauseView(record,createTranslator(language));assert.ok(view);
+ const text=textContent(view);assert.ok(text.includes(language==='en'?en:cs));
+ assert.ok(text.includes(language==='en'?'The original is outside the library, preserved in quarantine.':'Originál je mimo knihovnu, zachovaný v karanténě.'));
+ assert.ok(text.includes(language==='en'?'Outside the library since:':'Mimo knihovnu od:'));
+ assert.ok(text.includes('2026'));
+ assert.ok(textContent(recoveryDetails(record,createTranslator(language))).includes(language==='en'?en:cs),'the Recovery details view must show the pause');
+}));
+for(const language of ['cs','en'])test('Verify pause shows the returned original and unknown historical time in '+language,()=>withDocument(()=>{
+ const translate=createTranslator(language),view=recoveryVerifyPauseView({verifyPausedStep:'replacement_request',originalOutsideLibrary:false},translate);
+ assert.ok(view);const text=textContent(view);
+ assert.ok(text.includes(language==='en'?'The original is in the library.':'Originál je v knihovně.'));
+ assert.ok(text.includes(language==='en'?'Time not confirmed':'Čas není doložen'));
+ assert.equal(recoveryVerifyPauseView({},translate),null);
+}));
+
+for(const language of ['cs','en'])test('Verify pause does not claim quarantine is preserved when the original location is unknown in '+language,()=>withDocument(()=>{
+ const text=textContent(recoveryDetails({source:'recovery',phase:'waiting_replacement',verifyPausedStep:'replacement_request',originalOutsideLibrary:null,quarantineRetained:true},createTranslator(language)));
+ assert.ok(text.includes(language==='en'?'The original location is not recorded.':'Umístění originálu není doloženo.'));
+ assert.equal(text.includes('zachovaná v karanténě'),false);assert.equal(text.includes('preserved in quarantine'),false);
+}));

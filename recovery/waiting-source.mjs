@@ -30,6 +30,7 @@ export async function maintainWaitingSources({cfg,state,rad,td,phase,save,comman
     await td('/api/v2/bulk-update-files',{fileIds:[c.file],updatedObj:{TranscodeDecisionMaker:'Hold',holdUntil:FOREVER}});
     await phase(c,'restore_source_intent','Náhrada nenalezena; vracím vydání do knihovny a ponechávám zálohu v karanténě.');
     try{await fs.link(c.quarantine,c.source);c.keptLink=true;}catch(e){if(!['EXDEV','ENOTSUP','EOPNOTSUPP'].includes(e.code))throw e;await fs.copyFile(c.quarantine,c.source,fs.constants.COPYFILE_EXCL|fs.constants.COPYFILE_FICLONE);c.keptLink=false;}
+    c.originalRestoredAt=new Date().toISOString();delete c.originalOutsideSince;
     c.preservedSourceFP=fp(await fs.lstat(c.source));c.skipCurrentEdition=true;c.lastSearchAt=new Date().toISOString();c.nextSearchAt=new Date(Date.now()+6*3600000).toISOString();
     await phase(c,'waiting_source_kept','Vydání vyřazeno z převodů — náhrada zatím nenalezena. Film zůstává v knihovně; automatika hledá dál.');
     await command({name:'RescanMovie',movieId:c.movieId});const fresh=await rad('/movie/'+c.movieId);if(fresh.movieFile?.path!==cfg.radarrRoot+'/'+c.relative||fresh.movieFile?.size!==c.size)throw Error('Restored source not confirmed in Radarr');const current=fp(await fs.lstat(c.source));if(!samePreserved(current,c.preservedSourceFP))throw Error('Restored source changed during rescan');c.preservedSourceFP=current;c.keptMovieFileId=fresh.movieFileId;await save();
@@ -52,6 +53,7 @@ export async function maintainWaitingSources({cfg,state,rad,td,phase,save,comman
     throw Error('Kept source changed without confirmed replacement');
    }
    if(queue.length||Date.now()<Date.parse(c.nextSearchAt||0))continue;
+   if(cfg.enabled===false)continue; // In Verify, observation and protective restoration continue; download work waits.
    const profile=await rad('/qualityprofile/'+m.qualityProfileId),blocklist=await rad('/blocklist/movie?movieId='+c.movieId),badTitles=new Set([c.binding.sourceTitle,...blocklist.map(b=>b.sourceTitle)]);
    c.lastSearchAt=new Date().toISOString();c.nextSearchAt=new Date(Date.now()+6*3600000).toISOString();await save();
    const current=c.originalQuality||m.movieFile?.quality?.quality;if(!current?.id)throw Error('Original quality unknown; automated download refused');
@@ -60,7 +62,7 @@ export async function maintainWaitingSources({cfg,state,rad,td,phase,save,comman
    await idle(c);const q=await fs.lstat(c.quarantine);if(!samePreserved(fp(q),c.fp)||source.fp!==(await safeSource(c.relative)).fp)throw Error('Original changed before replacement request');
    if(c.keptLink){const kept=await fs.lstat(c.source);if(kept.ino!==q.ino||kept.dev!==q.dev||q.nlink!==2)throw Error('Preserved source link changed');}else if(await sample(c.source)!==await sample(c.quarantine))throw Error('Restored copy does not match quarantine');
    await td('/api/v2/bulk-update-files',{fileIds:[c.file],updatedObj:{TranscodeDecisionMaker:'Hold',holdUntil:FOREVER}});
-   await phase(c,'remove_kept_source_intent','Nalezena vhodná náhrada; originál zůstává v karanténě.');await fs.unlink(c.source);
+   await phase(c,'remove_kept_source_intent','Nalezena vhodná náhrada; originál zůstává v karanténě.');await fs.unlink(c.source);c.originalOutsideSince=new Date().toISOString();await save();
    await command({name:'RescanMovie',movieId:c.movieId});if((await rad('/movie/'+c.movieId)).movieFileId)throw Error('Radarr still sees kept source');
    await phase(c,'replacement_download_intent','Předávám vhodnou náhradu ke stažení.');await rad('/release',{guid:release.guid,indexerId:release.indexerId,movieId:c.movieId});c.skipCurrentEdition=false;c.selectedRelease=release.title;
    await phase(c,'waiting_replacement','Radarr stahuje jinou kopii; původní vydání zůstává v karanténě.');
@@ -80,7 +82,7 @@ export async function publishRecoveryStatus({cfg,state,atomic,tdarrFiles=[]}){
  const labels={deferred_limit:'Čeká na uvolnění denního limitu obnov',candidate:'Ověřuje se originál',verifying:'Kontrola originálu',confirmed:'Chyba originálu potvrzena',profile_intent:'Nastavuje se kvalita náhrady',holding:'Pozastavuje se vadné vydání',quarantine_intent:'Přesun originálu do karantény',quarantined:'Originál uložen v karanténě',blocklist_intent:'Vyřazuje se vadné vydání',blocked:'Vadné vydání vyřazeno',search_intent:'Spouští se hledání náhrady',waiting_source_kept:'Náhrada zatím nenalezena; film zůstává v knihovně',waiting_replacement:'Hledání nebo stahování náhrady',replacement_queue_intent:'Nová kopie se předává Tdarru',replacement_imported:'Náhrada předána Tdarru',manual:'Obnova vyžaduje kontrolu',restore_source_intent:'Vrací se zachovaná kopie do knihovny',remove_kept_source_intent:'Připravuje se stažení náhrady',replacement_download_intent:'Předává se náhrada ke stažení'};
  Object.assign(labels,{defer_limit_intent:'Pozastavuje se vadné vydání během denního limitu',defer_cooldown_intent:'Pozastavuje se potvrzené vadné vydání',deferred_cooldown:'Vadné vydání pozastavené; čeká na limit obnov',no_action:'Kontrola originálu dokončena',dry_run:'Chyba potvrzena; automatické změny vypnuté'});
  const frozenLimit=Object.values(state.cases).some(c=>c.status==='deferred_limit'&&c.approval&&!c.deferredLimit)?quotaFor({cfg,state}):null;
- const cases=Object.values(state.cases).filter(c=>labels[c.status]).map(c=>{
+ const cases=await Promise.all(Object.values(state.cases).filter(c=>labels[c.status]).map(async c=>{
   const display=replacementDisplayPath(c,cfg);
   const file=display?cfg.sourceRoot+'/'+display.relative:null;
   const matches=file?tdarrFiles.filter(f=>f._id===file&&f.DB===cfg.libraryId):[];
@@ -91,7 +93,27 @@ export async function publishRecoveryStatus({cfg,state,atomic,tdarrFiles=[]}){
   if(c.status==='replacement_imported'&&tdarrStatus==='Hold'&&!c.cleanup?.approvedAt)pipelineLabel='Náhrada je pozastavená v Tdarru; zkontroluj důvod';
   if(c.status==='no_action')pipelineLabel=c.originalCheckKind==='healthy'?'Úplná kontrola originálu bez chyby':'Kontrola originálu nepotvrdila poškození';
   const followup=replacementFollowup(c,{cfg,state});
-  return {replacementFollowupId:followup?.id||null,replacementFollowupBinding:followup?.binding||null,id:c.id,title:c.relative?.split('/')[0]||'Film',phase:c.status,pipelineLabel,source:'recovery',message:c.message,reason:c.evidence?.signature||c.approval?.signature||c.message,created:c.created,updated:c.updated,lastSearchAt:c.lastSearchAt||null,nextSearchAt:c.nextSearchAt||null,nextRetryAt:(c.status==='deferred_limit'&&c.approval&&!c.deferredLimit?frozenLimit?.retryAt:c.nextRetryAt)||null,sourceRetained:c.status==='waiting_source_kept'||c.status==='deferred_cooldown'||c.status==='deferred_limit'&&!!(c.deferredLimit||c.approval),originalCheckKind:c.originalCheckKind||null,tmdbId:c.tmdbId||null,titleSlug:c.titleSlug||null,edition:c.binding?.sourceTitle||c.approval?.sourceTitle||null,queue:['waiting_replacement','waiting_source_kept','manual'].includes(c.status)?c.latestQueue||[]:[],error:c.observationError||c.retentionError||null,tdarrStatus,legacyReplacementBinding:display?.legacy===true,replacementTitle:display?.relative.split('/').pop()||null,quarantineRetained:!!c.quarantine&&!c.cleanup?.complete,cleanupComplete:!!c.cleanup?.complete,deleteAfter:c.cleanup?.deleteAfter||null,fullHash:c.fullHash?{stage:c.fullHash.stage,done:c.fullHash.done,total:c.fullHash.total,started:c.fullHash.started,updated:c.fullHash.updated||null}:null,canRestore:false};
- });
+  return {...await verifyPause(c,cfg),replacementFollowupId:followup?.id||null,replacementFollowupBinding:followup?.binding||null,id:c.id,title:c.relative?.split('/')[0]||'Film',phase:c.status,pipelineLabel,source:'recovery',message:c.message,reason:c.evidence?.signature||c.approval?.signature||c.message,created:c.created,updated:c.updated,lastSearchAt:c.lastSearchAt||null,nextSearchAt:c.nextSearchAt||null,nextRetryAt:(c.status==='deferred_limit'&&c.approval&&!c.deferredLimit?frozenLimit?.retryAt:c.nextRetryAt)||null,sourceRetained:c.status==='waiting_source_kept'||c.status==='deferred_cooldown'||c.status==='deferred_limit'&&!!(c.deferredLimit||c.approval),originalCheckKind:c.originalCheckKind||null,tmdbId:c.tmdbId||null,titleSlug:c.titleSlug||null,edition:c.binding?.sourceTitle||c.approval?.sourceTitle||null,queue:['waiting_replacement','waiting_source_kept','manual'].includes(c.status)?c.latestQueue||[]:[],error:c.observationError||c.retentionError||null,tdarrStatus,legacyReplacementBinding:display?.legacy===true,replacementTitle:display?.relative.split('/').pop()||null,quarantineRetained:!!c.quarantine&&!c.cleanup?.complete,cleanupComplete:!!c.cleanup?.complete,deleteAfter:c.cleanup?.deleteAfter||null,fullHash:c.fullHash?{stage:c.fullHash.stage,done:c.fullHash.done,total:c.fullHash.total,started:c.fullHash.started,updated:c.fullHash.updated||null}:null,canRestore:false};
+ }));
  await atomic(path.join(path.dirname(cfg.mediaRoot),'.tdarr-recovery-status.json'),{version:1,updated:new Date().toISOString(),configChange:state.configChange?{detectedAt:state.configChange.detectedAt,restartRequired:true,valid:state.configChange.valid,error:state.configChange.error}:null,cases},0o644);
+}
+
+// A pause describes pending work; it never authorizes or caches a future mutation.
+async function verifyPause(c,cfg){
+ if(!['waiting_replacement','waiting_source_kept','replacement_queue_intent','replacement_imported'].includes(c.status)||c.cleanup?.complete)return {};
+ let outside=c.status!=='waiting_source_kept';
+ // A new import may use a different filename while the protected original still exists.
+ // Location is display evidence only and must never be used to authorize a later step.
+ if(c.source&&(c.preservedSourceFP||c.fp)){
+  try{const st=await fs.lstat(c.source);outside=!(st.isFile()&&!st.isSymbolicLink()&&samePreserved(fp(st),c.preservedSourceFP||c.fp)&&await fs.realpath(c.source)===c.source);}
+  catch(e){outside=e.code==='ENOENT'?true:null;}
+ }
+ if(outside===true){
+  try{const q=await fs.lstat(c.quarantine);if(!q.isFile()||q.isSymbolicLink()||!c.fp||!samePreserved(fp(q),c.fp)||await fs.realpath(c.quarantine)!==c.quarantine)outside=null;}
+  catch{outside=null;}
+ }
+ const timestamp=value=>{if(value===null||value===undefined)return null;const date=new Date(value);return Number.isFinite(date.getTime())?date.toISOString():null;};
+ const since=c.originalOutsideSince||(!c.preservedSourceFP&&!c.originalRestoredAt&&Number.isFinite(c.mutationStarted)?timestamp(c.mutationStarted):null);
+ const step=c.status==='replacement_imported'?'quarantine_purge':c.status==='replacement_queue_intent'||c.status==='waiting_replacement'&&c.replacementRelative?'tdarr_handoff':'replacement_request';
+ return {verifyPausedStep:cfg.enabled===false?step:null,originalOutsideLibrary:outside,originalOutsideSince:outside===true?timestamp(since):null,originalRestoredAt:outside===false?timestamp(c.originalRestoredAt):null};
 }

@@ -1,4 +1,4 @@
-import catalog from './messages.en.js?v=20261014-runtime1';
+import catalog from './messages.en.js?v=20261015-verify1';
 
 const escapeRegex=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 const interpolate=(text,values)=>text.replace(/\{(\d+)\}/g,(_,i)=>values[Number(i)]??'');
