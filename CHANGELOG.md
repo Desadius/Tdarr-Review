@@ -2,7 +2,24 @@
 
 This records the implemented application features. Versions before 1.10.0 were deployed snapshots and are not published Git tags.
 
-## Unreleased
+## 2.0.0 — Unreleased
+
+Review and Recovery become one container. Installations that ran the separate Recovery container follow [the 2.0 migration guide](docs/MIGRATE-TO-2.0.md), which copies the old Recovery data and keeps frozen approval evidence unchanged.
+
+### Breaking changes
+
+- The separate `ghcr.io/desadius/tdarr-recovery` image is discontinued; no 2.0 version of it is published. The Review image contains Recovery.
+- **Compose:** the `recovery` service and the `recovery` profile are removed; `compose.yaml` has one `review` service. `docker compose --profile recovery …` no longer finds the service, and `--remove-orphans` would remove an old Recovery container that is still running. Remove it deliberately as the migration guide describes.
+- **Compose:** `.env` no longer uses `RECOVERY_IMAGE_TAG`, `RECOVERY_DATA_HOST` or `TDARR_REPORTS_HOST`. New: `RECOVERY_MODE` (`off`, `verify`, `repair`; default `off`).
+- Recovery's data directory moves to `/data/recovery/` inside Review's data directory (`config.json`, `state.json`, `pending-approvals.json`, caches).
+- Recovery uses Review's mappings. The example configuration now uses `/media/movies`, quarantine `/media/.tdarr-corrupt` and reports `/tdarr/JobReports` instead of `/storage/...` and `/reports`. Existing frozen paths are never rewritten: keep them with an extra `/storage` (and, if frozen, `/reports`) mapping to the same host folders.
+- `RECOVERY_MODE` is the only Recovery switch; `enabled` in `config.json` is deprecated and must match it if present. An approval registry that froze `enabled` allows only the matching mode.
+- Resource limits of the template and Compose rise to `--cpus=2 --memory=2g --pids-limit=256`, shared by Review and Recovery. Unraid does not change Extra Parameters of an installed container; raise them when you edit it.
+
+### Documentation
+
+- Add [the 2.0 migration guide](docs/MIGRATE-TO-2.0.md): stop and back up while idle, copy the old Recovery data to `/data/recovery/`, keep `/storage` paths with a mapping, derive `RECOVERY_MODE` from the old `enabled` (including a mode pinned by the registry), remove the old container, verify health, runtime state and status file, delete old data later, and roll back. It includes a command that lists which keys the registry freezes without printing values.
+- Installation, configuration, operations, Community Applications, architecture, release and registry migration documents and the Czech overview describe the single container.
 
 ### Review: Recovery runtime status
 
@@ -11,7 +28,7 @@ This records the implemented application features. Versions before 1.10.0 were d
 
 ### Recovery worker
 
-- The Recovery mode now comes only from the `RECOVERY_MODE` environment variable: `verify` confirms corrupted originals without changing anything outside Recovery (the former `enabled: false`), `repair` may act on a confirmed corruption (the former `enabled: true`). The Compose `recovery` service requires `RECOVERY_MODE`; set it from your current `enabled` value before updating.
+- The Recovery mode now comes only from the `RECOVERY_MODE` environment variable: `verify` confirms corrupted originals without changing anything outside Recovery (the former `enabled: false`), `repair` may act on a confirmed corruption (the former `enabled: true`). Set it from your current `enabled` value when updating.
 - `enabled` in `config.json` is deprecated. A matching value is still accepted. A conflicting one, a missing or invalid mode, a missing, unreadable or invalid `config.json`, and an approval registry that refuses the configuration stop the worker before any API contact with exit code 78 and a final `RECOVERY_REFUSED <reason>` log line that never contains configuration values. A running worker reports a `config.json` edit whose `enabled` conflicts with the mode as invalid.
 - The offline registry migration utility checks `config.json` with the same `RECOVERY_MODE` as the worker; run it with the mode the worker will use.
 - Fix: the running worker now actually publishes the `configChange` restart notice introduced in 1.11.0. Its live status publisher dropped the field, so Review never showed the notice for edits made while the worker ran.
