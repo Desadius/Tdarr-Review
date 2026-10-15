@@ -9,6 +9,15 @@ const finiteTime = value => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 const normalize = value => text(value).toLowerCase();
+// An in-flight repair paused by Verify before its replacement arrived keeps the film out of the
+// library. Past this limit Review raises attention (health code and Recovery view); it is a notice only.
+export const RECOVERY_ORIGINAL_OUTSIDE_MS = 24 * 60 * 60 * 1000;
+// Only a paused replacement request means the film is missing: once a replacement is imported
+// (Tdarr handoff, quarantine purge) the library has a file again and nothing hangs in Radarr.
+export function originalOutsideTooLong(record, now = Date.now()) {
+  const since = record?.verifyPausedStep === 'replacement_request' && record.originalOutsideLibrary === true ? finiteTime(record.originalOutsideSince) : null;
+  return since !== null && now - since > RECOVERY_ORIGINAL_OUTSIDE_MS;
+}
 const list = value => Array.isArray(value) ? value : [];
 const hasDuration = value => typeof value === 'number' && Number.isFinite(value) && value > 0;
 
@@ -181,6 +190,7 @@ export function classifyRecovery(record, now = Date.now()) {
     else unknown = true;
   }
   if(verifyPaused(r)){category='waiting';label='Pozastaveno režimem Verify';nextStep='Po přepnutí na Repair Recovery znovu ověří aktuální stav a automaticky pokračuje.';unknown=false;}
+  if(verifyPaused(r)&&!stale&&!unknownTime&&originalOutsideTooLong(r,clock)){category='attention';label='Originál je déle než 24 hodin mimo knihovnu';nextStep='Pokud stahování v Radarru visí, odstraň ho v Radarru; Recovery při příští kontrole vrátí originál do knihovny.';}
   if (warnings.some(w => w !== 'Stav je starší než 12 minut; obnov aktuální údaje.' && w !== 'Čas posledního ověření stavu není dostupný.')) {
     category = 'attention'; nextStep = 'Zkontroluj upozornění v detailu případu.';
     if(blockedImport){label='Staženo; Radarr blokuje import';nextStep='Otevři frontu Radarru a přiřaď stažený soubor správnému filmu přes ruční import. Nové stahování není potřeba.';}

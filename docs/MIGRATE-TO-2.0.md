@@ -116,7 +116,7 @@ services:
 | `false` (or absent) | `verify` |
 | `true` | `repair` |
 
-**A registry that freezes `enabled` pins the mode.** The start-up check compares every frozen key with the configuration Recovery runs with, and `enabled` now comes from `RECOVERY_MODE`. If step 1 printed `registry frozen enabled: true`, only `repair` starts; with `false`, only `verify` starts. The other mode is refused with `RECOVERY_REFUSED registry-refused`, even with an unchanged `config.json`. The same applies to a later switch, for example to `verify` for a quieter period: while the registry freezes `enabled`, the switch is refused. A planned change ([#77](https://github.com/Desadius/Tdarr-Review/issues/77)) will let a registry approved for Repair also start in Verify; it is not part of this version.
+**A frozen `enabled` limits the modes.** The start-up check compares every frozen key with the configuration Recovery runs with, and `enabled` now comes from `RECOVERY_MODE`. If step 1 printed `registry frozen enabled: true`, the registry was approved for Repair and both `repair` and `verify` start, because Verify is strictly narrower. With `false`, only `verify` starts; `repair` is refused with `RECOVERY_REFUSED registry-refused`, even with an unchanged `config.json`. The status file's `registryAllowedModes` shows the allowed modes before a later switch ([Recovery mode](CONFIGURATION.md#recovery-mode)).
 
 Frozen limits (`maxRepairsPerDay`, `stableMinutes` or any other frozen key) cannot be changed through `config.json` either; an edit is reported invalid in the Recovery view and refused at the next start.
 

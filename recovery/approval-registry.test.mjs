@@ -8,6 +8,7 @@ import {fileURLToPath} from 'node:url';
 import {identity} from './policy.mjs';
 import {processPending} from './pending-approved.mjs';
 import {loadApprovalRegistry,registryHasApproval,migrateApprovalRegistry} from './approval-registry.mjs';
+import {configDigest,detectConfigChange,startupValidator} from './config-watch.mjs';
 
 function evidence(){
  const cfg={enabled:true,libraryId:'fixture-library',sourceRoot:'/media/movies',mediaRoot:'/storage/movies',radarrRoot:'/radarr/movies',quarantineRoot:'/storage/.tdarr-corrupt',reviewRoot:'/review',reviewPrefixes:['PROD-Movies'],maxRepairsPerDay:3};
@@ -212,5 +213,56 @@ test('offline CLI reads config.json with RECOVERY_MODE exactly as the worker doe
  for(const [mode,pattern] of [['verify',/disagrees with RECOVERY_MODE/],[undefined,/RECOVERY_MODE must be off, verify or repair/],['off',/RECOVERY_MODE is off/]]){
   f=await fixture(t);await f.write(f.source,f.registry);const refused=await run(f,mode);
   assert.notEqual(refused.code,0,String(mode));assert.match(refused.stderr,pattern);assert.doesNotMatch(refused.stderr+refused.stdout,/fixture-library|DISPOSABLE/);await assert.rejects(fs.stat(f.target),{code:'ENOENT'});
+ }
+});
+
+// #77: one rule for the frozen enabled key, shared by every reader of the registry.
+const verifyCfg=f=>({...f.cfg,enabled:false});
+test('a registry approved for Repair also loads in Verify; one frozen to Verify still refuses Repair',async t=>{
+ const f=await fixture(t);await f.write(f.target,f.registry);
+ assert.equal(f.registry.config.enabled,true);
+ assert.deepEqual((await loadApprovalRegistry({...f,cfg:verifyCfg(f)})).cases.length,1,'frozen enabled: true accepts Verify');
+ assert.equal((await f.load()).cases.length,1,'and Repair as before');
+ await f.write(f.target,{...f.registry,config:{...f.registry.config,enabled:false}});
+ await assert.rejects(f.load(),/frozen configuration differs/,'frozen enabled: false refuses Repair');
+ assert.equal((await loadApprovalRegistry({...f,cfg:verifyCfg(f)})).cases.length,1);
+});
+test('in Verify every frozen key other than enabled still requires an exact match',async t=>{
+ const f=await fixture(t);await f.write(f.target,f.registry);
+ for(const [k,v] of [['libraryId','another-library'],['sourceRoot','/media/other'],['mediaRoot','/storage/other'],['quarantineRoot','/storage/other-quarantine'],['reviewPrefixes',['Other']],['maxRepairsPerDay',4]]){
+  await assert.rejects(loadApprovalRegistry({...f,cfg:{...verifyCfg(f),[k]:v}}),/frozen configuration differs/,k);
+ }
+});
+test('the pending-approval loop accepts Verify against a Repair approval without running it',async t=>{
+ const f=await fixture(t);let repairs=0;
+ const run=cfg=>processPending({approvals:f.registry,cfg,state:f.state,safeSource:async()=>({p:'/x',fp:f.a.fp,size:f.a.size}),identity:()=>f.a.id,phase:async()=>{},repair:async()=>{repairs++;}});
+ await run(verifyCfg(f));assert.equal(repairs,0,'frozen approvals never run in Verify');
+ await assert.rejects(run({...verifyCfg(f),libraryId:'another-library'}),/Pending recovery mapping changed libraryId/);
+ const toVerify={...f.registry,config:{...f.registry.config,enabled:false}};
+ await assert.rejects(processPending({approvals:toVerify,cfg:f.cfg,state:f.state,repair:async()=>{repairs++;}}),/Pending recovery mapping changed enabled/,'a Verify approval never runs in Repair');
+ assert.equal(repairs,0);
+});
+test('a config edit is validated with the same enabled rule as start-up',async t=>{
+ const f=await fixture(t);await f.write(f.target,f.registry);
+ const {enabled,...withoutEnabled}=f.cfg,file=path.join(f.data,'config.json');await f.write(file,withoutEnabled);const loaded=configDigest(await fs.readFile(file,'utf8'));
+ await f.write(file,{...withoutEnabled,pollSeconds:600});
+ const verify=await detectConfigChange({file,loadedDigest:loaded,validate:startupValidator({data:f.data,mode:'verify',getState:()=>f.state})});
+ assert.equal(verify.valid,true,verify.error);
+ await f.write(f.target,{...f.registry,config:{...f.registry.config,enabled:false}});
+ const repair=await detectConfigChange({file,loadedDigest:loaded,validate:startupValidator({data:f.data,mode:'repair',getState:()=>f.state})});
+ assert.equal(repair.valid,false);assert.equal(repair.error,'Recovery approval registry: frozen configuration differs');
+});
+test('offline migration accepts and refuses exactly the combinations the start-up gate does',async t=>{
+ const tool=fileURLToPath(new URL('../tools/migrate-recovery-registry.mjs',import.meta.url));
+ const run=(f,mode)=>new Promise((resolve,reject)=>{const child=spawn(process.execPath,[tool,'--source',f.source,'--data',f.data],{env:{...process.env,RECOVERY_MODE:mode},stdio:['ignore','pipe','pipe']});let stdout='',stderr='';child.stdout.on('data',b=>stdout+=b);child.stderr.on('data',b=>stderr+=b);child.on('error',reject);child.on('close',code=>resolve({code,stdout,stderr}));});
+ for(const [frozen,mode,accepted] of [[true,'verify',true],[true,'repair',true],[false,'verify',true],[false,'repair',false]]){
+  const label='frozen enabled: '+frozen+' in '+mode,{enabled,...withoutEnabled}=evidence().cfg,cfg={...withoutEnabled,enabled:mode==='repair'};
+  const gate=await fixture(t);await gate.write(gate.target,{...gate.registry,config:{...gate.registry.config,enabled:frozen}});
+  assert.equal(await loadApprovalRegistry({data:gate.data,cfg,state:gate.state}).then(()=>true,()=>false),accepted,label+' at start-up');
+  const f=await fixture(t);await f.write(f.source,{...f.registry,config:{...f.registry.config,enabled:frozen}});await f.write(path.join(f.data,'config.json'),withoutEnabled);
+  const migrated=await run(f,mode);
+  assert.equal(migrated.code===0,accepted,label+' in migration: '+migrated.stderr);
+  if(accepted)assert.equal(JSON.parse(migrated.stdout).caseCount,1,label);
+  else{assert.match(migrated.stderr,/frozen configuration differs/,label);await assert.rejects(fs.stat(f.target),{code:'ENOENT'});}
  }
 });

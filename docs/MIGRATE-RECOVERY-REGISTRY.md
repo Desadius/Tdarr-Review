@@ -8,7 +8,7 @@ To move an installation that already has `pending-approvals.json` in the separat
 
 Stop the Recovery worker and keep it stopped until migration and update verification finish. Wait for its current original decode to finish; uncertain mutating phases require inspection before update. Back up private data, configuration and existing application source/image. Identify the exact old registry and the persistent Recovery data directory. Both must be regular local files/directories with appropriate ownership; no symlinks or group/other-writable evidence files are accepted.
 
-Migration validates the old registry, current config and stored approvals without contacting Tdarr/Radarr or opening movie files. It accepts the legacy `{config,cases}` shape or `version:1`. Frozen roots/library/review prefixes and every explicitly frozen setting must match. Completed imported legacy records with strong matching original identities stay historical metadata; they never become active authority.
+Migration validates the old registry, current config and stored approvals without contacting Tdarr/Radarr or opening movie files. It accepts the legacy `{config,cases}` shape or `version:1`. Frozen roots/library/review prefixes and every explicitly frozen setting must match. The only exception is a frozen `enabled: true` (approved for Repair), which also accepts `RECOVERY_MODE=verify`; a frozen `enabled: false` refuses `repair`. The utility accepts and refuses exactly the combinations the worker's start-up check does ([Recovery mode](CONFIGURATION.md#recovery-mode)). Completed imported legacy records with strong matching original identities stay historical metadata; they never become active authority.
 
 ## Offline command
 

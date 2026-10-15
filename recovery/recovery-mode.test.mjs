@@ -81,7 +81,8 @@ for(const [name,setup,reason] of [
  ['config.json that is not JSON',{mode:'verify',config:'{"radarrApiKey":"fixture-secret-key"'},'invalid-config'],
  ['config.json that is not an object',{mode:'repair',config:'["fixture-secret-key"]'},'invalid-config'],
  ['an approval registry that does not match',{mode:'verify',config:{},registry:{version:99,config:{radarrApiKey:'fixture-secret-key'},cases:[]}},'registry-refused'],
- ['an approval registry frozen to the other mode',{mode:'verify',config:{},registry:{version:1,config:{enabled:true},cases:[]}},'registry-refused'],
+ ['Repair against an approval registry frozen to Verify',{mode:'repair',config:{},registry:{version:1,config:{enabled:false},cases:[]}},'registry-refused'],
+ ['an approval registry frozen to a non-boolean enabled',{mode:'verify',config:{},registry:{version:1,config:{enabled:'true'},cases:[]}},'registry-refused'],
 ]){
  test('the actual worker refuses '+name+' with exit 78 and RECOVERY_REFUSED '+reason,async()=>{
   const r=await refusal(setup);

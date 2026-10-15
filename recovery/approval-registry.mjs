@@ -4,14 +4,14 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {validatePending} from './pending-approved.mjs';
 import {identity,relative} from './policy.mjs';
+import {canonical,sameValue,frozenConfigDifference} from './frozen-config.mjs';
 
 const NAME='pending-approvals.json',MAX_BYTES=2*1024*1024;
 const object=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const text=v=>typeof v==='string'&&v.trim().length>0&&!v.includes('\0');
 const positive=v=>Number.isSafeInteger(v)&&v>0;
 function fail(reason){throw Object.assign(Error('Recovery approval registry: '+reason),{code:'RECOVERY_APPROVAL_REGISTRY'});}
-function canonical(v){if(Array.isArray(v))return '['+v.map(canonical).join(',')+']';if(object(v))return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canonical(v[k])).join(',')+'}';return JSON.stringify(v);}
-const equal=(a,b)=>canonical(a)===canonical(b);
+const equal=sameValue;
 function freeze(value){if(object(value)||Array.isArray(value)){for(const child of Object.values(value))freeze(child);Object.freeze(value);}return value;}
 const digest=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
 const normalized=p=>process.platform==='win32'?path.resolve(p).toLowerCase():path.resolve(p);
@@ -96,7 +96,7 @@ function validateRegistry(value,{cfg,state,legacy=false,present=true}){
  if(!object(value)||Object.keys(value).some(k=>!['version','config','cases'].includes(k))||((!legacy||Object.hasOwn(value,'version'))&&value.version!==1)||!object(value.config)||!Array.isArray(value.cases))fail('unsupported registry shape or version');
  if(!object(cfg))fail('invalid recovery configuration');
  if(value.cases.length>1000)fail('too many frozen cases');
- for(const [k,v] of Object.entries(value.config))if(!Object.hasOwn(cfg,k)||!equal(cfg[k],v))fail('frozen configuration differs');
+ if(frozenConfigDifference(value.config,cfg)!==null)fail('frozen configuration differs');
  if(value.cases.length)validateMappings(value,cfg);
  const ids=new Set();for(const a of value.cases){validateCase(a,cfg);if(ids.has(a.id))fail('duplicate frozen case identity');ids.add(a.id);}
  const registry={version:1,config:value.config,cases:value.cases};validateState(state,registry,cfg,{present});return freeze(registry);

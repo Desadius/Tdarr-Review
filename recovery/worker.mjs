@@ -8,6 +8,7 @@ import {ensureHandoff} from './replacement-handoff.mjs';
 import {cooldownFor,deferConfirmedReplacement,inspectDeferredReplacement,reconcileDeferredIntent} from './replacement-gate.mjs';
 import {quotaFor,deferConfirmedLimit,inspectDeferredLimit,reconcileDeferredLimitIntent} from './deferred-limit.mjs';
 import {loadApprovalRegistry,registryHasApproval} from './approval-registry.mjs';
+import {registryAllowedModes} from './frozen-config.mjs';
 import {configDigest,detectConfigChange,startupValidator} from './config-watch.mjs';
 import {RecoveryRefusal,readRecoveryConfig,exitRefused} from './recovery-mode.mjs';
 import fs from 'node:fs/promises';
@@ -41,7 +42,7 @@ async function api(base,route,body,key){const r=await fetch(base.replace(/\/$/,'
 const rad=(p,b)=>api(cfg.radarrUrl+'/api/v3',p,b,cfg.radarrApiKey);
 const td=(p,b)=>api(cfg.tdarrUrl,p,b===undefined?undefined:{data:b});
 function rows(table){const db=new DatabaseSync(cfg.database,{readOnly:true});try{return db.prepare('SELECT json_data FROM '+table).all().map(r=>JSON.parse(r.json_data));}finally{db.close();}}
-const liveStatus=createLiveStatusPublisher({getState:()=>state,readTdarrFiles:()=>rows('filejsondb'),publish:({state,tdarrFiles,decorate})=>publishRecoveryStatus({cfg,state,tdarrFiles,atomic:(p,v,mode)=>atomic(p,decorate(v),mode)}),onError:e=>{state.statusPublicationError=e.message;console.error('Recovery status publication: '+e.message);}});
+const liveStatus=createLiveStatusPublisher({getState:()=>state,readTdarrFiles:()=>rows('filejsondb'),publish:({state,tdarrFiles,decorate})=>publishRecoveryStatus({cfg,state,tdarrFiles,registryAllowedModes:registryAllowedModes(pendingApprovals.config),atomic:(p,v,mode)=>atomic(p,decorate(v),mode)}),onError:e=>{state.statusPublicationError=e.message;console.error('Recovery status publication: '+e.message);}});
 async function safeSource(rel){const p=within(cfg.mediaRoot,rel);const real=await fs.realpath(p);if(real!==p)throw Error('Symlink source is not eligible');const s=await fs.stat(p);if(!s.isFile()||s.size===0||Date.now()-s.mtimeMs<cfg.stableMinutes*60000)throw Error('Source is not a stable regular file');return {p,size:s.size,fp:[s.dev,s.ino,s.size,s.mtimeMs,s.ctimeMs].join(':')};}
 async function sample(file){const h=await fs.open(file,'r');try{const s=await h.stat();const sum=crypto.createHash('sha256');for(const position of [0,Math.max(0,Math.floor(s.size/2)-524288),Math.max(0,s.size-1048576)]){const b=Buffer.alloc(Math.min(s.size,1048576));const n=await h.read(b,0,b.length,position);if(n.bytesRead!==b.length)throw Error('Short source read');sum.update(b);}return sum.digest('hex');}finally{await h.close();}}
 // Optional (cfg.fullSourceHash) full SHA-256 of the original, published as c.fullHash while it runs.

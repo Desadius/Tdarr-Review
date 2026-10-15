@@ -13,7 +13,7 @@ Review and Recovery become one container. Installations that ran the separate Re
 - **Compose:** `.env` no longer uses `RECOVERY_IMAGE_TAG`, `RECOVERY_DATA_HOST` or `TDARR_REPORTS_HOST`. New: `RECOVERY_MODE` (`off`, `verify`, `repair`; default `off`).
 - Recovery's data directory moves to `/data/recovery/` inside Review's data directory (`config.json`, `state.json`, `pending-approvals.json`, caches).
 - Recovery uses Review's mappings. The example configuration now uses `/media/movies`, quarantine `/media/.tdarr-corrupt` and reports `/tdarr/JobReports` instead of `/storage/...` and `/reports`. Existing frozen paths are never rewritten: keep them with an extra `/storage` (and, if frozen, `/reports`) mapping to the same host folders.
-- `RECOVERY_MODE` is the only Recovery switch; `enabled` in `config.json` is deprecated and must match it if present. An approval registry that froze `enabled` allows only the matching mode.
+- `RECOVERY_MODE` is the only Recovery switch; `enabled` in `config.json` is deprecated and must match it if present. An approval registry that froze `enabled: false` refuses `repair`; one that froze `enabled: true` allows both modes.
 - Resource limits of the template and Compose rise to `--cpus=2 --memory=2g --pids-limit=256`, shared by Review and Recovery. Unraid does not change Extra Parameters of an installed container; raise them when you edit it.
 
 ### Documentation
@@ -24,10 +24,12 @@ Review and Recovery become one container. Installations that ran the separate Re
 ### Review: Recovery runtime status
 
 - Show Recovery's supervisor state (**Off**, **Running**, **Restarting**, **Refused**, **Stopped**) and reason in Review, separately from film cases and unfinished file-exchange transactions. Missing runtime state shows **Off** without attention; invalid or unreadable state is reported without exposing configuration or stderr.
+- Add `recovery-original-outside-library` attention when a replacement request paused by Verify has kept the original outside the library for more than 24 hours. The Recovery view moves the case to **Needs attention** and tells the user to remove the stuck download in Radarr, after which Recovery returns the original on its next poll (English and Czech). The health check result does not change.
 - Add refused-worker, crash-loop and unreadable-runtime attention to the operational health summary while keeping container health tied to Review availability. Warn before restarting or updating the unified container while Recovery reports original decoding or a mutating phase.
 
 ### Recovery worker
 
+- Fix: a registry approved for Repair (frozen `enabled: true`) no longer refuses `RECOVERY_MODE=verify`, because Verify is strictly narrower. A registry frozen to Verify still refuses Repair, and every other frozen key still needs an exact match. The start-up check, the per-poll pending-approval check, the `configChange` validation and the offline migration utility use one shared rule. The status file reports the modes the registry allows as `registryAllowedModes`.
 - Verify now pauses non-protective steps of in-flight repairs: kept-source removal and replacement requests, Tdarr handoff, and quarantine purge. Protective restoration with its existing conditions and read-only observation continue. Review shows the paused step and original location/time in English and Czech; Repair resumes from fresh checks.
 
 - The Recovery mode now comes only from the `RECOVERY_MODE` environment variable: `verify` confirms corrupted originals and continues only protective steps of in-flight repairs (the former `enabled: false`), `repair` may act on a confirmed corruption (the former `enabled: true`). Set it from your current `enabled` value when updating.

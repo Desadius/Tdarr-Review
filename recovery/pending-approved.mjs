@@ -1,4 +1,5 @@
 import {bindHistory} from './policy.mjs';
+import {frozenConfigDifference} from './frozen-config.mjs';
 export function approvedBind(movie,history,target,size,a){
  if(movie.id!==a.movieId||movie.movieFileId!==a.movieFileId||!movie.monitored||!movie.movieFile||movie.movieFile.id!==a.movieFileId||movie.movieFile.path!==target||movie.movieFile.size!==a.size||size!==a.size||movie.movieFile.sceneName!==a.sourceTitle)throw Error('Current source does not match frozen approval');
  const imports=history.filter(h=>h.eventType==='downloadFolderImported'&&h.id===a.importId&&h.movieId===a.movieId&&String(h.data?.fileId)===String(a.movieFileId)&&h.data?.importedPath===target&&h.downloadId===a.downloadId&&h.sourceTitle===a.sourceTitle);
@@ -19,7 +20,7 @@ export function validatePending(a){
 }
 export const quotaAvailable=(state,limit,now=Date.now())=>Number.isInteger(limit)&&limit>0&&Object.values(state.cases||{}).filter(c=>c.mutationStarted&&now-c.mutationStarted<86400000).length<limit;
 export async function processPending({approvals,cfg,state,safeSource,identity,phase,repair}){
- for(const [k,v]of Object.entries(approvals.config))if(JSON.stringify(cfg[k])!==JSON.stringify(v))throw Error('Pending recovery mapping changed '+k);
+ const changed=frozenConfigDifference(approvals.config,cfg);if(changed!==null)throw Error('Pending recovery mapping changed '+changed);
  if(!cfg.enabled)return;
  for(const a of approvals.cases){let c=state.cases[a.id];if(c&&c.status!=='deferred_limit')continue;
   try{validatePending(a);const s=await safeSource(a.relative);if(s.fp!==a.fp||s.size!==a.size||identity(a.file,s.fp)!==a.id)throw Error('Frozen identity changed');
