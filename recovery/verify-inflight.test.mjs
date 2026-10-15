@@ -67,9 +67,9 @@ async function fixture(t,status){
   const code=await new Promise((resolve,reject)=>{child.on('error',reject);child.on('close',resolve);}).finally(()=>clearTimeout(timer));assert.equal(code,0,output);
   Object.assign(state,JSON.parse(await fs.readFile(path.join(data,'state.json'),'utf8')));
   const published=JSON.parse(await fs.readFile(path.join(root,'.tdarr-recovery-status.json'),'utf8'));
-  assert.equal(state.lastError,null,output);return {c:state.cases.case,public:published.cases.find(c=>c.id==='case')};
+  assert.equal(state.lastError,null,output);return {c:state.cases.case,public:published.cases.find(c=>c.id==='case'),status:published};
  }
- return {root,media,source,quarantine,replacement,state,c,cfg,movie,newFile,row,queue,control,requests,run};
+ return {root,data,media,source,quarantine,replacement,state,c,cfg,movie,newFile,row,queue,control,requests,run};
 }
 const nonProtective=requests=>requests.filter(r=>r.method!=='GET'||r.url.startsWith('/api/v3/release?'));
 
@@ -183,4 +183,23 @@ test('Verify publications preserve the recorded outside-the-library clock',linux
  const first=await f.run(),second=await f.run();
  assert.equal(first.public.originalOutsideSince,f.c.originalOutsideSince);assert.equal(second.public.originalOutsideSince,first.public.originalOutsideSince);
  assert.equal(second.public.verifyPausedStep,'replacement_request');
+});
+
+// #77: Verify is strictly narrower than Repair, so a registry approved for Repair also starts in Verify.
+test('a registry that froze enabled: true starts in Verify, keeps polling and reports the modes it allows',linux,async t=>{
+ const f=await fixture(t,'waiting_source_kept');
+ await fs.writeFile(path.join(f.data,'pending-approvals.json'),JSON.stringify({version:1,config:{enabled:true,libraryId:'lib'},cases:[]}),{mode:0o600});
+ const result=await f.run();
+ assert.deepEqual(nonProtective(f.requests),[],'Verify against a Repair approval stays paused');
+ assert.equal(result.public.verifyPausedStep,'replacement_request');
+ assert.deepEqual(result.status.registryAllowedModes,['verify','repair']);
+ assert.deepEqual((await f.run('repair')).status.registryAllowedModes,['verify','repair']);
+});
+test('without a frozen enabled the status file reports no mode restriction',linux,async t=>{
+ const f=await fixture(t,'waiting_source_kept');
+ assert.equal((await f.run()).status.registryAllowedModes,null);
+ await fs.writeFile(path.join(f.data,'pending-approvals.json'),JSON.stringify({version:1,config:{enabled:false},cases:[]}),{mode:0o600});
+ const result=await f.run();
+ assert.deepEqual(result.status.registryAllowedModes,['verify']);
+ assert.deepEqual(Object.keys(result.status).sort(),['cases','configChange','registryAllowedModes','updated','version'],'no other configuration value is exported');
 });
