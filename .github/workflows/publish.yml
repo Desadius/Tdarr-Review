@@ -7,7 +7,7 @@ on:
         required: true
         type: string
       publish_latest:
-        description: 'Also move latest to these tested images'
+        description: 'Also move latest to this tested image'
         required: true
         default: false
         type: boolean
@@ -45,27 +45,26 @@ jobs:
           node-version: '24'
       - run: npm run check
       - run: npm test
-      - name: Build both Linux amd64 images
+      - name: Build the Linux amd64 image
         run: |
           set -euo pipefail
           version=$(node -p "require('./package.json').version")
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Expected a release version'; exit 1; }
           printf 'RELEASE_VERSION=%s\n' "$version" >> "$GITHUB_ENV"
           docker build --platform linux/amd64 --build-arg APP_VERSION="$version" --build-arg VCS_REF="$RELEASE_SHA" -t tdarr-review:smoke .
-          docker build --platform linux/amd64 --build-arg APP_VERSION="$version" --build-arg VCS_REF="$RELEASE_SHA" -f Dockerfile.recovery -t tdarr-recovery:smoke .
-      - name: Test exact images before publication
+      - name: Test the exact image before publication
         run: bash tools/docker-smoke.sh
       - name: Log in to GitHub Container Registry
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-      - name: Publish the tested images
+      - name: Publish the tested image
         env:
           PUBLISH_LATEST: ${{ inputs.publish_latest }}
         run: |
           set -euo pipefail
           owner=${GITHUB_REPOSITORY_OWNER,,}
-          for app in tdarr-review tdarr-recovery; do
+          for app in tdarr-review; do
             image="ghcr.io/$owner/$app"
             for tag in "sha-$RELEASE_SHA" "$RELEASE_VERSION"; do
               docker tag "$app:smoke" "$image:$tag"

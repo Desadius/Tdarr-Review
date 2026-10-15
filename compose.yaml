@@ -10,6 +10,8 @@ services:
       TDARR_URL: "${TDARR_URL:?Set TDARR_URL in .env}"
       MEDIA_ROOT: /media/movies
       REVIEW_ROOT: /review
+      # off (default), verify or repair; verify and repair need /data/recovery/config.json.
+      RECOVERY_MODE: "${RECOVERY_MODE:-off}"
     volumes:
       - "${REVIEW_DATA_HOST:?Set REVIEW_DATA_HOST}:/data"
       - "${MEDIA_HOST:?Set MEDIA_HOST}:/media"
@@ -21,38 +23,9 @@ services:
       - /tmp:rw,noexec,nosuid,size=128m
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    mem_limit: 1g
-    cpus: 1
-    pids_limit: 128
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 256
     logging:
       driver: json-file
       options: {max-size: 10m, max-file: "3"}
-
-  recovery:
-    profiles: [recovery]
-    build:
-      context: .
-      dockerfile: Dockerfile.recovery
-    image: "ghcr.io/desadius/tdarr-recovery:${RECOVERY_IMAGE_TAG:-latest}"
-    user: "${PUID:-99}:${PGID:-100}"
-    environment:
-      # verify for "enabled": false, repair for "enabled": true; a conflicting enabled refuses start.
-      RECOVERY_MODE: "${RECOVERY_MODE:?Set RECOVERY_MODE to verify or repair}"
-    volumes:
-      - "${RECOVERY_DATA_HOST:?Set RECOVERY_DATA_HOST}:/data"
-      - "${MEDIA_HOST:?Set MEDIA_HOST}:/storage"
-      - "${REVIEW_HOST:?Set REVIEW_HOST}:/review:ro"
-      - "${TDARR_DB_HOST:?Set TDARR_DB_HOST}:/tdarr:ro"
-      - "${TDARR_REPORTS_HOST:?Set TDARR_REPORTS_HOST}:/reports:ro"
-    restart: unless-stopped
-    read_only: true
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,size=64m
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    mem_limit: 1g
-    cpus: 2
-    pids_limit: 128
-    logging:
-      driver: json-file
-      options: {max-size: 5m, max-file: "3"}

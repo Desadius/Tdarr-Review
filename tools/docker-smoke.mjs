@@ -187,7 +187,7 @@ async function host(){
   assert.match(prefix,/^tdarr-review-smoke-[A-Za-z0-9-]+$/);
   const names={review:prefix+'-review',integration:prefix+'-integration',recovery:prefix+'-recovery',migration:prefix+'-migration'},volumes=[prefix+'-review-data',prefix+'-recovery-data'];
   const script=fileURLToPath(import.meta.url),label='org.tdarr-review.smoke',image='tdarr-review:smoke';
-  const common=['--label',label+'='+prefix,'--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--memory','1g','--cpus','1','--pids-limit','128','--tmpfs','/tmp:rw,noexec,nosuid,size=128m'];
+  const common=['--label',label+'='+prefix,'--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--memory','2g','--cpus','2','--pids-limit','256','--tmpfs','/tmp:rw,noexec,nosuid,size=128m'];
   const reviewEnv=['-e','PUBLIC_ORIGIN=http://review.example.invalid:48270','-e','TDARR_URL=http://127.0.0.1:1'];
   // Docker's copy API rejects a readonly rootfs even for a writable tmpfs.
   // Write only the disposable tmpfs file through the unprivileged process.

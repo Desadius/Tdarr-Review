@@ -28,8 +28,10 @@ test('package.json, Dockerfile defaults and .env.example agree; a mismatch is re
  try{
   await fs.writeFile(path.join(root,'package.json'),JSON.stringify({version:'2.0.0'}));
   await fs.writeFile(path.join(root,'Dockerfile'),'FROM x\nARG APP_VERSION=2.0.0\n');
-  await fs.writeFile(path.join(root,'Dockerfile.recovery'),'FROM x\nARG APP_VERSION=1.9.0\n');
   await fs.writeFile(path.join(root,'.env.example'),'REVIEW_IMAGE_TAG=2.0.0\n');
-  assert.deepEqual(await versionMismatches(root),['Dockerfile.recovery APP_VERSION is 1.9.0, package.json is 2.0.0','.env.example RECOVERY_IMAGE_TAG is missing, package.json is 2.0.0']);
+  assert.deepEqual(await versionMismatches(root),[],'one image: no Recovery Dockerfile or image tag is required');
+  await fs.writeFile(path.join(root,'Dockerfile'),'FROM x\nARG APP_VERSION=1.9.0\n');
+  await fs.writeFile(path.join(root,'.env.example'),'PUID=99\n');
+  assert.deepEqual(await versionMismatches(root),['Dockerfile APP_VERSION is 1.9.0, package.json is 2.0.0','.env.example REVIEW_IMAGE_TAG is missing, package.json is 2.0.0']);
  }finally{await fs.rm(root,{recursive:true,force:true})}
 });
