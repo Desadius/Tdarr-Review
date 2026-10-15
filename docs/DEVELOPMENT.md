@@ -11,6 +11,8 @@ Tests that need Linux (directory `fsync`, POSIX permission/ctime assertions, sym
 
 The supervisor tests (`review/supervisor.test.mjs`) run real processes with stand-in children, so a test that reads an event it did not wait for would fail only under rare scheduling. `npm test` therefore runs them a second time through `review/supervisor-delayed.test.mjs`, which sets `SUPERVISOR_TEST_DELAY_MS=400`: Review's stand-in starts late and every stand-in pauses right after recording its start. Such a race then fails on every run. Each supervisor test must wait explicitly for every event it reads, including a child's start before signalling it; a stand-in records its start only after its signal handlers are installed. Set the variable yourself (`SUPERVISOR_TEST_DELAY_MS=1000 node --test review/supervisor.test.mjs`) to try other delays.
 
+Agents capturing red → green or mutation evidence, locally or in CI, follow [the verification procedure](agents/verification.md). Publish the evidence in a comment on the relevant PR; keep reusable procedures in repository documentation. For literal text replacements and multiline GitHub bodies, see [editing safely](agents/editing.md).
+
 `npm run check` also refuses a new test that reads implementation source text (for example `fs.readFile(new URL('./server.mjs', import.meta.url))`) instead of exercising behaviour. Existing reads are listed in `SOURCE_TEXT_ALLOWLIST` in `tools/source-text-tests.mjs`; when you rewrite one of those tests, remove its entry, because the check also fails on an entry that no longer matches.
 
 ### Development in WSL2

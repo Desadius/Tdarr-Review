@@ -9,7 +9,7 @@ Tdarr Review lets a person review and approve Tdarr transcodes before the origin
 - `review/` — web application (`server.mjs`, route modules in `review/routes/`, `core.mjs`, UI modules in `review/public/`) and its regression tests (`*.test.mjs`, `*.test.cjs`, `test.mjs`).
 - `recovery/` — optional background worker and its tests.
 - `tools/` — syntax checker, test runner, Docker smoke and demo scripts.
-- `docs/` — installation, user, architecture, operations, release and verification documentation.
+- `docs/` — installation, user, architecture, operations, release and development documentation.
 - `examples/`, `templates/`, `fixtures/` — sample configuration, Unraid template and synthetic test data.
 
 Read `docs/ARCHITECTURE.md` before changing replacement, quarantine, journal or recovery code, and `docs/REVIEW-WORKFLOW-DESIGN.md` before changing the review checklist or approval gates.
@@ -34,6 +34,8 @@ FFMPEG=/path/to/ffmpeg FFPROBE=/path/to/ffprobe npm run test:integration
 ```
 
 Run `npm run check` and `npm test` before every commit you propose. CI (`.github/workflows/test.yml`) runs the same checks plus the Docker image smoke test on every pull request.
+
+For red → green evidence, mutation checks (including CI) and PR verification comments, follow `docs/agents/verification.md`. For edits involving escaping or multiline GitHub text, follow `docs/agents/editing.md`.
 
 ## Safety rules (do not relax)
 
@@ -67,12 +69,13 @@ When a change is user-visible, add an entry to `CHANGELOG.md` under an unrelease
 - Keep the main checkout on `main`. Create every branch (implementation, documentation, a PR from a grilling session) in a new git worktree beside it, for example `git worktree add ../Tdarr-Review-<topic> -b claude/<topic> origin/main`, and remove that worktree with `git worktree remove` once its PR is merged.
 - Do not work on a branch another agent is currently using. To continue someone else's work, start from their branch or PR only when the maintainer asks.
 - Keep pull requests focused on one change and describe what was tested.
+- Record reusable project procedures in the relevant repository documentation and link them from these instructions when needed; private agent memory must not be their only source.
 
 ## Agent skills
 
 ### Issue tracker
 
-Issues live in GitHub Issues for `Desadius/Tdarr-Review` (use the `gh` CLI). See `docs/agents/issue-tracker.md`.
+Before choosing or claiming an issue in `Desadius/Tdarr-Review`, read `docs/agents/issue-tracker.md`. Its claiming procedure applies to every agent.
 
 ### Triage labels
 
