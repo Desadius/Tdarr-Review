@@ -1,12 +1,15 @@
 # Install on Unraid
 
-This guide describes **1.11.0**, targeting the versioned Linux amd64 image `ghcr.io/desadius/tdarr-review:1.11.0`. You can also build the source locally. The [Community Applications entry](https://ca.unraid.net/apps/tdarr-review-1qs5sdc0gn7hmk) uses the supplied [`templates/tdarr-review.xml`](../templates/tdarr-review.xml) with `latest`. Registry availability and catalog visibility are separate; see [publication status](COMMUNITY-APPS.md). Cloning this repository does not update an existing container.
+This guide describes **2.0.0**, which is not yet released, targeting the versioned Linux amd64 image `ghcr.io/desadius/tdarr-review:2.0.0` once it is published. Until then, build the source locally, or install the published 1.11.0 with [its own guide](https://github.com/Desadius/Tdarr-Review/blob/v1.11.0/docs/INSTALL-UNRAID.md). The [Community Applications entry](https://ca.unraid.net/apps/tdarr-review-1qs5sdc0gn7hmk) uses the supplied [`templates/tdarr-review.xml`](../templates/tdarr-review.xml) with `latest`. Registry availability and catalog visibility are separate; see [publication status](COMMUNITY-APPS.md). Cloning this repository does not update an existing container.
 
-## Updating to 1.11.0
+## Updating to 2.0.0
 
-Back up persistent `/data` and update only while no approval, batch, node restore or transaction recovery is running. Keep existing mappings, access key and settings. This release uses the same ports, mappings, permissions and Unraid template. New in `/data`: `decision-audit.jsonl` and its timestamped archives, a durable record of approvals and Radarr replacement requests; include them in backups. Review now lists the Tdarr nodes it will resume and lets you keep a node you paused yourself paused; the container health check reads `/health` and the UI, and reports pending work in Docker's health log without failing. Recovery adds the optional `fullSourceHash` setting (off by default) and reports edits to its `config.json` that need a restart. It does not reconstruct old approvals, reset assessments or relax quarantine identity checks.
+2.0.0 installs as **one container**. The Review image contains optional Recovery, which is **Off** by default and controlled by `RECOVERY_MODE` (`off`, `verify`, `repair`) in the template or `.env`. The separate Recovery image, the Compose `recovery` service and the Recovery data directory are discontinued; Recovery keeps its files in `/data/recovery/`. The resource limits rise to two CPUs, 2 GiB and 256 processes, because Review and an original decode share them.
 
-Review and optional Recovery have separate image tags and can be updated independently: each version tolerates the other's status-file fields. Select `1.11.0` explicitly; updating source or publishing images does not deploy an existing installation.
+- **You ran only Review:** back up `/data`, update only while no approval, batch, node restore or transaction recovery is running, and keep the existing mappings, access key and settings. Raise the limits in Extra Parameters as in [step 3](#3-unraid-docker-template). Nothing else changes; Recovery stays Off.
+- **You also ran the Recovery container:** follow [the 2.0 migration guide](MIGRATE-TO-2.0.md). It copies the old Recovery data, keeps frozen approval paths through an extra `/storage` mapping and removes the old container, so two Recovery instances never act on one library.
+
+Select `2.0.0` explicitly; updating source or publishing images does not deploy an existing installation.
 
 The five-step assessment and current `reviewRevision` required since 1.10.2 remain mandatory for approval. The optional Recovery routing function is a separate Tdarr flow change; follow [the integration guide](TDARR-INTEGRATION.md#require-review-for-recovery-replacements).
 
@@ -20,12 +23,9 @@ Example for new application/output directories:
 
 ```bash
 mkdir -p /mnt/cache/appdata/tdarr-review/data
-mkdir -p /mnt/cache/appdata/tdarr-recovery/data
 mkdir -p /mnt/cache/tdarr-review-output
-chown nobody:users /mnt/cache/appdata/tdarr-review/data \
-  /mnt/cache/appdata/tdarr-recovery/data /mnt/cache/tdarr-review-output
-chmod 770 /mnt/cache/appdata/tdarr-review/data \
-  /mnt/cache/appdata/tdarr-recovery/data /mnt/cache/tdarr-review-output
+chown nobody:users /mnt/cache/appdata/tdarr-review/data /mnt/cache/tdarr-review-output
+chmod 770 /mnt/cache/appdata/tdarr-review/data /mnt/cache/tdarr-review-output
 ```
 
 Unraid commonly uses UID 99 / GID 100 (`nobody:users`). Verify your installation. Review needs write access to the media directories and results, including permission to rename files and create temporary files. Do not recursively change permissions on the whole library merely to install this application.
@@ -38,11 +38,11 @@ cd Tdarr-Review
 cp .env.example .env
 ```
 
-Edit `.env` in a text editor. Set `REVIEW_IMAGE_TAG=1.11.0` for this source release, your real paths and API address. Set `REVIEW_BIND_IP` to the server's LAN IP if you want LAN access. Set `PUBLIC_ORIGIN` to exactly the browser origin, for example `http://YOUR_UNRAID_IP:8270` (with your actual IP).
+Edit `.env` in a text editor. Set `REVIEW_IMAGE_TAG` to the version you install (`2.0.0` once published), your real paths and API address. Set `REVIEW_BIND_IP` to the server's LAN IP if you want LAN access. Set `PUBLIC_ORIGIN` to exactly the browser origin, for example `http://YOUR_UNRAID_IP:8270` (with your actual IP).
 
 `TDARR_DB_HOST` must be the **directory** containing `SQL/database.db`, not just the database file. Its WAL/SHM sidecars must be available through the same read-only mapping. Locate this directory in your Tdarr server appdata before starting.
 
-After the `1.11.0` image has been published, if Docker Compose is available on your Unraid installation:
+After the `2.0.0` image has been published, if Docker Compose is available on your Unraid installation:
 
 ```bash
 docker compose pull review
@@ -75,7 +75,7 @@ In **Docker → Add Container**, configure:
 | Field | Value |
 | --- | --- |
 | Name | `tdarr-review` |
-| Repository | `ghcr.io/desadius/tdarr-review:1.11.0` after publication, or `tdarr-review:local` |
+| Repository | `ghcr.io/desadius/tdarr-review:2.0.0` after publication, or `tdarr-review:local` |
 | Network | `bridge` |
 | WebUI | `http://[IP]:[PORT:8270]` |
 | Port | Host `8270` → container `8270/TCP` |
@@ -83,6 +83,7 @@ In **Docker → Add Container**, configure:
 | Variable `TDARR_URL` | Tdarr API address reachable from this container |
 | Variable `MEDIA_ROOT` | `/media/movies` |
 | Variable `REVIEW_ROOT` | `/review` |
+| Variable `RECOVERY_MODE` | `off` (default), `verify` or `repair`; see [Optional Recovery](#6-optional-recovery) |
 | App state | Your state directory → `/data`, read/write |
 | Media parent | Your media share → `/media`, read/write |
 | Review output | Your results directory → `/review`, read/write |
@@ -91,10 +92,10 @@ In **Docker → Add Container**, configure:
 Suggested Extra Parameters:
 
 ```text
---user=99:100 --read-only --cap-drop=ALL --security-opt=no-new-privileges --cpus=1 --memory=1g --pids-limit=128 --tmpfs=/tmp:rw,noexec,nosuid,size=128m --restart=unless-stopped --log-opt=max-size=10m --log-opt=max-file=3
+--user=99:100 --read-only --cap-drop=ALL --security-opt=no-new-privileges --cpus=2 --memory=2g --pids-limit=256 --tmpfs=/tmp:rw,noexec,nosuid,size=128m --restart=unless-stopped --log-opt=max-size=10m --log-opt=max-file=3
 ```
 
-Enable Unraid Autostart for this container. Do not start a second Compose instance using the same state/media mappings if you use the Unraid template. The application is designed for one Review writer.
+Enable Unraid Autostart for this container. Do not start a second Compose instance using the same state/media mappings if you use the Unraid template. The application is designed for one Review writer. The limits cover Review and, when enabled, Recovery's original decodes in the same container.
 
 ## 4. First login and settings
 
@@ -125,7 +126,19 @@ Plex sees the replacement at the original film path (or the verified MKV destina
 
 ## 6. Optional Recovery
 
-Copy `examples/recovery-config.example.json` to the directory named by `RECOVERY_DATA_HOST`, as `config.json`. Edit every relevant field, supply the Radarr key privately, and restrict the file to the container UID (`chmod 600`). Set a suitable `since` timestamp in Unix **milliseconds** instead of zero if you only want recent Tdarr errors considered.
+Recovery runs inside the Review container and is **Off** until you set `RECOVERY_MODE` to `verify` or `repair` (the **Recovery mode** dropdown in the template, or `RECOVERY_MODE` in `.env` for Compose). With `off`, nothing about Recovery runs and Review works as before, including its manual Radarr integration. A mode change applies after a container restart.
+
+Copy `examples/recovery-config.example.json` into Review's data directory as `recovery/config.json` (host path for the example: `/mnt/cache/appdata/tdarr-review/data/recovery/config.json`). Its defaults use the mappings Review already has: library `/media/movies`, quarantine `/media/.tdarr-corrupt`, reports `/tdarr/JobReports` and the database `/tdarr/SQL/database.db`. Edit every relevant field, supply the Radarr key privately, and restrict the directory and file to the container UID:
+
+```bash
+mkdir -p /mnt/cache/appdata/tdarr-review/data/recovery
+cp examples/recovery-config.example.json /mnt/cache/appdata/tdarr-review/data/recovery/config.json
+chown -R nobody:users /mnt/cache/appdata/tdarr-review/data/recovery
+chmod 700 /mnt/cache/appdata/tdarr-review/data/recovery
+chmod 600 /mnt/cache/appdata/tdarr-review/data/recovery/config.json
+```
+
+Set a suitable `since` timestamp in Unix **milliseconds** instead of zero if you only want recent Tdarr errors considered. Do not add `enabled`; `RECOVERY_MODE` is the only switch.
 
 Create the quarantine root before enabling repairs. For the example media mapping:
 
@@ -135,26 +148,16 @@ chown nobody:users /mnt/user/media/.tdarr-corrupt
 chmod 770 /mnt/user/media/.tdarr-corrupt
 ```
 
-Use the parent of your actual movie library if it differs. It must be writable by Recovery and outside Plex's movie root, but within the same mounted media tree.
+Use the parent of your actual movie library if it differs. It must be writable by the container and outside Plex's movie root, but within the same mounted media tree.
 
-Set `RECOVERY_MODE=verify` in the `.env` file next to `compose.yaml`. Compose refuses to start the `recovery` service without it.
+Start with `RECOVERY_MODE=verify` and restart the container. Verify confirms corrupted originals but makes no automatic external repairs. `dry_run` cases are not automatically replayed when you later switch to `repair`; inspect them deliberately. Do not switch to `repair` until the mappings and Radarr history are confirmed. Review's **Recovery** view shows whether Recovery is **Off**, **Running**, **Restarting**, **Refused** or **Stopped**. It is refused (exit code 78, `RECOVERY_REFUSED <reason>` in `docker logs tdarr-review`) when the mode is invalid, when `config.json` is missing or invalid, when an `enabled` value left in `config.json` disagrees with the mode, or when the approval registry refuses the configuration; see [Recovery mode](CONFIGURATION.md#recovery-mode). A refusal never stops Review or makes the container unhealthy.
 
-```bash
-docker compose --profile recovery pull recovery
-docker compose --profile recovery up -d --no-build recovery
-docker compose logs --tail 40 recovery
-```
+A fresh installation needs no frozen pending approvals. The empty `examples/recovery-approval-registry.example.json` may be copied privately to `/data/recovery/pending-approvals.json`; it does not authorize repairs. An installation that ran the separate Recovery container up to 1.11.0 follows [the 2.0 migration guide](MIGRATE-TO-2.0.md) instead; its private registry is copied unchanged.
 
-`RECOVERY_MODE=verify` confirms corrupted originals but makes no automatic external repairs. `dry_run` cases are not automatically replayed when you later switch to `repair`; inspect them deliberately. Do not switch to `repair` until the mappings and Radarr history are confirmed. The worker refuses to start (exit code 78, `RECOVERY_REFUSED <reason>` in its log) when the mode is missing or invalid, when `config.json` is missing or invalid, or when an `enabled` value left in `config.json` disagrees with the mode; see [Recovery mode](CONFIGURATION.md#recovery-mode). An existing configuration with `"enabled": false` needs `RECOVERY_MODE=verify`, one with `"enabled": true` needs `RECOVERY_MODE=repair`.
-
-A fresh installation needs no frozen pending approvals. The empty `examples/recovery-approval-registry.example.json` may be copied privately to Recovery `/data/pending-approvals.json`; it does not authorize repairs. Existing installations with historical approvals must follow [the registry migration guide](MIGRATE-RECOVERY-REGISTRY.md) before replacing Recovery source/image.
-
-For a local worker build, use `docker compose --profile recovery build recovery` first. The optional worker runs in a second container, with no HTTP port. Combining both processes in one container is not implemented in this release. Without this worker, normal Review approval and its manual Radarr integration still work.
-
-## 7. Update an existing installation to 1.11.0
+## 7. Update an existing installation
 
 Keep the existing state, media, Review output and read-only Tdarr database mappings. Back up the mapped `/data` directory privately before the update; it contains access settings, history, journals and now server-saved review progress. Do not replace it with a fresh example directory. Run only one Review writer against those mappings.
 
-After registry publication, pin `REVIEW_IMAGE_TAG=1.11.0` in the existing `.env`, or the explicit `ghcr.io/desadius/tdarr-review:1.11.0` Repository value in Unraid, then pull/recreate that same Review service. A source build can be installed independently. Optional Recovery uses its own image tag and update procedure.
+After registry publication, pin `REVIEW_IMAGE_TAG=2.0.0` in the existing `.env`, or the explicit `ghcr.io/desadius/tdarr-review:2.0.0` Repository value in Unraid, then pull/recreate that same Review service. A source build can be installed independently. Recovery is part of the same image and updates with it; an installation that still runs the separate Recovery container follows [the 2.0 migration guide](MIGRATE-TO-2.0.md).
 
-Existing pending films start with an unfinished manual review when no matching version-1 session is saved. Past successful transcodes, technical scores and historical approvals do not fabricate new checklist confirmations. Verify container health, login, the five-step workspace and reopening saved/deferred progress before approving a real film. A local installation passed these checks for this release; that does not update your own installation automatically.
+Existing pending films start with an unfinished manual review when no matching version-1 session is saved. Past successful transcodes, technical scores and historical approvals do not fabricate new checklist confirmations. Verify container health, login, the five-step workspace and reopening saved/deferred progress before approving a real film. Updating the source or image does not update your own installation automatically.

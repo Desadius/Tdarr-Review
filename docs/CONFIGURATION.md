@@ -29,10 +29,10 @@ Example path correspondence for **one physical source**:
 | Host | `/mnt/user/media/movies/Film/Film.mkv` |
 | Tdarr server | `/media/movies/Film/Film.mkv` |
 | Review | `/media/movies/Film/Film.mkv` |
-| Recovery | `/storage/movies/Film/Film.mkv` |
+| Recovery (inside Review) | `/media/movies/Film/Film.mkv` |
 | Radarr | `/media/Film/Film.mkv` |
 
-These paths differ because of container mappings. Do not copy one consumer's root into another consumer's setting without checking its mapping. For Windows nodes, configure Tdarr path translators separately; Review itself runs on Linux.
+These paths differ because of container mappings. An installation migrated from the separate Recovery container may keep Recovery at `/storage/movies` through an extra mapping ([2.0 migration](MIGRATE-TO-2.0.md#3-keep-the-old-paths-with-an-extra-mapping)). Do not copy one consumer's root into another consumer's setting without checking its mapping. For Windows nodes, configure Tdarr path translators separately; Review itself runs on Linux.
 
 ## Radarr settings in Review
 
@@ -50,7 +50,7 @@ The manual replacement workflow clones the quality profile for that movie, retai
 
 ### Recovery mode
 
-The `RECOVERY_MODE` environment variable of the Recovery container is the only switch that decides what the worker may do. The mode is one of `off`, `verify` and `repair`, and `off` is the default ([ADR 0001](adr/0001-recovery-runs-inside-review.md)). `off` means the worker is not started at all, so the worker itself runs only in `verify` or `repair`:
+The `RECOVERY_MODE` environment variable of the Review container is the only switch that decides what the worker may do. The mode is one of `off`, `verify` and `repair`, and `off` is the default ([ADR 0001](adr/0001-recovery-runs-inside-review.md)). `off`, or leaving it unset, means the supervisor never starts the worker, so the worker itself runs only in `verify` or `repair`. Set it in the Unraid template (**Recovery mode**) or in `.env` for Compose:
 
 | `RECOVERY_MODE` | Behaviour |
 | --- | --- |
@@ -64,22 +64,24 @@ The worker refuses to start before contacting any API, exits with code `78` and 
 | `invalid-mode` | `RECOVERY_MODE` is missing or is not exactly `off`, `verify` or `repair`. The worker never assumes the default `off` itself (fail closed) |
 | `mode-off` | `RECOVERY_MODE` is `off`; Recovery does not run |
 | `mode-conflict` | `config.json` still contains `enabled` and it disagrees with the mode |
-| `missing-config` | `/data/config.json` does not exist |
-| `unreadable-config` | `/data/config.json` exists but cannot be read (for example its permissions or type) |
+| `missing-config` | `/data/recovery/config.json` does not exist |
+| `unreadable-config` | `/data/recovery/config.json` exists but cannot be read (for example its permissions or type) |
 | `invalid-config` | `config.json` is not a JSON object, or `enabled` is present but not `true`/`false` |
 | `registry-refused` | The private approval registry `pending-approvals.json` refuses the configuration or state; the log line before the reason names the rule, never a value |
 
 The reason line never contains configuration keys or values. Any other non-zero exit is a crash.
 
-With the Compose `recovery` service, keep Recovery off by not starting that service (leave out `--profile recovery`, or `docker compose stop recovery`); setting `RECOVERY_MODE=off` there only produces a `mode-off` refusal. The service uses `restart: unless-stopped`, so Docker restarts a refusing worker with its own growing delay until the cause is fixed. Look for `RECOVERY_REFUSED` in `docker compose logs recovery`, stop the service, fix the cause and start it again.
+A refused worker is not restarted: Review keeps running and shows **Refused** with the reason in its **Recovery** view and health attention (`recovery-refused`), never an unhealthy container. Look for `RECOVERY_REFUSED` in `docker logs tdarr-review` (or `docker compose logs review`), fix the cause and restart the container. A crash, unlike a refusal, is restarted with growing delays ([Supervisor](ARCHITECTURE.md#supervisor)).
+
+**A registry that freezes `enabled` pins the mode.** The registry check compares every frozen key with the configuration the worker runs with, and `enabled` is derived from `RECOVERY_MODE`. A registry with frozen `enabled: true` therefore starts only in `repair`, one with `false` only in `verify`; the other mode is refused with `registry-refused` even when `config.json` is unchanged. The [2.0 migration guide](MIGRATE-TO-2.0.md#check-what-the-old-configuration-and-registry-freeze) shows how to list the frozen keys without printing values. A planned change ([#77](https://github.com/Desadius/Tdarr-Review/issues/77)) will let a registry approved for Repair also start in Verify.
 
 `enabled` in `config.json` is **deprecated**. A matching value (`false` with `verify`, `true` with `repair`) is accepted so existing configurations keep working; remove it when convenient. To migrate, set `RECOVERY_MODE=verify` where you had `"enabled": false` and `RECOVERY_MODE=repair` where you had `"enabled": true`. Changing the mode, like any configuration change, takes effect after a restart.
 
 ### config.json
 
-The worker reads `/data/config.json`. Unlike Review, it currently has no configuration UI or general schema validator; use the supplied complete example and verify values before switching to `repair`.
+The worker reads `/data/recovery/config.json` (its data root is `/data/recovery/` inside the Review container). Unlike Review, it currently has no configuration UI or general schema validator; use the supplied complete example and verify values before switching to `repair`.
 
-The worker reads `config.json` only when it starts. Edits, including limits and `approvedImportRepairs`, take effect after the Recovery container is restarted. While the worker runs it checks the file once per poll: if the content differs from what it loaded, it logs that a restart is required and adds `configChange` (`detectedAt`, `restartRequired`, `valid`, `error`) to the shared `.tdarr-recovery-status.json`. `valid: false` means the next start would fail: the file is not a JSON object, its `enabled` disagrees with `RECOVERY_MODE`, or the worker's start-up approval-registry check refuses it (for example a value frozen in `pending-approvals.json`, such as a library root, `libraryId` or a limit, was changed). `error` names the rule but never a value; fix the file before restarting. Settings outside these checks can still be wrong in ways only the running worker notices. The running worker keeps using the configuration it started with and never applies an edit in the middle of a case. Restart only while the worker is idle (see [Operations](OPERATIONS.md)).
+The worker reads `config.json` only when it starts. Edits, including limits and `approvedImportRepairs`, take effect after the Review container is restarted. While the worker runs it checks the file once per poll: if the content differs from what it loaded, it logs that a restart is required and adds `configChange` (`detectedAt`, `restartRequired`, `valid`, `error`) to the shared `.tdarr-recovery-status.json`. `valid: false` means the next start would fail: the file is not a JSON object, its `enabled` disagrees with `RECOVERY_MODE`, or the worker's start-up approval-registry check refuses it (for example a value frozen in `pending-approvals.json`, such as a library root, `libraryId` or a limit, was changed). `error` names the rule but never a value; fix the file before restarting. Settings outside these checks can still be wrong in ways only the running worker notices. The running worker keeps using the configuration it started with and never applies an edit in the middle of a case. Restart only while the worker is idle (see [Operations](OPERATIONS.md)).
 
 | Setting | Default example / purpose |
 | --- | --- |
@@ -101,7 +103,7 @@ The worker reads `config.json` only when it starts. Edits, including limits and 
 | `detectTerminalHeaders` | Recognize the narrow terminal-overwritten MKV header case |
 | `approvedCaseIds`, `approvedImportRepairs` | Advanced historical exceptions; shipped empty |
 
-`/data/pending-approvals.json` is the private, versioned frozen-evidence registry. It is separate from source and images and is not populated from UI clicks. A fresh installation with no stored approvals may omit it or use the empty [example](../examples/recovery-approval-registry.example.json). Normal future errors use two live original decodes and do not require frozen authorization. Do not use synthetic fixtures as real authorization.
+`/data/recovery/pending-approvals.json` is the private, versioned frozen-evidence registry. It is separate from source and images and is not populated from UI clicks. A fresh installation with no stored approvals may omit it or use the empty [example](../examples/recovery-approval-registry.example.json). Normal future errors use two live original decodes and do not require frozen authorization. Do not use synthetic fixtures as real authorization.
 
 Existing private registries must be [migrated offline before an update](MIGRATE-RECOVERY-REGISTRY.md). Invalid, unreadable, symlinked, changed or missing historical authority stops the worker before APIs. Nonempty registries bind the library, worker/source/Radarr/quarantine/review roots and review prefixes to the current configuration. Every explicitly frozen setting, including limits or `enabled` if present, must still match. Change authorization deliberately with the worker stopped, then restart; the registry is loaded once and frozen in memory.
 
@@ -109,8 +111,8 @@ Completed imported legacy approval metadata can remain in state without being a 
 
 ## Shared files
 
-Recovery writes `.tdarr-recovery-status.json` in the **parent** of its media root. Review reads it from the parent of its media root. Both paths must map to the same host file. Review needs configured Radarr connection details to build links for the shared records.
+Recovery writes `.tdarr-recovery-status.json` in the **parent** of its media root. Review reads it from the parent of its media root. Both paths must map to the same host file; with the defaults both are `/media/.tdarr-recovery-status.json`. Review needs configured Radarr connection details to build links for the shared records.
 
 Recovery also writes `.tdarr-original-languages.json` inside the film root using Radarr's TMDB-linked original-language metadata. This repository does not install the complete transcode/language-selection flow; make that flow explicitly consume the cache if required.
 
-Approval evidence is stored in `.tdarr-approvals` beside the library. Mount the media parent in both containers if using recovery/quarantine. Keep quarantine outside Plex's movie root.
+Approval evidence is stored in `.tdarr-approvals` beside the library. Review and Recovery share the media parent mapping in the one container; an installation migrated with `/storage` maps that path to the same host folder as `/media`. Keep quarantine outside Plex's movie root.

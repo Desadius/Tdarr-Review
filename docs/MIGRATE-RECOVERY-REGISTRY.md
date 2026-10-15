@@ -1,8 +1,8 @@
 # Preserve private Recovery authorization during updates
 
-The candidate worker reads `/data/pending-approvals.json`; private approvals are no longer bundled with code. The currently published 1.10.0 image does not include this migration utility. Select an explicitly approved new image/source version that includes it before following these steps. Source publication, image publication and deployment remain separate decisions.
+The worker reads `pending-approvals.json` from its data root (`/data/recovery/` inside the Review container since 2.0.0); private approvals are no longer bundled with code. The currently published 1.10.0 image does not include this migration utility. Select an explicitly approved new image/source version that includes it before following these steps. Source publication, image publication and deployment remain separate decisions.
 
-A fresh installation with no historical approvals can omit the registry or copy the empty [example](../examples/recovery-approval-registry.example.json). This guide is for an existing private registry. Never replace it with an empty example or reconstruct authority from the copies in `state.json`.
+To move an installation that already has `pending-approvals.json` in the separate Recovery container's `/data` to 2.0, follow [the 2.0 migration guide](MIGRATE-TO-2.0.md) instead: it copies the registry unchanged. A fresh installation with no historical approvals can omit the registry or copy the empty [example](../examples/recovery-approval-registry.example.json). This guide is for an existing private registry. Never replace it with an empty example or reconstruct authority from the copies in `state.json`.
 
 ## Before migration
 
@@ -19,25 +19,25 @@ From a source checkout on Linux with Node 24, use explicit absolute paths:
 ```bash
 RECOVERY_MODE=verify node tools/migrate-recovery-registry.mjs \
   --source /absolute/old-app/pending-approvals.json \
-  --data /absolute/recovery/data
+  --data /absolute/review/data/recovery
 ```
 
-The new Recovery image includes the same utility at `/tools/migrate-recovery-registry.mjs`. If the host has no Node runtime, a disposable container can run it with only data and the old registry mounted. Substitute the approved image and actual host paths; the worker must already be stopped:
+The Review image includes the same utility at `/tools/migrate-recovery-registry.mjs`. If the host has no Node runtime, a disposable container can run it with only data and the old registry mounted. Substitute the approved image and actual host paths; the container must already be stopped:
 
 ```bash
 docker run --rm --network none --read-only --cap-drop ALL \
   --security-opt no-new-privileges --cpus 1 --memory 256m --pids-limit 64 \
   --tmpfs /tmp:rw,noexec,nosuid,size=32m \
   -e RECOVERY_MODE=verify \
-  --mount type=bind,source=/absolute/recovery/data,target=/data \
+  --mount type=bind,source=/absolute/review/data/recovery,target=/data \
   --mount type=bind,source=/absolute/old-app/pending-approvals.json,target=/legacy/pending-approvals.json,readonly \
   --entrypoint /usr/bin/node \
-  ghcr.io/desadius/tdarr-recovery:sha-APPROVED_FULL_COMMIT \
+  ghcr.io/desadius/tdarr-review:sha-APPROVED_FULL_COMMIT \
   /tools/migrate-recovery-registry.mjs \
   --source /legacy/pending-approvals.json --data /data
 ```
 
-The image runs as UID 99/GID 100. Its data mapping must permit that user to read config/state/source and create private backup/registry files. This container has no media/database mounts or external network and is removed when the command ends.
+The image runs as UID 99/GID 100. Its data mapping must permit that user to read config/state/source and create private backup/registry files. The throwaway container mounts only Recovery's data directory (Review's `/data/recovery` on the host) as its `/data`. It has no media/database mounts or external network and is removed when the command ends.
 
 ## Result and recovery
 
@@ -45,4 +45,4 @@ The first successful installation stores exact old registry/state backups and a 
 
 An identical valid existing registry is accepted as an idempotent retry. A different target, changed state/source during migration, unsupported evidence or a concurrently appearing target is rejected; no overwrite fallback is used. Failed attempts can leave their private backups for inspection. Preserve those backups and the original source until update verification succeeds. Do not reset state or copy an empty registry to work around a failure.
 
-After migration, update the already stopped worker using the same persistent `/data` and mappings, then verify logs, expected pending cases and Review status. A registry error must be resolved before repairs proceed. Registry changes require a stopped worker and restart; no hot reload is performed.
+After migration, start the already stopped Review container with the same persistent `/data`, mappings and `RECOVERY_MODE`, then verify logs, expected pending cases and Review status. A registry error must be resolved before repairs proceed. Registry changes require a stopped worker and restart; no hot reload is performed.
