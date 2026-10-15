@@ -1,6 +1,6 @@
 # Install on Unraid
 
-This guide describes **2.0.0**, which is not yet released, targeting the versioned Linux amd64 image `ghcr.io/desadius/tdarr-review:2.0.0` once it is published. Until then, build the source locally, or install the published 1.11.0 with [its own guide](https://github.com/Desadius/Tdarr-Review/blob/v1.11.0/docs/INSTALL-UNRAID.md). The [Community Applications entry](https://ca.unraid.net/apps/tdarr-review-1qs5sdc0gn7hmk) uses the supplied [`templates/tdarr-review.xml`](../templates/tdarr-review.xml) with `latest`. Registry availability and catalog visibility are separate; see [publication status](COMMUNITY-APPS.md). Cloning this repository does not update an existing container.
+This guide describes **2.0.0**, targeting the versioned Linux amd64 image `ghcr.io/desadius/tdarr-review:2.0.0`. You can also build the source locally. The previous release 1.11.0 has [its own guide](https://github.com/Desadius/Tdarr-Review/blob/v1.11.0/docs/INSTALL-UNRAID.md). The [Community Applications entry](https://ca.unraid.net/apps/tdarr-review-1qs5sdc0gn7hmk) uses the supplied [`templates/tdarr-review.xml`](../templates/tdarr-review.xml) with `latest`. Registry availability and catalog visibility are separate; see [publication status](COMMUNITY-APPS.md). Cloning this repository does not update an existing container.
 
 ## Updating to 2.0.0
 
@@ -38,7 +38,7 @@ cd Tdarr-Review
 cp .env.example .env
 ```
 
-Edit `.env` in a text editor. Set `REVIEW_IMAGE_TAG` to the version you install (`2.0.0` once published), your real paths and API address. Set `REVIEW_BIND_IP` to the server's LAN IP if you want LAN access. Set `PUBLIC_ORIGIN` to exactly the browser origin, for example `http://YOUR_UNRAID_IP:8270` (with your actual IP).
+Edit `.env` in a text editor. Set `REVIEW_IMAGE_TAG=2.0.0` for this source release, your real paths and API address. Set `REVIEW_BIND_IP` to the server's LAN IP if you want LAN access. Set `PUBLIC_ORIGIN` to exactly the browser origin, for example `http://YOUR_UNRAID_IP:8270` (with your actual IP).
 
 `TDARR_DB_HOST` must be the **directory** containing `SQL/database.db`, not just the database file. Its WAL/SHM sidecars must be available through the same read-only mapping. Locate this directory in your Tdarr server appdata before starting.
 
