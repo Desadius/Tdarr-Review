@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import {OLD_RECOVERY_IMAGE} from './old-recovery-image.mjs';
 
 const read=file=>fs.readFile(new URL('../'+file,import.meta.url),'utf8');
 
@@ -55,10 +56,9 @@ test('build, CI, version checks and templates name no separate Recovery image or
  const list=async directory=>(await fs.readdir(new URL('../'+directory+'/',import.meta.url))).map(name=>directory+'/'+name);
  const files=['Dockerfile','.dockerignore','compose.yaml','.env.example','package.json','tsconfig.typecheck.json',
   ...await list('templates'),...await list('.github/workflows'),
-  ...(await list('tools')).filter(file=>/\.(mjs|sh)$/.test(file)&&!file.endsWith('.test.mjs'))];
- // .tdarr-recovery-status.json is the shared status file, not the image.
- const image=/tdarr-recovery(?!-status)|Dockerfile\.recovery|RECOVERY_IMAGE_TAG|RECOVERY_DATA_HOST/;
- for(const file of files)assert.doesNotMatch(await read(file),image,file);
+  // The pattern's own definition necessarily contains the old names.
+  ...(await list('tools')).filter(file=>/\.(mjs|sh)$/.test(file)&&!file.endsWith('.test.mjs')&&file!=='tools/old-recovery-image.mjs')];
+ for(const file of files)assert.doesNotMatch(await read(file),OLD_RECOVERY_IMAGE,file);
 });
 
 test('the example Recovery config uses Review mappings, has no enabled key and passes the start-up checks',async t=>{

@@ -63,20 +63,17 @@ jobs:
           PUBLISH_LATEST: ${{ inputs.publish_latest }}
         run: |
           set -euo pipefail
-          owner=${GITHUB_REPOSITORY_OWNER,,}
-          for app in tdarr-review; do
-            image="ghcr.io/$owner/$app"
-            for tag in "sha-$RELEASE_SHA" "$RELEASE_VERSION"; do
-              docker tag "$app:smoke" "$image:$tag"
-              docker push "$image:$tag"
-              printf 'Published `%s:%s`\n' "$image" "$tag" >> "$GITHUB_STEP_SUMMARY"
-            done
-            if [[ "$PUBLISH_LATEST" == true ]]; then
-              docker tag "$app:smoke" "$image:latest"
-              docker push "$image:latest"
-              printf 'Updated `%s:latest`\n' "$image" >> "$GITHUB_STEP_SUMMARY"
-            fi
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tdarr-review"
+          for tag in "sha-$RELEASE_SHA" "$RELEASE_VERSION"; do
+            docker tag tdarr-review:smoke "$image:$tag"
+            docker push "$image:$tag"
+            printf 'Published `%s:%s`\n' "$image" "$tag" >> "$GITHUB_STEP_SUMMARY"
           done
+          if [[ "$PUBLISH_LATEST" == true ]]; then
+            docker tag tdarr-review:smoke "$image:latest"
+            docker push "$image:latest"
+            printf 'Updated `%s:latest`\n' "$image" >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Log out of GHCR
         if: always()
         run: docker logout ghcr.io
