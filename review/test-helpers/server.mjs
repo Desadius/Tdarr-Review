@@ -19,7 +19,7 @@ export async function serverHarness(){
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'review-server-'));
  const data=path.join(root,'data'),media=path.join(root,'media'),review=path.join(root,'review');
  const reservation=http.createServer();
- let child,diagnostics='';
+ let child,diagnostics='',output='';
  try{
   for(const dir of [data,media,review,path.join(data,'transactions')])await fs.mkdir(dir,{recursive:true});
   await new Promise(resolve=>reservation.listen(0,'127.0.0.1',resolve));
@@ -41,7 +41,7 @@ export async function serverHarness(){
     }
    }finally{await fs.rm(root,{recursive:true,force:true})}
   };
-  return {root,data,media,review,port,base,request,close,diagnostics:()=>diagnostics,
+  return {root,data,media,review,port,base,request,close,diagnostics:()=>diagnostics,output:()=>output,
    async start({settings={},state,preload,clock=false,traceRoutes=false,env={}}={}){
     try{
      // Every default endpoint is loopback; missing synthetic databases fail closed.
@@ -57,7 +57,7 @@ export async function serverHarness(){
      args.push(fileURLToPath(new URL('../server.mjs',import.meta.url)));
      child=spawn(process.execPath,args,{env:{...process.env,...env,DATA_ROOT:data,PORT:String(port),REVIEW_TEST_CLOCK:clock?'1':'0',REVIEW_TEST_TRACE:traceRoutes?trace:''},stdio:['ignore','pipe','pipe',...(clock?['ipc']:[])]});
      await deadline(new Promise((resolve,reject)=>{
-      child.stdout.on('data',chunk=>{if(String(chunk).includes('Tdarr Review listening'))resolve()});
+      child.stdout.on('data',chunk=>{output+=chunk;if(String(chunk).includes('Tdarr Review listening'))resolve()});
       child.stderr.on('data',chunk=>{diagnostics+=chunk});child.once('error',reject);child.once('exit',code=>reject(Error('Server exited '+code+': '+diagnostics)));
      }),'server startup');
     }catch(error){await close();throw error}

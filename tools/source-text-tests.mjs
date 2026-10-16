@@ -8,13 +8,10 @@ export const SOURCE_TEXT_ALLOWLIST={
  'review/app-runtime.test.mjs':['public/app.js'],
  // Executes the comparison module in a VM; assertions observe the actual player.
  'review/audio-listen.test.mjs':['public/comparison.js'],
- 'review/decision-audit.test.mjs':['server.mjs'],
  // Executes the real audio-comparison function in a VM and asserts DOM/API calls; no source regex assertions remain.
  'review/prepared-frontend.test.mjs':['public/comparison.js'],
  // Executes the Tdarr route example with synthetic inputs and mocked APIs.
  'review/recovery-route.test.cjs':['../examples/tdarr/recovery-review-route.cjs'],
- 'review/rejection-audit.test.mjs':['server.mjs','routes/items.mjs'],
- 'review/resume-retry.test.mjs':['server.mjs','routes/items.mjs','server.mjs'],
  // Executes the Tdarr guard example to observe its decision and output.
  'review/tdarr-guard.test.cjs':['examples/tdarr/review-guard.cjs'],
 };

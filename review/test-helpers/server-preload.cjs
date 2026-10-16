@@ -4,7 +4,8 @@ const {appendFileSync}=require('node:fs');
 if(process.env.REVIEW_TEST_CLOCK==='1'){
  const now=Date.now,interval=setInterval,callbacks=new Map();let offset=0;
  Date.now=()=>now()+offset;
- global.setInterval=(fn,ms,...args)=>{callbacks.set(ms,()=>fn(...args));return interval(fn,ms,...args)};
+ // Only tick() runs an interval callback, so a real timer cannot add an unrequested run.
+ global.setInterval=(fn,ms,...args)=>{callbacks.set(ms,()=>fn(...args));return interval(()=>{},ms)};
  process.on('message',message=>{offset+=message.advance||0;if(message.interval)callbacks.get(message.interval)?.();process.send({ack:message.id})});
 }
 if(process.env.REVIEW_TEST_TRACE){

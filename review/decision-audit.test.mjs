@@ -49,12 +49,5 @@ test('a symlinked audit file is refused and a failure does not block later recor
  assert.equal((await lines(path.join(dir,AUDIT_FILE)))[0].n,1);
 }));
 
-test('approvals and replacement requests are audited; audit failure only adds a warning',async()=>{
- const server=await fs.readFile(new URL('./server.mjs',import.meta.url),'utf8');
- const perform=server.slice(server.indexOf('async function perform('),server.indexOf('async function performBatch('));
- const replacement=server.slice(server.indexOf('async function replacementAction('),server.indexOf('const replacementTimer='));
- assert.match(perform,/if\(action==='approve'\)\{try\{await recordDecision\(DATA,\{event:'approval',[^}]*reviewSession:reviewEvidence,[^}]*transaction:journal\?path\.basename\(journal,'\.json'\):null,outcome:outcome\.status/);
- assert.match(replacement,/try\{await recordDecision\(DATA,\{event:'replacement',[^}]*reason,requestId:outcome\.requestId,outcome:outcome\.status/);
- for(const source of [perform,replacement])assert.match(source,/\}catch\(e\)\{auditFailed\(outcome,e\)\}/);
- assert.ok(perform.indexOf("recordDecision(DATA,{event:'approval'")<perform.indexOf('state.history=state.history.slice(0,150)'),'the warning is saved with the history entry');
-});
+// The server's use of these records (approval, replacement request, audit failure) is tested over
+// HTTP in decision-http.test.mjs.
