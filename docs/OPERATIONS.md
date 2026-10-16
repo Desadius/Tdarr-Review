@@ -7,7 +7,7 @@ Back up Review `/data` (it includes Recovery's `config.json`, state and private 
 `state.json` keeps only the latest 150 history entries. The durable decision records are separate append-only files in Review `/data` (mode 0600, each record fsynced):
 
 - `decision-audit.jsonl`: one record per finished approval (success or failure) and per Radarr replacement request, with time, item, paths, snapshot, Tdarr job, the saved review evidence, transaction journal id, outcome, message and warning. At 10 MiB the file is renamed to `decision-audit-<UTC time>.jsonl` and a new one starts; archives are never deleted or rewritten by Review.
-- `rejection-decisions.jsonl`: rejection requests and results.
+- `rejection-decisions.jsonl`: rejection requests and results. It must be a regular file: a symlink, directory or named pipe in its place is refused, and because the request is archived before the review copy is deleted, such a rejection fails and deletes nothing.
 
 Include these files in backups and remove old archives only deliberately. If a record cannot be written, the action keeps its result and the history entry shows a warning.
 
