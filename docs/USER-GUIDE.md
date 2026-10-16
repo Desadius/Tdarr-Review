@@ -18,7 +18,7 @@ Work through the five steps. Confirmations appear alongside the tools during com
 | **Synchronisation** (**Synchronizace**) | Select a useful dialogue/action section near the start, middle and end. For each section, assess sound against picture, check the corresponding box and choose **Save start check**, **Save middle check** or **Save end check**. Save all three before continuing. |
 | **Decision** (**Rozhodnutí**) | Inspect the saved method, device, confirmations and section times. Open the separate final approval dialog only when you are ready to replace the original. |
 
-Use **Save and continue** (**Uložit a pokračovat**) after confirming each step. Previously reached steps can be reopened. Loading frames, downloading a file or playing a clip never checks a box automatically. A preview, correlation estimate or technical score is not a substitute for your assessment.
+Use **Save and continue** (**Uložit a pokračovat**) after confirming each step. If something is missing, activate the same button to see the specific requirements in an accessible message. It lists only the missing conditions for that step, including a named device for HDR/Dolby Vision, manual confirmations, valid audio tracks or individually saved synchronisation checkpoints. It also explains temporary action, changed-file or revision blocks. This explanatory activation does not save or advance the review. Previously reached steps can be reopened. Loading frames, downloading a file or playing a clip never checks a box automatically. A preview, correlation estimate or technical score is not a substitute for your assessment.
 
 ## Save, defer and resume
 
