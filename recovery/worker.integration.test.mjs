@@ -33,7 +33,7 @@ async function fixture({terminalHeader=false,mode='repair',largeSource=false}={}
  // Run these synthetic decoder scripts through Node, including in containers
  // whose temporary filesystem is noexec. Only exact fixture paths are wrapped.
  const preload=root+'/decoder/preload.cjs';await fs.writeFile(preload,'const cp=require("node:child_process"),path=require("node:path"),original=cp.spawn;cp.spawn=(exe,args,opts)=>[path.join(__dirname,"ffmpeg"),path.join(__dirname,"ffprobe")].includes(exe)?original(process.execPath,[exe,...args],opts):original(exe,args,opts);require("node:module").syncBuiltinESMExports();\n');
- const requests=[];let forbidden=false,allowRepair=false,releaseBlocked=false;const commands=new Map();
+ const requests=[];let forbidden=false,allowRepair=false,releaseBlocked=false,beforeHold=null;const commands=new Map();
  const server=http.createServer(async(req,res)=>{try{
   let raw='';for await(const b of req)raw+=b;const parsed=raw?JSON.parse(raw):undefined,body=req.url.startsWith('/api/v2/')?parsed?.data:parsed;requests.push({method:req.method,url:req.url,body});res.setHeader('content-type','application/json');
   const reply=v=>res.end(JSON.stringify(v));
@@ -42,7 +42,7 @@ async function fixture({terminalHeader=false,mode='repair',largeSource=false}={}
   if(req.method==='GET'&&req.url==='/api/v3/history/movie?movieId=1')return reply(history);
   if(req.method==='GET'&&req.url==='/api/v2/get-nodes')return reply({});
   if(req.method==='POST'&&req.url==='/api/v2/cruddb'&&body.mode==='getById')return reply(row);
-  if(req.method==='POST'&&req.url==='/api/v2/bulk-update-files'){Object.assign(row,body.updatedObj);db.prepare('UPDATE filejsondb SET json_data=?').run(JSON.stringify(row));res.setHeader('content-type','text/plain');res.end('OK');return;}
+  if(req.method==='POST'&&req.url==='/api/v2/bulk-update-files'){if(beforeHold)await beforeHold();Object.assign(row,body.updatedObj);db.prepare('UPDATE filejsondb SET json_data=?').run(JSON.stringify(row));res.setHeader('content-type','text/plain');res.end('OK');return;}
   if(allowRepair){
    if(req.method==='POST'&&req.url==='/api/v3/command'){
     assert.ok(['RescanMovie','MoviesSearch'].includes(body.name));if(body.name==='RescanMovie'){movie.movieFileId=0;delete movie.movieFile;}
@@ -64,7 +64,7 @@ async function fixture({terminalHeader=false,mode='repair',largeSource=false}={}
  async function result(){assert.equal((await fs.stat(root+'/media/.tdarr-recovery-status.json')).mode&0o777,0o644);assert.equal((await fs.stat(data+'/state.json')).mode&0o777,0o600);return {state:JSON.parse(await fs.readFile(data+'/state.json')),public:JSON.parse(await fs.readFile(root+'/media/.tdarr-recovery-status.json'))};}
  async function unchanged(){assert.equal(fp(await fs.stat(source)),sourceFP);assert.equal(await fs.readFile(source,'utf8'),sourceBytes);assert.equal(await fs.readFile(parent.quarantine,'utf8'),'PRESERVED PARENT');assert.equal(forbidden,false,'worker attempted an unexpected download or API mutation');}
  async function cleanup(){db.close();await new Promise(r=>server.close(r));assert(root.startsWith(path.resolve(os.tmpdir())+path.sep)&&path.basename(root).startsWith('recovery-worker-'));await fs.rm(root,{recursive:true,force:true});}
- return {root,cfg,state,parent,movie,row,requests,file,relative,source,sourceFP,size,sourceBytes,data,write,run,daemon,result,unchanged,cleanup,id:identity(file,sourceFP),binding:bindHistory(movie,history,movie.movieFile.path,size),allowRepair:()=>{allowRepair=true;},setDecoder:script=>fs.writeFile(cfg.ffmpeg,script,{mode:0o755})};
+ return {root,cfg,state,parent,movie,row,requests,file,relative,source,sourceFP,size,sourceBytes,data,write,run,daemon,result,unchanged,cleanup,id:identity(file,sourceFP),binding:bindHistory(movie,history,movie.movieFile.path,size),allowRepair:()=>{allowRepair=true;},onHold:callback=>{beforeHold=callback;},setDecoder:script=>fs.writeFile(cfg.ffmpeg,script,{mode:0o755})};
 }
 
 test('actual worker retries an old unrecognized XLL report, links its exact parent and preserves cooldown',{skip:process.platform!=='linux'},async()=>{
@@ -268,6 +268,23 @@ test('a full-file hash detects changed bytes outside sampled regions before any 
   assert.equal(await fs.readFile(f.parent.quarantine,'utf8'),'PRESERVED PARENT');
   assert.deepEqual(f.requests.slice(before).filter(r=>r.method!=='GET'&&!(r.url==='/api/v2/cruddb'&&r.body.mode==='getById')),[],'no Tdarr or Radarr mutation after changed full hash');
   assert.deepEqual((await snapshots()).map(s=>s.cases.find(c=>c.id===f.id).fullHash.stage),['confirmation','before_quarantine']);
+ }finally{await f.cleanup();}
+});
+
+for(const guard of ['fingerprint','sample'])test(`worker rechecks ${guard} after hashing and immediately before the quarantine rename`,{skip:process.platform!=='linux'},async()=>{
+ const f=await fixture({largeSource:true});try{
+  await observeHashes(f,{preserveTimes:guard==='sample'});
+  f.parent.movieId=2;f.cfg.fullSourceHash=true;f.allowRepair();
+  const changed=Buffer.from(f.sourceBytes);changed[guard==='sample'?17:1024*1024+17]^=1;
+  // The Hold acknowledgment is after both real full hashes. Change the source
+  // before the worker's final identity/sample check and rename, without sleeps.
+  f.onHold(()=>fs.writeFile(f.source,changed));
+  await f.write();await f.run();const result=await f.result(),c=result.state.cases[f.id];
+  assert.match(JSON.stringify(c)+String(result.state.lastError),/Source changed before quarantine/);
+  assert.equal(c.evidence.fullSHA256,crypto.createHash('sha256').update(f.sourceBytes).digest('hex'));
+  assert.equal(c.quarantine,undefined);assert.deepEqual(await fs.readFile(f.source),changed);
+  assert.equal(await fs.readFile(f.parent.quarantine,'utf8'),'PRESERVED PARENT');
+  assert.equal(f.requests.filter(r=>r.url==='/api/v3/command'&&r.method==='POST').length,0,'no Radarr mutation follows final identity refusal');
  }finally{await f.cleanup();}
 });
 
