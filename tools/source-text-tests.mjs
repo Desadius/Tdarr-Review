@@ -8,7 +8,6 @@ export const SOURCE_TEXT_ALLOWLIST={
  'review/app-runtime.test.mjs':['public/app.js'],
  'review/app-version.test.mjs':['server.mjs','routes/items.mjs'],
  'review/audio-listen.test.mjs':['public/comparison.js'],
- 'review/auth-state.test.mjs':['server.mjs','routes/auth.mjs'],
  'review/decision-audit.test.mjs':['server.mjs'],
  'review/error-codes.test.mjs':['public/app.js','routes/static.mjs'],
  'review/i18n.test.mjs':['public/quarantine.js','public/settings-dialogs.js','public/app.js'],
@@ -17,7 +16,6 @@ export const SOURCE_TEXT_ALLOWLIST={
  'review/recovery-route.test.cjs':['../examples/tdarr/recovery-review-route.cjs'],
  'review/rejection-audit.test.mjs':['server.mjs','routes/items.mjs','public/app.js','public/ui-kit.js'],
  'review/resume-retry.test.mjs':['server.mjs','routes/items.mjs','server.mjs'],
- 'review/routes.test.mjs':['server.mjs'],
  'review/tdarr-guard.test.cjs':['examples/tdarr/review-guard.cjs'],
  'review/test-artwork.mjs':['server.mjs','routes/library.mjs','routes/static.mjs'],
  'recovery/full-hash.test.mjs':['worker.mjs','waiting-source.mjs']
