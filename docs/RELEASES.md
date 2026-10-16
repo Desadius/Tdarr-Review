@@ -20,4 +20,17 @@ gh workflow run publish.yml --ref main \
 
 Set `publish_latest=true` only when that update is part of the approval. Publishing the image makes it available to others; it does not imply permission to restart an existing installation.
 
+### Move latest to a verified image without rebuilding
+
+A publication rebuilds the image, so running it again with `publish_latest=true` after the installation was verified would point `latest` (and the version tag) at a new build with a different digest. To move only `latest` to exactly the image that was verified, **only after approval to move `latest`**, enter the verified digest as `promote_digest`:
+
+```bash
+gh workflow run publish.yml --ref main \
+  -f commit=FULL_APPROVED_40_CHARACTER_COMMIT_SHA \
+  -f promote_digest=sha256:VERIFIED_DIGEST \
+  -f publish_latest=true
+```
+
+Take the digest from the running installation, not from the `sha-<commit>` tag, which a repeated publication moves: `docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' ghcr.io/desadius/tdarr-review:2.0.0 | grep '^ghcr.io/desadius/tdarr-review@'` prints it after the `@`. The promotion job builds and tests nothing. It refuses before any registry write when `publish_latest` is not set or the commit is not in `main` history, and `tools/promote-latest.mjs` then refuses when the digest is malformed, missing from GHCR or cannot be inspected (the registry's error is shown), or when the image's `org.opencontainers.image.revision` label (set from `VCS_REF`) is not the given commit. Any earlier `main` commit is accepted, so the same step moves `latest` back to an older verified image. It then copies the manifest to `latest` with `docker buildx imagetools create --prefer-index=false`, so the digest stays the same, and checks that `latest` resolves to it. The version tag and `sha-<commit>` are not changed. The step summary names the digest of `latest` before and after.
+
 The workflow uses GitHub's [manual dispatch inputs and job-level permissions](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax). Dispatch inputs are passed through environment variables and validated before use in commands. A failed test or image smoke check prevents registry login and publication.

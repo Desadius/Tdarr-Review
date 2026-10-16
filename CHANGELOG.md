@@ -7,6 +7,7 @@ This records the implemented application features. Versions before 1.10.0 were d
 - Explain missing review-step requirements when Save and continue is activated, including HDR devices, manual confirmations, track pairs, saved synchronisation checks and temporary blocks (English/Czech).
 
 - Include diagnostic acceptance rules in the preview renderer identity so updates cannot reuse samples prepared under an older diagnostic policy.
+- The `Publish Docker images (manual)` workflow can move `latest` to an already published image by its verified digest (`promote_digest`) without rebuilding. It checks that the image exists in GHCR and that its revision label is the approved `main` commit, and leaves the version and `sha-<commit>` tags unchanged ([Releases](docs/RELEASES.md#move-latest-to-a-verified-image-without-rebuilding)).
 
 ## 2.0.0 — 2026-10-15
 
