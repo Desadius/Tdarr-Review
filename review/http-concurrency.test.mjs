@@ -1,30 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import {spawn} from 'node:child_process';
-import {fileURLToPath} from 'node:url';
 import {DatabaseSync} from 'node:sqlite';
 import {defaults} from './config.mjs';
+import {serverHarness,deadline} from './test-helpers/server.mjs';
 import {hash,sha256} from './core.mjs';
 
 // The server's configured paths, executable fixtures and durable directory
 // fsync require its supported Linux platform. No real media/API is contacted.
 const linux={skip:process.platform!=='linux'?'Requires Linux directory fsync and executable fixture semantics':false,timeout:60000};
-const serverFile=fileURLToPath(new URL('./server.mjs',import.meta.url));
 const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done});return {promise,resolve}};
-async function deadline(promise,label){
- let timer;
- try{return await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Timed out: '+label)),20000)})])}finally{clearTimeout(timer)}
-}
 
 async function fixture({pauses=false,recovery=false}={}){
- const root=await fs.mkdtemp(path.join(os.tmpdir(),'review-http-concurrency-'));
+ const harness=await serverHarness(),{root}=harness;
  const data=path.join(root,'data'),media=path.join(root,'media'),review=path.join(root,'review');
  const gates=[],calls=[],changes=[],nodes={fixture:{_id:'fixture',nodeName:'fixture-node',nodePaused:false,workers:{}}};
- let child,cookie,base,diagnostics='';
+ let cookie,base=harness.base;
  function hold(route,predicate=()=>true){
   const entered=deferred(),released=deferred(),gate={route,predicate,entered:entered.promise,release:released.resolve};
   gate.wait=async body=>{if(predicate(body)){entered.resolve(body);await released.promise}};gates.push(gate);return gate;
@@ -50,7 +43,7 @@ async function fixture({pauses=false,recovery=false}={}){
  });
  const close=async()=>{
   for(const gate of gates)gate.release();
-  if(child&&child.exitCode===null&&child.signalCode===null){const closed=new Promise(resolve=>child.once('close',resolve));child.kill('SIGTERM');await deadline(closed,'server shutdown')}
+  await harness.close();
   await new Promise(resolve=>mock.close(resolve));await fs.rm(root,{recursive:true,force:true});
  };
  try{
@@ -65,8 +58,6 @@ async function fixture({pauses=false,recovery=false}={}){
   // replacing any production decoder, file operation or server behavior.
   const preload=path.join(root,'preload.cjs');
   await fs.writeFile(preload,`const cp=require('node:child_process'),original=cp.spawn;cp.spawn=(exe,args,options)=>${JSON.stringify([ffprobe,ffmpeg])}.includes(exe)?original(process.execPath,[exe,...args],options):original(exe,args,options);require('node:module').syncBuiltinESMExports();`);
-  // Reserve an ephemeral loopback port; each suite fixture starts serially.
-  const portServer=http.createServer();await new Promise(resolve=>portServer.listen(0,'127.0.0.1',resolve));const port=portServer.address().port;await new Promise(resolve=>portServer.close(resolve));base='http://127.0.0.1:'+port;
   const dbpath=path.join(root,'tdarr.db'),db=new DatabaseSync(dbpath),files=new Map();
   db.exec('CREATE TABLE jobsjsondb (json_data TEXT); CREATE TABLE librarysettingsjsondb (json_data TEXT)');
   db.prepare('INSERT INTO librarysettingsjsondb VALUES (?)').run(JSON.stringify({_id:'fixture-library',folder:'/fixture-library'}));
@@ -82,11 +73,8 @@ async function fixture({pauses=false,recovery=false}={}){
   await fs.writeFile(path.join(data,'preview-settings.json'),JSON.stringify({enabled:false}));
   if(pauses)await fs.writeFile(path.join(data,'state.json'),JSON.stringify({items:{},history:[],sessions:{},pauses:[{name:'unavailable-node'}]}));
   if(recovery)await fs.writeFile(path.join(data,'transactions/manual.json'),JSON.stringify({id:'manual',phase:'installed'}));
-  const ready=deferred();child=spawn(process.execPath,['--require',preload,serverFile],{env:{...process.env,DATA_ROOT:data,PORT:String(port)},stdio:['ignore','pipe','pipe']});
-  child.stdout.on('data',chunk=>{if(String(chunk).includes('Tdarr Review listening'))ready.resolve()});child.stderr.on('data',chunk=>{diagnostics+=chunk});child.once('exit',code=>ready.resolve({code}));
-  assert.equal(await deadline(ready.promise,'server startup'),undefined,diagnostics);
-  const key=await fs.readFile(path.join(data,'access-key'),'utf8');
-  const login=await fetch(base+'/api/login',{method:'POST',headers:{origin:base,'content-type':'application/json'},body:JSON.stringify({key})});assert.equal(login.status,200,await login.clone().text());cookie=login.headers.get('set-cookie').split(';')[0];
+  await harness.start({settings:JSON.parse(await fs.readFile(path.join(data,'settings.json'),'utf8')),preload});
+  cookie=await harness.login();
   const post=(route,body={})=>fetch(base+route,{method:'POST',headers:{cookie,origin:base,'content-type':'application/json'},body:JSON.stringify(body)});
   const get=async route=>{const result=await fetch(base+route,{headers:{cookie}});assert.equal(result.status,200,await result.clone().text());return result.json()};
   const items=()=>get('/api/items');
@@ -114,10 +102,10 @@ async function fixture({pauses=false,recovery=false}={}){
    // Completion is observed through HTTP, never inferred from elapsed delay.
    const stop=Date.now()+20000;
    while(Date.now()<stop){const state=await items();if(!state.active&&!state.batchRunning&&state.history.length===count)return state;await new Promise(resolve=>setTimeout(resolve,20))}
-   assert.fail('Mutation did not settle: '+diagnostics);
+   assert.fail('Mutation did not settle: '+harness.diagnostics());
   };
   const preserved=async()=>{for(const [title,fileset] of files){assert.equal(await sha256(fileset.original),hash(Buffer.alloc(128,title.charCodeAt(0))));assert.equal(await sha256(fileset.review),hash(Buffer.alloc(32,title.charCodeAt(0)+32)))}};
-  return {root,data,files,mockBase,hold,calls,changes,post,get,items,confirm,approve,allMutations,journals,settled,preserved,close,diagnostics:()=>diagnostics};
+  return {root,data,files,mockBase,hold,calls,changes,post,get,items,confirm,approve,allMutations,journals,settled,preserved,close,diagnostics:harness.diagnostics};
  }catch(error){await close();throw error}
 }
 

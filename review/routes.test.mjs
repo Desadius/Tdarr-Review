@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs/promises';
+import {serverHarness,linuxServer} from './test-helpers/server.mjs';
 import {libraryRoutes} from './routes/library.mjs';
 import {itemRoutes} from './routes/items.mjs';
 import {previewRoutes} from './routes/previews.mjs';
@@ -50,10 +50,29 @@ test('unknown paths and wrong methods fall through without touching server state
   for(const [name,route] of Object.entries(modules))assert.equal(await claims(route,method,pathname),false,name+' '+method+' '+pathname);
 });
 
-test('server.mjs keeps host, origin, login, authentication and mutation claims ahead of route dispatch',async()=>{
- const server=await fs.readFile(new URL('./server.mjs',import.meta.url),'utf8');
- const order=["if(req.headers.host!==HOST)","req.headers.origin!==config.publicOrigin","if(await login(ctx,req,res,url))return;","!authenticated(ctx,req))return respond(res,401","const kind=mutationKind(","await previews.pauseBackground({wait:true})","for(const route of routes)if(await route(ctx,req,res,url,request))return;\n    respond(res,404,"].map(text=>server.indexOf(text));
- assert.ok(order.every(index=>index>0),JSON.stringify(order));
- assert.deepEqual([...order].sort((a,b)=>a-b),order);
- assert.match(server,/finally\{if\(request\.mutation&&mutationOwner===request\.mutation\)mutationOwner=null;/);
+test('HTTP guards precede dispatch for claimed and unknown paths; login remains reachable',linuxServer,async t=>{
+ const f=await serverHarness();t.after(()=>f.close());await f.start({traceRoutes:true});
+ for(const route of ['/api/settings','/api/preview-settings','/api/not-a-route']){
+  assert.equal((await f.request(route,{headers:{host:'wrong.invalid'}})).status,403,route+' host');
+  assert.equal((await f.request(route)).status,401,route+' authentication');
+  assert.equal((await f.request(route,{method:'POST',headers:{origin:'http://wrong.invalid'},body:{}})).status,403,route+' origin');
+  assert.equal((await f.request(route,{method:'POST',body:{}})).status,401,route+' mutation authentication');
+ }
+ assert.deepEqual(await f.routeCalls(),[],'refused requests never dispatch to route modules');
+ const cookie=await f.login();
+ assert.deepEqual(await f.routeCalls(),[],'login is handled before authenticated routes');
+ assert.equal((await f.request('/api/settings',{headers:{cookie}})).status,200);
+ assert.equal((await f.request('/api/not-a-route',{headers:{cookie}})).status,404);
+ assert.equal((await f.request('/api/login',{method:'POST',headers:{origin:'http://wrong.invalid'},body:{}})).status,403);
+ assert.equal((await f.request('/app.js',{headers:{host:'wrong.invalid'}})).status,403);
+});
+
+test('HTTP mutation gate refuses a claimed route before dispatch and releases later requests',linuxServer,async t=>{
+ const f=await serverHarness();t.after(()=>f.close());
+ await f.start({traceRoutes:true,state:{items:{},history:[],sessions:{},pauses:[{name:'synthetic-node'}]}});
+ const cookie=await f.login();
+ const blocked=await f.request('/api/settings',{method:'POST',headers:{cookie},body:{}});
+ assert.equal(blocked.status,409);
+ assert.deepEqual(await f.routeCalls(),[],'blocked mutation never dispatches');
+ assert.equal((await f.request('/api/settings',{headers:{cookie}})).status,200,'read remains available');
 });
