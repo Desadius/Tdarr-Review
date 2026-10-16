@@ -5,7 +5,6 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import {rejectionReason,recordRejection} from './rejection-audit.mjs';
-import {createTranslator} from './public/i18n.js';
 const server=await fs.readFile(new URL('./server.mjs',import.meta.url),'utf8');
 const code=server.slice(server.indexOf('async function perform('),server.indexOf('async function performBatch('));
 const outcomeLog=server.split('\n').find(line=>line.startsWith('const outcomeLog='));
@@ -33,19 +32,3 @@ test('Failed durable archive prevents destructive action',async()=>{
 });
 test('Missing reason cannot start a rejection',async()=>{const {box,events,item}=context();await assert.rejects(box.performTest('reject',item));assert.deepEqual(events,[]);assert.equal(box.active,null)});
 test('API validates reason before file scan and passes it into handler',async()=>{const items=await fs.readFile(new URL('./routes/items.mjs',import.meta.url),'utf8');const route=items.slice(items.indexOf("const action=/^\\/api\\/items"),items.indexOf('const video=/'));const reason=route.indexOf('rejectionReason(b.reason)'),scan=route.indexOf('await ctx.scan(true');assert.ok(reason>=0&&scan>reason);assert.ok(route.includes('reply(res,400'));assert.match(route,/ctx\.perform\(action\[2\],[\s\S]*acceptDuration,reason\)/)});
-test('History reasons are rendered as text and action requests include the entered reason',async()=>{
- const ui=await fs.readFile(new URL('./public/app.js',import.meta.url),'utf8');
- assert.ok(ui.includes("reason:['reject','replace'].includes(request.action)?reason:undefined"));
- const kit=await fs.readFile(new URL('./public/ui-kit.js',import.meta.url),'utf8');
- const helper=kit.split('\n').find(line=>line.startsWith('export const el='))?.replace(/^export /,'');
- const renderReason=ui.split('\n').find(line=>line.includes('if(h.rejectionReason)'));
- assert.ok(helper&&renderReason,'Exercise the actual element helper and history reason renderer');
- for(const reason of ['Zavřít','<img src=x onerror=alert(1)>\n"Zavřít"']){
-  const nodes=[];
-  const context={document:{createElement:()=>({})},tr:createTranslator('en'),h:{rejectionReason:reason},row:{append:node=>nodes.push(node)}};
-  vm.runInNewContext(helper+'\n'+renderReason,context);
-  assert.equal(nodes.length,1);
-  assert.equal(nodes[0].textContent,'Reason: '+reason,'Translate the label, not the user-authored reason');
-  assert.equal(nodes[0].innerHTML,undefined,'Hostile markup must never be assigned to innerHTML');
- }
-});

@@ -259,8 +259,7 @@ test('the request list and the restart notice come from one status-file snapshot
   assert.deepEqual(overview.requests.map(r=>r.id),['e'.repeat(24)]);assert.equal(overview.recoveryConfig.restartRequired,true);
   assert.deepEqual(await f.service.list(),overview.requests);
   await fs.writeFile(file,'{broken');await assert.rejects(f.service.overview(),'a corrupt status file is still reported, as before');
-  const route=await fs.readFile(new URL('./routes/library.mjs',import.meta.url),'utf8');
-  assert.match(route,/\/api\/radarr\/requests'&&req\.method==='GET'\)return reply\(res,200,await ctx\.replacements\.overview\(\)\);/);
+  // GET /api/radarr/requests serves this overview: server-wiring-http.test.mjs.
  }finally{await f.cleanup();}
 });
 

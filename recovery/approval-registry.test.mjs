@@ -11,11 +11,13 @@ import {loadApprovalRegistry,registryHasApproval,migrateApprovalRegistry} from '
 import {configDigest,detectConfigChange,startupValidator} from './config-watch.mjs';
 
 function evidence(){
- const cfg={enabled:true,libraryId:'fixture-library',sourceRoot:'/media/movies',mediaRoot:'/storage/movies',radarrRoot:'/radarr/movies',quarantineRoot:'/storage/.tdarr-corrupt',reviewRoot:'/review',reviewPrefixes:['PROD-Movies'],maxRepairsPerDay:3};
+ // The registry freezes the library mapping and a limit; config.json also needs the settings it does not freeze.
+ const frozen={enabled:true,libraryId:'fixture-library',sourceRoot:'/media/movies',mediaRoot:'/storage/movies',radarrRoot:'/radarr/movies',quarantineRoot:'/storage/.tdarr-corrupt',reviewRoot:'/review',reviewPrefixes:['PROD-Movies'],maxRepairsPerDay:3};
+ const cfg={...frozen,tdarrUrl:'http://127.0.0.1:9',radarrUrl:'http://127.0.0.1:9',radarrApiKey:'fixture-only',database:'/tdarr/SQL/database.db',reports:'/tdarr/JobReports',ffmpeg:'/usr/bin/ffmpeg',stableMinutes:0,decodeTimeoutHours:1,confirmDelaySeconds:0,movieCooldownDays:30,pollSeconds:300,since:0};
  const a={movieId:1,movieFileId:11,sourceTitle:'DISPOSABLE.Fixture.Release',relative:'Fixture/file.mkv',file:cfg.sourceRoot+'/Fixture/file.mkv',fp:'1:2:101:1000:1001',size:101,importId:21,grabId:22,downloadId:'DISPOSABLE-download',legacyMissingImportSize:true,signature:'quant_step_size larger than huff_lsbs',authorization:'Synthetic evidence only; never a production authorization'};
  a.id=identity(a.file,a.fp);
  a.checks=['7.1.4-Jellyfin','9.0.2-Gyan'].map(version=>({version,file:a.file,bytes:a.size,sourceUnchanged:true,hostIdentityUnchanged:true,timeout:false,exit:1,naturalComplete:false,stoppedAfterEvidence:true,decodeMarkers:[a.signature],stderrTail:a.signature}));
- const registry={version:1,config:structuredClone(cfg),cases:[a]};
+ const registry={version:1,config:structuredClone(frozen),cases:[a]};
  const state={version:1,jobs:{},cases:{[a.id]:{id:a.id,file:a.file,relative:a.relative,size:a.size,fp:a.fp,status:'deferred_limit',approval:structuredClone(a)}}};
  return {cfg,a,registry,state};
 }
@@ -198,7 +200,7 @@ test('a config edit that changes a frozen registry value is reported invalid bef
  assert.equal(Object.hasOwn(f.registry.config,'pollSeconds'),false);await f.write(file,{...f.cfg,pollSeconds:600});const allowed=await detectConfigChange({file,loadedDigest:loaded,validate});assert.equal(allowed.valid,true,allowed.error);
  for(const edit of [{maxRepairsPerDay:5},{libraryId:'another-library'}]){await f.write(file,{...f.cfg,...edit});const frozen=await detectConfigChange({file,loadedDigest:loaded,validate});assert.equal(frozen.valid,false,JSON.stringify(edit));assert.equal(frozen.error,'Recovery approval registry: frozen configuration differs');}
  const {libraryId,...withoutLibrary}=f.cfg;await f.write(file,withoutLibrary);const refused=await detectConfigChange({file,loadedDigest:loaded,validate});
- assert.equal(refused.valid,false);assert.match(refused.error,/^Recovery approval registry: /);assert.doesNotMatch(refused.error,/fixture-library/,'no config value is echoed');
+ assert.equal(refused.valid,false);assert.match(refused.error,/\(libraryId is missing\)$/);assert.doesNotMatch(refused.error,/fixture-library/,'no config value is echoed');
  assert.ok(!Object.isFrozen(f.state.cases[f.a.id]),'validation never freezes the live state');
 });
 

@@ -54,7 +54,7 @@ export function createCachedPreviewLoader({load,readPreparation,current,onReady,
 export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openAudioComparison,onSession=()=>{},onPreparation=()=>{},preparation=null,onApprove=()=>{},onReject=()=>{},onDeferred=()=>{},canApprove=()=>false,tr=x=>x,formatBytes=x=>String(x)}={}){
  const make=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=tr(text);return n};
  const button=(text,fn,cls='secondary')=>{const n=make('button',cls,text);n.type='button';n.onclick=fn;return n};
- let dead=false,loaded=false,saving=false,conflict=false,stale=false,revision=0,session=null,baseline=null,complete=false,tracks=null,toolCleanups=[],metadataLoading=false,hdrRequired=false,observations={},scopeValid=true;
+ let dead=false,loaded=false,saving=false,conflict=false,stale=false,revision=0,session=null,baseline=null,complete=false,tracks=null,toolCleanups=[],metadataLoading=false,hdrRequired=false,observations={},scopeValid=true,explainingSave=false;
  const cacheKey='tdarr-review-draft:'+item.id+':'+item.snapshot;
  const root=make('div','review-workflow'),sidebar=make('nav','workflow-nav'),main=make('section','workflow-main'),status=make('p','workflow-status'),warning=make('div','alert workflow-warning'),steps=make('div','workflow-step-buttons'),preparationPanel=make('div','preview-preparation');
  sidebar.setAttribute('aria-label',tr('Kroky posouzení'));status.setAttribute('role','status');warning.setAttribute('role','alert');warning.hidden=true;sidebar.append(make('p','eyebrow','POSOUZENÍ'),steps,status);root.append(sidebar,main);host.replaceChildren(root);
@@ -84,14 +84,19 @@ export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openA
  }
  function refreshGuard(){
   if(dead)return;status.textContent=tr(!loaded?'Načítám průběh posouzení…':saving?'Ukládám průběh posouzení…':labelState());
-  for(const n of root.querySelectorAll('[data-workflow-write]'))n.disabled=!allowed()||n.dataset.invalid==='true'||!scopeValid&&(n.hasAttribute('data-check')||n.hasAttribute('data-checkpoint')||n.hasAttribute('data-step-save'));
+  for(const n of root.querySelectorAll('[data-workflow-write]')){
+   const blocked=!allowed()||n.dataset.invalid==='true'||!scopeValid&&(n.hasAttribute('data-check')||n.hasAttribute('data-checkpoint')||n.hasAttribute('data-step-save'));
+   // A native button remains activatable to explain its existing save guard.
+   if(n.hasAttribute('data-step-save')){n.disabled=false;n.setAttribute('aria-disabled',String(blocked))}else n.disabled=blocked;
+  }
+  if(explainingSave)renderSaveReasons();
   for(const n of root.querySelectorAll('[data-preview-control]'))n.disabled=!allowed()||n.dataset.previewBusy==='true'||n.dataset.previewInvalid==='true';
   const approve=root.querySelector('[data-workflow-approve]');if(approve)approve.disabled=!allowed()||!complete||sessionDirty()||!canApprove();
  }
- function showWarning(message,reload=false){warning.replaceChildren(make('p','',message));if(reload)warning.append(button('Načíst uložený stav',()=>loadSession(false)));warning.hidden=false;refreshGuard()}
+ function showWarning(message,reload=false){explainingSave=false;warning.replaceChildren(make('p','',message));if(reload)warning.append(button('Načíst uložený stav',()=>loadSession(false)));warning.hidden=false;refreshGuard()}
  function applyRecord(record,{render=true}={}){
   if(record.snapshot!==item.snapshot){stale=true;showWarning('Soubory se změnily. Zavři detail a otevři aktuální film.');clearTools();return false}
-  revision=record.revision;baseline=clone(record.session);session=clone(record.session);complete=record.complete===true;hdrRequired=record.requirements?.hdr===true;observations=record.observations||{};loaded=true;conflict=false;warning.hidden=true;onSession(record);if(render)renderStep();refreshGuard();return true;
+  revision=record.revision;baseline=clone(record.session);session=clone(record.session);complete=record.complete===true;hdrRequired=record.requirements?.hdr===true;observations=record.observations||{};loaded=true;conflict=false;explainingSave=false;warning.hidden=true;onSession(record);if(render)renderStep();refreshGuard();return true;
  }
  async function loadSession(restoreLocal=true){
   if(dead||saving)return;clearTools();loaded=false;refreshGuard();main.replaceChildren(warning,make('p','details','Načítám průběh posouzení…'));
@@ -131,8 +136,35 @@ export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openA
   session={...desired,step:Math.min(desired.step,baseline.step),checks:{...baseline.checks,...desired.checks}};cache();
  }
  async function beforePreview(){await persistIdentity();if(dead||!allowed())throw Error(tr('Posouzení teď nelze uložit. Obnov aktuální údaje.'))}
+ function saveReasons(){
+  if(!loaded)return ['Počkej na načtení průběhu posouzení.'];
+  if(stale)return ['Soubory se změnily. Zavři detail a otevři aktuální film.'];
+  if(conflict)return ['Načti aktuální uložený stav posouzení z jiné relace.'];
+  if(saving)return ['Počkej na dokončení ukládání posouzení.'];
+  const reasons=[];
+  if(!canWrite())reasons.push('Počkej na dokončení jiné akce nebo obnovy a obnov aktuální údaje.');
+  if(!validMethod())reasons.push(hdrRequired?'Vyplň přehrávač nebo zařízení pro kontrolu HDR/Dolby Vision (alespoň dva znaky).':'Vyplň přehrávač nebo zařízení pro externí kontrolu (alespoň dva znaky).');
+  if(!validPair())reasons.push('Vyber platný pár zvukových stop originálu a převodu.');
+  if(!scopeValid)reasons.push('Vyber platný časový úsek ukázky.');
+  const confirmations={preparation:'Potvrď, že porovnáváš správný originál a tento převod.',image:'Potvrď, že jsi zkontroloval obraz a výsledek je přijatelný.',hdr:'Potvrď kontrolu HDR/Dolby Vision na vhodném zařízení.',audio:'Potvrď kontrolu vybraného páru zvukových stop.',syncStart:'Potvrď synchronizaci na začátku filmu.',syncMiddle:'Potvrď synchronizaci uprostřed filmu.',syncEnd:'Potvrď synchronizaci na konci filmu.'};
+  const checkpoints={syncStart:'Ulož kontrolu synchronizace na začátku filmu.',syncMiddle:'Ulož kontrolu synchronizace uprostřed filmu.',syncEnd:'Ulož kontrolu synchronizace na konci filmu.'};
+  for(const key of stepChecks(session.step)){
+   if(!session.checks[key])reasons.push(confirmations[key]);
+   // Synchronisation requires an individual saved checkpoint even after its box is ticked.
+   if(session.step===3&&!baseline.checks[key])reasons.push(checkpoints[key]);
+  }
+  return reasons;
+ }
+ function renderSaveReasons(){
+  const reasons=saveReasons();warning.hidden=!reasons.length;
+  if(!reasons.length)return;
+  const list=make('ul');for(const reason of reasons)list.append(make('li','',reason));
+  warning.replaceChildren(make('p','','Než bude možné uložit a pokračovat:'),list);
+  if(conflict)warning.append(button('Načíst uložený stav',()=>loadSession(false)));
+ }
  async function saveStep(){
-  if(!allowed()||!currentChecks()||!validMethod()||!validPair())return;
+  if(!allowed()||!currentChecks()||!validMethod()||!validPair()){explainingSave=true;renderSaveReasons();return;}
+  explainingSave=false;
   const desired=clone(session),next=Math.min(4,session.step+1);try{await persistIdentity();if(dead)return;
    // These are the user's checks from this step, made against the newly selected identity.
    const keys=stepChecks(desired.step);for(const key of keys)session.checks[key]=desired.checks[key];session.note=desired.note;session.deferred=false;session.step=next;

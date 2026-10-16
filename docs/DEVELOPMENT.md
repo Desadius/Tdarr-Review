@@ -11,9 +11,13 @@ Tests that need Linux (directory `fsync`, POSIX permission/ctime assertions, sym
 
 The supervisor tests (`review/supervisor.test.mjs`) run real processes with stand-in children, so a test that reads an event it did not wait for would fail only under rare scheduling. `npm test` therefore runs them a second time through `review/supervisor-delayed.test.mjs`, which sets `SUPERVISOR_TEST_DELAY_MS=400`: Review's stand-in starts late and every stand-in pauses right after recording its start. Such a race then fails on every run. Each supervisor test must wait explicitly for every event it reads, including a child's start before signalling it; a stand-in records its start only after its signal handlers are installed. Set the variable yourself (`SUPERVISOR_TEST_DELAY_MS=1000 node --test review/supervisor.test.mjs`) to try other delays.
 
+HTTP server fixtures share `review/test-helpers/server.mjs`. Create `serverHarness()`, register `t.after(() => fixture.close())`, then call `start()` after preparing synthetic settings, media and optional loopback mocks. The helper owns temporary data/media/review roots and an ephemeral loopback port, waits for readiness and stops the child before removing its root. Its optional child-only clock advances `Date.now()` and invokes an existing interval callback over IPC; production timers and authentication code are unchanged. Optional import hooks wrap real route exports to record dispatch, so duplicated route guards cannot hide a missing server guard. `auth-state` checks persisted session cleanup at startup, login and hourly maintenance; `routes` sends real HTTP requests through the guards. `http-concurrency` uses the same process lifecycle with its synthetic decoder and API gates.
+
 Supervisor fixtures share `review/test-supervisor-helpers.mjs`. Register `t.after(() => stop(run))` immediately after starting a fixture. `stop()` kills the process group, waits for the supervisor and inherited output pipes to close, and then removes only that run's temporary root. `review/supervisor-cleanup.test.mjs` checks passing and deliberately failing test processes with normal and delayed stand-ins, including that their processes have stopped and their temporary roots are gone.
 
 Agents capturing red → green or mutation evidence, locally or in CI, follow [the verification procedure](agents/verification.md). Publish the evidence in a comment on the relevant PR; keep reusable procedures in repository documentation. For literal text replacements and multiline GitHub bodies, see [editing safely](agents/editing.md).
+
+Frontend wiring tests in `review/app-runtime.test.mjs` execute the unmodified app and its browser import graph inside Node's module VM with a minimal DOM. They open real settings/quarantine/rejection dialogs, supply synthetic API responses, inspect both languages and record explicit action requests. They cover dynamic retention, known versus missing node metadata, coded errors with server-text fallback and verbatim rejection history/reasons without implicit review confirmation. The fixture models native dialog close and validation events; it is not a browser or assistive-technology audit. Error-module delivery is tested separately through the actual static route over loopback HTTP. Prepared comparison source reads remain only to execute code, with their reason documented beside the ratchet entry.
 
 `npm run check` also refuses a new test that reads implementation source text (for example `fs.readFile(new URL('./server.mjs', import.meta.url))`) instead of exercising behaviour. Existing reads are listed in `SOURCE_TEXT_ALLOWLIST` in `tools/source-text-tests.mjs`; when you rewrite one of those tests, remove its entry, because the check also fails on an entry that no longer matches.
 
@@ -52,12 +56,17 @@ gh run watch "$(gh run list --workflow linux-tests.yml --branch <branch> --limit
 
 `npm run test:docker` runs `npm run check && npm test` in `node:24` for Linux amd64. It mounts only this repository read-only, uses a read-only container root with disposable `/tmp` scratch space (mounted with `exec`, because the HTTP fixtures run stand-in `ffprobe`/`ffmpeg` scripts that Review checks for execute permission), drops capabilities and disables the container network. It neither forwards host settings/credentials nor mounts a Docker socket, media or runtime data. Fixtures use synthetic temporary files and loopback mocks. The test container itself never fetches anything (`--pull=never`). When `node:24` is not present locally, the command first downloads it once on the host with `docker pull --platform linux/amd64 node:24` and says so; if that download fails, it stops before starting a container and names the command to retry. The disposable container is removed on exit, and failed checks/Docker errors return a nonzero status. Docker image smoke and generated-media integration checks remain separate commands below.
 
+### Codex startup troubleshooting
+
+If Codex reports `account/read failed during TUI bootstrap`, try manually restarting the Codex application and reopening the project. This is a maintainer-approved troubleshooting tip, not a confirmed diagnosis or guaranteed fix; no daemon restart command has been verified. This does not call for restarting Review or its containers. If it persists, consult [official troubleshooting guidance](https://learn.chatgpt.com/docs/reference/troubleshooting).
+
 ### Agent command allowlist
 
 Claude Code and Codex run the same set of commands without asking:
 
 - `gh pr view`, `list`, `checks`, `diff`, `create`, `comment`, `edit`
 - `gh issue view`, `list`, `comment`, `edit`
+- `gh label list`
 - `gh run view`, `list`
 - `git add`, `git commit`
 - `git fetch origin`, `git push origin` (also with `-u`/`--set-upstream`)
@@ -69,7 +78,7 @@ The lists live in two files that must change together:
 - Claude Code: `permissions` in `.claude/settings.json` (project settings, read automatically). `gh` commands with `--repo`/`-R` always ask, so the allowlist cannot reach another repository. Personal additions belong in the ignored `.claude/settings.local.json`.
 - Codex: `.codex/rules/tdarr-review.rules`. Codex loads project rules only when the project is trusted; trust each worktree path when Codex asks, or add `[projects."<path>"] trust_level = "trusted"` to `~/.codex/config.toml`. Rules you approve during a session go to `~/.codex/rules/default.rules`, not to the repository.
 
-Codex's `prefix_rule` matches command prefixes only, so a forbidden option placed later in the command (`git push origin topic --force`) is not caught by the rules and relies on the normal sandbox prompt and on branch protection for `main`. Verify the rules after every change; the file's `match`/`not_match` examples are checked when the rules load:
+Codex's `prefix_rule` matches command prefixes only, so a forbidden option placed later in the command (`git push origin topic --force`) is not caught by the rules and relies on the normal sandbox prompt and on branch protection for `main`. `tools/agent-allowlist.test.mjs` compares the allowed command prefixes in both files and checks that label listing does not authorize label writes. Verify the rules after every change; the file's `match`/`not_match` examples are checked when the rules load:
 
 ```bash
 codex execpolicy check --pretty --rules .codex/rules/tdarr-review.rules -- gh pr view 1        # allow

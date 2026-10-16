@@ -5,10 +5,10 @@ import crypto from 'node:crypto';
 import {validatePending} from './pending-approved.mjs';
 import {identity,relative} from './policy.mjs';
 import {canonical,sameValue,frozenConfigDifference} from './frozen-config.mjs';
+import {text,relativePrefix} from './config-values.mjs';
 
 const NAME='pending-approvals.json',MAX_BYTES=2*1024*1024;
 const object=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
-const text=v=>typeof v==='string'&&v.trim().length>0&&!v.includes('\0');
 const positive=v=>Number.isSafeInteger(v)&&v>0;
 function fail(reason){throw Object.assign(Error('Recovery approval registry: '+reason),{code:'RECOVERY_APPROVAL_REGISTRY'});}
 const equal=sameValue;
@@ -43,7 +43,6 @@ async function readPrivate(file){
 }
 function parse(bytes){try{return JSON.parse(bytes.toString('utf8'));}catch{fail('invalid JSON');}}
 function absolutePOSIX(p){return text(p)&&p.startsWith('/')&&!p.startsWith('//')&&!p.includes('\\')&&p!=='/'&&path.posix.normalize(p)===p&&!p.endsWith('/');}
-function relativePrefix(p){return text(p)&&!p.startsWith('/')&&!p.includes('\\')&&!/^[A-Za-z]:/.test(p)&&!p.endsWith('/')&&path.posix.normalize(p)===p&&!p.split('/').some(s=>!s||s==='.'||s==='..');}
 function validateFrozenIdentity(a,cfg,id){
  if(!object(a)||!text(id)||!/^[0-9a-f]{24}$/.test(id))fail('invalid case identity');
  if(!['movieId','movieFileId','importId','grabId','size'].every(k=>positive(a[k])))fail('incomplete frozen movie/import identity');

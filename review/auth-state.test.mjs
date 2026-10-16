@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs/promises';
+import {serverHarness,linuxServer} from './test-helpers/server.mjs';
+import {hash} from './core.mjs';
 import {SESSION_TTL_MS,AUTH_WINDOW_MS,AUTH_MAX_ATTEMPTS,pruneSessions,pruneAuthAttempts,registerAuthAttempt} from './auth-state.mjs';
 
 const NOW=Date.parse('2026-10-13T12:00:00Z');
@@ -27,11 +28,25 @@ test('login limit allows twelve attempts per window and resets after it',()=>{
  assert.equal(attempts.get('10.0.0.1').count,1);
 });
 
-test('server prunes sessions at start-up, on login and periodically, saving the pruned state',async()=>{
- const server=await fs.readFile(new URL('./server.mjs',import.meta.url),'utf8');
- assert.match(server,/new Map\(Object\.entries\(state\.sessions\|\|\{\}\)\);pruneSessions\(sessions\);state\.sessions=Object\.fromEntries\(sessions\)/);
- assert.match(server,/setInterval\(\(\)=>\{pruneAuthAttempts\(authAttempts\);if\(pruneSessions\(sessions\)\)\{state\.sessions=Object\.fromEntries\(sessions\);void save\(\)/);
- const login=await fs.readFile(new URL('./routes/auth.mjs',import.meta.url),'utf8');
- assert.match(login,/pruneSessions\(ctx\.sessions\);ctx\.sessions\.set\(hash\(token\),Date\.now\(\)\+SESSION_TTL_MS\)/);
- assert.match(login,/pruneAuthAttempts\(ctx\.authAttempts,now\);if\(!registerAuthAttempt\(/);
+for(const phase of ['startup','login','periodic'])test(`HTTP sessions are pruned and persisted at ${phase}`,linuxServer,async t=>{
+ const f=await serverHarness();t.after(()=>f.close());
+ const now=Date.now(),expired=hash('expired'),live=hash('live');
+ await f.start({clock:true,state:{items:{},history:[],pauses:phase==='startup'?[{name:'synthetic-node'}]:[],sessions:{[expired]:now+(phase==='startup'?-1000:60000),[live]:now+86400000}}});
+ if(phase!=='startup')await f.tick({advance:120000});
+ if(phase==='login')await f.login();
+ if(phase==='periodic')await f.tick({interval:3600000});
+ assert.equal((await f.request('/api/settings',{headers:{cookie:'review_session=expired'}})).status,401);
+ if(phase==='startup')assert.equal((await f.request('/api/node-restores/keep',{method:'POST',headers:{cookie:'review_session=live'},body:{name:'synthetic-node',confirm:true}})).status,200);
+ const stop=Date.now()+5000;let saved;
+ do{saved=await f.state();if(!Object.hasOwn(saved.sessions,expired))break;await new Promise(resolve=>setTimeout(resolve,10))}while(Date.now()<stop);
+ assert.equal(Object.hasOwn(saved.sessions,expired),false,'expired session removed from saved state');
+ assert.equal(saved.sessions[live],now+86400000,'live session retained');
+ assert.equal((await f.request('/api/settings',{headers:{cookie:'review_session=live'}})).status,200);
+});
+
+test('HTTP login rate limit resets after its window',linuxServer,async t=>{
+ const f=await serverHarness();t.after(()=>f.close());await f.start({clock:true});
+ for(let i=0;i<12;i++)assert.equal((await f.request('/api/login',{method:'POST',body:{key:'wrong'}})).status,401);
+ assert.equal((await f.request('/api/login',{method:'POST',body:{key:'wrong'}})).status,429);
+ await f.tick({advance:AUTH_WINDOW_MS+1});await f.login();
 });
