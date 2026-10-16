@@ -90,3 +90,11 @@ test('the live publisher keeps the restart notice for a config.json edit in the 
  assert.deepEqual(f.snapshots.at(-1).configChange,{detectedAt:new Date(NOW).toISOString(),restartRequired:true,valid:false,error:'config.json is not valid JSON'});
  assert(!JSON.stringify(f.snapshots.at(-1)).includes('private-digest'));
 });
+
+test('live publication retains only the public full-hash projection and clears it afterward',async()=>{
+ const f=fixture();
+ f.c.fullHash={stage:'confirmation',done:4,total:10,started:new Date(NOW).toISOString(),updated:new Date(NOW+1).toISOString(),privatePath:'/private/film.mkv',sha256:'private-digest'};
+ await f.live.refresh();
+ assert.deepEqual(f.last('case').fullHash,{stage:'confirmation',done:4,total:10,started:new Date(NOW).toISOString(),updated:new Date(NOW+1).toISOString()});
+ delete f.c.fullHash;await f.live.refresh();assert.equal(f.last('case').fullHash,null);await f.live.close();
+});
