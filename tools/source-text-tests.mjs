@@ -7,6 +7,7 @@ export const SOURCE_TEXT_ALLOWLIST={
  // This suite executes app.js and its real import graph in a browser-module VM.
  'review/app-runtime.test.mjs':['public/app.js'],
  'review/app-version.test.mjs':['server.mjs','routes/items.mjs'],
+ // Executes the comparison module in a VM; assertions observe the actual player.
  'review/audio-listen.test.mjs':['public/comparison.js'],
  'review/auth-state.test.mjs':['server.mjs','routes/auth.mjs'],
  'review/decision-audit.test.mjs':['server.mjs'],
@@ -14,13 +15,14 @@ export const SOURCE_TEXT_ALLOWLIST={
  'review/i18n.test.mjs':['public/quarantine.js','public/settings-dialogs.js','public/app.js'],
  'review/prepared-frontend.test.mjs':['public/comparison.js'],
  'review/radarr-replacement.test.mjs':['routes/library.mjs'],
+ // Executes the Tdarr route example with synthetic inputs and mocked APIs.
  'review/recovery-route.test.cjs':['../examples/tdarr/recovery-review-route.cjs'],
  'review/rejection-audit.test.mjs':['server.mjs','routes/items.mjs','public/app.js','public/ui-kit.js'],
  'review/resume-retry.test.mjs':['server.mjs','routes/items.mjs','server.mjs'],
  'review/routes.test.mjs':['server.mjs'],
+ // Executes the Tdarr guard example to observe its decision and output.
  'review/tdarr-guard.test.cjs':['examples/tdarr/review-guard.cjs'],
  'review/test-artwork.mjs':['server.mjs','routes/library.mjs','routes/static.mjs'],
- 'recovery/full-hash.test.mjs':['worker.mjs','waiting-source.mjs']
 };
 export function sourceTextReads(text){
   const reads=[];
