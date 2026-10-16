@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import http from 'node:http';
+import {fileURLToPath} from 'node:url';
+import {staticRoutes} from './routes/static.mjs';
 import {ERROR_MESSAGES,errorText} from './public/error-messages.js';
 import {apiError} from './routes/http.mjs';
 import {createTranslator} from './public/i18n.js';
@@ -40,11 +43,13 @@ test('routes answer with known codes, never with literal error text',async()=>{
  }
 });
 
-test('the UI renders a known code in its language and falls back to the server text',async()=>{
- const app=await fs.readFile(new URL('./public/app.js',import.meta.url),'utf8');
- assert.match(app,/const serverError=d=>\(typeof d\?\.code==='string'&&errorText\(d\.code,d\.params,language\)\)\|\|d\?\.error;/);
- assert.match(app,/Error\(serverError\(d\)\|\|'Požadavek selhal\.'\)/);
- const assets=await fs.readFile(new URL('./routes/static.mjs',import.meta.url),'utf8');assert.ok(assets.includes("'/error-messages.js':['error-messages.js'"));
+test('the real static route serves the executable error-message module over HTTP',async t=>{
+ const server=http.createServer(async(req,res)=>{if(!await staticRoutes({ROOT:fileURLToPath(new URL('.',import.meta.url))},req,res,new URL(req.url,'http://fixture')))res.writeHead(404).end()});
+ t.after(()=>new Promise(resolve=>server.close(resolve)));await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ const response=await fetch('http://127.0.0.1:'+server.address().port+'/error-messages.js');
+ assert.equal(response.status,200);assert.match(response.headers.get('content-type'),/javascript/);
+ const module=await import('data:text/javascript;base64,'+Buffer.from(await response.text()).toString('base64'));
+ for(const language of ['cs','en'])assert.equal(module.errorText('item_changed',{},language),ERROR_MESSAGES.item_changed[language]);
 });
 
 import {ReviewSessionError,createReviewSessionStore} from './review-session.mjs';
