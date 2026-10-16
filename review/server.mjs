@@ -39,6 +39,7 @@ import {previewRoutes} from './routes/previews.mjs';
 import {settingsRoutes} from './routes/settings.mjs';
 import {staticRoutes} from './routes/static.mjs';
 import {nodeRoutes} from './routes/nodes.mjs';
+import {previewCodeVersion as readPreviewCodeVersion} from './preview-version.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 const DATA=process.env.DATA_ROOT||'/data',PORT=Number(process.env.PORT||8270),APP_VERSION=await appVersion();
@@ -71,8 +72,7 @@ const save=()=>{const snapshot=structuredClone(state);saveChain=saveChain.catch(
 const reviewSessions=createReviewSessionStore({getState:()=>state,save,verify:verifyReviewItem});
 const previewSettingsFile=path.join(DATA,'preview-settings.json');
 let previewSettings=validatePreviewSettings({...defaultPreviewSettings(),...JSON.parse(await fs.readFile(previewSettingsFile,'utf8').catch(e=>{if(e.code!=='ENOENT')throw e;return '{}'}))});
-const rendererFiles=['preview-render.mjs','av-preview.mjs','audio-compare.mjs','audio-listen.mjs','frames.mjs','preview-process.mjs'];
-const previewCodeVersion=hash((await Promise.all(rendererFiles.map(file=>fs.readFile(path.join(ROOT,file),'utf8')))).join('\n'));
+const previewCodeVersion=await readPreviewCodeVersion();
 const previewVersion=()=>hash(previewCodeVersion+'|'+JSON.stringify([MEDIA,REVIEW,FFPROBE,config.ffmpeg]));
 const previewPairs=new Map(),previewPlans=new Map(),previewAttempts=new Map();
 let previewMutationHolds=0,previewPlanning=null;

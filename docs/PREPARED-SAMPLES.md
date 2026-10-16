@@ -37,4 +37,6 @@ The count/byte/expiry limits are enforced only inside the owned cache. When back
 
 ## Verification
 
+The renderer identity includes diagnostic acceptance rules as well as extraction code. Updating those rules invalidates older cached samples on startup; ordinary restarts with unchanged renderer sources can reuse them.
+
 Unit tests cover disk bounds, private/atomic writes, restart reuse, stale identities, priority/preemption, read-only cache loading, language ordering/ambiguity and manual confirmations. `tools/test-preview-cache-http.mjs` uses generated media and a local mock Tdarr to verify preparation, cached-only misses/hits, custom requests, persistent reuse after restart, source changes and unchanged assessment evidence. No production film is approved as a test.
