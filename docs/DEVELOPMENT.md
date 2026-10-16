@@ -15,6 +15,8 @@ Supervisor fixtures share `review/test-supervisor-helpers.mjs`. Register `t.afte
 
 Agents capturing red → green or mutation evidence, locally or in CI, follow [the verification procedure](agents/verification.md). Publish the evidence in a comment on the relevant PR; keep reusable procedures in repository documentation. For literal text replacements and multiline GitHub bodies, see [editing safely](agents/editing.md).
 
+Frontend wiring tests in `review/app-runtime.test.mjs` execute the unmodified app and its browser import graph inside Node's module VM with a minimal DOM. They open real settings/quarantine/rejection dialogs, supply synthetic API responses, inspect both languages and record explicit action requests. They cover dynamic retention, known versus missing node metadata, coded errors with server-text fallback and verbatim rejection history/reasons without implicit review confirmation. The fixture models native dialog close and validation events; it is not a browser or assistive-technology audit. Error-module delivery is tested separately through the actual static route over loopback HTTP. Prepared comparison source reads remain only to execute code, with their reason documented beside the ratchet entry.
+
 `npm run check` also refuses a new test that reads implementation source text (for example `fs.readFile(new URL('./server.mjs', import.meta.url))`) instead of exercising behaviour. Existing reads are listed in `SOURCE_TEXT_ALLOWLIST` in `tools/source-text-tests.mjs`; when you rewrite one of those tests, remove its entry, because the check also fails on an entry that no longer matches.
 
 ### Development in WSL2
