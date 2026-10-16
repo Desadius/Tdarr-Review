@@ -4,6 +4,7 @@ This records the implemented application features. Versions before 1.10.0 were d
 
 ## Unreleased
 
+- Preserve optional full-file hash progress in Recovery live status; exercise confirmation, changed-source refusal and public progress against the running worker.
 - Explain missing review-step requirements when Save and continue is activated, including HDR devices, manual confirmations, track pairs, saved synchronisation checks and temporary blocks (English/Czech).
 
 - Include diagnostic acceptance rules in the preview renderer identity so updates cannot reuse samples prepared under an older diagnostic policy.

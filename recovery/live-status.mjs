@@ -1,6 +1,6 @@
 import {projectReplacementFollowups} from './replacement-followup.mjs';
 // Public status is a projection of the private journal, never a repair decision.
-const PUBLIC_FIELDS = ['verifyPausedStep', 'originalOutsideLibrary', 'originalOutsideSince', 'originalRestoredAt', 'legacyReplacementBinding', 'replacementFollowupId', 'replacementFollowupBinding', 'id', 'title', 'phase', 'pipelineLabel', 'source', 'message', 'reason', 'created', 'updated', 'lastSearchAt', 'nextSearchAt', 'nextRetryAt', 'sourceRetained', 'originalCheckKind', 'tmdbId', 'titleSlug', 'edition', 'error', 'tdarrStatus', 'replacementTitle', 'quarantineRetained', 'cleanupComplete', 'deleteAfter', 'canRestore'];
+const PUBLIC_FIELDS = ['verifyPausedStep', 'originalOutsideLibrary', 'originalOutsideSince', 'originalRestoredAt', 'legacyReplacementBinding', 'replacementFollowupId', 'replacementFollowupBinding', 'id', 'title', 'phase', 'pipelineLabel', 'source', 'message', 'reason', 'created', 'updated', 'lastSearchAt', 'nextSearchAt', 'nextRetryAt', 'sourceRetained', 'originalCheckKind', 'tmdbId', 'titleSlug', 'edition', 'error', 'tdarrStatus', 'replacementTitle', 'quarantineRetained', 'cleanupComplete', 'deleteAfter', 'canRestore', 'fullHash'];
 const PUBLIC_TEXT = ['message', 'reason', 'error'];
 const iso = value => new Date(value).toISOString();
 const timestamp = value => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? Date.parse(value) : null;

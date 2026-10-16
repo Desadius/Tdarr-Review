@@ -13,10 +13,10 @@ import {DEFERRED_HOLD_UNTIL} from './replacement-gate.mjs';
 
 // Exercise the actual journal/worker wiring, using only disposable files,
 // loopback APIs and a synthetic decoder. No production media or API contacts.
-async function fixture({terminalHeader=false,mode='repair'}={}){
+async function fixture({terminalHeader=false,mode='repair',largeSource=false}={}){
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'recovery-worker-')),data=root+'/data',media=root+'/media/movies',relative='Fixture/new.mkv',source=media+'/'+relative,file='/media/movies/'+relative;
  for(const dir of [data,path.dirname(source),root+'/review',root+'/quarantine',root+'/reports/fixture',root+'/decoder'])await fs.mkdir(dir,{recursive:true});
- const sourceBytes=(terminalHeader?'\x1b[0m':'')+'DISPOSABLE SOURCE BYTES';await fs.writeFile(source,sourceBytes);const before=await fs.stat(source),sourceFP=fp(before),size=before.size;
+ const sourceBytes=largeSource?Buffer.alloc(5*1024*1024,7):(terminalHeader?'\x1b[0m':'')+'DISPOSABLE SOURCE BYTES';await fs.writeFile(source,sourceBytes);const before=await fs.stat(source),sourceFP=fp(before),size=before.size;
  const cfg={libraryId:'fixture-library',sourceRoot:'/media/movies',mediaRoot:media,radarrRoot:'/radarr/movies',reviewRoot:root+'/review',reviewPrefixes:[],quarantineRoot:root+'/quarantine',database:root+'/db.sqlite',reports:root+'/reports',ffmpeg:root+'/decoder/ffmpeg',stableMinutes:0,decodeTimeoutHours:1,confirmDelaySeconds:0,maxRepairsPerDay:3,movieCooldownDays:30,pollSeconds:300,detectTerminalHeaders:false,since:0,approvedImportRepairs:{}};
  const movie={id:1,monitored:true,movieFileId:11,movieFile:{id:11,path:cfg.radarrRoot+'/'+relative,size,sceneName:'Fixture.New.Release'}};
  const history=[{id:21,eventType:'downloadFolderImported',movieId:1,downloadId:'fixture-download',sourceTitle:movie.movieFile.sceneName,data:{fileId:'11',importedPath:movie.movieFile.path,size:String(size)}},{id:22,eventType:'grabbed',movieId:1,downloadId:'fixture-download',sourceTitle:movie.movieFile.sceneName,data:{publishedDate:'2026-10-11T00:00:00Z',indexer:'Fixture',size:String(size),protocol:'1'}}];
@@ -33,7 +33,7 @@ async function fixture({terminalHeader=false,mode='repair'}={}){
  // Run these synthetic decoder scripts through Node, including in containers
  // whose temporary filesystem is noexec. Only exact fixture paths are wrapped.
  const preload=root+'/decoder/preload.cjs';await fs.writeFile(preload,'const cp=require("node:child_process"),path=require("node:path"),original=cp.spawn;cp.spawn=(exe,args,opts)=>[path.join(__dirname,"ffmpeg"),path.join(__dirname,"ffprobe")].includes(exe)?original(process.execPath,[exe,...args],opts):original(exe,args,opts);require("node:module").syncBuiltinESMExports();\n');
- const requests=[];let forbidden=false,allowRepair=false,releaseBlocked=false;const commands=new Map();
+ const requests=[];let forbidden=false,allowRepair=false,releaseBlocked=false,beforeHold=null;const commands=new Map();
  const server=http.createServer(async(req,res)=>{try{
   let raw='';for await(const b of req)raw+=b;const parsed=raw?JSON.parse(raw):undefined,body=req.url.startsWith('/api/v2/')?parsed?.data:parsed;requests.push({method:req.method,url:req.url,body});res.setHeader('content-type','application/json');
   const reply=v=>res.end(JSON.stringify(v));
@@ -42,7 +42,7 @@ async function fixture({terminalHeader=false,mode='repair'}={}){
   if(req.method==='GET'&&req.url==='/api/v3/history/movie?movieId=1')return reply(history);
   if(req.method==='GET'&&req.url==='/api/v2/get-nodes')return reply({});
   if(req.method==='POST'&&req.url==='/api/v2/cruddb'&&body.mode==='getById')return reply(row);
-  if(req.method==='POST'&&req.url==='/api/v2/bulk-update-files'){Object.assign(row,body.updatedObj);db.prepare('UPDATE filejsondb SET json_data=?').run(JSON.stringify(row));res.setHeader('content-type','text/plain');res.end('OK');return;}
+  if(req.method==='POST'&&req.url==='/api/v2/bulk-update-files'){if(beforeHold)await beforeHold();Object.assign(row,body.updatedObj);db.prepare('UPDATE filejsondb SET json_data=?').run(JSON.stringify(row));res.setHeader('content-type','text/plain');res.end('OK');return;}
   if(allowRepair){
    if(req.method==='POST'&&req.url==='/api/v3/command'){
     assert.ok(['RescanMovie','MoviesSearch'].includes(body.name));if(body.name==='RescanMovie'){movie.movieFileId=0;delete movie.movieFile;}
@@ -64,7 +64,7 @@ async function fixture({terminalHeader=false,mode='repair'}={}){
  async function result(){assert.equal((await fs.stat(root+'/media/.tdarr-recovery-status.json')).mode&0o777,0o644);assert.equal((await fs.stat(data+'/state.json')).mode&0o777,0o600);return {state:JSON.parse(await fs.readFile(data+'/state.json')),public:JSON.parse(await fs.readFile(root+'/media/.tdarr-recovery-status.json'))};}
  async function unchanged(){assert.equal(fp(await fs.stat(source)),sourceFP);assert.equal(await fs.readFile(source,'utf8'),sourceBytes);assert.equal(await fs.readFile(parent.quarantine,'utf8'),'PRESERVED PARENT');assert.equal(forbidden,false,'worker attempted an unexpected download or API mutation');}
  async function cleanup(){db.close();await new Promise(r=>server.close(r));assert(root.startsWith(path.resolve(os.tmpdir())+path.sep)&&path.basename(root).startsWith('recovery-worker-'));await fs.rm(root,{recursive:true,force:true});}
- return {root,cfg,state,parent,movie,row,requests,file,relative,source,sourceFP,size,sourceBytes,data,write,run,daemon,result,unchanged,cleanup,id:identity(file,sourceFP),binding:bindHistory(movie,history,movie.movieFile.path,size),allowRepair:()=>{allowRepair=true;},setDecoder:script=>fs.writeFile(cfg.ffmpeg,script,{mode:0o755})};
+ return {root,cfg,state,parent,movie,row,requests,file,relative,source,sourceFP,size,sourceBytes,data,write,run,daemon,result,unchanged,cleanup,id:identity(file,sourceFP),binding:bindHistory(movie,history,movie.movieFile.path,size),allowRepair:()=>{allowRepair=true;},onHold:callback=>{beforeHold=callback;},setDecoder:script=>fs.writeFile(cfg.ffmpeg,script,{mode:0o755})};
 }
 
 test('actual worker retries an old unrecognized XLL report, links its exact parent and preserves cooldown',{skip:process.platform!=='linux'},async()=>{
@@ -212,26 +212,79 @@ test('SIGTERM during an original decode finishes the step instead of leaving an 
  }finally{await f.cleanup();}
 });
 
+// Observe real hash-child launches after the worker publishes its initial
+// progress. The optional stat shim hides only the fixture's mtime/ctime so the
+// regression isolates full hashing from the independent fingerprint defense.
+async function observeHashes(f,{preserveTimes=false}={}){
+ const preload=path.join(f.root,'decoder/preload.cjs'),stat=await fs.stat(f.source);
+ await fs.appendFile(preload,`
+ const fs=require('node:fs'),fsp=require('node:fs/promises'),spawnHash=cp.spawn;
+ cp.spawn=(exe,args,opts)=>{
+  if(args.some(arg=>arg.endsWith('/recovery/full-hash.mjs'))){
+   const status=JSON.parse(fs.readFileSync(${JSON.stringify(path.join(f.root,'media/.tdarr-recovery-status.json'))},'utf8'));
+   fs.appendFileSync(${JSON.stringify(path.join(f.data,'hash-status.jsonl'))},JSON.stringify(status)+String.fromCharCode(10));
+  }
+  return spawnHash(exe,args,opts);
+ };
+ ${preserveTimes?`const realStat=fsp.stat;fsp.stat=async(file,...args)=>{const value=await realStat(file,...args);if(file===${JSON.stringify(f.source)})Object.assign(value,{mtimeMs:${stat.mtimeMs},ctimeMs:${stat.ctimeMs}});return value};`:''}
+ require('node:module').syncBuiltinESMExports();
+ `);
+ return async()=> (await fs.readFile(path.join(f.data,'hash-status.jsonl'),'utf8')).trim().split('\n').map(line=>JSON.parse(line));
+}
+
 test('optional full-file hash is taken at confirmation and matched before the quarantine rename',{skip:process.platform!=='linux'},async()=>{
  const f=await fixture();try{
+  const snapshots=await observeHashes(f);
   f.parent.movieId=2;f.cfg.maxRepairsPerDay=1;f.cfg.fullSourceHash=true;await f.write();await f.run();let result=await f.result(),c=result.state.cases[f.id];
   const expected=crypto.createHash('sha256').update(f.sourceBytes).digest('hex');
   assert.equal(result.state.lastError,null);assert.equal(c.status,'deferred_limit');assert.equal(c.evidence.fullSHA256,expected);assert.equal(c.fullHash,undefined,'progress is cleared after the hash');
   result.state.cases[f.parent.id].mutationStarted=Date.now()-86400001;await fs.writeFile(f.data+'/state.json',JSON.stringify(result.state));f.allowRepair();await f.run();result=await f.result();c=result.state.cases[f.id];
   assert.equal(result.state.lastError,null);assert.equal(c.status,'waiting_replacement');assert.equal(await fs.readFile(c.quarantine,'utf8'),f.sourceBytes);assert.equal(c.evidence.fullSHA256,expected);
+  const progress=(await snapshots()).map(snapshot=>snapshot.cases.find(c=>c.id===f.id).fullHash);
+  assert.ok(progress.every(Boolean),'running worker publishes full-hash progress');
+  assert.deepEqual(progress.map(p=>({stage:p.stage,done:p.done,total:p.total})),[
+   {stage:'confirmation',done:0,total:f.size},{stage:'before_quarantine',done:0,total:f.size}
+  ]);
+  for(const p of progress)assert.ok(Number.isFinite(Date.parse(p.started)),'public hash progress has a start timestamp');
+  assert.equal(result.public.cases.find(c=>c.id===f.id).fullHash,null,'public progress clears on completion');
  }finally{await f.cleanup();}
 });
 
-test('a full-file hash that differs from the confirmation keeps the original in place',{skip:process.platform!=='linux'},async()=>{
- const f=await fixture();try{
+test('a full-file hash detects changed bytes outside sampled regions before any new mutation',{skip:process.platform!=='linux'},async()=>{
+ const f=await fixture({largeSource:true});try{
+  const snapshots=await observeHashes(f,{preserveTimes:true});
   f.parent.movieId=2;f.cfg.maxRepairsPerDay=1;f.cfg.fullSourceHash=true;await f.write();await f.run();let result=await f.result();
-  // Simulate a change the fingerprint and samples cannot see by altering the confirmed digest.
-  result.state.cases[f.id].evidence.fullSHA256='0'.repeat(64);result.state.cases[f.parent.id].mutationStarted=Date.now()-86400001;
-  await fs.writeFile(f.data+'/state.json',JSON.stringify(result.state));f.allowRepair();const holdsBefore=f.requests.filter(r=>r.url==='/api/v2/bulk-update-files').length;await f.run();result=await f.result();const c=result.state.cases[f.id];
-  assert.equal(f.requests.filter(r=>r.url==='/api/v2/bulk-update-files').length,holdsBefore,'the hash is compared before Recovery holds the file in Tdarr');
-  assert.notEqual(c.status,'waiting_replacement');assert.match(JSON.stringify(c)+String(result.state.lastError),/Full source hash changed before quarantine/);
-  assert.equal(c.quarantine,undefined);await f.unchanged();
-  assert.equal(f.requests.filter(r=>r.url==='/api/v3/command'&&r.method==='POST').length,0,'no Radarr search after a refused rename');
+  const confirmed=result.state.cases[f.id].evidence.fullSHA256;
+  assert.equal(confirmed,crypto.createHash('sha256').update(f.sourceBytes).digest('hex'));
+  const changed=Buffer.from(f.sourceBytes);changed[1024*1024+17]^=1;
+  // 5 MiB fixture samples cover [0,1), [2,3), [4,5) MiB. The changed byte is in [1,2).
+  for(const start of [0,2*1024*1024,4*1024*1024])assert.deepEqual(changed.subarray(start,start+1024*1024),f.sourceBytes.subarray(start,start+1024*1024));
+  await fs.writeFile(f.source,changed);
+  result.state.cases[f.parent.id].mutationStarted=Date.now()-86400001;
+  await fs.writeFile(f.data+'/state.json',JSON.stringify(result.state));f.allowRepair();const before=f.requests.length;await f.run();result=await f.result();const c=result.state.cases[f.id];
+  assert.match(JSON.stringify(c)+String(result.state.lastError),/Full source hash changed before quarantine/);
+  assert.equal(c.evidence.fullSHA256,confirmed,'confirmation evidence is not rewritten');
+  assert.equal(c.quarantine,undefined);assert.deepEqual(await fs.readFile(f.source),changed);
+  assert.equal(await fs.readFile(f.parent.quarantine,'utf8'),'PRESERVED PARENT');
+  assert.deepEqual(f.requests.slice(before).filter(r=>r.method!=='GET'&&!(r.url==='/api/v2/cruddb'&&r.body.mode==='getById')),[],'no Tdarr or Radarr mutation after changed full hash');
+  assert.deepEqual((await snapshots()).map(s=>s.cases.find(c=>c.id===f.id).fullHash.stage),['confirmation','before_quarantine']);
+ }finally{await f.cleanup();}
+});
+
+for(const guard of ['fingerprint','sample'])test(`worker rechecks ${guard} after hashing and immediately before the quarantine rename`,{skip:process.platform!=='linux'},async()=>{
+ const f=await fixture({largeSource:true});try{
+  await observeHashes(f,{preserveTimes:guard==='sample'});
+  f.parent.movieId=2;f.cfg.fullSourceHash=true;f.allowRepair();
+  const changed=Buffer.from(f.sourceBytes);changed[guard==='sample'?17:1024*1024+17]^=1;
+  // The Hold acknowledgment is after both real full hashes. Change the source
+  // before the worker's final identity/sample check and rename, without sleeps.
+  f.onHold(()=>fs.writeFile(f.source,changed));
+  await f.write();await f.run();const result=await f.result(),c=result.state.cases[f.id];
+  assert.match(JSON.stringify(c)+String(result.state.lastError),/Source changed before quarantine/);
+  assert.equal(c.evidence.fullSHA256,crypto.createHash('sha256').update(f.sourceBytes).digest('hex'));
+  assert.equal(c.quarantine,undefined);assert.deepEqual(await fs.readFile(f.source),changed);
+  assert.equal(await fs.readFile(f.parent.quarantine,'utf8'),'PRESERVED PARENT');
+  assert.equal(f.requests.filter(r=>r.url==='/api/v3/command'&&r.method==='POST').length,0,'no Radarr mutation follows final identity refusal');
  }finally{await f.cleanup();}
 });
 
