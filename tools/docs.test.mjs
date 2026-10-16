@@ -100,3 +100,27 @@ test('the guide\'s step 2 comparison ignores only the runtime state of an earlie
  await fs.rm(path.join(copy,'cache','languages.json'));
  assert.match(await compare(),/languages\.json/);
 });
+
+test('the config.json check before an update runs the start-up rules and prints no values',async t=>{
+ const {execFile}=await import('node:child_process');
+ const os=await import('node:os');
+ const {pathToFileURL}=await import('node:url');
+ const block=/--entrypoint \/usr\/bin\/node \S+ --input-type=module -e '([^']+)' \/check\/config\.json/.exec(await read('docs/CONFIGURATION.md'))?.[1];
+ assert.ok(block,'check command');
+ const image='"/recovery/recovery-mode.mjs"';assert.equal(block.split(image).length,2,'the script imports the image\'s parser once');
+ const script=block.replace(image,JSON.stringify(pathToFileURL(new URL('recovery/recovery-mode.mjs',root).pathname).href));
+ const run=file=>new Promise(resolve=>execFile(process.execPath,['--input-type=module','-e',script,file],(error,stdout)=>resolve({code:error?error.code:0,stdout})));
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'config-check-'));
+ t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ const file=path.join(dir,'config.json'),cfg=JSON.parse(await read('fixtures/recovery-config-1.11.json'));
+ assert.deepEqual(await run(file),{code:1,stdout:'config.json: cannot be read (ENOENT)\n'});
+ const {enabled,...withoutEnabled}=cfg;
+ await fs.writeFile(file,JSON.stringify(withoutEnabled));
+ assert.deepEqual(await run(file),{code:0,stdout:'verify: passes\nrepair: passes\n'});
+ await fs.writeFile(file,JSON.stringify(cfg));
+ assert.deepEqual(await run(file),{code:1,stdout:'verify: passes\nrepair: mode-conflict enabled in config.json disagrees with RECOVERY_MODE; remove it or make it match\n'});
+ await fs.writeFile(file,JSON.stringify({...withoutEnabled,radarrApiKey:'SECRET-KEY-VALUE',stableMinutes:'SECRET-ten'}));
+ const refused=await run(file);
+ assert.equal(refused.code,1);assert.doesNotMatch(refused.stdout,/SECRET/);
+ assert.match(refused.stdout,/^verify: invalid-config .*\(stableMinutes must be a number of 0 or more\)$/m);
+});

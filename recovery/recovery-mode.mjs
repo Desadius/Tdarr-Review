@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import {configValueProblem} from './config-values.mjs';
 
 // RECOVERY_MODE is the only source of truth for the Recovery mode. The worker runs only in
 // verify (confirm corrupted originals; only protective steps of in-flight repairs continue)
@@ -12,12 +13,12 @@ const REASONS={
  'mode-conflict':'enabled in config.json disagrees with RECOVERY_MODE; remove it or make it match',
  'missing-config':'config.json does not exist',
  'unreadable-config':'config.json exists but cannot be read; check its type and permissions',
- 'invalid-config':'config.json must be a JSON object, and enabled, if present, true or false',
+ 'invalid-config':'config.json must be a JSON object, enabled, if present, true or false, and every setting present with a usable value',
  'registry-refused':'the private approval registry does not match this configuration or state',
 };
 
-// The message and reason never contain configuration values or keys from config.json; a detail
-// is only ever a rule text that is itself free of values (such as an approval registry error).
+// The message and reason never contain configuration values; a detail is only ever a rule text that
+// is itself free of values (such as an approval registry error, or a known key name and its rule).
 export class RecoveryRefusal extends Error{
  constructor(reason,detail){super('Recovery refused to start: '+REASONS[reason]+(detail?' ('+detail+')':''));this.name='RecoveryRefusal';this.reason=reason;}
 }
@@ -37,6 +38,8 @@ function withMode(value,mode){
   if(typeof value.enabled!=='boolean')throw new RecoveryRefusal('invalid-config');
   if(value.enabled!==enabled)throw new RecoveryRefusal('mode-conflict');
  }
+ const problem=configValueProblem(value);
+ if(problem)throw new RecoveryRefusal('invalid-config',problem);
  return {...value,enabled};
 }
 function parse(text){try{return JSON.parse(text);}catch{throw new RecoveryRefusal('invalid-config');}}

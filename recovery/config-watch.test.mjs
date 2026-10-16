@@ -56,14 +56,15 @@ test('an edit that parses is checked once against the start-up rules; their erro
 test('an edit is checked with the start-up gate: the Recovery mode, then the approval registry',async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'recovery-config-gate-'));try{
   await fs.writeFile(path.join(root,'pending-approvals.json'),JSON.stringify({version:1,config:{libraryId:'frozen-library'},cases:[]}),{mode:0o600});
-  const state={version:1,jobs:{},cases:{}};
+  const state={version:1,jobs:{},cases:{}},base={...JSON.parse(await fs.readFile(new URL('../examples/recovery-config.example.json',import.meta.url),'utf8')),libraryId:'frozen-library'};
   const repair=startupValidator({data:root,mode:'repair',getState:()=>state}),verify=startupValidator({data:root,mode:'verify',getState:()=>state});
-  assert.equal(await repair({libraryId:'frozen-library'}),null);
-  assert.equal(await repair({libraryId:'frozen-library',enabled:true}),null,'a matching enabled is accepted');
-  assert.equal(await verify({libraryId:'frozen-library',enabled:false}),null);
-  for(const [validate,value] of [[repair,{libraryId:'frozen-library',enabled:false}],[verify,{libraryId:'frozen-library',enabled:true}]])assert.match(await validate(value),/disagrees with RECOVERY_MODE/);
-  assert.match(await repair({libraryId:'frozen-library',enabled:'yes'}),/must be a JSON object, and enabled/);
-  const frozen=await repair({libraryId:'another-library'});assert.equal(frozen,'Recovery approval registry: frozen configuration differs');
+  assert.equal(await repair(base),null);
+  assert.equal(await repair({...base,enabled:true}),null,'a matching enabled is accepted');
+  assert.equal(await verify({...base,enabled:false}),null);
+  for(const [validate,value] of [[repair,{...base,enabled:false}],[verify,{...base,enabled:true}]])assert.match(await validate(value),/disagrees with RECOVERY_MODE/);
+  assert.match(await repair({...base,enabled:'yes'}),/enabled, if present, true or false/);
+  assert.match(await repair({...base,pollSeconds:'often'}),/\(pollSeconds must be a number from 0 to 2147483\)$/);
+  const frozen=await repair({...base,libraryId:'another-library'});assert.equal(frozen,'Recovery approval registry: frozen configuration differs');
   // The loader only reads state; the validator still hands it a copy, which no test can observe.
   assert.deepEqual(state,{version:1,jobs:{},cases:{}});
  }finally{await fs.rm(root,{recursive:true,force:true})}
