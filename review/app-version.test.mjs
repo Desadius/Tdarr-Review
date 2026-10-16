@@ -16,9 +16,7 @@ test('the reported version comes from APP_VERSION, else package.json, never a li
  assert.equal(await appVersion({env:{APP_VERSION:'2.0.0-rc.1'}}),'2.0.0-rc.1');
  assert.equal(await appVersion({env:{APP_VERSION:'<script>'}}),version,'an invalid build argument is ignored');
  assert.equal(await appVersion({env:{},packageFile:new URL('missing.json',repo)}),'unknown');
- const server=await fs.readFile(new URL('server.mjs',import.meta.url),'utf8');
- const items=await fs.readFile(new URL('routes/items.mjs',import.meta.url),'utf8');
- assert.match(items,/\{version:ctx\.APP_VERSION,/);for(const source of [server,items])assert.doesNotMatch(source,/version:'\d+\.\d+\.\d+'/);
+ // The running server reports this version over HTTP: server-wiring-http.test.mjs.
  assert.match(await fs.readFile(new URL('Dockerfile',repo),'utf8'),/^ENV .*APP_VERSION=\$\{APP_VERSION\}/m);
 });
 
