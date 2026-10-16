@@ -284,6 +284,21 @@ test('the running worker reports a config.json edit whose enabled conflicts with
  }finally{await f.cleanup();}
 });
 
+test('the running worker reports a config.json edit with an unusable value as invalid without echoing it',{skip:process.platform!=='linux'},async()=>{
+ const f=await fixture({mode:'verify'});try{
+  f.state.jobs['fixture-job']='manual: operator review';f.cfg.pollSeconds=1;await f.write();
+  const worker=f.daemon(),status=async()=>JSON.parse(await fs.readFile(path.join(f.data,'../media/.tdarr-recovery-status.json'),'utf8').catch(()=>'{}'));
+  await until(async()=>(await status()).updated);
+  assert.equal((await status()).configChange,null);
+  await fs.writeFile(f.data+'/config.json',JSON.stringify({...f.cfg,stableMinutes:'SECRET-ten'}));
+  await until(async()=>(await status()).configChange);
+  const change=(await status()).configChange;assert.equal(change.valid,false);assert.match(change.error,/\(stableMinutes must be a number of 0 or more\)$/);
+  worker.child.kill('SIGTERM');const exit=await worker.closed;assert.equal(exit.code,0,exit.output);
+  assert.doesNotMatch(exit.output+JSON.stringify(change),/SECRET/);
+  assert.deepEqual(f.requests.filter(r=>r.method!=='GET'),[]);await f.unchanged();
+ }finally{await f.cleanup();}
+});
+
 // Paths, types, sizes and content digests of every entry below root.
 async function snapshot(root){
  const tree={};

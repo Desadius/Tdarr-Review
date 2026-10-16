@@ -42,7 +42,7 @@ export async function serverHarness(){
    }finally{await fs.rm(root,{recursive:true,force:true})}
   };
   return {root,data,media,review,port,base,request,close,diagnostics:()=>diagnostics,output:()=>output,
-   async start({settings={},state,preload,clock=false,traceRoutes=false}={}){
+   async start({settings={},state,preload,clock=false,traceRoutes=false,env={}}={}){
     try{
      // Every default endpoint is loopback; missing synthetic databases fail closed.
      const config={...defaults({MEDIA_ROOT:media,REVIEW_ROOT:review,TDARR_DB:path.join(root,'missing.db'),TDARR_URL:base,PUBLIC_ORIGIN:base}),...settings};
@@ -55,7 +55,7 @@ export async function serverHarness(){
      if(traceRoutes)await fs.writeFile(trace,'');
      if(clock||traceRoutes)args.push('--require',fileURLToPath(new URL('./server-preload.cjs',import.meta.url)));
      args.push(fileURLToPath(new URL('../server.mjs',import.meta.url)));
-     child=spawn(process.execPath,args,{env:{...process.env,DATA_ROOT:data,PORT:String(port),REVIEW_TEST_CLOCK:clock?'1':'0',REVIEW_TEST_TRACE:traceRoutes?trace:''},stdio:['ignore','pipe','pipe',...(clock?['ipc']:[])]});
+     child=spawn(process.execPath,args,{env:{...process.env,...env,DATA_ROOT:data,PORT:String(port),REVIEW_TEST_CLOCK:clock?'1':'0',REVIEW_TEST_TRACE:traceRoutes?trace:''},stdio:['ignore','pipe','pipe',...(clock?['ipc']:[])]});
      await deadline(new Promise((resolve,reject)=>{
       child.stdout.on('data',chunk=>{output+=chunk;if(String(chunk).includes('Tdarr Review listening'))resolve()});
       child.stderr.on('data',chunk=>{diagnostics+=chunk});child.once('error',reject);child.once('exit',code=>reject(Error('Server exited '+code+': '+diagnostics)));

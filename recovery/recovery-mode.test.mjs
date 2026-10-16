@@ -9,19 +9,22 @@ import {fileURLToPath} from 'node:url';
 import {REFUSED_EXIT,RecoveryRefusal,resolveRecoveryConfig,readRecoveryConfig} from './recovery-mode.mjs';
 
 const refused=reason=>e=>e instanceof RecoveryRefusal&&e.reason===reason;
+// A config.json with every required setting (the shipped example); the value checks have their own suite.
+const COMPLETE=JSON.parse(await fs.readFile(new URL('../examples/recovery-config.example.json',import.meta.url),'utf8'));
+const complete=(extra={})=>JSON.stringify({...COMPLETE,...extra});
 
 test('verify and repair are the only modes a worker accepts',()=>{
- assert.equal(resolveRecoveryConfig({mode:'verify',text:'{}'}).mode,'verify');
- assert.equal(resolveRecoveryConfig({mode:'repair',text:'{}'}).mode,'repair');
- assert.throws(()=>resolveRecoveryConfig({mode:'off',text:'{}'}),refused('mode-off'));
- for(const mode of [undefined,'','Repair','REPAIR',' repair','true','enabled','dry_run'])assert.throws(()=>resolveRecoveryConfig({mode,text:'{}'}),refused('invalid-mode'),String(mode));
+ assert.equal(resolveRecoveryConfig({mode:'verify',text:complete()}).mode,'verify');
+ assert.equal(resolveRecoveryConfig({mode:'repair',text:complete()}).mode,'repair');
+ assert.throws(()=>resolveRecoveryConfig({mode:'off',text:complete()}),refused('mode-off'));
+ for(const mode of [undefined,'','Repair','REPAIR',' repair','true','enabled','dry_run'])assert.throws(()=>resolveRecoveryConfig({mode,text:complete()}),refused('invalid-mode'),String(mode));
 });
 
 test('the mode alone decides whether repairs are allowed',()=>{
- assert.equal(resolveRecoveryConfig({mode:'verify',text:'{"libraryId":"x"}'}).cfg.enabled,false);
- assert.equal(resolveRecoveryConfig({mode:'repair',text:'{"libraryId":"x"}'}).cfg.enabled,true);
- assert.deepEqual(resolveRecoveryConfig({mode:'repair',text:'{"enabled":true,"libraryId":"x"}'}).cfg,{enabled:true,libraryId:'x'});
- assert.deepEqual(resolveRecoveryConfig({mode:'verify',text:'{"enabled":false}'}).cfg,{enabled:false});
+ assert.equal(resolveRecoveryConfig({mode:'verify',text:complete()}).cfg.enabled,false);
+ assert.equal(resolveRecoveryConfig({mode:'repair',text:complete()}).cfg.enabled,true);
+ assert.deepEqual(resolveRecoveryConfig({mode:'repair',text:complete({enabled:true})}).cfg,{...COMPLETE,enabled:true});
+ assert.deepEqual(resolveRecoveryConfig({mode:'verify',text:complete({enabled:false})}).cfg,{...COMPLETE,enabled:false});
 });
 
 test('an enabled key that disagrees with the mode refuses; a malformed one is invalid',()=>{
@@ -42,9 +45,9 @@ test('a missing or unreadable config.json is a named refusal',async()=>{
   await assert.rejects(readRecoveryConfig({file:path.join(dir,'config.json'),mode:'verify'}),refused('missing-config'));
   await assert.rejects(readRecoveryConfig({file:path.join(dir,'config.json'),mode:'off'}),refused('mode-off'));
   await assert.rejects(readRecoveryConfig({file:dir,mode:'verify'}),refused('unreadable-config'));
-  await fs.writeFile(path.join(dir,'config.json'),'{"enabled":false}');
+  await fs.writeFile(path.join(dir,'config.json'),complete({enabled:false}));
   const loaded=await readRecoveryConfig({file:path.join(dir,'config.json'),mode:'verify'});
-  assert.equal(loaded.text,'{"enabled":false}');assert.deepEqual(loaded.cfg,{enabled:false});
+  assert.equal(loaded.text,complete({enabled:false}));assert.deepEqual(loaded.cfg,{...COMPLETE,enabled:false});
  }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
 
@@ -57,7 +60,7 @@ async function refusal({mode,config,configDirectory=false,registry}){
  try{
   if(configDirectory)await fs.mkdir(path.join(data,'config.json'));
   if(registry!==undefined)await fs.writeFile(path.join(data,'pending-approvals.json'),JSON.stringify(registry),{mode:0o600});
-  if(config!==undefined)await fs.writeFile(path.join(data,'config.json'),typeof config==='string'?config:JSON.stringify({radarrUrl:base,tdarrUrl:base,radarrApiKey:'fixture-secret-key',libraryId:'fixture-library',database:path.join(root,'missing.sqlite'),pollSeconds:300,...config}));
+  if(config!==undefined)await fs.writeFile(path.join(data,'config.json'),typeof config==='string'?config:JSON.stringify({...COMPLETE,radarrUrl:base,tdarrUrl:base,radarrApiKey:'fixture-secret-key',libraryId:'fixture-library',database:path.join(root,'missing.sqlite'),pollSeconds:300,...config}));
   const env={...process.env,DATA_ROOT:data};delete env.RECOVERY_MODE;if(mode!==undefined)env.RECOVERY_MODE=mode;
   const exit=await new Promise((resolve,reject)=>{
    const child=spawn(process.execPath,[fileURLToPath(new URL('./worker.mjs',import.meta.url)),'--once'],{env,stdio:['ignore','pipe','pipe']});
@@ -76,6 +79,8 @@ for(const [name,setup,reason] of [
  ['enabled true in verify mode',{mode:'verify',config:{enabled:true}},'mode-conflict'],
  ['enabled false in repair mode',{mode:'repair',config:{enabled:false}},'mode-conflict'],
  ['a non-boolean enabled',{mode:'repair',config:{enabled:'true'}},'invalid-config'],
+ ['a limit that is not a number',{mode:'verify',config:{stableMinutes:'fixture-secret-key'}},'invalid-config'],
+ ['a missing required setting',{mode:'verify',config:{since:undefined}},'invalid-config'],
  ['a missing config.json',{mode:'verify'},'missing-config'],
  ['a config.json that cannot be read',{mode:'verify',configDirectory:true},'unreadable-config'],
  ['config.json that is not JSON',{mode:'verify',config:'{"radarrApiKey":"fixture-secret-key"'},'invalid-config'],
