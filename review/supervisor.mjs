@@ -6,6 +6,8 @@ import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {atomicJSON} from './core.mjs';
 import {REFUSED_EXIT} from '../recovery/recovery-mode.mjs';
+import {randomUUID} from 'node:crypto';
+import {CONTROL_VERSION,controlMessage,sendControl,validId} from './recovery-control.mjs';
 
 export const STATE_FILE='runtime-state.json';
 
@@ -27,7 +29,10 @@ export async function supervise({mode,dataRoot,review,recovery,restart=RESTART,s
  const update=changes=>{Object.assign(state,changes);return writes=writes.then(()=>publish(recoveryData,{...state,updated:new Date().toISOString()}));};
  // Not awaited: the signal handlers below must be in place at once, because PID 1 ignores signals without one.
  void update({});
- const reviewChild=spawn(review[0],review.slice(1),{stdio:'inherit'});
+ const session=randomUUID();
+ let control=null,resumeCrash=false;
+ const usedIds=new Set();
+ const reviewChild=spawn(review[0],review.slice(1),{stdio:['inherit','inherit','inherit','ipc']});
  const reviewExit=new Promise(resolve=>{
   reviewChild.on('exit',(code,signal)=>resolve(code??128+(signal?os.constants.signals[signal]:0)));
   // 127: the shell's status for a command that cannot be run.
@@ -42,7 +47,13 @@ export async function supervise({mode,dataRoot,review,recovery,restart=RESTART,s
  let worker=null;
  const crashLoopReason=()=>crashes>=restart.crashLoopAfter?'crash-loop':null;
  const startRecovery=()=>{
-  const child=worker=spawn(lowPriority[0],[...lowPriority.slice(1),...recovery],{stdio:['ignore','inherit','pipe'],env:{...process.env,DATA_ROOT:recoveryData,RECOVERY_MODE:mode}});
+  const [command,...args]=[...lowPriority,...recovery];
+  const child=worker=spawn(command,args,{stdio:['ignore','inherit','pipe','ipc'],env:{...process.env,DATA_ROOT:recoveryData,RECOVERY_MODE:mode,RECOVERY_CONTROL_SESSION:session}});
+  child.on('message',m=>{
+   if(worker!==child||!controlMessage(m)||m.channel!=='recovery-worker'||m.session!==session)return;
+   if(m.event==='ready'&&control?.state==='starting')control.state='running';
+   if(m.event==='drained'&&control?.state==='draining'&&m.id===control.id)control.state='ready';
+  });
   // stderr still reaches the container log; its tail may hold the refusal line.
   let tail='';
   const drained=new Promise(resolve=>{child.stderr?.on('data',chunk=>{process.stderr.write(chunk);tail=(tail+chunk).slice(-4096);});child.stderr?.on('end',resolve);});
@@ -55,6 +66,13 @@ export async function supervise({mode,dataRoot,review,recovery,restart=RESTART,s
     clearTimeout(stable);worker=null;
     const exited={lastExitCode:code,lastExitSignal:signal,lastExitedAt:new Date().toISOString()};
     if(stopReason){await update({state:'stopped',reason:stopReason,...exited});return resolve();}
+    if(control&&['draining','ready','stopping','starting'].includes(control.state)){
+     const intentional=control.state==='stopping';
+     control.state=intentional?'stopped':'failed';control.reason=intentional?null:'worker-exited';
+     if(code===REFUSED_EXIT)await Promise.race([drained,new Promise(resolve=>setTimeout(resolve,1000))]);
+     await update({state:code===REFUSED_EXIT?'refused':'stopped',reason:intentional?'settings-apply':code===REFUSED_EXIT?refusalReason(tail):'apply-start-failed',...exited});
+     return resolve();
+    }
     if(code===REFUSED_EXIT){
      await Promise.race([drained,new Promise(resolve=>setTimeout(resolve,1000))]);
      void update({state:'refused',reason:refusalReason(tail),...exited});
@@ -68,6 +86,57 @@ export async function supervise({mode,dataRoot,review,recovery,restart=RESTART,s
    });
   });
  };
+ // Requests are volatile and tied to this supervisor instance. Restart never replays an old request.
+ const workerCommand=action=>sendControl(worker,{channel:'recovery-worker',version:CONTROL_VERSION,session,id:control.id,action});
+ const snapshot=()=>({...control,session});
+ const handleControl=async m=>{
+  if(!controlMessage(m)||m.channel!=='recovery-control'||!validId(m.id)||!validId(m.token))return;
+  try{
+   if(m.session!==null&&m.session!==session)throw Error('recovery_control_session_expired');
+   if(stopping||stopReason)throw Error('recovery_control_stopping');
+   if(m.action==='requestDrain'){
+    if(control&&control.id===m.id)return snapshot();
+    if(control&&['draining','ready','stopping','starting'].includes(control.state))throw Error('recovery_control_pending');
+    if(usedIds.has(m.id)||usedIds.size>=1024)throw Error('recovery_control_id_expired');
+    usedIds.add(m.id);
+    resumeCrash=state.state==='restarting';
+    control={id:m.id,state:mode==='off'?'off':'draining',reason:null};
+    clearTimeout(restartTimer);
+    if(mode!=='off'&&!worker)control.state='ready';
+    else if(mode!=='off'&&!workerCommand('drain')){control.state='failed';control.reason='worker-unavailable';}
+    return snapshot();
+   }
+   if(m.session!==session||!control||control.id!==m.id)throw Error('recovery_control_request_expired');
+   if(m.action==='status')return snapshot();
+   if(m.action==='cancel'){
+    if(control.state==='cancelled')return snapshot();
+    if(!['draining','ready','off'].includes(control.state))throw Error('recovery_control_cannot_cancel');
+    if(worker&&!workerCommand('cancel'))throw Error('recovery_control_worker_unavailable');
+    control.state='cancelled';if(!worker&&resumeCrash)startRecovery();return snapshot();
+   }
+   if(m.action==='stopAfterDrain'){
+    if(control.state==='stopping'){await workerExit;return snapshot();}
+    if(control.state==='stopped')return snapshot();
+    if(!['ready','off'].includes(control.state))throw Error('recovery_control_not_drained');
+    if(worker){control.state='stopping';if(!workerCommand('stop')){control.state='failed';throw Error('recovery_control_worker_unavailable');}await workerExit;}
+    else control.state='stopped';
+    return snapshot();
+   }
+   if(m.action==='restart'){
+    if(['starting','running','off'].includes(control.state))return snapshot();
+    if(control.state!=='stopped')throw Error('recovery_control_not_stopped');
+    if(mode==='off'){control.state='off';return snapshot();}
+    control.state='starting';startRecovery();return snapshot();
+   }
+   throw Error('recovery_control_action_invalid');
+  }catch(e){return {error:e.message};}
+ };
+ reviewChild.on('message',async m=>{
+  if(!controlMessage(m)||m.channel!=='recovery-control')return;
+  const result=await handleControl(m);
+  if(!result)return;
+  sendControl(reviewChild,{channel:'recovery-control-reply',version:CONTROL_VERSION,token:m.token,...(result.error?{error:result.error}:{result})});
+ });
  // Stopping happens once: it cancels a pending restart and gives Recovery the signal, then SIGKILL after stopGraceMs.
  /** @type {Promise<void>|null} */
  let stopping=null;

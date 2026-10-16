@@ -1,5 +1,17 @@
 export default {
   "exact": {
+    "Relace řízení Recovery vypršela.": "Recovery control session expired.",
+    "Správce Recovery se ukončuje.": "Recovery supervisor stopping.",
+    "Použití změn Recovery již probíhá.": "Recovery apply already pending.",
+    "Identifikátor požadavku Recovery vypršel.": "Recovery request id expired.",
+    "Požadavek Recovery vypršel.": "Recovery request expired.",
+    "Tento požadavek Recovery již nelze zrušit.": "Recovery request cannot be cancelled.",
+    "Proces Recovery není dostupný.": "Recovery worker unavailable.",
+    "Recovery ještě nedokončilo probíhající operaci.": "Recovery is not drained.",
+    "Recovery ještě není zastavené.": "Recovery is not stopped.",
+    "Neplatná akce řízení Recovery.": "Unknown Recovery control action.",
+    "Správce Recovery není dostupný.": "Recovery supervisor unavailable.",
+    "Neplatný identifikátor požadavku Recovery.": "Invalid Recovery control request id.",
     "Počkej na načtení průběhu posouzení.": "Wait for the review progress to load.",
     "Načti aktuální uložený stav posouzení z jiné relace.": "Load the current saved review from the other session.",
     "Počkej na dokončení ukládání posouzení.": "Wait for the review to finish saving.",

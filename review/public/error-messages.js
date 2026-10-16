@@ -2,6 +2,19 @@
 // (which also sends the Czech text as `error` for older clients) and the browser UI.
 // Add a code here instead of a new literal message in a route.
 export const ERROR_MESSAGES=Object.freeze({
+ recovery_control_session_expired:Object.freeze({cs:'Relace řízení Recovery vypršela.',en:'Recovery control session expired.'}),
+ recovery_control_stopping:Object.freeze({cs:'Správce Recovery se ukončuje.',en:'Recovery supervisor stopping.'}),
+ recovery_control_pending:Object.freeze({cs:'Použití změn Recovery již probíhá.',en:'Recovery apply already pending.'}),
+ recovery_control_id_expired:Object.freeze({cs:'Identifikátor požadavku Recovery vypršel.',en:'Recovery request id expired.'}),
+ recovery_control_request_expired:Object.freeze({cs:'Požadavek Recovery vypršel.',en:'Recovery request expired.'}),
+ recovery_control_cannot_cancel:Object.freeze({cs:'Tento požadavek Recovery již nelze zrušit.',en:'Recovery request cannot be cancelled.'}),
+ recovery_control_worker_unavailable:Object.freeze({cs:'Proces Recovery není dostupný.',en:'Recovery worker unavailable.'}),
+ recovery_control_not_drained:Object.freeze({cs:'Recovery ještě nedokončilo probíhající operaci.',en:'Recovery is not drained.'}),
+ recovery_control_not_stopped:Object.freeze({cs:'Recovery ještě není zastavené.',en:'Recovery is not stopped.'}),
+ recovery_control_action_invalid:Object.freeze({cs:'Neplatná akce řízení Recovery.',en:'Unknown Recovery control action.'}),
+ recovery_control_unavailable:Object.freeze({cs:'Správce Recovery není dostupný.',en:'Recovery supervisor unavailable.'}),
+ recovery_control_id_invalid:Object.freeze({cs:'Neplatný identifikátor požadavku Recovery.',en:'Invalid Recovery control request id.'}),
+
  host_forbidden:Object.freeze({cs:"Nepovolená adresa serveru.",en:"Server address not allowed."}),
  origin_forbidden:Object.freeze({cs:"Nepovolený původ požadavku.",en:"Request origin not allowed."}),
  json_required:Object.freeze({cs:"Vyžadován JSON.",en:"JSON required."}),
