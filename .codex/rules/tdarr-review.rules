@@ -20,6 +20,14 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["gh", "label", "list"],
+    decision = "allow",
+    justification = "Read repository labels for issue triage",
+    match = ["gh label list", "gh label list --limit 100"],
+    not_match = ["gh label create ready-for-agent", "gh label edit bug", "gh label delete old"],
+)
+
+prefix_rule(
     pattern = ["gh", "run", ["view", "list"]],
     decision = "allow",
     justification = "Read GitHub Actions runs",
