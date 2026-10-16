@@ -7,10 +7,15 @@ on:
         required: true
         type: string
       publish_latest:
-        description: 'Also move latest to this tested image'
+        description: 'Also move latest to this tested image (required for a promotion)'
         required: true
         default: false
         type: boolean
+      promote_digest:
+        description: 'Promote only: verified digest sha256:... to move latest to, without building'
+        required: false
+        default: ''
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -18,7 +23,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   publish:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && inputs.promote_digest == ''
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -74,6 +79,47 @@ jobs:
             docker push "$image:latest"
             printf 'Updated `%s:latest`\n' "$image" >> "$GITHUB_STEP_SUMMARY"
           fi
+      - name: Log out of GHCR
+        if: always()
+        run: docker logout ghcr.io
+  promote:
+    # Moves latest to an already published image; builds nothing and writes no other tag.
+    if: github.ref == 'refs/heads/main' && inputs.promote_digest != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check the approved main commit and the promotion approval
+        env:
+          APPROVED_COMMIT: ${{ inputs.commit }}
+          PUBLISH_LATEST: ${{ inputs.publish_latest }}
+        run: |
+          set -euo pipefail
+          [[ "$PUBLISH_LATEST" == true ]] || { echo 'A promotion moves latest; set publish_latest to confirm it'; exit 1; }
+          [[ "$APPROVED_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'Expected a full lowercase commit SHA'; exit 1; }
+          [[ "$(git rev-parse "$APPROVED_COMMIT^{commit}")" == "$APPROVED_COMMIT" ]]
+          git merge-base --is-ancestor "$APPROVED_COMMIT" origin/main
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - name: Log in to GitHub Container Registry
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Move latest to the verified digest
+        env:
+          COMMIT: ${{ inputs.commit }}
+          DIGEST: ${{ inputs.promote_digest }}
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tdarr-review" node tools/promote-latest.mjs
       - name: Log out of GHCR
         if: always()
         run: docker logout ghcr.io
