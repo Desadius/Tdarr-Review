@@ -6,17 +6,14 @@ import {listTestFiles} from './test-options.mjs';
 export const SOURCE_TEXT_ALLOWLIST={
  // This suite executes app.js and its real import graph in a browser-module VM.
  'review/app-runtime.test.mjs':['public/app.js'],
- 'review/app-version.test.mjs':['server.mjs','routes/items.mjs'],
  'review/audio-listen.test.mjs':['public/comparison.js'],
  'review/decision-audit.test.mjs':['server.mjs'],
  // Executes the real audio-comparison function in a VM and asserts DOM/API calls; no source regex assertions remain.
  'review/prepared-frontend.test.mjs':['public/comparison.js'],
- 'review/radarr-replacement.test.mjs':['routes/library.mjs'],
  'review/recovery-route.test.cjs':['../examples/tdarr/recovery-review-route.cjs'],
  'review/rejection-audit.test.mjs':['server.mjs','routes/items.mjs'],
  'review/resume-retry.test.mjs':['server.mjs','routes/items.mjs','server.mjs'],
  'review/tdarr-guard.test.cjs':['examples/tdarr/review-guard.cjs'],
- 'review/test-artwork.mjs':['server.mjs','routes/library.mjs','routes/static.mjs'],
  'recovery/full-hash.test.mjs':['worker.mjs','waiting-source.mjs']
 };
 export function sourceTextReads(text){
