@@ -15,7 +15,7 @@ if(typeof vm.SourceTextModule!=='function'){
  });
 }else{
  class Element{
-  constructor(tag){this.tagName=tag.toUpperCase();this.children=[];this.attributes={};this.dataset={};this.events=new Map();this.className='';this.value='';this.hidden=false;this.open=false;this.checked=false;this.disabled=false;this.ownText='';this.parentElement=null;this.style={};this.classList={toggle:(name,on)=>{const classes=new Set(this.className.split(/\s+/).filter(Boolean));if(on??!classes.has(name))classes.add(name);else classes.delete(name);this.className=[...classes].join(' ')}}}
+  constructor(tag){this.tagName=tag.toUpperCase();this.children=[];this.attributes={};this.dataset={};this.events=new Map();this.className='';this.value='';this.hidden=false;this.open=false;this.checked=false;this.disabled=false;this.ownText='';this.parentElement=null;this.style={};this.classList={add:(...names)=>{for(const name of names)this.classList.toggle(name,true)},remove:(...names)=>{for(const name of names)this.classList.toggle(name,false)},toggle:(name,on)=>{const classes=new Set(this.className.split(/\s+/).filter(Boolean));if(on??!classes.has(name))classes.add(name);else classes.delete(name);this.className=[...classes].join(' ')}}}
   get textContent(){return this.ownText+this.children.map(node=>node.textContent).join('')}
   set textContent(value){this.ownText=String(value);this.children=[]}
   get firstElementChild(){return this.children.find(node=>node.tagName)||null}
@@ -27,8 +27,8 @@ if(typeof vm.SourceTextModule!=='function'){
   replaceWith(node){const parent=this.parentElement;if(parent){parent.insertBefore(node,this);this.remove()}}
   remove(){if(this.parentElement){const siblings=this.parentElement.children;siblings.splice(siblings.indexOf(this),1);this.parentElement=null}}
   setAttribute(name,value){this.attributes[name]=String(value);if(name==='class')this.className=String(value);if(['id','value','type','name'].includes(name))this[name]=String(value);if(['hidden','open','checked','disabled'].includes(name))this[name]=true;if(name.startsWith('data-'))this.dataset[name.slice(5).replace(/-([a-z])/g,(_,c)=>c.toUpperCase())]=String(value)}
-  getAttribute(name){return this.attributes[name]??null}
-  hasAttribute(name){return Object.hasOwn(this.attributes,name)}
+  getAttribute(name){return name.startsWith('data-')?this.dataset[name.slice(5).replace(/-([a-z])/g,(_,c)=>c.toUpperCase())]??null:this.attributes[name]??null}
+  hasAttribute(name){return name.startsWith('data-')?name.slice(5).replace(/-([a-z])/g,(_,c)=>c.toUpperCase()) in this.dataset:Object.hasOwn(this.attributes,name)}
   removeAttribute(name){delete this.attributes[name]}
   matches(selector){const attr=/\[([^=\]]+)(?:=["']?([^\]"']+)["']?)?\]/.exec(selector),tag=selector.split(/[.#[\s]/)[0];if(tag&&this.tagName!==tag.toUpperCase())return false;const cls=/\.([\w-]+)/.exec(selector);if(cls&&!this.className.split(/\s+/).includes(cls[1]))return false;const id=/#([\w-]+)/.exec(selector);if(id&&this.id!==id[1])return false;return !attr||(this.hasAttribute(attr[1])&&(attr[2]===undefined||this.getAttribute(attr[1])===attr[2]))}
   querySelectorAll(selector){const result=[];for(const child of this.children){if(child.tagName&&selector.split(',').some(part=>child.matches(part)))result.push(child);result.push(...child.querySelectorAll(selector))}return result}
@@ -37,6 +37,10 @@ if(typeof vm.SourceTextModule!=='function'){
   contains(node){return node===this||this.children.some(child=>child.contains(node))}
   addEventListener(type,fn){if(!this.events.has(type))this.events.set(type,[]);this.events.get(type).push(fn)}
   async emit(type){const event={target:this,preventDefault(){}};await this['on'+type]?.(event);for(const fn of this.events.get(type)||[])await fn(event)}
+  showModal(){this.open=true}
+  close(value){if(value!==undefined)this.returnValue=value;this.open=false;return this.emit('close')}
+  setCustomValidity(value){this.validationMessage=value}
+  reportValidity(){return !this.validationMessage}
   focus(){}
  }
  class TextNode extends Element{constructor(value){super('');this.tagName=null;this.nodeValue=value}get textContent(){return this.nodeValue}set textContent(value){this.nodeValue=value}}
@@ -48,19 +52,21 @@ if(typeof vm.SourceTextModule!=='function'){
    if(token.startsWith('<')){const tag=/^<([\w-]+)/.exec(token)[1],node=new Element(tag);for(const attr of token.matchAll(/\s([\w-]+)(?:="([^"]*)")?/g))node.setAttribute(attr[1],attr[2]??'');stack.at(-1).append(node);if(!voids.has(tag)&&!token.endsWith('/>'))stack.push(node)}else stack.at(-1).append(new TextNode(token));
   }
   const document={documentElement:root.querySelector('html'),body:root.querySelector('body'),createElement:tag=>new Element(tag),getElementById:id=>root.querySelector('#'+id),querySelector:selector=>root.querySelector(selector),querySelectorAll:selector=>root.querySelectorAll(selector),addEventListener(){},createTreeWalker(node){const texts=[];const walk=entry=>{if(entry.tagName===null)texts.push(entry);for(const child of entry.children)walk(child)};walk(node);let index=-1;return {nextNode(){this.currentNode=texts[++index];return !!this.currentNode}}}};
+  for(const select of root.querySelectorAll('select'))select.value=(select.children.find(n=>n.hasAttribute('selected'))||select.children[0])?.value||'';
   document.activeElement=document.body;return document;
  }
  const flush=()=>new Promise(resolve=>setImmediate(resolve));
- async function appFixture(language){
+ async function appFixture(language,{itemsData={},routes={}}={}){
   const html=await fs.readFile(new URL('./public/index.html',import.meta.url),'utf8'),document=browserDocument(html),calls=[],timers=[],storage=new Map();let now=Date.now(),overviewError=null,fallbackRuntime=null,fallbackStatus=200;
   class BrowserDate extends Date{constructor(...args){super(...(args.length?args:[now]))}static now(){return now}}
   const runtime={present:true,version:1,mode:'repair',state:'running',reason:null};
   let response={requests:[{id:'b'.repeat(24),source:'recovery',title:'Synthetic movie',phase:'verifying',canRestore:false,statusUpdated:new Date().toISOString()}],recoveryRuntime:runtime,recoveryConfig:{restartRequired:true,valid:true}};
   const location=new URL('http://localhost/?lang='+language+'#recovery');
-  const context=vm.createContext({document,location,URL,URLSearchParams,Date:BrowserDate,console,AbortController,NodeFilter:{SHOW_TEXT:4},localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)},sessionStorage:{getItem:()=>null,removeItem(){},setItem(){}},history:{replaceState(){}},addEventListener(){},setInterval(fn,ms){timers.push({fn,ms});return timers.length},clearInterval(){},setTimeout,clearTimeout,fetch:async(route,options)=>{
-   calls.push({route,method:options.method});if(route==='/api/radarr/requests'&&overviewError)return {status:overviewError.status,ok:false,json:async()=>({error:overviewError.message})};
+  const context=vm.createContext({document,location,URL,URLSearchParams,Option:class extends Element{constructor(label,value){super('option');this.textContent=label;this.value=value}},Date:BrowserDate,console,AbortController,NodeFilter:{SHOW_TEXT:4},localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)},sessionStorage:{getItem:()=>null,removeItem(){},setItem(){}},history:{replaceState(){}},addEventListener(){},setInterval(fn,ms){timers.push({fn,ms});return timers.length},clearInterval(){},setTimeout,clearTimeout,fetch:async(route,options)=>{
+   calls.push({route,method:options.method,body:options.body?JSON.parse(options.body):undefined});
+   const fixture=routes[route]||routes[route.split('?')[0]];if(fixture)return {status:fixture.status||200,ok:!fixture.status||fixture.status<400,json:async()=>structuredClone(fixture.data)};if(route==='/api/radarr/requests'&&overviewError)return {status:overviewError.status,ok:false,json:async()=>({error:overviewError.message})};
    if(route==='/api/recovery/runtime'&&fallbackStatus!==200)return {status:fallbackStatus,ok:false,json:async()=>({error:'synthetic runtime unavailable'})};
-   const data=route==='/api/items'?{label:'Synthetic Review',serverTime:now,items:[],history:[],recovery:[],pendingRestores:[],restorePending:0}:route==='/api/radarr/requests'?response:route==='/api/recovery/runtime'?fallbackRuntime:null;
+   const data=route==='/api/items'?{label:'Synthetic Review',serverTime:now,items:[],history:[],recovery:[],pendingRestores:[],restorePending:0,...itemsData}:route==='/api/radarr/requests'?response:route==='/api/recovery/runtime'?fallbackRuntime:null;
    if(!data)throw Error('Unexpected fixture route: '+route);return {status:200,ok:true,json:async()=>structuredClone(data)};
   }});
   const publicRoot=new URL('./public/',import.meta.url),modules=new Map();
@@ -73,6 +79,46 @@ if(typeof vm.SourceTextModule!=='function'){
   const refresh=async()=>{await document.getElementById('recoveryRefresh').emit('click');for(let i=0;i<10;i++)await flush()};
   return {document,calls,timers,async update(value){response=value;await refresh()},async failOverview(runtime,status=500,runtimeStatus=200){overviewError={status,message:'synthetic shared case status invalid'};fallbackRuntime=runtime;fallbackStatus=runtimeStatus;now+=60000;await refresh()}};
  }
+ for(const language of ['cs','en'])for(const cleanupEnabled of [false,true])test(`real dialogs render retention settings and cleanup state in ${language} (${cleanupEnabled})`,async()=>{
+  const fixture=await appFixture(language,{routes:{'/api/quarantine':{data:{files:[],warnings:[],retentionDays:14,cleanupEnabled}},'/api/radarr/settings':{data:{url:'http://127.0.0.1',mediaRoot:'/fixture',quarantineRoot:'/quarantine',retentionDays:21}}}}),dom=fixture.document;
+  await dom.getElementById('settingsQuarantine').emit('click');
+  const quarantine=dom.querySelectorAll('dialog').find(n=>n.open);assert.ok(quarantine);
+  assert.match(quarantine.textContent,language==='en'?/retention period before cleanup is 14 days/:/úklid je 14 dní/);
+  assert.match(quarantine.textContent,language==='en'?(cleanupEnabled?/Automatic cleanup is enabled/:/Automatic quarantine cleanup is disabled/):(cleanupEnabled?/Automatický úklid je zapnutý/:/Automatický úklid karantény je vypnutý/));
+  await quarantine.close();await dom.getElementById('settingsRadarr').emit('click');
+  const settings=dom.querySelectorAll('dialog').find(n=>n.open);assert.match(settings.textContent,language==='en'?/Quarantine retention lasts 21 days/:/Retence karantény běží 21 dní/);
+  assert.doesNotMatch(settings.textContent,/7 (?:days|dní)/);assert(fixture.calls.every(c=>c.method==='GET'));
+ });
+ for(const language of ['cs','en'])test('real retention dialogs omit an unknown period in '+language,async()=>{
+  const fixture=await appFixture(language,{routes:{'/api/quarantine':{data:{files:[],warnings:[],retentionDays:null,cleanupEnabled:false}},'/api/radarr/settings':{data:{url:'http://127.0.0.1',mediaRoot:'/fixture',quarantineRoot:'/quarantine',retentionDays:null}}}}),dom=fixture.document;
+  await dom.getElementById('settingsQuarantine').emit('click');const quarantine=dom.querySelectorAll('dialog').find(n=>n.open);assert.doesNotMatch(quarantine.textContent,/(?:null|undefined|\d+) (?:days|dní)/);
+  await quarantine.close();await dom.getElementById('settingsRadarr').emit('click');const settings=dom.querySelectorAll('dialog').find(n=>n.open);assert.match(settings.textContent,language==='en'?/Recovery/:/Obnovy/);assert.doesNotMatch(settings.textContent,/(?:null|undefined|\d+) (?:days|dní)/);
+ });
+ for(const language of ['cs','en'])test('real app renders only known pending-node film and time in '+language,async()=>{
+  const now='2026-10-16T10:00:00Z',fixture=await appFixture(language,{itemsData:{restorePending:2,pendingRestores:[{name:'node-known',title:'Film (2020)',pausedAt:now},{name:'node-legacy',title:null,pausedAt:null}]}}),box=fixture.document.getElementById('nodeRestores');
+  const known=box.children.find(n=>n.textContent.includes('node-known')),legacy=box.children.find(n=>n.textContent.includes('node-legacy'));
+  assert.match(known.textContent,language==='en'?/Paused for Film \(2020\)/:/Pozastaveno pro Film \(2020\)/);assert.match(known.textContent,/2026/);
+  assert.doesNotMatch(legacy.textContent,/Film|Paused for|Pozastaveno pro|\?|null|undefined|2026/);assert.match(legacy.textContent,/node-legacy/);
+ });
+ for(const language of ['cs','en'])for(const coded of [true,false])test(`real app localizes error codes and preserves unknown server text in ${language} (${coded})`,async()=>{
+  const fixture=await appFixture(language,{routes:{'/api/quarantine':{status:409,data:{code:coded?'item_changed':'unknown-fixture-code',error:'Synthetic untranslated fallback /fixture/movie.mkv'}}}}),dom=fixture.document;
+  await dom.getElementById('settingsQuarantine').emit('click');const error=dom.getElementById('error');assert.equal(error.hidden,false);
+  if(coded)assert.match(error.textContent,language==='en'?/item.*changed/i:/Položka se změnila/);else assert.equal(error.textContent,'Synthetic untranslated fallback /fixture/movie.mkv');
+ });
+ const reviewItem={id:'a'.repeat(24),snapshot:'b'.repeat(64),title:'Fixture film',status:'ready',originalBytes:200,reviewBytes:100,durationA:100,durationB:100};
+ for(const language of ['cs','en'])for(const reason of ['Zavřít','<img src=x onerror=alert(1)>\nZavřít'])test('real rejection dialog sends the entered reason and never confirms review in '+language+' ('+reason.slice(0,6)+')',async()=>{
+  const checks=Object.fromEntries(['preparation','image','audio','syncStart','syncMiddle','syncEnd','hdr'].map(key=>[key,false]));
+  const session={snapshot:reviewItem.snapshot,revision:0,requirements:{hdr:false},complete:false,session:{method:'review',device:'',step:0,scope:{originalIndex:1,reviewIndex:2,seconds:10},checks,note:'',deferred:false}};
+  const fixture=await appFixture(language,{itemsData:{items:[reviewItem],history:[{id:'history',title:'Past film',action:'reject',status:'success',time:'2026-10-16T10:00:00Z',rejectionReason:reason}]},routes:{['/api/items/'+reviewItem.id+'/review-session']:{data:session},['/api/items/'+reviewItem.id+'/audio-compare']:{data:{original:[{index:1,label:'Original'}],review:[{index:2,label:'Review'}]}},['/api/items/'+reviewItem.id+'/reject']:{data:{ok:true}}}}),dom=fixture.document;
+  const history=dom.getElementById('history');assert.ok(history.textContent.includes((language==='en'?'Reason: ':'Důvod: ')+reason));assert.equal(history.querySelectorAll('img').length,0);
+  const inspect=dom.querySelectorAll('button').find(n=>n.getAttribute('aria-label')===(language==='en'?'Review Fixture film':'Posoudit Fixture film'));assert.ok(inspect);await inspect.emit('click');for(let i=0;i<4;i++)await flush();
+  assert(dom.querySelectorAll('[data-check]').length>0);assert(dom.querySelectorAll('[data-check]').every(n=>n.checked===false));
+  const reject=dom.getElementById('detailActions').querySelector('button');assert.equal(reject.disabled,false);await reject.emit('click');assert.equal(dom.getElementById('confirm').open,true);
+  await dom.getElementById('commit').emit('click');assert.ok(dom.getElementById('rejectReason').validationMessage);assert.equal(fixture.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,0);
+  dom.getElementById('rejectReason').value=reason;await dom.getElementById('rejectReason').emit('input');await dom.getElementById('commit').emit('click');await dom.getElementById('confirm').close('confirm');for(let i=0;i<4;i++)await flush();
+  const writes=fixture.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare'));assert.equal(writes.length,1);assert.equal(writes[0].route,'/api/items/'+reviewItem.id+'/reject');assert.equal(writes[0].body.reason,reason);
+  assert.equal(fixture.calls.filter(c=>c.method==='POST'&&c.route.endsWith('/review-session')).length,0,'opening and rejecting do not confirm review');
+ });
  for(const language of ['cs','en'])test('real Review app shows API runtime and interruption changes in '+language,async()=>{
   const fixture=await appFixture(language),dom=fixture.document,runtime=dom.getElementById('recoveryRuntime'),warning=dom.getElementById('recoveryRestartWarning');
   assert.equal(dom.documentElement.lang,language);assert.equal(dom.getElementById('error').hidden,true,dom.getElementById('error').textContent);

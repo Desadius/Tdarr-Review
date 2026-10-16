@@ -21,7 +21,7 @@ async function fixture(t,status){
  }
  if(['replacement_queue_intent','replacement_imported'].includes(status))Object.assign(c,{replacement:{movieFileId:11,path:'/radarr/Film/new.mkv',size:(await fs.stat(replacement)).size},replacementRelative:'Film/new.mkv',replacementSourceFP:fp(await fs.stat(replacement))});
  const state={version:1,jobs:{},cases:{case:c}},requests=[];
- const cfg={libraryId:'lib',sourceRoot:'/media',mediaRoot:media,radarrRoot:'/radarr',reviewRoot:path.join(root,'review'),reviewPrefixes:[],quarantineRoot:path.join(root,'quarantine'),database:path.join(root,'db.sqlite'),reports:path.join(root,'reports'),stableMinutes:0,pollSeconds:300,detectTerminalHeaders:false,approvedImportRepairs:{},maxRepairsPerDay:3};
+ const cfg={libraryId:'lib',sourceRoot:'/media',mediaRoot:media,radarrRoot:'/radarr',reviewRoot:path.join(root,'review'),reviewPrefixes:[],quarantineRoot:path.join(root,'quarantine'),database:path.join(root,'db.sqlite'),reports:path.join(root,'reports'),stableMinutes:0,pollSeconds:300,detectTerminalHeaders:false,approvedImportRepairs:{},maxRepairsPerDay:3,radarrApiKey:'fixture-only',ffmpeg:path.join(root,'ffmpeg'),decodeTimeoutHours:1,confirmDelaySeconds:0,movieCooldownDays:30,since:0};
  const movie={id:1,qualityProfileId:1,movieFileId:status==='waiting_source_kept'?10:['replacement_queue_intent','replacement_imported'].includes(status)?11:0};
  const oldFile={id:10,path:'/radarr/Film/original.mkv',size:bytes.length,sceneName:'Bad.Release',quality:{quality:{id:1,resolution:1080}}};
  const newFile={id:11,path:'/radarr/Film/new.mkv',size:(await fs.stat(replacement)).size,sceneName:'New.Release'};

@@ -85,35 +85,65 @@ A refused worker is not restarted: Review keeps running and shows **Refused** wi
 
 ### config.json
 
-The worker reads `/data/recovery/config.json` (its data root is `/data/recovery/` inside the Review container). Unlike Review, it currently has no configuration UI or general schema validator; use the supplied complete example and verify values before switching to `repair`.
+The worker reads `/data/recovery/config.json` (its data root is `/data/recovery/` inside the Review container). Unlike Review, it has no configuration UI; use the supplied complete example and verify values before switching to `repair`.
 
-The worker reads `config.json` only when it starts. Edits, including limits and `approvedImportRepairs`, take effect after the Review container is restarted. While the worker runs it checks the file once per poll: if the content differs from what it loaded, it logs that a restart is required and adds `configChange` (`detectedAt`, `restartRequired`, `valid`, `error`) to the shared `.tdarr-recovery-status.json`. The same file always carries `registryAllowedModes`, the Recovery modes the approval registry allows (see [Recovery mode](#recovery-mode)). `valid: false` means the next start would fail: the file is not a JSON object, its `enabled` disagrees with `RECOVERY_MODE`, or the worker's start-up approval-registry check refuses it (for example a value frozen in `pending-approvals.json`, such as a library root, `libraryId` or a limit, was changed). `error` names the rule but never a value; fix the file before restarting. Settings outside these checks can still be wrong in ways only the running worker notices. The running worker keeps using the configuration it started with and never applies an edit in the middle of a case. Restart only while the worker is idle (see [Operations](OPERATIONS.md)).
+At start-up every setting in the table below must be present (unless it is marked optional) and have a usable value, or the worker refuses with `RECOVERY_REFUSED invalid-config`. The log line names the setting and the rule, for example `(stableMinutes must be a number of 0 or more)`, never its value. A string where a number belongs (`"stableMinutes": "10 min"`, which used to disable the stability wait, or `"10"`), a negative limit, a delay longer than Node's longest timer (about 24.8 days, which would fire at once), a relative worker path, a trailing `/` on `sourceRoot` or `"detectTerminalHeaders": "false"` (which used to turn the check on) is refused instead of being misread. Keys the worker does not know are ignored. [Check a `config.json` before an update](#check-a-configjson-before-an-update) shows how to test a file without starting the worker.
 
-| Setting | Default example / purpose |
-| --- | --- |
-| `enabled` | Deprecated; use `RECOVERY_MODE`. If present it must match the mode |
-| `tdarrUrl`, `radarrUrl`, `radarrApiKey` | API connections; keep the key private |
-| `libraryId`, `sourceRoot` | Production Tdarr library and server path |
-| `mediaRoot`, `radarrRoot`, `reviewRoot` | Roots in the worker, Radarr and worker respectively |
-| `reviewPrefixes` | Result prefixes to check before taking away a source |
-| `quarantineRoot` | Worker path outside the media library, on the same mounted tree |
-| `database`, `reports`, `ffmpeg` | Read-only Tdarr SQLite/reports and decoder executable |
-| `stableMinutes` | `10`: minimum time since source modification |
-| `decodeTimeoutHours` | `12`: timeout is an operational failure, never corruption proof |
-| `fullSourceHash` | `false`: identity is checked by fingerprint and three 1 MiB samples. `true` also reads the whole original for a SHA-256 once when the corruption is confirmed and again before Recovery changes anything in Radarr or Tdarr for the repair; a different hash stops the repair, and fingerprint and samples are still rechecked right before the quarantine rename. The hash runs at idle I/O and lowest CPU priority, reports progress as `fullHash` in the shared status file and in the Review Recovery view, and on a large film can take as long as reading the whole file twice. |
-| `confirmDelaySeconds` | `30`: delay between independent original checks |
-| `maxRepairsPerDay` | `3`: rolling 24-hour circuit breaker |
-| `movieCooldownDays` | `30`: prevent repeated repairs for the same movie |
-| `pollSeconds` | `300`: delay after each worker pass |
-| `since` | Earliest eligible completed error time, Unix milliseconds |
-| `detectTerminalHeaders` | Recognize the narrow terminal-overwritten MKV header case |
-| `approvedCaseIds`, `approvedImportRepairs` | Advanced historical exceptions; shipped empty |
+The worker reads `config.json` only when it starts. Edits, including limits and `approvedImportRepairs`, take effect after the Review container is restarted. While the worker runs it checks the file once per poll: if the content differs from what it loaded, it logs that a restart is required and adds `configChange` (`detectedAt`, `restartRequired`, `valid`, `error`) to the shared `.tdarr-recovery-status.json`. The same file always carries `registryAllowedModes`, the Recovery modes the approval registry allows (see [Recovery mode](#recovery-mode)). `valid: false` means the next start would fail: the file is not a JSON object, its `enabled` disagrees with `RECOVERY_MODE`, a setting is missing or has an unusable value, or the worker's start-up approval-registry check refuses it (for example a value frozen in `pending-approvals.json`, such as a library root, `libraryId` or a limit, was changed). `error` names the rule but never a value; fix the file before restarting. Settings outside these checks can still be wrong in ways only the running worker notices. The running worker keeps using the configuration it started with and never applies an edit in the middle of a case. Restart only while the worker is idle (see [Operations](OPERATIONS.md)).
+
+| Setting | Accepted values | Default example / purpose |
+| --- | --- | --- |
+| `enabled` | Optional, `true` or `false` | Deprecated; use `RECOVERY_MODE`. If present it must match the mode |
+| `tdarrUrl`, `radarrUrl`, `radarrApiKey` | Non-empty string | API connections; keep the key private |
+| `libraryId` | Non-empty string | Production Tdarr library |
+| `sourceRoot` | Non-empty string without a trailing `/` | Library path on the Tdarr server |
+| `mediaRoot`, `reviewRoot` | Absolute path, not `/` itself | Roots in the worker |
+| `radarrRoot` | Non-empty string without a trailing `/` | Root as Radarr sees it |
+| `reviewPrefixes` | List of relative paths below `reviewRoot` (no leading or trailing `/`, no `.` or `..`), may be empty | Result prefixes to check before taking away a source |
+| `quarantineRoot` | Absolute path, not `/` itself | Worker path outside the media library, on the same mounted tree |
+| `database`, `reports`, `ffmpeg` | Absolute path, not `/` itself | Read-only Tdarr SQLite/reports and decoder executable |
+| `ffprobe` | Optional, absolute path, not `/` itself | Probe executable; absent means the `ffprobe` beside `ffmpeg` |
+| `stableMinutes` | Number, 0 or more | `10`: minimum time since source modification |
+| `decodeTimeoutHours` | Number greater than 0, at most 596 | `12`: timeout is an operational failure, never corruption proof |
+| `fullSourceHash` | Optional, `true` or `false` | `false`: identity is checked by fingerprint and three 1 MiB samples. `true` also reads the whole original for a SHA-256 once when the corruption is confirmed and again before Recovery changes anything in Radarr or Tdarr for the repair; a different hash stops the repair, and fingerprint and samples are still rechecked right before the quarantine rename. The hash runs at idle I/O and lowest CPU priority, reports progress as `fullHash` in the shared status file and in the Review Recovery view, and on a large film can take as long as reading the whole file twice. |
+| `confirmDelaySeconds` | Number from 0 to 2147483 | `30`: delay between independent original checks |
+| `maxRepairsPerDay` | Whole number, 1 or more | `3`: rolling 24-hour circuit breaker |
+| `movieCooldownDays` | Number, 0 or more | `30`: prevent repeated repairs for the same movie |
+| `pollSeconds` | Number from 0 to 2147483 | `300`: delay after each worker pass |
+| `since` | Number, 0 or more | Earliest eligible completed error time, Unix milliseconds |
+| `detectTerminalHeaders` | Optional, `true` or `false` | Recognize the narrow terminal-overwritten MKV header case |
+| `approvedCaseIds` | Optional, list of non-empty strings | Advanced historical exception; shipped empty |
+| `approvedImportRepairs` | Optional, object whose values are objects | Advanced historical exception; shipped empty |
 
 `/data/recovery/pending-approvals.json` is the private, versioned frozen-evidence registry. It is separate from source and images and is not populated from UI clicks. A fresh installation with no stored approvals may omit it or use the empty [example](../examples/recovery-approval-registry.example.json). Normal future errors use two live original decodes and do not require frozen authorization. Do not use synthetic fixtures as real authorization.
 
 Existing private registries must be [migrated offline before an update](MIGRATE-RECOVERY-REGISTRY.md). Invalid, unreadable, symlinked, changed or missing historical authority stops the worker before APIs. Nonempty registries bind the library, worker/source/Radarr/quarantine/review roots and review prefixes to the current configuration. Every explicitly frozen setting, including limits or `enabled` if present, must still match. Change authorization deliberately with the worker stopped, then restart; the registry is loaded once and frozen in memory.
 
 Completed imported legacy approval metadata can remain in state without being a current registry member only when its original source/movie/import/binding tuple and frozen mappings remain consistent. It never becomes current authorization and is not activated by the pending repair loop. A changed current member or legacy record in another phase fails validation.
+
+### Check a config.json before an update
+
+A Review update can tighten the start-up checks of `config.json`. To learn before updating whether your file passes the checks of the new version, run them against a read-only copy in a throwaway container from the **new** image, without network and without starting Recovery. The output names only the mode, the refusal reason and the setting with its rule, never a value:
+
+```bash
+docker run --rm --network none --read-only --cap-drop ALL \
+  --security-opt no-new-privileges --user 99:100 \
+  --mount type=bind,source=/mnt/cache/appdata/tdarr-review/data/recovery/config.json,target=/check/config.json,readonly \
+  --entrypoint /usr/bin/node ghcr.io/desadius/tdarr-review:NEW_VERSION --input-type=module -e '
+import fs from "node:fs";
+const {resolveRecoveryConfig}=await import("/recovery/recovery-mode.mjs");
+let text;
+try{text=fs.readFileSync(process.argv[1],"utf8");}catch(e){console.log("config.json: cannot be read ("+(e.code||"error")+")");process.exit(1);}
+let failed=false;
+for(const mode of ["verify","repair"]){
+ try{resolveRecoveryConfig({mode,text});console.log(mode+": passes");}
+ catch(e){failed=true;console.log(mode+": "+(e.reason?e.reason+" "+e.message.replace(/^Recovery refused to start: /,""):"cannot be checked"));}
+}
+process.exit(failed?1:0);
+' /check/config.json
+```
+
+Replace `NEW_VERSION` with the version (or `sha-<commit>` tag) you are about to install, and the source path with your Review data directory. Before an image is published, the same command runs from a source checkout of that version: from the checkout's root, replace `--entrypoint /usr/bin/node ghcr.io/desadius/tdarr-review:NEW_VERSION` with `--entrypoint /usr/local/bin/node node:24` and add `--mount type=bind,source="$PWD/recovery",target=/recovery,readonly`. Only the line for the `RECOVERY_MODE` you run matters; with a deprecated `enabled` in the file, the other mode reports `mode-conflict`. The approval registry is checked separately at start-up ([Recovery mode](#recovery-mode)).
 
 ## Shared files
 

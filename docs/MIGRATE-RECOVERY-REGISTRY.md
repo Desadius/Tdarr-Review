@@ -12,7 +12,7 @@ Migration validates the old registry, current config and stored approvals withou
 
 ## Offline command
 
-The utility checks `config.json` exactly as the worker will start with it, so it needs the same `RECOVERY_MODE` (`verify` or `repair`) the worker will run with. A missing or invalid mode, or an `enabled` in `config.json` that disagrees with it, stops the migration before anything is written (see [Recovery mode](CONFIGURATION.md#recovery-mode)).
+The utility checks `config.json` exactly as the worker will start with it, so it needs the same `RECOVERY_MODE` (`verify` or `repair`) the worker will run with. A missing or invalid mode, an `enabled` in `config.json` that disagrees with it, or a setting that is missing or has an unusable value ([config.json](CONFIGURATION.md#configjson)) stops the migration before anything is written (see [Recovery mode](CONFIGURATION.md#recovery-mode)).
 
 From a source checkout on Linux with Node 24, use explicit absolute paths:
 
