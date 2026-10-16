@@ -13,6 +13,7 @@
       "Bash(gh issue list *)",
       "Bash(gh issue comment *)",
       "Bash(gh issue edit *)",
+      "Bash(gh label list *)",
       "Bash(gh run view *)",
       "Bash(gh run list *)",
       "Bash(git add *)",
