@@ -6,7 +6,7 @@ test('only device identity can differ',()=>{const p={originalFP:'48:123:400:500:
 test('duration exception is narrow and explicitly flagged',()=>{assert(durationException({durationMismatch:true,durationA:7948.428,durationB:7947.488}));for(const info of [{durationA:7948,durationB:7945},{durationA:10,durationB:9},{durationA:NaN,durationB:5},{durationA:0,durationB:0}])assert(!durationException({durationMismatch:true,...info}));assert(!durationException({durationA:7948.428,durationB:7947.488}))});
 test('a recorded identity counts as remounted only when the device alone differs',()=>{
  const current='47:123:400:500:600',review='45:124:200:700:800';
- const expected={same:true,ctimeChanged:false,deviceChanged:true,deviceAndCtimeChanged:false,inodeChanged:false,fourFields:false,emptyCtime:false,textCtime:false,textDevice:true,sixFields:false,missing:false};
+ const expected={same:true,ctimeChanged:false,deviceChanged:true,deviceAndCtimeChanged:false,inodeChanged:false,fourFields:false,emptyCtime:false,textCtime:false,textDevice:false,sixFields:false,missing:false};
  for(const [variant,stored] of Object.entries(identityVariants(current))){
   assert.equal(remountOnly({originalFP:stored,reviewFP:review},current,review),expected[variant],'original '+variant);
   assert.equal(remountOnly({originalFP:current,reviewFP:stored},current,current),expected[variant],'review '+variant);
