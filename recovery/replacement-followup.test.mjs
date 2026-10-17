@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {identity} from './policy.mjs';
 import {replacementFollowup,replacementFollowupId,projectReplacementFollowups} from './replacement-followup.mjs';
 import {classifyRecovery} from '../review/public/review-model.js';
+import {identityVariants} from '../review/test-helpers/identity-variants.mjs';
 
 function fixture(){
  const cfg={sourceRoot:'/media/movies'},relative='Film/new.mkv',fp='1:2:100:4:5',file=cfg.sourceRoot+'/'+relative;
@@ -70,4 +71,15 @@ test('linked replacement followups retain Verify pause and original-location dis
  const out=projectReplacementFollowups({cases:[{id:parentId,source:'recovery',phase:'replacement_imported',replacementFollowupId:childId},{id:childId,source:'recovery',phase:'replacement_queue_intent',statusUpdated:'2026-10-13T10:00:00.000Z',...fields}]}).cases[0];
  for(const [key,value]of Object.entries(fields))assert.equal(out.replacementFollowup[key],value,key);
  assert.equal(classifyRecovery(out,Date.parse('2026-10-13T10:01:00.000Z')).category,'waiting');
+});
+test('follow-up binding follows the recorded replacement identity and accepts only non-negative plain numbers',()=>{
+ const expected={same:'exact',ctimeChanged:'ctime_changed',deviceChanged:null,deviceAndCtimeChanged:null,inodeChanged:null,fourFields:null,emptyCtime:null,textCtime:null,textDevice:null,sixFields:null,missing:null};
+ for(const [variant,stored] of Object.entries(identityVariants('1:2:100:4:5'))){
+  const f=fixture();f.parent.replacementSourceFP=stored;
+  assert.equal(replacementFollowup(f.parent,f)?.binding??null,expected[variant],variant);
+ }
+ for(const fp of ['1:2:100:-4:5','1:2:100:1e+21:5','9007199254740992:2:100:4:5']){
+  const f=fixture();f.parent.replacementSourceFP=fp;f.child.fp=fp;f.child.id=identity(f.child.file,fp);
+  assert.equal(replacementFollowup(f.parent,f)?.binding??null,fp.startsWith('9007')?'exact':null,fp);
+ }
 });
