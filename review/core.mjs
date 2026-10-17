@@ -61,6 +61,8 @@ async function syncDirectory(dir) {
 }
 const statOrMissing=async file=>{try{return await fs.lstat(file)}catch(e){if(e.code==='ENOENT')return null;throw e}};
 // Renaming changes ctime. Device, inode, size and mtime still identify the saved original.
+// A recorded identity that cannot be read never matches; its journal stays for inspection.
+const readableIdentity=fp=>compareIdentity(fp,fp)!=='invalid';
 const originalIdentity=(stat,fp)=>stat?.isFile()&&!stat.isSymbolicLink()&&['same','ctime-changed'].includes(compareIdentity(fp,identityOf(stat)));
 /** @param {TransactionJournal} record */
 async function restoreBackup(record) {
@@ -82,7 +84,7 @@ async function restoreBackup(record) {
 /** @param {TransactionJournal} t */
 function validJournalPaths(t) {
   return typeof t.id==='string'&&/^[A-Za-z0-9_-]+$/.test(t.id)&&typeof t.original==='string'&&path.isAbsolute(t.original)
-    &&typeof t.review==='string'&&path.isAbsolute(t.review)&&typeof t.originalFP==='string'
+    &&typeof t.review==='string'&&path.isAbsolute(t.review)
     &&t.tmp===path.join(path.dirname(t.original),`.tdarr-review-${t.id}.tmp`)
     &&t.backup===path.join(path.dirname(t.original),`.tdarr-review-${t.id}.old`)
     &&(!t.destination||validDestination(t.original,t.destination));
@@ -99,6 +101,7 @@ export async function recoverTransactions(directory) {
       t=JSON.parse(await fs.readFile(journal,'utf8'));
       if(['complete','aborted'].includes(t.phase))continue;
       if(!validJournalPaths(t))throw new Error('Neplatné cesty v záznamu výměny.');
+      if(!readableIdentity(t.originalFP)||t.reviewFP!==undefined&&!readableIdentity(t.reviewFP))throw new Error('Neplatná identita souboru v záznamu výměny.');
       if(['preparing','syncing-copy','verifying-copy','ready','original-backed-up'].includes(t.phase)&&await restoreBackup(t)){
         // Keep any unfinished replacement copy. Recovery does not delete new content.
         t.phase='aborted';t.recoveredAt=new Date().toISOString();

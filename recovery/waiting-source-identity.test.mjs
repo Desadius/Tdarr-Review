@@ -34,8 +34,9 @@ async function fixture({status,kept=false,movie}){
  const exists=async p=>!!await fs.lstat(p).catch(()=>null);
  return {c,cfg,deps,source,quarantine,downloads,exists,cleanup:()=>fs.rm(root,{recursive:true,force:true})};
 }
+const invalid=new Set(['fourFields','emptyCtime','textCtime','textDevice','sixFields','missing']);
 function expectRefusal(c,variant,message){
- assert.equal(c.observationError,message,variant);
+ assert.equal(c.observationError,invalid.has(variant)?'Recorded file identity is unreadable; quarantine preserved':message,variant);
 }
 
 test('a missing replacement returns the quarantined original only when its recorded identity matches',async()=>{
@@ -89,7 +90,7 @@ test('original location display follows the recorded identities without authoriz
   try{
    kept.c.preservedSourceFP=identityVariants(kept.c.preservedSourceFP)[variant];
    // Without a kept-copy identity the display falls back to the quarantine identity.
-   assert.equal(await publish(kept),variant==='missing'?false:!matches,'kept library copy, '+variant);
+   assert.equal(await publish(kept),variant==='missing'?false:invalid.has(variant)?null:!matches,'kept library copy, '+variant);
   }finally{await kept.cleanup()}
  }
 });

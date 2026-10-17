@@ -5,7 +5,7 @@ import {publishApproval} from './quarantine-retention.mjs';
 import {extractListeningAudio} from './audio-listen.mjs';
 import {assessment} from './assessment.mjs';
 import {extractAudio,alignment} from './audio-compare.mjs';
-import {remountOnly,durationException} from './recheck.mjs';
+import {remountOnly,unreadableIdentity,durationException} from './recheck.mjs';
 import {defaults,validate,mapReview} from './config.mjs';
 import {extractFrame} from './frames.mjs';
 import http from 'node:http';
@@ -309,7 +309,7 @@ async function scan(force=false,recheckId=null,owner=null){
         const remounted=changed&&remountOnly(prior,a.fp,b.fp);
         item.canRecheck=!!remounted;
         const rechecked=remounted&&recheckId===id;
-        if(changed&&!refreshed&&!rechecked)throw new Error('Soubory se od zařazení do review změnily. Vyžadují kontrolu.');
+        if(changed&&!refreshed&&!rechecked)throw new Error(unreadableIdentity(prior)?'Zaznamenaná identita souboru je nečitelná. Vyžaduje kontrolu.':'Soubory se od zařazení do review změnily. Vyžadují kontrolu.');
         let info=(refreshed||rechecked)?null:prior?.info;
         if(info?.evidenceVersion!==1||typeof info.reviewRequirements?.hdr!=='boolean')info=null;
         if(!info){const pa=await probe(FFPROBE,a.path),pb=await probe(FFPROBE,b.path);info={...inspect(pa,pb),reviewRequirements:reviewRequirements(pa,pb)}}

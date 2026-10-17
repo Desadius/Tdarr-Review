@@ -6,8 +6,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {identityOf,compareIdentity} from './file-identity.mjs';
 const FOREVER=253402300799000;
-// Quarantine moves and library links change the preserved original's ctime.
-const samePreserved=(current,stored)=>['same','ctime-changed'].includes(compareIdentity(stored,current));
+// Quarantine moves and library links change the preserved original's ctime. An unreadable
+// recorded identity is refused with its own reason instead of looking like a change.
+function samePreserved(current,stored){
+ const change=compareIdentity(stored,current);
+ if(change==='invalid')throw Object.assign(Error('Recorded file identity is unreadable; quarantine preserved'),{code:'FILE_IDENTITY_INVALID'});
+ return ['same','ctime-changed'].includes(change);
+}
 export function eligibleRelease(r,profile,badTitles,current){
  if(!r.downloadAllowed||badTitles.has(r.title))return false;
  const q=r.quality?.quality?.id;

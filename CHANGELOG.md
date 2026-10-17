@@ -4,6 +4,8 @@ This records the implemented application features. Versions before 1.10.0 were d
 
 ## Unreleased
 
+- A recorded file identity that cannot be read now never counts as a match and is reported with its own reason. Previously some malformed recorded values (four fields, an empty or non-numeric ctime or device) matched: quarantine retention could purge a quarantined original, Recovery could restore or remove a preserved copy, an interrupted replacement could be rolled back and a missing value produced a raw `TypeError`. Such cases now stay in place: an interrupted replacement stays pending with `Neplatná identita souboru v záznamu výměny.` (approvals stay blocked), replacement and Recovery cases show attention with `FILE_IDENTITY_INVALID`, and a changed review item is blocked with an unreadable-identity reason (English and Czech). Identity bytes, case IDs and the handling of valid identities are unchanged; every file identity is now produced and compared by one module.
+
 - AV samples of open-GOP H.264 sources no longer fail with `mmco: unref short failure` at a clip time just past a keyframe: this decoder diagnostic now qualifies for the existing single retry with 30 seconds of preroll, and the retry must pass the same strict checks. Older cached samples are re-prepared after the update (#134).
 
 - Test and Apply validate the manual Review quarantine's directory, permissions and filesystem/mount boundaries whenever Radarr is configured, including Recovery Off. Diagnostics create no directories; an unavailable quarantine is refused before activating a generation.

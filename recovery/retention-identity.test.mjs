@@ -23,8 +23,8 @@ const exists=async p=>!!await fs.lstat(p).catch(()=>null);
 
 for(const [name,copy] of Object.entries(copies)){
  test(name+' retention refuses a changed approved replacement by the kind of change',async()=>{
-  const metadata=/metadata timestamp changed/,changed=/^Error: Approved replacement changed; quarantine preserved$/;
-  const expected={same:null,ctimeChanged:metadata,deviceChanged:changed,deviceAndCtimeChanged:changed,inodeChanged:changed,fourFields:changed,emptyCtime:changed,textCtime:changed,textDevice:changed,sixFields:changed,missing:changed};
+  const metadata=/metadata timestamp changed/,changed=/^Error: Approved replacement changed; quarantine preserved$/,unreadable=/^Error: Recorded file identity is unreadable; quarantine preserved$/;
+  const expected={same:null,ctimeChanged:metadata,deviceChanged:changed,deviceAndCtimeChanged:changed,inodeChanged:changed,fourFields:unreadable,emptyCtime:unreadable,textCtime:unreadable,textDevice:unreadable,sixFields:unreadable,missing:unreadable};
   for(const [variant,error] of Object.entries(expected)){
    const s=await setup(copy);
    try{
@@ -44,7 +44,8 @@ for(const [name,copy] of Object.entries(copies)){
    try{
     s.c.fp=identityVariants(s.c.fp)[variant];
     const run=copy.retainCase(s.c,{...s,now:s.expired});
-    if(purged)await run;else await assert.rejects(run,/^Error: Quarantine file changed; preserved$/,variant);
+    const unreadable=['fourFields','emptyCtime','textCtime','textDevice','sixFields','missing'].includes(variant);
+    if(purged)await run;else await assert.rejects(run,unreadable?{code:'FILE_IDENTITY_INVALID',message:'Recorded file identity is unreadable; quarantine preserved'}:/^Error: Quarantine file changed; preserved$/,variant);
     assert.equal(await exists(s.file),!purged,variant);
     assert.equal(await exists(s.installed),true,variant);
    }finally{await s.cleanup()}

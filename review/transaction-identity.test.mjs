@@ -20,9 +20,12 @@ async function interrupted(variant,phase){
  const originalFP=identityVariants(current)[variant];
  await fs.writeFile(path.join(journals,id+'.json'),JSON.stringify({id,original,review,destination:original,tmp,backup,originalFP,reviewFP:identityOf(await fs.stat(review)),phase}));
  const exists=async p=>!!await fs.lstat(p).catch(()=>null);
- return {root,journals,original,backup,exists,cleanup:()=>fs.rm(root,{recursive:true,force:true})};
+ const backupIno=phase==='original-backed-up'?(await fs.stat(backup)).ino:null;
+ return {root,journals,original,backup,backupIno,exists,cleanup:()=>fs.rm(root,{recursive:true,force:true})};
 }
 
+// Malformed or missing recorded identities: refused with their own reason, nothing moves.
+const invalid=new Set(['fourFields','emptyCtime','textCtime','textDevice','sixFields','missing']);
 const accepted={same:true,ctimeChanged:true,deviceChanged:false,deviceAndCtimeChanged:false,inodeChanged:false,fourFields:false,emptyCtime:false,textCtime:false,textDevice:false,sixFields:false,missing:false};
 
 test('rollback of a backed-up original follows the recorded identity',async()=>{
@@ -36,8 +39,9 @@ test('rollback of a backed-up original follows the recorded identity',async()=>{
    if(restores)assert.equal(await fs.readFile(f.original,'utf8'),'ORIGINAL');
    const journal=JSON.parse(await fs.readFile(path.join(f.journals,'t1.json'),'utf8'));
    assert.equal(journal.phase,restores?'aborted':'original-backed-up',variant);
-   if(variant==='missing')assert.match(pending[0].error,/Neplatné cesty/);
+   if(invalid.has(variant))assert.equal(pending[0].error,'Neplatná identita souboru v záznamu výměny.',variant);
    else if(!restores)assert.equal(pending[0].error,undefined,variant);
+   if(!restores)assert.equal((await fs.stat(f.backup)).ino,f.backupIno,variant);
   }finally{await f.cleanup()}
  }
 });
@@ -52,4 +56,15 @@ test('an untouched original is released only when its recorded identity matches'
    assert.equal(await f.exists(f.backup),false,variant);
   }finally{await f.cleanup()}
  }
+});
+
+test('an unreadable recorded result identity also keeps the transaction for inspection',async()=>{
+ const f=await interrupted('same','original-backed-up');
+ try{
+  const file=path.join(f.journals,'t1.json'),journal=JSON.parse(await fs.readFile(file,'utf8'));
+  await fs.writeFile(file,JSON.stringify({...journal,reviewFP:'not-an-identity'}));
+  const pending=await recoverTransactions(f.journals);
+  assert.equal(pending.length,1);assert.equal(pending[0].error,'Neplatná identita souboru v záznamu výměny.');
+  assert.equal(await f.exists(f.original),false);assert.equal((await fs.stat(f.backup)).ino,f.backupIno);
+ }finally{await f.cleanup()}
 });

@@ -232,7 +232,7 @@ test('retention identity errors stay public and clear when exact approved identi
  const f=await importedFixture();try{
   const journal=await f.readJournal(),approval=await publishApproval({mediaRoot:f.media,relative:journal.replacementRelative,sourceFP:journal.replacementSourceFP,installedRelative:journal.replacementRelative,atomic:f.atomicJSON});
   const approvalDirectory=path.join(path.dirname(f.media),'.tdarr-approvals'),approvalFile=path.join(approvalDirectory,(await fs.readdir(approvalDirectory))[0]);
-  await f.atomicJSON(approvalFile,{...approval,installedFP:'changed'});await f.service.cleanup();let c=(await f.service.list())[0];assert.match(c.retentionError,/changed/);assert.equal(classifyRecovery(c).category,'attention');assert.equal(c.deleteAfter,null);
+  await f.atomicJSON(approvalFile,{...approval,installedFP:'changed'});await f.service.cleanup();let c=(await f.service.list())[0];assert.equal(c.retentionError,'Recorded file identity is unreadable; quarantine preserved');assert.equal(classifyRecovery(c).category,'attention');assert.equal(c.deleteAfter,null);
   await f.atomicJSON(approvalFile,approval);await f.service.cleanup();c=(await f.service.list())[0];assert.equal(c.retentionError,null);assert.equal(c.error,null);assert.equal(c.approvedAt,approval.approvedAt);assert.equal(classifyRecovery(c).category,'done');assert.equal(await fs.readFile(journal.originalQuarantine,'utf8'),'ORIGINAL');
  }finally{await f.cleanup()}
 });
@@ -276,6 +276,7 @@ test('Review preserves Verify pause and original-location fields from the shared
 // Recorded identities are compared without ctime: quarantine renames change it.
 const identityAccepted={same:true,ctimeChanged:true,deviceChanged:false,deviceAndCtimeChanged:false,inodeChanged:false,fourFields:false,emptyCtime:false,textCtime:false,textDevice:false,sixFields:false,missing:false};
 const statIdentity=s=>[s.dev,s.ino,s.size,s.mtimeMs,s.ctimeMs].join(':');
+const unreadableIdentity=new Set(['fourFields','emptyCtime','textCtime','textDevice','sixFields','missing']),unreadableMessage='Zaznamenaná identita souboru je nečitelná; karanténa zůstává zachovaná.';
 
 test('an interrupted handoff resumes only for the recorded replacement identity',async()=>{
  for(const [variant,resumes] of Object.entries(identityAccepted)){
@@ -288,7 +289,8 @@ test('an interrupted handoff resumes only for the recorded replacement identity'
    await f.service.observe();const after=JSON.parse(await fs.readFile(journal,'utf8'));
    assert.equal(after.phase,resumes?'imported':'queue_intent',variant);
    assert.equal(f.tdcalls.some(call=>call.p==='/api/v2/rescan-file'),resumes,variant);
-   if(!resumes)assert.equal(after.observationError,'Identita náhrady se po přerušeném předání změnila.',variant);
+   if(!resumes)assert.equal(after.observationError,unreadableIdentity.has(variant)?unreadableMessage:'Identita náhrady se po přerušeném předání změnila.',variant);
+   if(!resumes)assert.equal(classifyRecovery((await f.service.list())[0]).category,'attention',variant);
   }finally{await f.cleanup()}
  }
 });
@@ -308,8 +310,9 @@ test('restore returns a quarantined original only for its recorded identity',asy
     assert.equal((await f.service.restore(c.id)).phase,'restored',variant);
     assert.equal(await fs.readFile(f.source,'utf8'),'ORIGINAL',variant);
    }else{
-    await assert.rejects(f.service.restore(c.id),/^Error: Karanténa se změnila\.$/,variant);
+    await assert.rejects(f.service.restore(c.id),{message:unreadableIdentity.has(variant)?unreadableMessage:'Karanténa se změnila.'},variant);
     assert.equal(JSON.parse(await fs.readFile(journal,'utf8')).phase,'manual',variant);
+    assert.equal(classifyRecovery((await f.service.list())[0]).category,'attention',variant);
     assert.equal(await fs.readFile(record.originalQuarantine,'utf8'),'ORIGINAL',variant);await assert.rejects(fs.stat(f.source),{code:'ENOENT'});
    }
   }finally{await f.cleanup()}

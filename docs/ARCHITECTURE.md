@@ -23,6 +23,12 @@ Review stores transaction phases durably before continuing. The destination copy
 
 On restart, only a provably untouched original can be restored automatically. Installed or ambiguous transactions remain for inspection; their journal and temporary files must not be discarded. Concurrent approvals, rejections, settings changes and preview operations are guarded by the server, not just disabled buttons.
 
+### File identity
+
+A file identity is the text `dev:ino:size:mtimeMs:ctimeMs` of a plain `fs.Stats` (see `GLOSSARY.md`). Journals, Recovery state, approval evidence and the frozen approval registry store it, and Recovery case IDs are hashed from it, so its bytes never change. `recovery/file-identity.mjs` is its only producer (`identityOf`) and the only place that compares two identities field by field (`compareIdentity`). The comparison returns `same`, `ctime-changed` or `device-changed` when exactly that one field differs, `different` for any other difference and `invalid` when either side is not exactly five `String()` texts of finite numbers. Each caller states which change it accepts: quarantine moves, transaction backups and library links accept `ctime-changed`, a recheck after a remount accepts `device-changed`. Exact full-text equality remains where nothing may differ.
+
+An `invalid` recorded identity never matches. Transaction recovery leaves such a journal pending with the reason `Neplatná identita souboru v záznamu výměny.` and moves no file; replacement, retention and Recovery cases report `FILE_IDENTITY_INVALID` (unreadable recorded identity, quarantine preserved) as attention, and a changed review item is blocked with its own reason. Display-only uses (the original's location, the follow-up link) show an unknown location or no link.
+
 ### Server layout
 
 `review/server.mjs` loads configuration and state, recovers transactions, owns discovery (`scan`), the approval/rejection transaction (`perform`), node pausing/resuming and preview preparation, and runs the request pipeline. Every request first passes the Host check, the POST origin and JSON checks, login, authentication and, for a mutating request, the busy-policy reservation. Only then is it dispatched to the route modules in `review/routes/`:
