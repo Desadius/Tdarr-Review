@@ -14,9 +14,10 @@ export const hasNorwegianAudio=streams=>streams.some(s=>s.codec_type==='audio'&&
 
 const clone=x=>structuredClone(x);
 // A quarantine move changes ctime. An unreadable recorded identity has its own reason.
+const unreadableIdentity=()=>Object.assign(Error('Zaznamenaná identita souboru je nečitelná; karanténa zůstává zachovaná.'),{code:'FILE_IDENTITY_INVALID'});
 function recordedIdentity(stored,current){
  const change=compareIdentity(stored,current);
- if(change==='invalid')throw Object.assign(Error('Zaznamenaná identita souboru je nečitelná; karanténa zůstává zachovaná.'),{code:'FILE_IDENTITY_INVALID'});
+ if(change==='invalid')throw unreadableIdentity();
  return ['same','ctime-changed'].includes(change);
 }
 export function validateConnection(c){
@@ -189,7 +190,9 @@ export function createReplacement({data,getConfig,getConnection,safeFile,hash,at
   try{
    await pauseDispatch(item);
    const moves=[];
-   for(const [source,dest,fp]of [[c.originalQuarantine,c.sourcePath,c.originalFP],[c.reviewQuarantine,c.reviewPath,c.reviewFP]].filter(([source,dest,fp])=>source&&dest&&fp)){
+   // A quarantined file without a recorded identity is never skipped: nothing moves.
+   for(const [source,dest,fp]of [[c.originalQuarantine,c.sourcePath,c.originalFP],[c.reviewQuarantine,c.reviewPath,c.reviewFP]].filter(([source,dest])=>source&&dest)){
+    if(!fp)throw unreadableIdentity();
     let s;try{s=await fs.lstat(source)}catch(e){if(e.code!=='ENOENT')throw e;const original=await fs.lstat(dest);if(!original.isFile()||original.isSymbolicLink()||original.nlink!==1||identityOf(original)!==fp)throw Error('Původní soubor se změnil.');continue;}
     if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1||!recordedIdentity(fp,identityOf(s)))throw Error('Karanténa se změnila.');
     try{await fs.lstat(dest);throw Error('Cílový soubor už existuje.');}catch(e){if(e.code!=='ENOENT')throw e;}
