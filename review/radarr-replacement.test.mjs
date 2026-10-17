@@ -6,7 +6,7 @@ import path from 'node:path';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import {validateConnection,matchMovie,titleRegex,replacementProfile,canResume,createReplacement} from './radarr-replacement.mjs';
-import {publishApproval} from './quarantine-retention.mjs';
+import {publishApproval} from '../recovery/quarantine-retention.mjs';
 import {classifyRecovery} from './public/review-model.js';
 import {identityVariants} from './test-helpers/identity-variants.mjs';
 const profile={id:6,name:'HD',items:[{quality:{id:1,resolution:720},allowed:true},{quality:{id:2,resolution:1080},allowed:true},{quality:{id:3,resolution:2160},allowed:true}],formatItems:[{format:1,score:5},{format:2,score:-10000}],minFormatScore:1};
@@ -176,6 +176,24 @@ test('changed source root/library or unsafe replacement path does not query or m
  }finally{await f.cleanup()}
 });
 
+test('a waiting request shows Radarr download progress and a blocked import',async()=>{
+ const f=await fixture();try{
+  await f.service.run(f.item,'reason');
+  f.setQueue([{movieId:42,title:'Film.2026.1080p.REMUX-OTHER',status:'completed',trackedDownloadState:'importBlocked',trackedDownloadStatus:'warning',size:100,sizeleft:25,statusMessages:[{messages:['Manual Import required.']}]}]);
+  await f.service.observe();
+  const [q]=(await f.service.list())[0].queue;
+  assert.deepEqual({percent:q.percent,error:q.error,state:q.trackedDownloadState},{percent:75,error:'Manual Import required.',state:'importBlocked'});
+ }finally{await f.cleanup()}
+});
+test('a handoff target that is not a normalized absolute path never reaches Tdarr',async()=>{
+ const f=await fixture();try{
+  f.cfg.sourceRoots=['/media//movies'];await f.service.run(f.item,'reason');
+  const file=path.join(f.media,'Film/new.mkv');await fs.writeFile(file,'REPLACEMENT');const old=new Date(Date.now()-700000);await fs.utimes(file,old,old);
+  f.movie.movieFileId=8;f.movie.movieFile={id:8,path:'/rad/movies/Film/new.mkv',size:11,sceneName:'Film.2026.1080p.REMUX-OTHER',quality:{quality:{name:'Bluray-1080p'}},languages:[{name:'English'}]};
+  const before=f.tdcalls.length;await f.service.observe();
+  const c=(await f.service.list())[0];assert.equal(c.phase,'queue_intent');assert.match(c.error,/Invalid Tdarr handoff target/);assert.deepEqual(f.tdcalls.slice(before),[]);
+ }finally{await f.cleanup()}
+});
 test('temporary imported observation failure clears after a verified read, without replaying handoff',async()=>{
  const f=await importedFixture();try{
   const before=f.tdcalls.length;f.setTdfailure(Error('Tdarr timeout'));await f.service.observe();let c=(await f.service.list())[0];

@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {requestArtworkIdentity} from '../artwork.mjs';
 import {statistics} from '../stats.mjs';
-import {quarantineRetention} from '../quarantine-retention.mjs';
+import {quarantineRetention} from '../../recovery/quarantine-retention.mjs';
 import {body,reply,apiError} from './http.mjs';
 import {logEvent} from '../log.mjs';
 import {readRecoveryRuntime} from '../recovery-runtime.mjs';
