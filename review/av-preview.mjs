@@ -25,7 +25,7 @@ export function canRetryPreviewSeek(error,{seconds,video,signal}={}){
  const diagnostics=previewErrors(error?.previewDiagnostics||'').trim();if(!diagnostics)return false;
  return diagnostics.split(/\r?\n/).every(line=>{
   const match=/^\[h264 @ (?:0x)?[0-9a-f]+\]\s*(.*)$/i.exec(line.trim());if(!match)return false;
-  return /^(?:top block unavailable for requested intra mode(?:\s+-?\d+)?|Reference\s+\d+\s*>=\s*\d+|error while decoding MB\s+\d+\s+\d+(?:,\s*bytestream\s+-?\d+)?)\s*$/i.test(match[1]);
+  return /^(?:top block unavailable for requested intra mode(?:\s+-?\d+)?|Reference\s+\d+\s*>=\s*\d+|error while decoding MB\s+\d+\s+\d+(?:,\s*bytestream\s+-?\d+)?|mmco: unref short failure)\s*$/i.test(match[1]);
  });
 }
 export async function withPreviewSeekRetry(run,context){

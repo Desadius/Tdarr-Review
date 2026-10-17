@@ -4,6 +4,8 @@ This records the implemented application features. Versions before 1.10.0 were d
 
 ## Unreleased
 
+- AV samples of open-GOP H.264 sources no longer fail with `mmco: unref short failure` at a clip time just past a keyframe: this decoder diagnostic now qualifies for the existing single retry with 30 seconds of preroll, and the retry must pass the same strict checks. Older cached samples are re-prepared after the update (#134).
+
 - Test and Apply validate the manual Review quarantine's directory, permissions and filesystem/mount boundaries whenever Radarr is configured, including Recovery Off. Diagnostics create no directories; an unavailable quarantine is refused before activating a generation.
 
 - Add guided shared Review/Recovery settings in English and Czech: persistent offline drafts, explicit diagnostics and Apply/Cancel, complete atomic configuration generations, safe Recovery drain/restart, migration choices, protected frozen/in-flight mappings and bounded private audit history. Recovery mode remains controlled by RECOVERY_MODE; saving never starts repairs.
