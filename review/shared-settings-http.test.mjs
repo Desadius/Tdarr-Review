@@ -28,7 +28,7 @@ for(const kind of ['symlink-parent','symlink-target','file-target','unwritable-p
 for(const kind of ['parent','target'])test(`HTTP manual quarantine diagnostics require ${kind}-directory traversal permission`,linuxServer,async t=>{
  const f=await reviewFixture(),restricted=path.join(f.root,'manual-no-search'),target=kind==='parent'?path.join(restricted,'manual'):restricted;t.after(async()=>{await fs.chmod(restricted,0o700);await f.close();});await fs.mkdir(restricted,{mode:0o666});
  const current=await f.get('/api/shared-settings'),save=await f.post('/api/shared-settings/draft',{revision:current.revision,patch:{radarr:{url:f.mockBase,apiKey:'synthetic-search-permission-key',mediaRoot:'/fixture-library',quarantineRoot:target}}});assert.equal(save.status,200);
- const response=await f.post('/api/shared-settings/test',{revision:(await save.json()).revision});assert.equal(response.status,process.getuid()===0?200:409,'diagnostics must honor the running user directory-search permission');assert.equal((await f.get('/api/shared-settings')).generation,0);
+ const response=await f.post('/api/shared-settings/test',{revision:(await save.json()).revision});assert.equal(response.status,409,'directories without search permission must fail diagnostics');assert.equal((await f.get('/api/shared-settings')).generation,0);
 });
 
 test('HTTP manual quarantine diagnostics permit a missing target without creating it in Test or Off Apply',linuxServer,async t=>{
