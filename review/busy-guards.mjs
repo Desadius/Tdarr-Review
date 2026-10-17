@@ -5,6 +5,7 @@ const foreground=['foreground','active','batchRunning','resumeTask','previewBusy
 const settled=['recovery','pauses'];
 const scan=['scan'];
 export const BUSY_POLICIES=Object.freeze({
+ sharedSettings:Object.freeze([...foreground]),
  // These actions join an existing scan for their own fresh preflight. Their
  // reservation prevents a second mutation while that scan is awaited.
  approve:Object.freeze([...foreground,...settled]),
@@ -46,6 +47,7 @@ export function busyFor(kind,activities){
 // its existing independent authentication/session persistence rules.
 export function mutationKind(method,pathname){
  if(method!=='POST')return null;
+ if(/^\/api\/shared-settings\/(?:draft|test)$/.test(pathname))return 'sharedSettings';
  if(/^\/api\/settings(?:\/test)?$/.test(pathname))return 'settings';
  if(/^\/api\/radarr\/settings(?:\/test)?$/.test(pathname))return 'radarrSettings';
  if(pathname==='/api/preview-settings')return 'previewSettings';

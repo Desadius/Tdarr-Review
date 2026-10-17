@@ -33,16 +33,17 @@ export async function serverHarness(){
     req.on('error',reject);req.end(body===undefined?undefined:JSON.stringify(body));
    });
   };
-  const close=async()=>{
-   try{
+  const stopProcess=async()=>{
     if(child&&child.exitCode===null&&child.signalCode===null){
      const closed=new Promise(resolve=>child.once('close',resolve));child.kill('SIGTERM');
      try{await deadline(closed,'server shutdown')}catch(error){child.kill('SIGKILL');await closed;throw error}
     }
-   }finally{await fs.rm(root,{recursive:true,force:true})}
   };
-  return {root,data,media,review,port,base,request,close,diagnostics:()=>diagnostics,output:()=>output,
-   async start({settings={},state,preload,clock=false,traceRoutes=false,env={}}={}){
+  const close=async()=>{
+   try{await stopProcess();}finally{await fs.rm(root,{recursive:true,force:true})}
+  };
+  return {root,data,media,review,port,base,request,close,stop:stopProcess,diagnostics:()=>diagnostics,output:()=>output,
+   async start({settings={},state,preload,clock=false,traceRoutes=false,env={},supervisor=false}={}){
     try{
      // Every default endpoint is loopback; missing synthetic databases fail closed.
      const config={...defaults({MEDIA_ROOT:media,REVIEW_ROOT:review,TDARR_DB:path.join(root,'missing.db'),TDARR_URL:base,PUBLIC_ORIGIN:base}),...settings};
@@ -54,7 +55,11 @@ export async function serverHarness(){
      const trace=path.join(root,'route-calls.jsonl');
      if(traceRoutes)await fs.writeFile(trace,'');
      if(clock||traceRoutes)args.push('--require',fileURLToPath(new URL('./server-preload.cjs',import.meta.url)));
-     args.push(fileURLToPath(new URL('../server.mjs',import.meta.url)));
+     if(supervisor){
+      const launcher=path.join(root,'supervised.mjs');
+      await fs.writeFile(launcher,`import {supervise} from ${JSON.stringify(new URL('../supervisor.mjs',import.meta.url).href)};process.exit(await supervise({mode:process.env.RECOVERY_MODE,dataRoot:process.env.DATA_ROOT,review:[process.execPath,...${JSON.stringify(args)},${JSON.stringify(fileURLToPath(new URL('../server.mjs',import.meta.url)))}],recovery:[process.execPath,${JSON.stringify(fileURLToPath(new URL('../../recovery/worker.mjs',import.meta.url)))}],lowPriority:[]}));`);
+      args.length=0;args.push(launcher);
+     }else args.push(fileURLToPath(new URL('../server.mjs',import.meta.url)));
      child=spawn(process.execPath,args,{env:{...process.env,...env,DATA_ROOT:data,PORT:String(port),REVIEW_TEST_CLOCK:clock?'1':'0',REVIEW_TEST_TRACE:traceRoutes?trace:''},stdio:['ignore','pipe','pipe',...(clock?['ipc']:[])]});
      await deadline(new Promise((resolve,reject)=>{
       child.stdout.on('data',chunk=>{output+=chunk;if(String(chunk).includes('Tdarr Review listening'))resolve()});

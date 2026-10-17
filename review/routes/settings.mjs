@@ -1,31 +1,21 @@
-import {hash,atomicJSON} from '../core.mjs';
-import {validate,checkPaths} from '../config.mjs';
-import {body,reply,apiError} from './http.mjs';
+import {body,reply} from './http.mjs';
+import {settingsError,failedSettingsSave} from './shared-settings.mjs';
 import {logEvent} from '../log.mjs';
 
-// Tdarr connection and path settings. Saving resets cached items, previews and review sessions.
-export async function settingsRoutes(ctx,req,res,url,request){
- if(url.pathname==='/api/settings'&&req.method==='GET')return reply(res,200,{config:ctx.config,revision:hash(JSON.stringify(ctx.config))});
+// Legacy editor compatibility: Save stages the shared draft; only explicit Apply activates it.
+export async function settingsRoutes(ctx,req,res,url){
+ if(url.pathname==='/api/settings'&&req.method==='GET'){
+  const shared=await ctx.sharedSettings.public();return reply(res,200,{config:ctx.config,revision:shared.revision,draft:shared.draft,managed:shared.managed});
+ }
  if(['/api/settings/test','/api/settings'].includes(url.pathname)&&req.method==='POST'){
-  const b=await body(req);
-  if(ctx.busyFor('settings',request.mutation))return reply(res,409,apiError('finish_actions_preview_recovery'));
-  if(b.revision!==hash(JSON.stringify(ctx.config)))return reply(res,409,apiError('settings_changed'));
-  ctx.settingsBusy=true;
+  let saving=false;
   try{
-   const candidate=validate(b.config);await checkPaths(candidate);
-   const r=await fetch(candidate.tdarrUrl+'/api/v2/get-nodes',{signal:AbortSignal.timeout(12000)});
-   if(!r.ok)throw Error('Připojení k Tdarru selhalo: '+r.status);
-   const nodes=await r.json();if(!nodes||typeof nodes!=='object'||Array.isArray(nodes))throw Error('Neplatná odpověď Tdarru.');
-   const libraries=await ctx.readRows('librarysettingsjsondb',candidate);await ctx.readRows('jobsjsondb',candidate);
-   const matches=libraries.filter(l=>candidate.libraryId?l._id===candidate.libraryId:candidate.sourceRoots.includes(String(l.folder).replace(/\/$/,'')));
-   if(matches.length!==1||!candidate.sourceRoots.includes(String(matches[0].folder).replace(/\/$/,'')))throw Error('Vyber jednoznačnou knihovnu a její zdrojovou cestu v Tdarru.');
-   if(url.pathname==='/api/settings'){
-    await ctx.previews.invalidate({all:true});ctx.previewPairs.clear();ctx.previewPlans.clear();ctx.previewAttempts.clear();
-    await atomicJSON(ctx.configfile,candidate);ctx.config=candidate;ctx.applyConfig();ctx.statsCache=null;ctx.state.items={};ctx.state.reviewSessions={};ctx.cache=null;ctx.cacheAt=0;await ctx.save();
-    logEvent('settings.saved',{publicOrigin:candidate.publicOrigin,tdarrUrl:candidate.tdarrUrl,mediaRoot:candidate.mediaRoot,reviewRoot:candidate.reviewRoot,libraryId:candidate.libraryId});
-   }
-   return reply(res,200,{ok:true,message:'Připojení, databáze a cesty jsou dostupné.',publicOrigin:candidate.publicOrigin,revision:hash(JSON.stringify(ctx.config))});
-  }finally{ctx.settingsBusy=false}
+   const input=await body(req);
+   if(url.pathname.endsWith('/test')){await ctx.settingsApply.test(input);return reply(res,200,{ok:true});}
+   saving=true;await ctx.sharedSettings.saveDraft({revision:input.revision,patch:{review:input.config},resolutions:input.resolutions||[],acknowledgeHistory:input.acknowledgeHistory});
+   logEvent('settings.saved',{draft:true,active:false});
+   return reply(res,200,{ok:true,...await ctx.sharedSettings.public()});
+  }catch(error){return reply(res,error.status||409,saving?await failedSettingsSave(ctx.sharedSettings,error):settingsError(error));}
  }
  return false;
 }

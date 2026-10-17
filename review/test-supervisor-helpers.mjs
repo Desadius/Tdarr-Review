@@ -31,9 +31,10 @@ if(kind==='crash-after')setTimeout(()=>exit(1),Number(code));
 if(kind==='refuse'){process.stderr.write('Recovery refused to start: config.json does not exist\nRECOVERY_REFUSED '+code+'\n',()=>exit(78));}
 `;
 
-export async function start({mode,review='serve',recovery='serve',restart={initialMs:200,maxMs:800,crashLoopAfter:3,stableMs:60000},env={},reviewCommand,...extra}={}){
+export async function start({mode,review='serve',recovery='serve',restart={initialMs:200,maxMs:800,crashLoopAfter:3,stableMs:60000},env={},reviewCommand,beforeStart,...extra}={}){
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'supervisor-')),dataRoot=path.join(root,'data'),events=path.join(root,'events.log');
  await fs.mkdir(dataRoot);
+ await beforeStart?.({dataRoot});
  const standIn=path.join(root,'stand-in.cjs'),launcher=path.join(root,'launcher.mjs');
  await fs.writeFile(standIn,STAND_IN);
  await fs.writeFile(launcher,'import {supervise} from '+JSON.stringify(new URL('./supervisor.mjs',import.meta.url).href)+';\nprocess.exit(await supervise(JSON.parse(process.env.SUPERVISE_OPTIONS)));\n');

@@ -2,7 +2,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {migrateApprovalRegistry} from '../recovery/approval-registry.mjs';
-import {RecoveryRefusal,readRecoveryConfig} from '../recovery/recovery-mode.mjs';
+import {RecoveryRefusal} from '../recovery/recovery-mode.mjs';
+import {readRuntimeRecoveryConfig} from '../recovery/managed-config.mjs';
 
 // Offline only. Stop Recovery before invoking this tool. It never calls an API,
 // changes a movie, or derives authorization from the persisted case journal.
@@ -16,7 +17,7 @@ export async function main(args=process.argv.slice(2),env=process.env){
  const data=options['--data'];
  // Avoid printing filesystem errors or raw private JSON on failure.
  // Validate against the configuration the worker would run with, including RECOVERY_MODE.
- const {cfg}=await readRecoveryConfig({file:path.join(data,'config.json'),mode:env.RECOVERY_MODE});
+ const {cfg}=await readRuntimeRecoveryConfig({data,mode:env.RECOVERY_MODE,checkActivation:false});
  const state=JSON.parse(await fs.readFile(path.join(data,'state.json'),'utf8'));
  return migrateApprovalRegistry({source:options['--source'],data,cfg,state});
 }

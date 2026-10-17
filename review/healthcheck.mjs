@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import http from 'node:http';
 import {fileURLToPath} from 'node:url';
+import {readActiveSettings} from './shared-settings.mjs';
 
 // Probe the local listener while retaining the application's configured Host.
 // Saved settings override environment defaults, as they do in server.mjs.
@@ -35,7 +36,8 @@ function localGet(host,port){
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  try{
   const file=path.join(process.env.DATA_ROOT||'/data','settings.json');
-  const saved=JSON.parse(await fs.readFile(file,'utf8').catch(e=>{
+  const active=await readActiveSettings(path.dirname(file),{checkPrivate:false});
+  const saved=active?.review||JSON.parse(await fs.readFile(file,'utf8').catch(e=>{
    if(e.code!=='ENOENT')throw e;
    return '{}';
   }));

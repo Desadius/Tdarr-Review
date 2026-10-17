@@ -32,12 +32,14 @@ test('HTTP every mutating route is excluded during an approval; read-only previe
  }finally{await f.close()}
 });
 
-for(const route of ['/api/settings','/api/settings/test','/api/radarr/settings','/api/radarr/settings/test'])test(`HTTP approval cannot overlap ${route}`,linux,async()=>{
+for(const route of ['/api/settings/test','/api/radarr/settings/test'])test(`HTTP approval cannot overlap ${route}`,linux,async()=>{
  const f=await fixture();try{
   const item=(await f.items()).items[0];await f.confirm(item);
-  const radarr=route.includes('/radarr/'),settings=radarr?null:await f.get('/api/settings');
+  const radarr=route.includes('/radarr/');
+  if(radarr){const current=await f.get('/api/radarr/settings');assert.equal((await f.post('/api/radarr/settings',{revision:current.revision,url:f.mockBase,apiKey:'synthetic-test-key',mediaRoot:'/fixture-library',preferCzechEnglish:true})).status,200);}
+  const settings=await f.get('/api/settings');
   const gate=f.hold(radarr?'/api/v3/system/status':'/api/v2/get-nodes');
-  const pending=f.post(route,radarr?{url:f.mockBase,apiKey:'synthetic-test-key',mediaRoot:'/fixture-library',preferCzechEnglish:true}:settings);
+  const pending=f.post(route,settings);
   // A request that answers before reaching the gated call failed early; report why instead of timing out.
   await deadline(Promise.race([gate.entered,pending.then(async response=>{throw Error('settings request finished before validation reached Tdarr: '+response.status+' '+await response.clone().text()+' '+f.diagnostics())})]),'settings validation');assert.equal((await f.approve(item)).status,409);assert.equal((await f.post('/api/approve-batch',{items:[item]})).status,409);
   gate.release();const result=await pending;assert.equal(result.status,200,await result.clone().text());assert.deepEqual(await f.journals(),[]);await f.preserved();
@@ -62,7 +64,7 @@ for(const state of ['pauses','recovery'])test(`HTTP ${state} blocks media mutati
   assert.equal((await f.post('/api/approve-batch',{items:[item]})).status,409);assert.equal((await f.post(`/api/radarr/requests/${'f'.repeat(24)}/restore`,{confirm:true})).status,409);
   const settings=await f.get('/api/settings');assert.equal((await f.post('/api/settings/test',settings)).status,409);assert.equal((await f.post('/api/settings',settings)).status,409);
   const cacheSettings=await f.get('/api/preview-settings');assert.equal((await f.post('/api/preview-settings',cacheSettings)).status,200);
-  for(const route of ['/api/radarr/settings','/api/radarr/settings/test'])assert.equal((await f.post(route,{url:f.mockBase,apiKey:'synthetic-test-key',mediaRoot:'/fixture-library',preferCzechEnglish:true})).status,200,route);
+  for(const route of ['/api/radarr/settings','/api/radarr/settings/test']){const current=await f.get('/api/radarr/settings');assert.equal((await f.post(route,{revision:current.revision,url:f.mockBase,apiKey:'synthetic-test-key',mediaRoot:'/fixture-library',preferCzechEnglish:true})).status,200,route);}
   assert.equal((await f.post(`/api/items/${item.id}/frames`,{snapshot:item.snapshot,seconds:0})).status,200);
   const remaining=await f.items();assert.equal(remaining.history.length,0);assert.equal(state==='pauses'?remaining.restorePending:remaining.recovery.length,1);assert.equal((await f.journals()).length,state==='recovery'?1:0);await f.preserved();
  }finally{await f.close()}
