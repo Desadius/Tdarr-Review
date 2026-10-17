@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {safeFile,fingerprint,replaceChecked,inspect,recoverTransactions} from './core.mjs';
+import {safeFile,replaceChecked,inspect,recoverTransactions} from './core.mjs';
+import {identityOf} from '../recovery/file-identity.mjs';
 const directorySync={skip:process.platform==='win32'?'Requires POSIX directory fsync for durable replacement journals':false};
 const fileSymlink={skip:process.platform==='win32'?'File symlinks require Windows Developer Mode or elevated privileges; covered by the Linux suite':false};
 
@@ -18,12 +19,12 @@ test('file symlinks are rejected',fileSymlink,async()=>{
 test('approval replaces only the selected original and cleans completed transaction',directorySync,async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'review-test-'));
  try {const original=path.join(root,'movie.mkv'),review=path.join(root,'review.mkv'),journal=path.join(root,'transaction.json');await fs.writeFile(original,'original film');await fs.writeFile(review,'new film');await fs.writeFile(path.join(root,'other.mkv'),'keep');
- const updates=[];await replaceChecked({original,review,journal,originalFP:fingerprint(await fs.stat(original)),reviewFP:fingerprint(await fs.stat(review)),onProgress:p=>updates.push(p)});assert(updates.some(p=>p.phase==='preparing'&&p.done===8&&p.total===8));assert(updates.some(p=>p.phase==='verifying-copy'&&p.done===16&&p.total===16));assert.equal(await fs.readFile(original,'utf8'),'new film');assert.equal(await fs.readFile(path.join(root,'other.mkv'),'utf8'),'keep');await assert.rejects(fs.stat(review));assert.equal(JSON.parse(await fs.readFile(journal)).phase,'complete');assert.equal((await fs.readdir(root)).filter(n=>n.endsWith('.old')||n.endsWith('.tmp')).length,0)
+ const updates=[];await replaceChecked({original,review,journal,originalFP:identityOf(await fs.stat(original)),reviewFP:identityOf(await fs.stat(review)),onProgress:p=>updates.push(p)});assert(updates.some(p=>p.phase==='preparing'&&p.done===8&&p.total===8));assert(updates.some(p=>p.phase==='verifying-copy'&&p.done===16&&p.total===16));assert.equal(await fs.readFile(original,'utf8'),'new film');assert.equal(await fs.readFile(path.join(root,'other.mkv'),'utf8'),'keep');await assert.rejects(fs.stat(review));assert.equal(JSON.parse(await fs.readFile(journal)).phase,'complete');assert.equal((await fs.readdir(root)).filter(n=>n.endsWith('.old')||n.endsWith('.tmp')).length,0)
  }finally{await fs.rm(root,{recursive:true,force:true})}
 });
 test('changed source and interrupted commit never overwrite original',directorySync,async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'review-test-'));
- try{const original=path.join(root,'movie.mkv'),review=path.join(root,'review.mkv'),journal=path.join(root,'transaction.json');await fs.writeFile(original,'original');await fs.writeFile(review,'new');const originalFP=fingerprint(await fs.stat(original)),reviewFP=fingerprint(await fs.stat(review));
+ try{const original=path.join(root,'movie.mkv'),review=path.join(root,'review.mkv'),journal=path.join(root,'transaction.json');await fs.writeFile(original,'original');await fs.writeFile(review,'new');const originalFP=identityOf(await fs.stat(original)),reviewFP=identityOf(await fs.stat(review));
  await assert.rejects(replaceChecked({original,review,journal,originalFP,reviewFP,beforeCommit:async()=>{throw new Error('Tdarr started')}}));assert.equal(await fs.readFile(original,'utf8'),'original');assert.equal(await fs.readFile(review,'utf8'),'new');assert.equal((await fs.readdir(root)).filter(n=>n.endsWith('.old')||n.endsWith('.tmp')).length,0);
  assert.equal(JSON.parse(await fs.readFile(journal,'utf8')).phase,'aborted');assert.deepEqual(await recoverTransactions(root),[]);
  await fs.writeFile(original,'changed');await assert.rejects(replaceChecked({original,review,journal,originalFP,reviewFP}));assert.equal(await fs.readFile(original,'utf8'),'changed');
@@ -35,7 +36,7 @@ test('failed swap rolls back the exact original and records a terminal abort',di
  try{
   const original=path.join(root,'movie.mkv'),review=path.join(root,'review.mkv'),journal=path.join(root,'transaction.json');
   await fs.writeFile(original,'original film');await fs.writeFile(review,'new film');
-  await assert.rejects(replaceChecked({original,review,journal,originalFP:fingerprint(await fs.stat(original)),reviewFP:fingerprint(await fs.stat(review)),onStage:phase=>{if(phase==='original-backed-up')throw new Error('Simulated failure before installation')}}));
+  await assert.rejects(replaceChecked({original,review,journal,originalFP:identityOf(await fs.stat(original)),reviewFP:identityOf(await fs.stat(review)),onStage:phase=>{if(phase==='original-backed-up')throw new Error('Simulated failure before installation')}}));
   assert.equal(await fs.readFile(original,'utf8'),'original film');assert.equal(await fs.readFile(review,'utf8'),'new film');
   assert.equal((await fs.stat(original)).nlink,1);assert.equal(JSON.parse(await fs.readFile(journal,'utf8')).phase,'aborted');
   assert.deepEqual(await recoverTransactions(root),[]);
@@ -45,7 +46,7 @@ test('failed swap rolls back the exact original and records a terminal abort',di
 async function recoveryFixture(root,phase){
  const id='fixture',original=path.join(root,'movie.mkv'),review=path.join(root,'review.mkv'),tmp=path.join(root,`.tdarr-review-${id}.tmp`),backup=path.join(root,`.tdarr-review-${id}.old`),journal=path.join(root,'transaction.json');
  await fs.writeFile(original,'original film');await fs.writeFile(review,'new film');await fs.copyFile(review,tmp);
- const record={id,original,review,tmp,backup,originalFP:fingerprint(await fs.stat(original)),reviewFP:fingerprint(await fs.stat(review)),phase};
+ const record={id,original,review,tmp,backup,originalFP:identityOf(await fs.stat(original)),reviewFP:identityOf(await fs.stat(review)),phase};
  await fs.writeFile(journal,JSON.stringify(record));return {...record,journal};
 }
 

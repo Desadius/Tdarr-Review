@@ -6,6 +6,7 @@ import {validatePending} from './pending-approved.mjs';
 import {identity,relative} from './policy.mjs';
 import {canonical,sameValue,frozenConfigDifference} from './frozen-config.mjs';
 import {text,relativePrefix} from './config-values.mjs';
+import {identityOf} from './file-identity.mjs';
 
 const NAME='pending-approvals.json',MAX_BYTES=2*1024*1024;
 const object=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
@@ -15,7 +16,6 @@ const equal=sameValue;
 function freeze(value){if(object(value)||Array.isArray(value)){for(const child of Object.values(value))freeze(child);Object.freeze(value);}return value;}
 const digest=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
 const normalized=p=>process.platform==='win32'?path.resolve(p).toLowerCase():path.resolve(p);
-const stamp=s=>[s.dev,s.ino,s.size,s.mtimeMs,s.ctimeMs].join(':');
 
 async function directory(data){
  if(!text(data)||!path.isAbsolute(data))fail('data directory must be absolute');
@@ -32,13 +32,13 @@ async function readPrivate(file){
   if(process.platform!=='win32'&&(l.mode&0o022))fail('evidence must not be writable by group or others');
   h=await fs.open(file,constants.O_RDONLY|(constants.O_NOFOLLOW||0));
   const before=await h.stat();
-  if(!before.isFile()||before.nlink!==1||stamp(before)!==stamp(l))fail('evidence changed while opening');
+  if(!before.isFile()||before.nlink!==1||identityOf(before)!==identityOf(l))fail('evidence changed while opening');
   const buffer=Buffer.alloc(MAX_BYTES+1);let length=0;
   while(length<buffer.length){const {bytesRead}=await h.read(buffer,length,buffer.length-length,null);if(!bytesRead)break;length+=bytesRead;}
   if(length>MAX_BYTES)fail('evidence file size is outside the supported limit');
   const bytes=buffer.subarray(0,length),after=await h.stat();
-  if(bytes.length!==before.size||stamp(before)!==stamp(after))fail('evidence changed while reading');
-  return {bytes,stamp:stamp(after)};
+  if(bytes.length!==before.size||identityOf(before)!==identityOf(after))fail('evidence changed while reading');
+  return {bytes,stamp:identityOf(after)};
  }finally{await h?.close();}
 }
 function parse(bytes){try{return JSON.parse(bytes.toString('utf8'));}catch{fail('invalid JSON');}}

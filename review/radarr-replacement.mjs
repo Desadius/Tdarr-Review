@@ -1,7 +1,8 @@
 import {downloadQueue} from './download-queue.mjs';
 import {readRecoveryRuntime} from './recovery-runtime.mjs';
 import {ensureHandoff} from './replacement-handoff.mjs';
-import {retainCase,fp as retentionFP,quarantineRetention} from './quarantine-retention.mjs';
+import {retainCase,quarantineRetention} from './quarantine-retention.mjs';
+import {identityOf,compareIdentity} from '../recovery/file-identity.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -12,6 +13,12 @@ const runProbe=promisify(execFile);
 export const hasNorwegianAudio=streams=>streams.some(s=>s.codec_type==='audio'&&['nor','no','nob','nb','nno','nn'].includes(String(s.tags?.language||'').toLowerCase())&&!/commentary|komentar|commentaire/i.test(s.tags?.title||''));
 
 const clone=x=>structuredClone(x);
+// A quarantine move changes ctime. An unreadable recorded identity has its own reason.
+function recordedIdentity(stored,current){
+ const change=compareIdentity(stored,current);
+ if(change==='invalid')throw Object.assign(Error('Zaznamenaná identita souboru je nečitelná; karanténa zůstává zachovaná.'),{code:'FILE_IDENTITY_INVALID'});
+ return ['same','ctime-changed'].includes(change);
+}
 export function validateConnection(c){
  if(!c||typeof c.url!=='string'||typeof c.apiKey!=='string'||!c.apiKey.trim()||!c.mediaRoot?.startsWith('/')||c.mediaRoot==='/'||c.mediaRoot.includes('\\')||c.mediaRoot.split('/').some(v=>v==='..'||v==='.')||typeof c.preferCzechEnglish!=='boolean')throw Error('Vyplň adresu Radarru, API klíč a cestu knihovny v Radarru.');
  const u=new URL(c.url);if(!['http:','https:'].includes(u.protocol)||u.username||u.password||u.search||u.hash)throw Error('Neplatná adresa Radarru.');
@@ -157,9 +164,9 @@ export function createReplacement({data,getConfig,getConnection,safeFile,hash,at
     if(c.searchId){const s=await api(con,'/command/'+c.searchId);c.search={id:s.id,status:s.status,message:s.message};}
     if(m.movieFileId&&m.movieFileId!==c.oldFileId){
      const root=con.mediaRoot+'/',f=m.movieFile;if(!f?.path?.startsWith(root)||f.sceneName&&new RegExp(titleRegex(c.sourceTitle),'i').test(f.sceneName))throw Error('Importovaná kopie je původní vydání nebo má neplatnou cestu.');
-     const relative=f.path.slice(root.length),s=await safeFile(cfg.mediaRoot,relative);if(s.stat.size!==f.size)throw Error('Velikost importu se neshoduje.');if(c.phase==='queue_intent'&&(relative!==c.replacementRelative||retentionFP(s.stat).split(':').slice(0,4).join(':')!==c.replacementSourceFP.split(':').slice(0,4).join(':')))throw Error('Identita náhrady se po přerušeném předání změnila.');
+     const relative=f.path.slice(root.length),s=await safeFile(cfg.mediaRoot,relative);if(s.stat.size!==f.size)throw Error('Velikost importu se neshoduje.');if(c.phase==='queue_intent'&&(relative!==c.replacementRelative||!recordedIdentity(c.replacementSourceFP,identityOf(s.stat))))throw Error('Identita náhrady se po přerušeném předání změnila.');
      c.replacement={title:f.sceneName,quality:f.quality?.quality?.name,languages:(f.languages||[]).map(v=>v.name),bytes:f.size};
-     c.replacementRelative=relative;c.replacementSourceFP=retentionFP(s.stat);
+     c.replacementRelative=relative;c.replacementSourceFP=identityOf(s.stat);
      if(Date.now()-s.stat.mtimeMs<600000){c.message='Nová kopie je importovaná; čekám 10 minut na stabilní soubor.';observed(c);await persist(c);continue;}
      if(c.nativeAudioRepair){const probe=JSON.parse((await runProbe(cfg.ffprobe,['-v','error','-show_streams','-of','json',s.path],{timeout:60000,maxBuffer:4000000})).stdout);if(!hasNorwegianAudio(probe.streams||[]))throw Error('Náhrada nemá označený norský dialog; karanténa zůstává zachovaná.');if((await safeFile(cfg.mediaRoot,relative)).fp!==s.fp)throw Error('Import se během kontroly zvuku změnil.');c.nativeAudioVerifiedAt=new Date().toISOString();}
      if(!cfg.libraryId)throw Error('Pro automatické předání vyplň ID knihovny Tdarr.');
@@ -183,8 +190,8 @@ export function createReplacement({data,getConfig,getConnection,safeFile,hash,at
    await pauseDispatch(item);
    const moves=[];
    for(const [source,dest,fp]of [[c.originalQuarantine,c.sourcePath,c.originalFP],[c.reviewQuarantine,c.reviewPath,c.reviewFP]].filter(([source,dest,fp])=>source&&dest&&fp)){
-    let s;try{s=await fs.lstat(source)}catch(e){if(e.code!=='ENOENT')throw e;const original=await fs.lstat(dest);if(!original.isFile()||original.isSymbolicLink()||original.nlink!==1||[original.dev,original.ino,original.size,original.mtimeMs,original.ctimeMs].join(':')!==fp)throw Error('Původní soubor se změnil.');continue;}
-    if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1||[s.dev,s.ino,s.size,s.mtimeMs].join(':')!==fp.split(':').slice(0,-1).join(':'))throw Error('Karanténa se změnila.');
+    let s;try{s=await fs.lstat(source)}catch(e){if(e.code!=='ENOENT')throw e;const original=await fs.lstat(dest);if(!original.isFile()||original.isSymbolicLink()||original.nlink!==1||identityOf(original)!==fp)throw Error('Původní soubor se změnil.');continue;}
+    if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1||!recordedIdentity(fp,identityOf(s)))throw Error('Karanténa se změnila.');
     try{await fs.lstat(dest);throw Error('Cílový soubor už existuje.');}catch(e){if(e.code!=='ENOENT')throw e;}
     const root=source===c.originalQuarantine?cfg.mediaRoot:cfg.reviewRoot;if((await fs.realpath(path.dirname(dest)))!==path.dirname(dest)||!dest.startsWith(await fs.realpath(root)+path.sep))throw Error('Cílová cesta se změnila.');
     moves.push([source,dest]);

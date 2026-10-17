@@ -69,7 +69,7 @@ Pause maintenance nodes in Tdarr **before** starting a Review replacement or rep
 
 Inspect the film's detail and durable journal. Preserve `.tdarr-review-*.old`, `.tmp` files and incomplete JSON transactions. A timeout is not proof that a remote mutation failed; verify actual Tdarr/Radarr state before retrying. Review's replacement handoff avoids duplicate queueing when it can prove the same file is already queued or processed.
 
-`manual` means an identity, mapping or mutation could not be verified. It does not mean a quarantined file should be deleted. `Not required` means Tdarr skipped the encoding decision, not that the file is healthy or already optimized.
+`manual` means an identity, mapping or mutation could not be verified. It does not mean a quarantined file should be deleted. A reason saying the recorded file identity is unreadable (`Recorded file identity is unreadable; quarantine preserved`, `Zaznamenaná identita souboru je nečitelná`, or `Neplatná identita souboru v záznamu výměny.` for an interrupted replacement) means the stored evidence itself is damaged: nothing was moved or deleted, and the case needs manual inspection of the journal and the preserved files. `Not required` means Tdarr skipped the encoding decision, not that the file is healthy or already optimized.
 
 ## Recovery configuration was edited
 

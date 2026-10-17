@@ -8,6 +8,7 @@ import crypto from 'node:crypto';
 import {validateConnection,matchMovie,titleRegex,replacementProfile,canResume,createReplacement} from './radarr-replacement.mjs';
 import {publishApproval} from './quarantine-retention.mjs';
 import {classifyRecovery} from './public/review-model.js';
+import {identityVariants} from './test-helpers/identity-variants.mjs';
 const profile={id:6,name:'HD',items:[{quality:{id:1,resolution:720},allowed:true},{quality:{id:2,resolution:1080},allowed:true},{quality:{id:3,resolution:2160},allowed:true}],formatItems:[{format:1,score:5},{format:2,score:-10000}],minFormatScore:1};
 test('connection forbids embedded credentials, query, unsafe root and empty key',()=>{
  const c={url:'http://radarr:7878/base',apiKey:'secret',mediaRoot:'/media/movies',preferCzechEnglish:true};assert.equal(validateConnection(c).url,c.url);
@@ -231,7 +232,7 @@ test('retention identity errors stay public and clear when exact approved identi
  const f=await importedFixture();try{
   const journal=await f.readJournal(),approval=await publishApproval({mediaRoot:f.media,relative:journal.replacementRelative,sourceFP:journal.replacementSourceFP,installedRelative:journal.replacementRelative,atomic:f.atomicJSON});
   const approvalDirectory=path.join(path.dirname(f.media),'.tdarr-approvals'),approvalFile=path.join(approvalDirectory,(await fs.readdir(approvalDirectory))[0]);
-  await f.atomicJSON(approvalFile,{...approval,installedFP:'changed'});await f.service.cleanup();let c=(await f.service.list())[0];assert.match(c.retentionError,/changed/);assert.equal(classifyRecovery(c).category,'attention');assert.equal(c.deleteAfter,null);
+  await f.atomicJSON(approvalFile,{...approval,installedFP:'changed'});await f.service.cleanup();let c=(await f.service.list())[0];assert.equal(c.retentionError,'Recorded file identity is unreadable; quarantine preserved');assert.equal(classifyRecovery(c).category,'attention');assert.equal(c.deleteAfter,null);
   await f.atomicJSON(approvalFile,approval);await f.service.cleanup();c=(await f.service.list())[0];assert.equal(c.retentionError,null);assert.equal(c.error,null);assert.equal(c.approvedAt,approval.approvedAt);assert.equal(classifyRecovery(c).category,'done');assert.equal(await fs.readFile(journal.originalQuarantine,'utf8'),'ORIGINAL');
  }finally{await f.cleanup()}
 });
@@ -270,4 +271,50 @@ test('Review preserves Verify pause and original-location fields from the shared
   const record=(await f.service.overview()).requests[0];
   for(const [key,value]of Object.entries(fields))assert.equal(record[key],value,key);
  }finally{await f.cleanup();}
+});
+
+// Recorded identities are compared without ctime: quarantine renames change it.
+const identityAccepted={same:true,ctimeChanged:true,deviceChanged:false,deviceAndCtimeChanged:false,inodeChanged:false,fourFields:false,emptyCtime:false,textCtime:false,textDevice:false,sixFields:false,missing:false};
+const statIdentity=s=>[s.dev,s.ino,s.size,s.mtimeMs,s.ctimeMs].join(':');
+const unreadableIdentity=new Set(['fourFields','emptyCtime','textCtime','textDevice','sixFields','missing']),unreadableMessage='Zaznamenaná identita souboru je nečitelná; karanténa zůstává zachovaná.';
+
+test('an interrupted handoff resumes only for the recorded replacement identity',async()=>{
+ for(const [variant,resumes] of Object.entries(identityAccepted)){
+  const f=await fixture();try{
+   const c=await f.service.run(f.item,'reason'),file=path.join(f.media,'Film/new.mkv'),journal=path.join(f.data,'radarr-replacements',c.id+'.json');
+   await fs.writeFile(file,'REPLACEMENT');const old=new Date(Date.now()-700000);await fs.utimes(file,old,old);
+   f.movie.movieFileId=8;f.movie.movieFile={id:8,path:'/rad/movies/Film/new.mkv',size:11,sceneName:'Film.2026.1080p.REMUX-OTHER',quality:{quality:{name:'Bluray-1080p'}},languages:[{name:'English'}]};
+   const record=JSON.parse(await fs.readFile(journal,'utf8'));
+   await f.atomicJSON(journal,{...record,phase:'queue_intent',replacementRelative:'Film/new.mkv',replacementSourceFP:identityVariants(statIdentity(await fs.stat(file)))[variant]});
+   await f.service.observe();const after=JSON.parse(await fs.readFile(journal,'utf8'));
+   assert.equal(after.phase,resumes?'imported':'queue_intent',variant);
+   assert.equal(f.tdcalls.some(call=>call.p==='/api/v2/rescan-file'),resumes,variant);
+   if(!resumes)assert.equal(after.observationError,unreadableIdentity.has(variant)?unreadableMessage:'Identita náhrady se po přerušeném předání změnila.',variant);
+   if(!resumes)assert.equal(classifyRecovery((await f.service.list())[0]).category,'attention',variant);
+  }finally{await f.cleanup()}
+ }
+});
+
+test('restore returns a quarantined original only for its recorded identity',async()=>{
+ for(const [variant,restores] of Object.entries(identityAccepted)){
+  const f=await fixture();try{
+   const c=await f.service.run(f.item,'reason'),journal=path.join(f.data,'radarr-replacements',c.id+'.json');
+   const record=JSON.parse(await fs.readFile(journal,'utf8'));
+   await f.atomicJSON(journal,{...record,originalFP:identityVariants(statIdentity(await fs.stat(record.originalQuarantine)))[variant]});
+   if(variant==='missing'){
+    // Without a recorded identity the original is not part of the restore at all.
+    assert.equal((await f.service.restore(c.id)).phase,'restored');
+    assert.equal(await fs.readFile(record.originalQuarantine,'utf8'),'ORIGINAL');await assert.rejects(fs.stat(f.source),{code:'ENOENT'});
+    assert.equal(await fs.readFile(f.output,'utf8'),'TRANSCODE');
+   }else if(restores){
+    assert.equal((await f.service.restore(c.id)).phase,'restored',variant);
+    assert.equal(await fs.readFile(f.source,'utf8'),'ORIGINAL',variant);
+   }else{
+    await assert.rejects(f.service.restore(c.id),{message:unreadableIdentity.has(variant)?unreadableMessage:'Karanténa se změnila.'},variant);
+    assert.equal(JSON.parse(await fs.readFile(journal,'utf8')).phase,'manual',variant);
+    assert.equal(classifyRecovery((await f.service.list())[0]).category,'attention',variant);
+    assert.equal(await fs.readFile(record.originalQuarantine,'utf8'),'ORIGINAL',variant);await assert.rejects(fs.stat(f.source),{code:'ENOENT'});
+   }
+  }finally{await f.cleanup()}
+ }
 });

@@ -4,9 +4,15 @@ import {relative as safeRelative} from './policy.mjs';
 import {replacementFollowup} from './replacement-followup.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {identityOf,compareIdentity} from './file-identity.mjs';
 const FOREVER=253402300799000;
-export const samePreserved=(a,b)=>a.split(':').slice(0,4).join(':')===b.split(':').slice(0,4).join(':');
-export const fp=s=>[s.dev,s.ino,s.size,s.mtimeMs,s.ctimeMs].join(':');
+// Quarantine moves and library links change the preserved original's ctime. An unreadable
+// recorded identity is refused with its own reason instead of looking like a change.
+function samePreserved(current,stored){
+ const change=compareIdentity(stored,current);
+ if(change==='invalid')throw Object.assign(Error('Recorded file identity is unreadable; quarantine preserved'),{code:'FILE_IDENTITY_INVALID'});
+ return ['same','ctime-changed'].includes(change);
+}
 export function eligibleRelease(r,profile,badTitles,current){
  if(!r.downloadAllowed||badTitles.has(r.title))return false;
  const q=r.quality?.quality?.id;
@@ -25,16 +31,16 @@ export async function maintainWaitingSources({cfg,state,rad,td,phase,save,comman
     if(c.searchCommand){const cmd=await rad('/command/'+c.searchCommand);if(!['completed','failed','aborted','cancelled'].includes(cmd.status))continue;}
     if(m.movieFileId)continue;
     await idle(c);
-    const q=await fs.lstat(c.quarantine);if(!q.isFile()||q.isSymbolicLink()||!samePreserved(fp(q),c.fp)||q.nlink!==1||await fs.realpath(c.quarantine)!==c.quarantine)throw Error('Quarantine identity changed; cannot restore source');
+    const q=await fs.lstat(c.quarantine);if(!q.isFile()||q.isSymbolicLink()||!samePreserved(identityOf(q),c.fp)||q.nlink!==1||await fs.realpath(c.quarantine)!==c.quarantine)throw Error('Quarantine identity changed; cannot restore source');
     if(await fs.realpath(path.dirname(c.source))!==path.dirname(c.source))throw Error('Unsafe source parent');
     try{await fs.lstat(c.source);throw Error('Source already exists')}catch(e){if(e.code!=='ENOENT')throw e;}
     await td('/api/v2/bulk-update-files',{fileIds:[c.file],updatedObj:{TranscodeDecisionMaker:'Hold',holdUntil:FOREVER}});
     await phase(c,'restore_source_intent','Náhrada nenalezena; vracím vydání do knihovny a ponechávám zálohu v karanténě.');
     try{await fs.link(c.quarantine,c.source);c.keptLink=true;}catch(e){if(!['EXDEV','ENOTSUP','EOPNOTSUPP'].includes(e.code))throw e;await fs.copyFile(c.quarantine,c.source,fs.constants.COPYFILE_EXCL|fs.constants.COPYFILE_FICLONE);c.keptLink=false;}
     c.originalRestoredAt=new Date().toISOString();delete c.originalOutsideSince;
-    c.preservedSourceFP=fp(await fs.lstat(c.source));c.skipCurrentEdition=true;c.lastSearchAt=new Date().toISOString();c.nextSearchAt=new Date(Date.now()+6*3600000).toISOString();
+    c.preservedSourceFP=identityOf(await fs.lstat(c.source));c.skipCurrentEdition=true;c.lastSearchAt=new Date().toISOString();c.nextSearchAt=new Date(Date.now()+6*3600000).toISOString();
     await phase(c,'waiting_source_kept','Vydání vyřazeno z převodů — náhrada zatím nenalezena. Film zůstává v knihovně; automatika hledá dál.');
-    await command({name:'RescanMovie',movieId:c.movieId});const fresh=await rad('/movie/'+c.movieId);if(fresh.movieFile?.path!==cfg.radarrRoot+'/'+c.relative||fresh.movieFile?.size!==c.size)throw Error('Restored source not confirmed in Radarr');const current=fp(await fs.lstat(c.source));if(!samePreserved(current,c.preservedSourceFP))throw Error('Restored source changed during rescan');c.preservedSourceFP=current;c.keptMovieFileId=fresh.movieFileId;await save();
+    await command({name:'RescanMovie',movieId:c.movieId});const fresh=await rad('/movie/'+c.movieId);if(fresh.movieFile?.path!==cfg.radarrRoot+'/'+c.relative||fresh.movieFile?.size!==c.size)throw Error('Restored source not confirmed in Radarr');const current=identityOf(await fs.lstat(c.source));if(!samePreserved(current,c.preservedSourceFP))throw Error('Restored source changed during rescan');c.preservedSourceFP=current;c.keptMovieFileId=fresh.movieFileId;await save();
     continue;
    }
    // Radarr can import a different filename after removing the preserved link.
@@ -44,7 +50,7 @@ export async function maintainWaitingSources({cfg,state,rad,td,phase,save,comman
     if(!f?.path?.startsWith(root)||!f.sceneName||f.sceneName===c.binding.sourceTitle)throw Error('Replacement import identity not confirmed');
     const rel=f.path.slice(root.length);if(rel.split('/').some(x=>!x||x==='.'||x==='..')||rel.includes('\\'))throw Error('Unsafe replacement path');
     const replacement=await safeSource(rel);if(replacement.size!==f.size)throw Error('Replacement size does not match Radarr');
-    const q=await fs.lstat(c.quarantine);if(!q.isFile()||q.isSymbolicLink()||!samePreserved(fp(q),c.fp)||await fs.realpath(c.quarantine)!==c.quarantine)throw Error('Quarantine identity changed');
+    const q=await fs.lstat(c.quarantine);if(!q.isFile()||q.isSymbolicLink()||!samePreserved(identityOf(q),c.fp)||await fs.realpath(c.quarantine)!==c.quarantine)throw Error('Quarantine identity changed');
     c.skipCurrentEdition=false;delete c.observationError;c.nextSearchAt=null;
     await phase(c,'waiting_replacement','Importována nová kopie; původní vydání je zachované v karanténě.');continue;
    }
@@ -60,7 +66,7 @@ export async function maintainWaitingSources({cfg,state,rad,td,phase,save,comman
    const current=c.originalQuality||m.movieFile?.quality?.quality;if(!current?.id)throw Error('Original quality unknown; automated download refused');
    const releases=await rad('/release?movieId='+c.movieId),release=releases.find(r=>eligibleRelease(r,profile,badTitles,current));
    if(!release){c.message='Vydání vyřazeno z převodů — náhrada zatím nenalezena. Film zůstává v knihovně; další automatické hledání za 6 hodin.';await save();continue;}
-   await idle(c);const q=await fs.lstat(c.quarantine);if(!samePreserved(fp(q),c.fp)||source.fp!==(await safeSource(c.relative)).fp)throw Error('Original changed before replacement request');
+   await idle(c);const q=await fs.lstat(c.quarantine);if(!samePreserved(identityOf(q),c.fp)||source.fp!==(await safeSource(c.relative)).fp)throw Error('Original changed before replacement request');
    if(c.keptLink){const kept=await fs.lstat(c.source);if(kept.ino!==q.ino||kept.dev!==q.dev||q.nlink!==2)throw Error('Preserved source link changed');}else if(await sample(c.source)!==await sample(c.quarantine))throw Error('Restored copy does not match quarantine');
    await td('/api/v2/bulk-update-files',{fileIds:[c.file],updatedObj:{TranscodeDecisionMaker:'Hold',holdUntil:FOREVER}});
    await phase(c,'remove_kept_source_intent','Nalezena vhodná náhrada; originál zůstává v karanténě.');await fs.unlink(c.source);c.originalOutsideSince=new Date().toISOString();await save();
@@ -106,11 +112,11 @@ async function verifyPause(c,cfg){
  // A new import may use a different filename while the protected original still exists.
  // Location is display evidence only and must never be used to authorize a later step.
  if(c.source&&(c.preservedSourceFP||c.fp)){
-  try{const st=await fs.lstat(c.source);outside=!(st.isFile()&&!st.isSymbolicLink()&&samePreserved(fp(st),c.preservedSourceFP||c.fp)&&await fs.realpath(c.source)===c.source);}
+  try{const st=await fs.lstat(c.source);outside=!(st.isFile()&&!st.isSymbolicLink()&&samePreserved(identityOf(st),c.preservedSourceFP||c.fp)&&await fs.realpath(c.source)===c.source);}
   catch(e){outside=e.code==='ENOENT'?true:null;}
  }
  if(outside===true){
-  try{const q=await fs.lstat(c.quarantine);if(!q.isFile()||q.isSymbolicLink()||!c.fp||!samePreserved(fp(q),c.fp)||await fs.realpath(c.quarantine)!==c.quarantine)outside=null;}
+  try{const q=await fs.lstat(c.quarantine);if(!q.isFile()||q.isSymbolicLink()||!c.fp||!samePreserved(identityOf(q),c.fp)||await fs.realpath(c.quarantine)!==c.quarantine)outside=null;}
   catch{outside=null;}
  }
  const timestamp=value=>{if(value===null||value===undefined)return null;const date=new Date(value);return Number.isFinite(date.getTime())?date.toISOString():null;};

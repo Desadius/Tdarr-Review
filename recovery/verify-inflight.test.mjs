@@ -6,7 +6,7 @@ import path from 'node:path';
 import http from 'node:http';
 import {spawn} from 'node:child_process';
 import {DatabaseSync} from 'node:sqlite';
-import {fp} from './waiting-source.mjs';
+import {identityOf} from './file-identity.mjs';
 import {publishApproval} from './quarantine-retention.mjs';
 
 const linux={skip:process.platform!=='linux'?'Requires Linux filesystem identities and directory fsync':false};
@@ -15,11 +15,11 @@ async function fixture(t,status){
  const data=path.join(root,'data'),media=path.join(root,'movies'),source=path.join(media,'Film/original.mkv'),quarantine=path.join(root,'quarantine/case/original.mkv'),replacement=path.join(media,'Film/new.mkv');
  for(const dir of [data,path.dirname(source),path.dirname(quarantine)])await fs.mkdir(dir,{recursive:true});
  const bytes='SYNTHETIC ORIGINAL';await fs.writeFile(quarantine,bytes);await fs.writeFile(replacement,'SYNTHETIC REPLACEMENT');
- const c={id:'case',status,movieId:1,file:'/media/Film/original.mkv',relative:'Film/original.mkv',source,quarantine,size:bytes.length,fp:fp(await fs.stat(quarantine)),binding:{movieFileId:10,sourceTitle:'Bad.Release'},mutationStarted:Date.now()-2*86400000,created:new Date(Date.now()-2*86400000).toISOString(),updated:new Date().toISOString(),originalQuality:{id:1,resolution:1080},searchCommand:5};
+ const c={id:'case',status,movieId:1,file:'/media/Film/original.mkv',relative:'Film/original.mkv',source,quarantine,size:bytes.length,fp:identityOf(await fs.stat(quarantine)),binding:{movieFileId:10,sourceTitle:'Bad.Release'},mutationStarted:Date.now()-2*86400000,created:new Date(Date.now()-2*86400000).toISOString(),updated:new Date().toISOString(),originalQuality:{id:1,resolution:1080},searchCommand:5};
  if(status==='waiting_source_kept'){
-  await fs.link(quarantine,source);Object.assign(c,{keptLink:true,preservedSourceFP:fp(await fs.stat(source)),keptMovieFileId:10,skipCurrentEdition:true,nextSearchAt:new Date(0).toISOString()});
+  await fs.link(quarantine,source);Object.assign(c,{keptLink:true,preservedSourceFP:identityOf(await fs.stat(source)),keptMovieFileId:10,skipCurrentEdition:true,nextSearchAt:new Date(0).toISOString()});
  }
- if(['replacement_queue_intent','replacement_imported'].includes(status))Object.assign(c,{replacement:{movieFileId:11,path:'/radarr/Film/new.mkv',size:(await fs.stat(replacement)).size},replacementRelative:'Film/new.mkv',replacementSourceFP:fp(await fs.stat(replacement))});
+ if(['replacement_queue_intent','replacement_imported'].includes(status))Object.assign(c,{replacement:{movieFileId:11,path:'/radarr/Film/new.mkv',size:(await fs.stat(replacement)).size},replacementRelative:'Film/new.mkv',replacementSourceFP:identityOf(await fs.stat(replacement))});
  const state={version:1,jobs:{},cases:{case:c}},requests=[];
  const cfg={libraryId:'lib',sourceRoot:'/media',mediaRoot:media,radarrRoot:'/radarr',reviewRoot:path.join(root,'review'),reviewPrefixes:[],quarantineRoot:path.join(root,'quarantine'),database:path.join(root,'db.sqlite'),reports:path.join(root,'reports'),stableMinutes:0,pollSeconds:300,detectTerminalHeaders:false,approvedImportRepairs:{},maxRepairsPerDay:3,radarrApiKey:'fixture-only',ffmpeg:path.join(root,'ffmpeg'),decodeTimeoutHours:1,confirmDelaySeconds:0,movieCooldownDays:30,since:0};
  const movie={id:1,qualityProfileId:1,movieFileId:status==='waiting_source_kept'?10:['replacement_queue_intent','replacement_imported'].includes(status)?11:0};
