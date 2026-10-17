@@ -4,6 +4,8 @@ This records the implemented application features. Versions before 1.10.0 were d
 
 ## Unreleased
 
+- Test and Apply validate the manual Review quarantine's directory, permissions and filesystem/mount boundaries whenever Radarr is configured, including Recovery Off. Diagnostics create no directories; an unavailable quarantine is refused before activating a generation.
+
 - Add guided shared Review/Recovery settings in English and Czech: persistent offline drafts, explicit diagnostics and Apply/Cancel, complete atomic configuration generations, safe Recovery drain/restart, migration choices, protected frozen/in-flight mappings and bounded private audit history. Recovery mode remains controlled by RECOVERY_MODE; saving never starts repairs.
 
 - Preserve optional full-file hash progress in Recovery live status; exercise confirmation, changed-source refusal and public progress against the running worker.

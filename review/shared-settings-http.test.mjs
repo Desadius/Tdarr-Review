@@ -6,6 +6,37 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 
+test('HTTP Off mode rejects an unavailable manual quarantine before Test or Apply changes any generation',linuxServer,async t=>{
+ const f=await reviewFixture();t.after(()=>f.close());const current=await f.get('/api/shared-settings'),target=path.join(f.root,'missing-parent','manual-quarantine');
+ const save=await f.post('/api/shared-settings/draft',{revision:current.revision,patch:{radarr:{url:f.mockBase,apiKey:'synthetic-manual-key',mediaRoot:'/fixture-library',quarantineRoot:target}}});assert.equal(save.status,200);const revision=(await save.json()).revision;
+ const checked=await f.post('/api/shared-settings/test',{revision});assert.equal(checked.status,409,await checked.clone().text());assert.equal((await checked.json()).code,'settings_manual_quarantine_unavailable');
+ const apply=await f.post('/api/shared-settings/apply',{revision});assert.equal(apply.status,202);const failed=await settled(f,(await apply.json()).id);assert.equal(failed.state,'failed');assert.equal(failed.error.code,'settings_manual_quarantine_unavailable');assert.equal((await f.get('/api/shared-settings')).generation,0);
+ await assert.rejects(fs.stat(path.dirname(target)),{code:'ENOENT'});assert.deepEqual(await f.journals(),[]);await f.preserved();
+});
+
+for(const kind of ['symlink-parent','symlink-target','file-target','unwritable-parent','different-filesystem'])test(`HTTP manual quarantine diagnostics refuse ${kind} in Off mode`,linuxServer,async t=>{
+ const f=await reviewFixture();t.after(()=>f.close());let target=path.join(f.root,'manual-quarantine');
+ if(kind==='symlink-parent'){const alias=path.join(f.root,'alias');await fs.symlink(f.root,alias);target=path.join(alias,'manual');}
+ if(kind==='symlink-target')await fs.symlink(f.root,target);
+ if(kind==='file-target')await fs.writeFile(target,'preserved synthetic file');
+ if(kind==='unwritable-parent')target='/sys/tdarr-review-synthetic-quarantine';
+ if(kind==='different-filesystem'){assert.notEqual((await fs.stat('/dev/shm')).dev,(await fs.stat(f.root)).dev);target='/dev/shm/tdarr-review-synthetic-quarantine';}
+ const current=await f.get('/api/shared-settings'),save=await f.post('/api/shared-settings/draft',{revision:current.revision,patch:{radarr:{url:f.mockBase,apiKey:'synthetic-preflight-key',mediaRoot:'/fixture-library',quarantineRoot:target}}});assert.equal(save.status,200,await save.clone().text());const revision=(await save.json()).revision;
+ const response=await f.post('/api/shared-settings/test',{revision});assert.equal(response.status,409,await response.clone().text());assert.equal((await response.json()).code,'settings_manual_quarantine_unavailable');assert.equal((await f.get('/api/shared-settings')).generation,0);if(kind==='file-target')assert.equal(await fs.readFile(target,'utf8'),'preserved synthetic file');await f.preserved();
+});
+
+for(const kind of ['parent','target'])test(`HTTP manual quarantine diagnostics require ${kind}-directory traversal permission`,linuxServer,async t=>{
+ const f=await reviewFixture(),restricted=path.join(f.root,'manual-no-search'),target=kind==='parent'?path.join(restricted,'manual'):restricted;t.after(async()=>{await fs.chmod(restricted,0o700);await f.close();});await fs.mkdir(restricted,{mode:0o666});
+ const current=await f.get('/api/shared-settings'),save=await f.post('/api/shared-settings/draft',{revision:current.revision,patch:{radarr:{url:f.mockBase,apiKey:'synthetic-search-permission-key',mediaRoot:'/fixture-library',quarantineRoot:target}}});assert.equal(save.status,200);
+ const response=await f.post('/api/shared-settings/test',{revision:(await save.json()).revision});assert.equal(response.status,process.getuid()===0?200:409,'diagnostics must honor the running user directory-search permission');assert.equal((await f.get('/api/shared-settings')).generation,0);
+});
+
+test('HTTP manual quarantine diagnostics permit a missing target without creating it in Test or Off Apply',linuxServer,async t=>{
+ const f=await reviewFixture();t.after(()=>f.close());const target=path.join(f.root,'manual-later'),current=await f.get('/api/shared-settings');const save=await f.post('/api/shared-settings/draft',{revision:current.revision,patch:{radarr:{url:f.mockBase,apiKey:'synthetic-read-only-key',mediaRoot:'/fixture-library',quarantineRoot:target}}});assert.equal(save.status,200);const revision=(await save.json()).revision;
+ assert.equal((await f.post('/api/shared-settings/test',{revision})).status,200);await assert.rejects(fs.stat(target),{code:'ENOENT'});
+ const response=await f.post('/api/shared-settings/apply',{revision});assert.equal(response.status,202);assert.equal((await settled(f,(await response.json()).id)).state,'succeeded');await assert.rejects(fs.stat(target),{code:'ENOENT'});await f.preserved();
+});
+
 test('HTTP shared drafts save offline, reject stale writers and keep active settings and secrets private',linuxServer,async t=>{
  const f=await serverHarness();t.after(()=>f.close());await f.start();
  assert.equal((await f.request('/api/shared-settings')).status,401);

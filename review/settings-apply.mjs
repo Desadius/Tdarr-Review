@@ -5,6 +5,7 @@ import {checkPaths} from './config.mjs';
 import {readActiveSettings} from './shared-settings.mjs';
 import {readSettingsActivation,writeSettingsActivation,settingsPublicOrigin} from './settings-activation.mjs';
 import {settingsError} from './routes/shared-settings.mjs';
+import {checkManualQuarantine} from './quarantine-path.mjs';
 
 const error=code=>Object.assign(Error(code),{code,status:409});
 const pause=()=>new Promise(resolve=>setTimeout(resolve,25));
@@ -31,6 +32,7 @@ export async function diagnoseSettings(candidate,{readRows,mode}){
    await get('/system/status');const movies=await get('/movie');
    if(!Array.isArray(movies)||!movies.some(m=>m.path===candidate.radarr.mediaRoot||m.path?.startsWith(candidate.radarr.mediaRoot+'/')))throw Error();
   }catch{throw error('settings_radarr_unavailable');}
+  try{await checkManualQuarantine({mediaRoot:candidate.review.mediaRoot,quarantineRoot:candidate.radarr.quarantineRoot});}catch{throw error('settings_manual_quarantine_unavailable');}
  }
  if(['verify','repair'].includes(mode)){
   try{
