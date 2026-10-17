@@ -274,7 +274,7 @@ test('Review preserves Verify pause and original-location fields from the shared
 });
 
 // Recorded identities are compared without ctime: quarantine renames change it.
-const identityAccepted={same:true,ctimeChanged:true,deviceChanged:false,deviceAndCtimeChanged:false,inodeChanged:false,fourFields:true,emptyCtime:true,textCtime:true,textDevice:false,sixFields:true,missing:false};
+const identityAccepted={same:true,ctimeChanged:true,deviceChanged:false,deviceAndCtimeChanged:false,inodeChanged:false,fourFields:false,emptyCtime:false,textCtime:false,textDevice:false,sixFields:false,missing:false};
 const statIdentity=s=>[s.dev,s.ino,s.size,s.mtimeMs,s.ctimeMs].join(':');
 
 test('an interrupted handoff resumes only for the recorded replacement identity',async()=>{
@@ -288,15 +288,13 @@ test('an interrupted handoff resumes only for the recorded replacement identity'
    await f.service.observe();const after=JSON.parse(await fs.readFile(journal,'utf8'));
    assert.equal(after.phase,resumes?'imported':'queue_intent',variant);
    assert.equal(f.tdcalls.some(call=>call.p==='/api/v2/rescan-file'),resumes,variant);
-   if(variant==='missing')assert.match(after.observationError,/Cannot read properties of undefined/);
-   else if(!resumes)assert.equal(after.observationError,'Identita náhrady se po přerušeném předání změnila.',variant);
+   if(!resumes)assert.equal(after.observationError,'Identita náhrady se po přerušeném předání změnila.',variant);
   }finally{await f.cleanup()}
  }
 });
 
 test('restore returns a quarantined original only for its recorded identity',async()=>{
- const expected={...identityAccepted,fourFields:false,sixFields:false};
- for(const [variant,restores] of Object.entries(expected)){
+ for(const [variant,restores] of Object.entries(identityAccepted)){
   const f=await fixture();try{
    const c=await f.service.run(f.item,'reason'),journal=path.join(f.data,'radarr-replacements',c.id+'.json');
    const record=JSON.parse(await fs.readFile(journal,'utf8'));

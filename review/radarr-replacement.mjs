@@ -2,7 +2,7 @@ import {downloadQueue} from './download-queue.mjs';
 import {readRecoveryRuntime} from './recovery-runtime.mjs';
 import {ensureHandoff} from './replacement-handoff.mjs';
 import {retainCase,quarantineRetention} from './quarantine-retention.mjs';
-import {identityOf} from '../recovery/file-identity.mjs';
+import {identityOf,compareIdentity} from '../recovery/file-identity.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -158,7 +158,7 @@ export function createReplacement({data,getConfig,getConnection,safeFile,hash,at
     if(c.searchId){const s=await api(con,'/command/'+c.searchId);c.search={id:s.id,status:s.status,message:s.message};}
     if(m.movieFileId&&m.movieFileId!==c.oldFileId){
      const root=con.mediaRoot+'/',f=m.movieFile;if(!f?.path?.startsWith(root)||f.sceneName&&new RegExp(titleRegex(c.sourceTitle),'i').test(f.sceneName))throw Error('Importovaná kopie je původní vydání nebo má neplatnou cestu.');
-     const relative=f.path.slice(root.length),s=await safeFile(cfg.mediaRoot,relative);if(s.stat.size!==f.size)throw Error('Velikost importu se neshoduje.');if(c.phase==='queue_intent'&&(relative!==c.replacementRelative||identityOf(s.stat).split(':').slice(0,4).join(':')!==c.replacementSourceFP.split(':').slice(0,4).join(':')))throw Error('Identita náhrady se po přerušeném předání změnila.');
+     const relative=f.path.slice(root.length),s=await safeFile(cfg.mediaRoot,relative);if(s.stat.size!==f.size)throw Error('Velikost importu se neshoduje.');if(c.phase==='queue_intent'&&(relative!==c.replacementRelative||!['same','ctime-changed'].includes(compareIdentity(c.replacementSourceFP,identityOf(s.stat)))))throw Error('Identita náhrady se po přerušeném předání změnila.');
      c.replacement={title:f.sceneName,quality:f.quality?.quality?.name,languages:(f.languages||[]).map(v=>v.name),bytes:f.size};
      c.replacementRelative=relative;c.replacementSourceFP=identityOf(s.stat);
      if(Date.now()-s.stat.mtimeMs<600000){c.message='Nová kopie je importovaná; čekám 10 minut na stabilní soubor.';observed(c);await persist(c);continue;}
@@ -185,7 +185,7 @@ export function createReplacement({data,getConfig,getConnection,safeFile,hash,at
    const moves=[];
    for(const [source,dest,fp]of [[c.originalQuarantine,c.sourcePath,c.originalFP],[c.reviewQuarantine,c.reviewPath,c.reviewFP]].filter(([source,dest,fp])=>source&&dest&&fp)){
     let s;try{s=await fs.lstat(source)}catch(e){if(e.code!=='ENOENT')throw e;const original=await fs.lstat(dest);if(!original.isFile()||original.isSymbolicLink()||original.nlink!==1||identityOf(original)!==fp)throw Error('Původní soubor se změnil.');continue;}
-    if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1||[s.dev,s.ino,s.size,s.mtimeMs].join(':')!==fp.split(':').slice(0,-1).join(':'))throw Error('Karanténa se změnila.');
+    if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1||!['same','ctime-changed'].includes(compareIdentity(fp,identityOf(s))))throw Error('Karanténa se změnila.');
     try{await fs.lstat(dest);throw Error('Cílový soubor už existuje.');}catch(e){if(e.code!=='ENOENT')throw e;}
     const root=source===c.originalQuarantine?cfg.mediaRoot:cfg.reviewRoot;if((await fs.realpath(path.dirname(dest)))!==path.dirname(dest)||!dest.startsWith(await fs.realpath(root)+path.sep))throw Error('Cílová cesta se změnila.');
     moves.push([source,dest]);
