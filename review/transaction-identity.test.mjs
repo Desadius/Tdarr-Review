@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {recoverTransactions,fingerprint} from './core.mjs';
+import {recoverTransactions} from './core.mjs';
+import {identityOf} from '../recovery/file-identity.mjs';
 import {identityVariants} from './test-helpers/identity-variants.mjs';
 
 // Transaction recovery restores an original only when the recorded file identity matches.
@@ -15,9 +16,9 @@ async function interrupted(variant,phase){
  const tmp=path.join(media,`.tdarr-review-${id}.tmp`),backup=path.join(media,`.tdarr-review-${id}.old`);
  await fs.writeFile(review,'TRANSCODE');
  if(phase==='original-backed-up'){await fs.writeFile(backup,'ORIGINAL');}else await fs.writeFile(original,'ORIGINAL');
- const current=fingerprint(await fs.stat(phase==='original-backed-up'?backup:original));
+ const current=identityOf(await fs.stat(phase==='original-backed-up'?backup:original));
  const originalFP=identityVariants(current)[variant];
- await fs.writeFile(path.join(journals,id+'.json'),JSON.stringify({id,original,review,destination:original,tmp,backup,originalFP,reviewFP:fingerprint(await fs.stat(review)),phase}));
+ await fs.writeFile(path.join(journals,id+'.json'),JSON.stringify({id,original,review,destination:original,tmp,backup,originalFP,reviewFP:identityOf(await fs.stat(review)),phase}));
  const exists=async p=>!!await fs.lstat(p).catch(()=>null);
  return {root,journals,original,backup,exists,cleanup:()=>fs.rm(root,{recursive:true,force:true})};
 }

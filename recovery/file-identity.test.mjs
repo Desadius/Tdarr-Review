@@ -3,10 +3,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {fingerprint} from '../review/core.mjs';
-import {fp as reviewRetentionFP} from '../review/quarantine-retention.mjs';
-import {fp as recoveryRetentionFP} from './quarantine-retention.mjs';
-import {fp as waitingSourceFP} from './waiting-source.mjs';
 import {identity} from './policy.mjs';
 import {identityOf,compareIdentity} from './file-identity.mjs';
 import {identityVariants} from '../review/test-helpers/identity-variants.mjs';
@@ -20,10 +16,9 @@ const golden=[
  [{dev:2**53+1,ino:2**53+2,size:2**40,mtimeMs:1e21,ctimeMs:1.5},'9007199254740992:9007199254740994:1099511627776:1e+21:1.5'],
  [{dev:2**64,ino:2**63,size:1,mtimeMs:0.1,ctimeMs:-0},'18446744073709552000:9223372036854776000:1:0.1:0'],
 ];
-const producers={identityOf,fingerprint,reviewRetentionFP,recoveryRetentionFP,waitingSourceFP};
 
-test('every file identity producer writes the same frozen bytes',()=>{
- for(const [stat,expected] of golden)for(const [name,produce] of Object.entries(producers))assert.equal(produce(stat),expected,name);
+test('identityOf writes the frozen bytes every former producer wrote',()=>{
+ for(const [stat,expected] of golden)assert.equal(identityOf(stat),expected);
 });
 
 test('a real plain stat produces its fields joined in order',async()=>{
@@ -31,7 +26,7 @@ test('a real plain stat produces its fields joined in order',async()=>{
  try{
   const file=path.join(root,'film.mkv');await fs.writeFile(file,'synthetic');const stat=await fs.stat(file);
   assert.equal(typeof stat.ino,'number');
-  for(const [name,produce] of Object.entries(producers))assert.equal(produce(stat),`${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`,name);
+  assert.equal(identityOf(stat),`${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`);
  }finally{await fs.rm(root,{recursive:true,force:true})}
 });
 

@@ -4,15 +4,16 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {identityVariants} from '../review/test-helpers/identity-variants.mjs';
+import {identityOf} from './file-identity.mjs';
 
 // Review and Recovery each ship a copy of the retention rules; both must decide the same way.
 const copies={review:await import('../review/quarantine-retention.mjs'),recovery:await import('./quarantine-retention.mjs')};
 
-async function setup({fp,publishApproval}){
+async function setup({publishApproval}){
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'retention-identity-')),mediaRoot=path.join(root,'movies'),quarantineRoot=path.join(root,'.tdarr-corrupt');
  await fs.mkdir(mediaRoot);await fs.mkdir(path.join(quarantineRoot,'case'),{recursive:true});
  const file=path.join(quarantineRoot,'case','bad.mkv'),installed=path.join(mediaRoot,'new.mkv');await fs.writeFile(file,'old film');await fs.writeFile(installed,'approved film');
- const c={id:'case',quarantine:file,fp:fp(await fs.stat(file)),replacementRelative:'new.mkv',replacementSourceFP:'source-fingerprint'};
+ const c={id:'case',quarantine:file,fp:identityOf(await fs.stat(file)),replacementRelative:'new.mkv',replacementSourceFP:'source-fingerprint'};
  const s={root,mediaRoot,quarantineRoot,file,installed,c,atomic:async(p,v)=>{await fs.writeFile(p,JSON.stringify(v))},atomicCase:async()=>{}};
  await publishApproval({...s,relative:'new.mkv',sourceFP:c.replacementSourceFP,installedRelative:'new.mkv'});
  const approvals=path.join(root,'.tdarr-approvals'),[evidence]=await fs.readdir(approvals);

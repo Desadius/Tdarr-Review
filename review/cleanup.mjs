@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {safeFile,fingerprint} from './core.mjs';
+import {safeFile} from './core.mjs';
 
 const reserved=new Set(['PROD-Movies','PC-LANG-v2','PC-test']);
 // Capture only our matching receipt before the reviewed media is removed.

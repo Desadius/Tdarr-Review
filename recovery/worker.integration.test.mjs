@@ -8,7 +8,7 @@ import crypto from 'node:crypto';
 import {spawn} from 'node:child_process';
 import {DatabaseSync} from 'node:sqlite';
 import {identity,bindHistory} from './policy.mjs';
-import {fp} from './waiting-source.mjs';
+import {identityOf} from './file-identity.mjs';
 import {DEFERRED_HOLD_UNTIL} from './replacement-gate.mjs';
 import {createSharedSettingsStore} from '../review/shared-settings.mjs';
 
@@ -17,7 +17,7 @@ import {createSharedSettingsStore} from '../review/shared-settings.mjs';
 async function fixture({terminalHeader=false,mode='repair',largeSource=false}={}){
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'recovery-worker-')),data=root+'/data',media=root+'/media/movies',relative='Fixture/new.mkv',source=media+'/'+relative,file='/media/movies/'+relative;
  for(const dir of [data,path.dirname(source),root+'/review',root+'/quarantine',root+'/reports/fixture',root+'/decoder'])await fs.mkdir(dir,{recursive:true});
- const sourceBytes=largeSource?Buffer.alloc(5*1024*1024,7):(terminalHeader?'\x1b[0m':'')+'DISPOSABLE SOURCE BYTES';await fs.writeFile(source,sourceBytes);const before=await fs.stat(source),sourceFP=fp(before),size=before.size;
+ const sourceBytes=largeSource?Buffer.alloc(5*1024*1024,7):(terminalHeader?'\x1b[0m':'')+'DISPOSABLE SOURCE BYTES';await fs.writeFile(source,sourceBytes);const before=await fs.stat(source),sourceFP=identityOf(before),size=before.size;
  const cfg={libraryId:'fixture-library',sourceRoot:'/media/movies',mediaRoot:media,radarrRoot:'/radarr/movies',reviewRoot:root+'/review',reviewPrefixes:[],quarantineRoot:root+'/quarantine',database:root+'/db.sqlite',reports:root+'/reports',ffmpeg:root+'/decoder/ffmpeg',stableMinutes:0,decodeTimeoutHours:1,confirmDelaySeconds:0,maxRepairsPerDay:3,movieCooldownDays:30,pollSeconds:300,detectTerminalHeaders:false,since:0,approvedImportRepairs:{}};
  const movie={id:1,monitored:true,movieFileId:11,movieFile:{id:11,path:cfg.radarrRoot+'/'+relative,size,sceneName:'Fixture.New.Release'}};
  const history=[{id:21,eventType:'downloadFolderImported',movieId:1,downloadId:'fixture-download',sourceTitle:movie.movieFile.sceneName,data:{fileId:'11',importedPath:movie.movieFile.path,size:String(size)}},{id:22,eventType:'grabbed',movieId:1,downloadId:'fixture-download',sourceTitle:movie.movieFile.sceneName,data:{publishedDate:'2026-10-11T00:00:00Z',indexer:'Fixture',size:String(size),protocol:'1'}}];
@@ -63,7 +63,7 @@ async function fixture({terminalHeader=false,mode='repair',largeSource=false}={}
  // Long-running worker as in the container: no --once, stopped only by a signal.
  function daemon(){const child=spawn(process.execPath,['--require',preload,new URL('./worker.mjs',import.meta.url).pathname],{env:{...process.env,DATA_ROOT:data,RECOVERY_MODE:mode},stdio:['ignore','pipe','pipe']});let output='';const timer=setTimeout(()=>child.kill('SIGKILL'),20000);child.stdout.on('data',b=>output+=b);child.stderr.on('data',b=>output+=b);const closed=new Promise((resolve,reject)=>{child.on('error',reject);child.on('close',(code,signal)=>{clearTimeout(timer);resolve({code,signal,output})});});return {child,closed};}
  async function result(){assert.equal((await fs.stat(root+'/media/.tdarr-recovery-status.json')).mode&0o777,0o644);assert.equal((await fs.stat(data+'/state.json')).mode&0o777,0o600);return {state:JSON.parse(await fs.readFile(data+'/state.json')),public:JSON.parse(await fs.readFile(root+'/media/.tdarr-recovery-status.json'))};}
- async function unchanged(){assert.equal(fp(await fs.stat(source)),sourceFP);assert.equal(await fs.readFile(source,'utf8'),sourceBytes);assert.equal(await fs.readFile(parent.quarantine,'utf8'),'PRESERVED PARENT');assert.equal(forbidden,false,'worker attempted an unexpected download or API mutation');}
+ async function unchanged(){assert.equal(identityOf(await fs.stat(source)),sourceFP);assert.equal(await fs.readFile(source,'utf8'),sourceBytes);assert.equal(await fs.readFile(parent.quarantine,'utf8'),'PRESERVED PARENT');assert.equal(forbidden,false,'worker attempted an unexpected download or API mutation');}
  async function cleanup(){db.close();await new Promise(r=>server.close(r));assert(root.startsWith(path.resolve(os.tmpdir())+path.sep)&&path.basename(root).startsWith('recovery-worker-'));await fs.rm(root,{recursive:true,force:true});}
  return {root,cfg,state,parent,movie,row,requests,file,relative,source,sourceFP,size,sourceBytes,data,write,run,daemon,result,unchanged,cleanup,id:identity(file,sourceFP),binding:bindHistory(movie,history,movie.movieFile.path,size),allowRepair:()=>{allowRepair=true;},onHold:callback=>{beforeHold=callback;},setDecoder:script=>fs.writeFile(cfg.ffmpeg,script,{mode:0o755})};
 }
@@ -403,7 +403,7 @@ test('a complete repair case writes nothing in the review-results root or in Rev
   assert.equal(result.state.lastError,null);assert.equal(c.status,'replacement_imported');assert.equal(c.handoffStatus,'Queued');assert.equal(f.row.TranscodeDecisionMaker,'Queued');
   // Review approved the replacement more than the retention period ago; the next scan purges the quarantined original.
   const evidence=path.join(approvals,crypto.createHash('sha256').update(c.replacementRelative+'\0'+c.replacementSourceFP).digest('hex')+'.json');
-  await fs.writeFile(evidence,JSON.stringify({version:1,relative:c.replacementRelative,sourceFP:c.replacementSourceFP,installedRelative:f.relative,installedFP:fp(installed),approvedAt:new Date(Date.now()-8*86400000).toISOString()}));
+  await fs.writeFile(evidence,JSON.stringify({version:1,relative:c.replacementRelative,sourceFP:c.replacementSourceFP,installedRelative:f.relative,installedFP:identityOf(installed),approvedAt:new Date(Date.now()-8*86400000).toISOString()}));
   const reviewApproved=await snapshotReview();
   result=await scan();c=result.state.cases[f.id];
   assert.equal(result.state.lastError,null);assert.equal(c.retentionError,undefined);assert.equal(c.cleanup?.complete,true);await assert.rejects(fs.stat(c.quarantine),{code:'ENOENT'});

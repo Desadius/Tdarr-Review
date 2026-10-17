@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {maintainWaitingSources,publishRecoveryStatus,fp} from './waiting-source.mjs';
+import {maintainWaitingSources,publishRecoveryStatus} from './waiting-source.mjs';
+import {identityOf} from './file-identity.mjs';
 import {identityVariants} from '../review/test-helpers/identity-variants.mjs';
 
 // The preserved original is compared with its recorded identity without ctime: moving
@@ -19,8 +20,8 @@ async function fixture({status,kept=false,movie}){
  await fs.writeFile(quarantine,'retained original bytes');
  if(kept)await fs.link(quarantine,source);
  const size=(await fs.stat(quarantine)).size;
- const c={id:'case',movieId:1,file:'/media/movies/Movie/file.mkv',relative:'Movie/file.mkv',source,quarantine,size,fp:fp(await fs.stat(quarantine)),status,binding:{movieFileId:10,sourceTitle:'bad release'}};
- if(kept)Object.assign(c,{keptLink:true,keptMovieFileId:11,skipCurrentEdition:true,preservedSourceFP:fp(await fs.stat(source)),nextSearchAt:new Date(0).toISOString()});
+ const c={id:'case',movieId:1,file:'/media/movies/Movie/file.mkv',relative:'Movie/file.mkv',source,quarantine,size,fp:identityOf(await fs.stat(quarantine)),status,binding:{movieFileId:10,sourceTitle:'bad release'}};
+ if(kept)Object.assign(c,{keptLink:true,keptMovieFileId:11,skipCurrentEdition:true,preservedSourceFP:identityOf(await fs.stat(source)),nextSearchAt:new Date(0).toISOString()});
  let current=movie(size);const downloads=[];
  const rad=async(p,body)=>{
   if(p==='/release'&&body){downloads.push(body);return {};}
@@ -29,7 +30,7 @@ async function fixture({status,kept=false,movie}){
  };
  const command=async()=>{current=await fs.stat(source).catch(()=>null)?{movieFileId:11,movieFile:{path:'/media/Movie/file.mkv',size}}:{movieFileId:0};};
  const deps={cfg,state:{cases:{case:c}},rad,td:async()=>{},phase:async(c,status,message)=>Object.assign(c,{status,message}),save:async()=>{},command,idle:async()=>{},
-  safeSource:async rel=>{const st=await fs.stat(path.join(cfg.mediaRoot,rel));return {fp:fp(st),size:st.size};},sample:async p=>fs.readFile(p,'utf8')};
+  safeSource:async rel=>{const st=await fs.stat(path.join(cfg.mediaRoot,rel));return {fp:identityOf(st),size:st.size};},sample:async p=>fs.readFile(p,'utf8')};
  const exists=async p=>!!await fs.lstat(p).catch(()=>null);
  return {c,cfg,deps,source,quarantine,downloads,exists,cleanup:()=>fs.rm(root,{recursive:true,force:true})};
 }

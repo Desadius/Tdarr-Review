@@ -9,6 +9,7 @@ import dv81 from './dv81.cjs';
 import dualHDR from './dual-hdr.cjs';
 import legacySDR from './legacy-sdr.cjs';
 import hdrExtra from './hdr-extra.cjs';
+import {identityOf} from '../recovery/file-identity.mjs';
 
 /**
  * Durable exchange journal written by replaceChecked() and read by recoverTransactions().
@@ -19,8 +20,8 @@ import hdrExtra from './hdr-extra.cjs';
  * @property {string} destination Installed path (the original path, or .mkv for a .ts/.m2ts original).
  * @property {string} tmp Verified copy next to the original.
  * @property {string} backup Original kept until the exchange completes.
- * @property {string} originalFP fingerprint() of the original when reviewed.
- * @property {string} reviewFP fingerprint() of the result when reviewed.
+ * @property {string} originalFP identityOf() of the original when reviewed.
+ * @property {string} reviewFP identityOf() of the result when reviewed.
  * @property {'preparing'|'syncing-copy'|'verifying-copy'|'ready'|'original-backed-up'|'installed'|'original-removed'|'complete'|'aborted'} phase
  * @property {string} created ISO time.
  * @property {string} [error] Why the exchange stopped.
@@ -31,8 +32,6 @@ import hdrExtra from './hdr-extra.cjs';
 
 /** @param {string|Buffer} s */
 export const hash = s => crypto.createHash('sha256').update(s).digest('hex');
-/** @param {{dev:number,ino:number,size:number,mtimeMs:number,ctimeMs:number}} s */
-export const fingerprint = s => `${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}:${s.ctimeMs}`;
 /**
  * Resolves a regular, single-link file strictly inside root.
  * @param {string} root
@@ -48,7 +47,7 @@ export async function safeFile(root, relative) {
   if(!resolved.startsWith(base+path.sep)) throw new Error('Soubor je mimo povolenou složku.');
   const stat=await fs.stat(resolved);
   if(!stat.isFile() || stat.nlink!==1) throw new Error('Soubor není běžný soubor nebo má více pevných odkazů.');
-  return {path:resolved,stat,fp:fingerprint(stat)};
+  return {path:resolved,stat,fp:identityOf(stat)};
 }
 export async function atomicJSON(file,data) {
   const tmp=file+'.new';
@@ -62,7 +61,7 @@ async function syncDirectory(dir) {
 }
 const statOrMissing=async file=>{try{return await fs.lstat(file)}catch(e){if(e.code==='ENOENT')return null;throw e}};
 // Renaming changes ctime. Device, inode, size and mtime still identify the saved original.
-const originalIdentity=(stat,fp)=>stat?.isFile()&&!stat.isSymbolicLink()&&fingerprint(stat).split(':').slice(0,-1).join(':')===String(fp).split(':').slice(0,-1).join(':');
+const originalIdentity=(stat,fp)=>stat?.isFile()&&!stat.isSymbolicLink()&&identityOf(stat).split(':').slice(0,-1).join(':')===String(fp).split(':').slice(0,-1).join(':');
 /** @param {TransactionJournal} record */
 async function restoreBackup(record) {
   if(record.destination&&record.destination!==record.original&&await statOrMissing(record.destination))return false;
@@ -197,7 +196,7 @@ export function inspect(original,review) {
 export async function replaceChecked({original,review,destination=original,originalFP,reviewFP,journal,onStage=()=>{},onProgress=()=>{},beforeCommit=async()=>{}}) {
   if(!validDestination(original,destination))throw Error('Nepovolená cílová cesta převodu.');
   const check=async()=>{
-    if(fingerprint(await fs.stat(original))!==originalFP||fingerprint(await fs.stat(review))!==reviewFP) throw new Error('Soubor se od kontroly změnil. Obnov přehled.');
+    if(identityOf(await fs.stat(original))!==originalFP||identityOf(await fs.stat(review))!==reviewFP) throw new Error('Soubor se od kontroly změnil. Obnov přehled.');
     if(destination!==original&&await statOrMissing(destination))throw Error('Cílový MKV již existuje; nebude přepsán.');
   };
   await check();
@@ -238,7 +237,7 @@ export async function replaceChecked({original,review,destination=original,origi
     await syncDirectory(path.dirname(original));
     await save('original-removed');
     // A replaced review file is never deleted if another process changed it.
-    if(fingerprint(await fs.stat(review))!==reviewFP)throw new Error('Originál nahrazen; review se změnilo a nebylo odstraněno.');
+    if(identityOf(await fs.stat(review))!==reviewFP)throw new Error('Originál nahrazen; review se změnilo a nebylo odstraněno.');
     await fs.unlink(review);
     await syncDirectory(path.dirname(review));
     await save('complete');

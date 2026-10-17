@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {replaceChecked,fingerprint,recoverTransactions} from './core.mjs';
+import {replaceChecked,recoverTransactions} from './core.mjs';
+import {identityOf} from '../recovery/file-identity.mjs';
 import {resolveReviewSource} from './source-mapping.mjs';
 import {evidence,countFile} from './stats.mjs';
 const directorySync={skip:process.platform==='win32'?'Requires POSIX directory fsync for durable replacement journals':false};
-async function fixture(run){const root=await fs.mkdtemp(path.join(os.tmpdir(),'transport-test-'));try{const original=path.join(root,'Film.m2ts'),destination=path.join(root,'Film.mkv'),review=path.join(root,'Review.mkv'),journal=path.join(root,'transaction.json');await fs.writeFile(original,'original transport stream');await fs.writeFile(review,'encoded MKV');await run({root,original,destination,review,journal,originalFP:fingerprint(await fs.stat(original)),reviewFP:fingerprint(await fs.stat(review))})}finally{await fs.rm(root,{recursive:true,force:true})}}
+async function fixture(run){const root=await fs.mkdtemp(path.join(os.tmpdir(),'transport-test-'));try{const original=path.join(root,'Film.m2ts'),destination=path.join(root,'Film.mkv'),review=path.join(root,'Review.mkv'),journal=path.join(root,'transaction.json');await fs.writeFile(original,'original transport stream');await fs.writeFile(review,'encoded MKV');await run({root,original,destination,review,journal,originalFP:identityOf(await fs.stat(original)),reviewFP:identityOf(await fs.stat(review))})}finally{await fs.rm(root,{recursive:true,force:true})}}
 test('extension-changing approval installs MKV and removes only reviewed source',directorySync,()=>fixture(async p=>{await replaceChecked(p);assert.equal(await fs.readFile(p.destination,'utf8'),'encoded MKV');await assert.rejects(fs.stat(p.original),{code:'ENOENT'});await assert.rejects(fs.stat(p.review),{code:'ENOENT'});assert.deepEqual(await recoverTransactions(p.root),[])}));
 test('existing destination cannot be overwritten',()=>fixture(async p=>{await fs.writeFile(p.destination,'other movie');await assert.rejects(replaceChecked(p),/již existuje/);assert.equal(await fs.readFile(p.destination,'utf8'),'other movie');assert.equal(await fs.readFile(p.original,'utf8'),'original transport stream')}));
 test('failure after source backup restores original without installing target',directorySync,()=>fixture(async p=>{await assert.rejects(replaceChecked({...p,onStage:s=>{if(s==='original-backed-up')throw Error('test failure')}}));assert.equal(await fs.readFile(p.original,'utf8'),'original transport stream');await assert.rejects(fs.stat(p.destination),{code:'ENOENT'});assert.deepEqual(await recoverTransactions(p.root),[])}));

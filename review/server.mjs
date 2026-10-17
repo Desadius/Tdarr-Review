@@ -14,7 +14,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
 import {fileURLToPath} from 'node:url';
-import {safeFile,fingerprint,hash,atomicJSON,command,probe,inspect,replaceChecked,recoverTransactions} from './core.mjs';
+import {safeFile,hash,atomicJSON,command,probe,inspect,replaceChecked,recoverTransactions} from './core.mjs';
 import {measure} from './progress.mjs';
 import {appVersion} from './app-version.mjs';
 import {logEvent} from './log.mjs';
