@@ -1,10 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import {identityOf} from './file-identity.mjs';
+import {identityOf,compareIdentity} from './file-identity.mjs';
 // Single source for the retention rules; the Review UI reads them from /api/quarantine.
 export const quarantineRetention=Object.freeze({retentionDays:7,cleanupEnabled:true});
-const sameFile=(a,b)=>a.split(':').slice(0,4).join(':')===b.split(':').slice(0,4).join(':');
 function under(root,rel){const p=path.resolve(root,rel);if(!rel||path.isAbsolute(rel)||p===root||!p.startsWith(root+path.sep))throw Error('Invalid retention path');return p;}
 async function regular(p){if(await fs.realpath(path.dirname(p))!==path.dirname(p))throw Error('Symlink parent');const s=await fs.lstat(p);if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1)throw Error('Unsafe retention file');return s;}
 function key(relative,sourceFP){return crypto.createHash('sha256').update(relative+'\0'+sourceFP).digest('hex')+'.json';}
@@ -22,7 +21,7 @@ export async function retainCase(c,{mediaRoot,reviewRoot,quarantineRoot,reviewQu
  if(a.version!==1||a.relative!==c.replacementRelative||a.sourceFP!==c.replacementSourceFP||!Number.isFinite(Date.parse(a.approvedAt))||Date.parse(a.approvedAt)>now)throw Error('Invalid approval evidence');
  const installed=under(mediaRoot,a.installedRelative);const installedNow=identityOf(await regular(installed));
  if(installedNow!==a.installedFP){
-  if(sameFile(installedNow,a.installedFP))throw Error('Approved replacement metadata timestamp changed; content identity is not reverified; quarantine preserved');
+  if(compareIdentity(a.installedFP,installedNow)==='ctime-changed')throw Error('Approved replacement metadata timestamp changed; content identity is not reverified; quarantine preserved');
   throw Error('Approved replacement changed; quarantine preserved');
  }
  if(!c.cleanup){c.cleanup={approvedAt:a.approvedAt,deleteAfter:new Date(Date.parse(a.approvedAt)+quarantineRetention.retentionDays*86400000).toISOString(),files:[]};await atomicCase(c);}
@@ -32,7 +31,8 @@ export async function retainCase(c,{mediaRoot,reviewRoot,quarantineRoot,reviewQu
   const realRoot=await fs.realpath(root);const rel=path.relative(realRoot,file);if(under(realRoot,rel)!==file||path.dirname(file)!==path.join(realRoot,c.id))throw Error('Quarantine ownership mismatch');
   let entry=c.cleanup.files.find(v=>v.path===file);if(entry?.purged)continue;
   let st;try{st=await regular(file)}catch(e){if(e.code==='ENOENT'&&entry?.intent){entry.purged=true;await atomicCase(c);continue;}throw e;}
-  if(!expected||!sameFile(identityOf(st),expected))throw Error('Quarantine file changed; preserved');
+  // Moving the original into quarantine changes its ctime.
+  if(!['same','ctime-changed'].includes(compareIdentity(expected,identityOf(st))))throw Error('Quarantine file changed; preserved');
   if(!entry){entry={path:file,fp:identityOf(st),intent:true};c.cleanup.files.push(entry);await atomicCase(c);}
   if(identityOf(await regular(installed))!==a.installedFP||identityOf(await regular(file))!==entry.fp)throw Error('Retention identity changed');
   await fs.unlink(file);entry.purged=true;entry.time=new Date(now).toISOString();await atomicCase(c);

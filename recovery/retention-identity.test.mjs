@@ -23,8 +23,8 @@ const exists=async p=>!!await fs.lstat(p).catch(()=>null);
 
 for(const [name,copy] of Object.entries(copies)){
  test(name+' retention refuses a changed approved replacement by the kind of change',async()=>{
-  const metadata=/metadata timestamp changed/,changed=/^Error: Approved replacement changed; quarantine preserved$/,typeError=/Cannot read properties of undefined/;
-  const expected={same:null,ctimeChanged:metadata,deviceChanged:changed,deviceAndCtimeChanged:changed,inodeChanged:changed,fourFields:metadata,emptyCtime:metadata,textCtime:metadata,textDevice:changed,sixFields:metadata,missing:typeError};
+  const metadata=/metadata timestamp changed/,changed=/^Error: Approved replacement changed; quarantine preserved$/;
+  const expected={same:null,ctimeChanged:metadata,deviceChanged:changed,deviceAndCtimeChanged:changed,inodeChanged:changed,fourFields:changed,emptyCtime:changed,textCtime:changed,textDevice:changed,sixFields:changed,missing:changed};
   for(const [variant,error] of Object.entries(expected)){
    const s=await setup(copy);
    try{
@@ -38,7 +38,7 @@ for(const [name,copy] of Object.entries(copies)){
  });
 
  test(name+' retention purges quarantine only when the recorded original identity matches',async()=>{
-  const purges={same:true,ctimeChanged:true,deviceChanged:false,deviceAndCtimeChanged:false,inodeChanged:false,fourFields:true,emptyCtime:true,textCtime:true,textDevice:false,sixFields:true,missing:false};
+  const purges={same:true,ctimeChanged:true,deviceChanged:false,deviceAndCtimeChanged:false,inodeChanged:false,fourFields:false,emptyCtime:false,textCtime:false,textDevice:false,sixFields:false,missing:false};
   for(const [variant,purged] of Object.entries(purges)){
    const s=await setup(copy);
    try{
