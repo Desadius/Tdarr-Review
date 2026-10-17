@@ -23,7 +23,7 @@ async function interrupted(variant,phase){
  return {root,journals,original,backup,exists,cleanup:()=>fs.rm(root,{recursive:true,force:true})};
 }
 
-const accepted={same:true,ctimeChanged:true,deviceChanged:false,deviceAndCtimeChanged:false,inodeChanged:false,fourFields:false,emptyCtime:true,textCtime:true,textDevice:false,sixFields:false,missing:false};
+const accepted={same:true,ctimeChanged:true,deviceChanged:false,deviceAndCtimeChanged:false,inodeChanged:false,fourFields:false,emptyCtime:false,textCtime:false,textDevice:false,sixFields:false,missing:false};
 
 test('rollback of a backed-up original follows the recorded identity',async()=>{
  for(const [variant,restores] of Object.entries(accepted)){

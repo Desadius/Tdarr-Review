@@ -9,7 +9,7 @@ import dv81 from './dv81.cjs';
 import dualHDR from './dual-hdr.cjs';
 import legacySDR from './legacy-sdr.cjs';
 import hdrExtra from './hdr-extra.cjs';
-import {identityOf} from '../recovery/file-identity.mjs';
+import {identityOf,compareIdentity} from '../recovery/file-identity.mjs';
 
 /**
  * Durable exchange journal written by replaceChecked() and read by recoverTransactions().
@@ -61,7 +61,7 @@ async function syncDirectory(dir) {
 }
 const statOrMissing=async file=>{try{return await fs.lstat(file)}catch(e){if(e.code==='ENOENT')return null;throw e}};
 // Renaming changes ctime. Device, inode, size and mtime still identify the saved original.
-const originalIdentity=(stat,fp)=>stat?.isFile()&&!stat.isSymbolicLink()&&identityOf(stat).split(':').slice(0,-1).join(':')===String(fp).split(':').slice(0,-1).join(':');
+const originalIdentity=(stat,fp)=>stat?.isFile()&&!stat.isSymbolicLink()&&['same','ctime-changed'].includes(compareIdentity(fp,identityOf(stat)));
 /** @param {TransactionJournal} record */
 async function restoreBackup(record) {
   if(record.destination&&record.destination!==record.original&&await statOrMissing(record.destination))return false;
