@@ -1,40 +1,20 @@
+import {installSharedSettings} from '/shared-settings-view.js?v=20261017-settings1';
 // Review, sample-preparation and Radarr settings dialogs.
-import {tr,locale} from '/i18n.js?v=20261013-retention1';
-import {$,el,button} from '/ui-kit.js?v=20261013-split1';
+import {tr,locale} from '/i18n.js?v=20261017-settings1';
+import {$,el,button} from '/ui-kit.js?v=20261017-settings1';
 
 let app=null;
 const api=(route,body)=>app.api(route,body);
-let settingsDialog,previewSettingsDialog,radarrDialog;
+let previewSettingsDialog;
 
 export function installSettingsDialogs(context){
  app=context;
- settingsDialog=el('dialog','settings-dialog');document.body.append(settingsDialog);
- const settingsButton=$('settingsReview');
- settingsButton.onclick=async()=>{
-  try{
-  const data=await api('/api/settings');settingsDialog.replaceChildren();const title=el('h2','','Nastavení Review'),form=el('form'),fields={};
-  const help=el('p','','Jedna knihovna na instalaci. Cesty vlevo v Docker mapování nejsou stejné jako cesty uvnitř kontejnerů. Zde zadávej cesty dostupné uvnitř Review, u polí Tdarr cesty viditelné jeho serverem.');
-  const descriptions=[['label','Název instalace','Například Domácí knihovna'],['publicOrigin','Veřejná adresa Review','Úplná adresa včetně http(s) a portu. Při změně se přepne adresa této stránky.'],['tdarrUrl','Adresa API Tdarr','Například http://tdarr:8266; musí být dostupná z kontejneru Review.'],['mediaRoot','Originály v kontejneru Review','Například /media; vyžaduje čtení a zápis.'],['reviewRoot','Výsledky v kontejneru Review','Například /review; oddělená složka s právem zápisu.'],['sourceRoots','Zdrojové cesty v Tdarru','Jedna cesta na řádek. První odpovídá knihovně, další jsou případné aliasy stejného obsahu.'],['tdarrReviewRoot','Review cesta v Tdarru','Například /pilot-review; slouží ke kontrole běžících úloh.'],['reviewPrefixes','Podsložky Review určené k odebrání z cesty','Jedno jméno na řádek, například PROD-Movies. Prázdné = stejná struktura jako originály.'],['libraryId','ID knihovny Tdarr','Prázdné = automaticky podle zdrojové cesty.'],['database','Databáze Tdarr v kontejneru Review','Připoj aktuální adresář SQL včetně WAL/SHM pouze pro čtení.'],['ffprobe','Program FFprobe','Absolutní cesta v kontejneru Review.'],['ffmpeg','Program FFmpeg','Absolutní cesta; používá se pro porovnání snímků.']];
-  for(const [key,text,hint] of descriptions){const label=el('label','settings-field',text),input=el(['sourceRoots','reviewPrefixes'].includes(key)?'textarea':'input');input.value=Array.isArray(data.config[key])?data.config[key].join('\n'):data.config[key];label.append(input,el('small','',hint));form.append(label);fields[key]=input}
-  const status=el('p');status.setAttribute('role','status');const actions=el('div','dialog-actions'),test=el('button','secondary','Otestovat'),save=el('button','','Ověřit a uložit'),close=el('button','secondary','Zavřít');test.type=close.type='button';close.onclick=()=>settingsDialog.close();actions.append(close,test,save);
-  async function submit(onlyTest){test.disabled=save.disabled=true;status.textContent=tr('Ověřuji spojení a cesty…');try{const config={};for(const [k,input] of Object.entries(fields))config[k]=['sourceRoots','reviewPrefixes'].includes(k)?input.value.split('\n').map(x=>x.trim()).filter(Boolean):input.value.trim();const result=await api(onlyTest?'/api/settings/test':'/api/settings',{config,revision:data.revision});status.textContent=tr(onlyTest?result.message:'Nastavení uloženo. '+result.message);data.revision=result.revision;if(!onlyTest){app.forceRender();if(result.publicOrigin!==location.origin){location.assign(result.publicOrigin);return}await app.load()}}catch(e){status.textContent=tr(e.message)}finally{test.disabled=save.disabled=false}}
-  test.onclick=()=>submit(true);form.onsubmit=e=>{e.preventDefault();submit(false)};form.append(status,actions);settingsDialog.append(title,help,el('p','','Docker připojení složek, port a trvalý adresář /data se nastavují při instalaci kontejneru. Menu je samo nevytváří. Podporovaný profil: MKV, H.264 → HEVC 10bit, kopírované zvukové a titulkové stopy; HDR10, HDR10+, Dolby Vision 8.1 a zachování Dolby Vision 7/FEL podle kompatibilního profilu Review.'),form);settingsDialog.setAttribute('aria-label',tr('Nastavení Review'));settingsDialog.showModal();
-  }catch(e){app.error(e)}
- };
+ const openShared=installSharedSettings(context);
+ $('settingsReview').onclick=openShared;
  previewSettingsDialog=el('dialog','settings-dialog');document.body.append(previewSettingsDialog);
  const previewSettingsCard=el('article'),previewSettingsButton=button('Nastavit přípravu ukázek',openPreviewSettings);previewSettingsCard.append(el('h2','','Příprava ukázek'),el('p','','Limity mezipaměti a automatická příprava porovnání pro čekající filmy.'),previewSettingsButton);$('view-settings').querySelector('.settings-grid').append(previewSettingsCard);
  
- radarrDialog=el('dialog','settings-dialog');document.body.append(radarrDialog);
- const radarrButton=$('settingsRadarr');
- radarrButton.onclick=async()=>{try{
-  const c=await api('/api/radarr/settings');radarrDialog.replaceChildren(el('h2','','Radarr – náhrady filmů'));
-  const fields={},form=el('form');for(const [name,label,type]of [['url','Adresa Radarru','url'],['mediaRoot','Cesta filmové knihovny uvnitř Radarru','text'],['quarantineRoot','Karanténa originálů v Review (mimo filmovou knihovnu)','text'],['apiKey','API klíč (prázdné = zachovat uložený)','password']]){const l=el('label','settings-field',label),input=el('input');input.type=type;input.value=name==='apiKey'?'':c[name]||'';input.autocomplete='off';l.append(input);form.append(l);fields[name]=input;}
-  const pref=el('input');pref.type='checkbox';pref.checked=c.preferCzechEnglish!==false;const label=el('label','','Preferovat vydání s českým i anglickým audiem');label.prepend(pref);form.append(label,el('p','','Radarr posuzuje jazyky podle označení vydání. Skutečné stopy se ověří až po stažení. Samotné zamítnutí převodu nové stahování nespouští.'));
-  const status=el('p'),buttons=el('div','dialog-actions'),test=el('button','secondary','Otestovat spojení'),save=el('button','','Ověřit a uložit'),close=el('button','secondary','Zavřít');test.type=close.type='button';close.onclick=()=>radarrDialog.close();
-  async function submit(testOnly){test.disabled=save.disabled=true;try{const body=Object.fromEntries(Object.entries(fields).map(([k,v])=>[k,v.value.trim()]));body.preferCzechEnglish=pref.checked;status.textContent=tr((await api('/api/radarr/settings'+(testOnly?'/test':''),body)).message);if(!testOnly)fields.apiKey.value=''}catch(e){status.textContent=tr(e.message)}finally{test.disabled=save.disabled=false}}
-  test.onclick=()=>submit(true);form.onsubmit=e=>{e.preventDefault();submit(false)};buttons.append(close,test,save);form.append(status,buttons);radarrDialog.append(form);
-  radarrDialog.append(el('p','details',Number.isInteger(c.retentionDays)?'Stavy filmů a žádostí najdeš v sekci Obnovy. Retence karantény běží '+c.retentionDays+' dní od doloženého schválení funkční náhrady.':'Stavy filmů a žádostí najdeš v sekci Obnovy.'));radarrDialog.setAttribute('aria-label',tr('Nastavení Radarru'));radarrDialog.showModal();
- }catch(e){app.error(e)}};
+ $('settingsRadarr').onclick=openShared;
 }
 
 async function openPreviewSettings(){

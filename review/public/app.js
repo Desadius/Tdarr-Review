@@ -1,13 +1,13 @@
 import {mountReviewWorkflow,classifyPreparation,preparationSummary} from '/review-workflow.js?v=20261013-prepared2';
 import {capabilities, classifyRecovery, recoveryProgress, downloadProgress, liveRecoveryRecord, projectRequests, historyWarnings, historyFollowup, recoveryFollowup, fullHashProgress} from '/review-model.js?v=20261015-outside1';
-import {$,el,fmt,date,elapsedText,etaText,poster,button,badge,keyed,makeTabs,detailsFacts} from '/ui-kit.js?v=20261015-outside1';
+import {$,el,fmt,date,elapsedText,etaText,poster,button,badge,keyed,makeTabs,detailsFacts} from '/ui-kit.js?v=20261017-settings1';
 import {decodeProgressView,downloadProgressView,fullHashProgressView,recoveryDetails,recoveryRuntimeView,recoveryRestartWarningView,recoveryConfigNoticeView} from '/recovery-view.js?v=20261015-outside1';
 import {installComparisons,openComparison,openAudioComparison} from '/comparison.js?v=20261013-split1';
-import {installSettingsDialogs} from '/settings-dialogs.js?v=20261013-split1';
+import {installSettingsDialogs} from '/settings-dialogs.js?v=20261017-settings1';
 import {installQuarantine,openQuarantine} from '/quarantine.js?v=20261013-split1';
 import {installStatistics,loadStatistics,statisticsLoadedAt} from '/statistics.js?v=20261013-split1';
-import {tr,locale,language,initializeLocale} from '/i18n.js?v=20261015-outside1';
-import {errorText} from '/error-messages.js?v=20261013-codes1';
+import {tr,locale,language,initializeLocale} from '/i18n.js?v=20261017-settings1';
+import {errorText} from '/error-messages.js?v=20261017-settings1';
 initializeLocale();
 
 const busy=d=>!!d?.active||!!d?.batchRunning;
@@ -32,7 +32,7 @@ async function api(route,body){
  const r=await fetch(route,{method:body===undefined?'GET':'POST',headers:body===undefined?{}:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
  let d;try{d=await r.json()}catch{throw Error('Server nevrátil platnou odpověď. Obnov údaje a ověř výsledek akce.')}
  if(r.status===401){authenticated=false;$('login').hidden=false;$('workspace').hidden=!latest;updateGuards();throw Error(serverError(d)||'Přihlášení vypršelo. Poslední načtené údaje nejsou aktuální.')}
- if(!r.ok)throw Object.assign(Error(serverError(d)||'Požadavek selhal.'),{status:r.status,code:d.code,data:d});
+ if(!r.ok)throw Object.assign(Error(serverError(d)||'Požadavek selhal.'),{status:r.status,code:d.code,field:d.field,revision:d.revision,data:d});
  return d;
 }
 function error(e){$('error').textContent=tr(e.message);$('error').hidden=false;const active=[...document.querySelectorAll('dialog[open]')].at(-1);if(active){let alert=active.querySelector('.dialog-error');if(!alert){alert=el('p','alert dialog-error');alert.setAttribute('role','alert');active.prepend(alert)}alert.textContent=tr(e.message);alert.tabIndex=-1;alert.focus();}}
