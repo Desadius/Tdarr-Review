@@ -15,7 +15,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
-import {classify,confirmed,relative,bindHistory,bindApprovedImport,blocked,identity,within} from './policy.mjs';
+import {classify,confirmed,relative,bindHistory,bindApprovedImport,blocked,caseId,within} from './policy.mjs';
 import {readHeader} from './container-header.mjs';
 import {lowPriorityHash} from './full-hash.mjs';
 import {createWorkerControl} from './control.mjs';
@@ -254,7 +254,7 @@ async function tick(){
  if(!canStart())return;
  await resumeDailyLimit();
  if(!canStart())return;
- await processPending({approvals:pendingApprovals,cfg,state,safeSource,identity,phase,repair,canStart});
+ await processPending({approvals:pendingApprovals,cfg,state,safeSource,caseId,phase,repair,canStart});
  if(!canStart())return;
  await publishNow(()=>liveStatus.refresh());
  for(const c of Object.values(state.cases).filter(c=>c.status==='replacement_imported'&&cfg.enabled!==false)){if(!canStart())return;try{await retainCase(c,{mediaRoot:cfg.mediaRoot,quarantineRoot:cfg.quarantineRoot,atomicCase:save});delete c.retentionError;}catch(e){c.retentionError=e.message;}}
@@ -264,7 +264,7 @@ async function tick(){
    if(!canStart())return;
    let c;
    try{
-    const rel=relative(f._id,cfg.sourceRoot),s=await safeSource(rel),id=identity(f._id,s.fp);
+    const rel=relative(f._id,cfg.sourceRoot),s=await safeSource(rel),id=caseId(f._id,s.fp);
    if(Object.values(state.cases).some(c=>c.skipCurrentEdition&&c.file===f._id&&c.preservedSourceFP===s.fp))continue;
     if(state.cases[id])continue;
     if(await readHeader(s.p)!=='terminal_overwrite')continue;
@@ -287,7 +287,7 @@ async function tick(){
   if(classify({code:1,stderr:report}).kind!=='corrupt'){state.jobs[j._id]='not_confirmed_decode_error_v3';continue;}
   let c;
   try{
-   const rel=relative(j.file,cfg.sourceRoot),s=await safeSource(rel),id=identity(j.file,s.fp);
+   const rel=relative(j.file,cfg.sourceRoot),s=await safeSource(rel),id=caseId(j.file,s.fp);
    if(Object.values(state.cases).some(c=>c.skipCurrentEdition&&c.file===j.file&&c.preservedSourceFP===s.fp))continue;
    state.jobs[j._id]=id;
    if(state.cases[id])continue;

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {identity} from './policy.mjs';
+import {caseId} from './policy.mjs';
 import {identityOf,compareIdentity} from './file-identity.mjs';
 import {identityVariants} from '../review/test-helpers/identity-variants.mjs';
 
@@ -31,8 +31,8 @@ test('a real plain stat produces its fields joined in order',async()=>{
 });
 
 test('Recovery case IDs derived from a file identity keep their value',()=>{
- assert.equal(identity('/media/movies/Film/a.mkv',golden[0][1]),'acf95bf98b6d30d2563e9899');
- assert.equal(identity('/media/movies/Film/a.mkv',golden[1][1]),'abd45ac0b0cd275f01c3603f');
+ assert.equal(caseId('/media/movies/Film/a.mkv',golden[0][1]),'acf95bf98b6d30d2563e9899');
+ assert.equal(caseId('/media/movies/Film/a.mkv',golden[1][1]),'abd45ac0b0cd275f01c3603f');
 });
 
 test('comparison names a lone ctime or device change and calls every other difference different',()=>{
