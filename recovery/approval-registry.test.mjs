@@ -9,6 +9,7 @@ import {identity} from './policy.mjs';
 import {processPending} from './pending-approved.mjs';
 import {loadApprovalRegistry,registryHasApproval,migrateApprovalRegistry} from './approval-registry.mjs';
 import {configDigest,detectConfigChange,startupValidator} from './config-watch.mjs';
+import {createSharedSettingsStore} from '../review/shared-settings.mjs';
 
 function evidence(){
  // The registry freezes the library mapping and a limit; config.json also needs the settings it does not freeze.
@@ -21,6 +22,22 @@ function evidence(){
  const state={version:1,jobs:{},cases:{[a.id]:{id:a.id,file:a.file,relative:a.relative,size:a.size,fp:a.fp,status:'deferred_limit',approval:structuredClone(a)}}};
  return {cfg,a,registry,state};
 }
+
+async function managedMigration(f){
+ const recovery=path.join(f.root,'recovery');await fs.mkdir(recovery);await f.write(path.join(recovery,'config.json'),f.cfg);
+ const store=createSharedSettingsStore({data:f.root,env:{RECOVERY_MODE:'repair'}}),initial=await store.current(),draft=await store.saveDraft({revision:initial.revision,patch:{recovery:{maxRepairsPerDay:4}}});await store.applyGeneration({revision:draft.revision});
+ return ()=>new Promise((resolve,reject)=>{const child=spawn(process.execPath,[fileURLToPath(new URL('../tools/migrate-recovery-registry.mjs',import.meta.url)),'--source',f.source,'--data',f.data],{env:{...process.env,RECOVERY_MODE:'repair'},stdio:['ignore','pipe','pipe']});let stdout='',stderr='';child.stdout.on('data',b=>stdout+=b);child.stderr.on('data',b=>stderr+=b);child.on('error',reject);child.on('close',code=>resolve({code,stdout,stderr}));});
+}
+
+test('managed offline CLI uses the committed frozen configuration instead of a differing legacy config',async t=>{
+ const f=await fixture(t),run=await managedMigration(f),registry={...f.registry,config:{...f.registry.config,maxRepairsPerDay:4}};await f.write(f.source,registry);
+ const migrated=await run();assert.equal(migrated.code,0,migrated.stderr);assert.equal(JSON.parse(migrated.stdout).caseCount,1);const installed=JSON.parse(await fs.readFile(f.target,'utf8'));assert.equal(installed.config.maxRepairsPerDay,4);assert.equal(JSON.parse(await fs.readFile(path.join(f.data,'config.json'),'utf8')).maxRepairsPerDay,3);
+});
+
+test('managed offline CLI refuses corrupt authority without migrating matching legacy evidence',async t=>{
+ const f=await fixture(t),run=await managedMigration(f);await f.write(f.source,f.registry);await fs.writeFile(path.join(f.root,'shared-settings.json'),'{"private":"SYNTHETIC-MANAGED-SECRET",');const before=await fs.readFile(path.join(f.data,'state.json'));
+ const failed=await run();assert.equal(failed.code,1);assert.equal(failed.stdout,'');assert.equal(failed.stderr.includes('SYNTHETIC-MANAGED-SECRET'),false);await assert.rejects(fs.stat(f.target),{code:'ENOENT'});assert.deepEqual(await fs.readFile(path.join(f.data,'state.json')),before);
+});
 function importedHistory(f,shape='legacy'){
  const a=structuredClone(f.a);Object.assign(a,{movieId:2,movieFileId:12,importId:23,grabId:24,relative:'Historical/file.mkv',file:f.cfg.sourceRoot+'/Historical/file.mkv',fp:'1:3:202:2000:2001',size:202,downloadId:'DISPOSABLE-historical-download',sourceTitle:'DISPOSABLE.Historical.Release'});a.id=identity(a.file,a.fp);
  for(const c of a.checks){c.file=a.file;c.bytes=a.size;}

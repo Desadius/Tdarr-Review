@@ -13,7 +13,7 @@ export const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=
 
 // pauses: a node Review could not restore is pending; nodesVisible:false hides every node from the
 // mock Tdarr (as pauses does by default), so a restore leaves its pauses pending.
-export async function reviewFixture({pauses=false,recovery=false,clock=false,nodesVisible=!pauses,beforeStart}={}){
+export async function reviewFixture({pauses=false,recovery=false,clock=false,nodesVisible=!pauses,beforeStart,supervisor=false,env={}}={}){
  const harness=await serverHarness(),{root}=harness;
  const data=path.join(root,'data'),media=path.join(root,'media'),review=path.join(root,'review');
  const gates=[],calls=[],changes=[],nodes={fixture:{_id:'fixture',nodeName:'fixture-node',nodePaused:false,workers:{}}};
@@ -25,7 +25,7 @@ export async function reviewFixture({pauses=false,recovery=false,clock=false,nod
  const mock=http.createServer(async(req,res)=>{
   try{
    let raw='';for await(const chunk of req)raw+=chunk;
-   const input=raw?JSON.parse(raw):null;calls.push({route:req.url,input});
+   const input=raw?JSON.parse(raw):null;calls.push({route:req.url,input,apiKey:req.headers['x-api-key']||null});
    for(const gate of gates)if(gate.route===req.url)await gate.wait(input);
    let output;
    if(req.url==='/api/v2/get-nodes')output=nodesVisible?nodes:{};
@@ -77,7 +77,7 @@ export async function reviewFixture({pauses=false,recovery=false,clock=false,nod
   if(pauses)await fs.writeFile(path.join(data,'state.json'),JSON.stringify({items:{},history:[],sessions:{},pauses:[{name:'unavailable-node'}]}));
   if(recovery)await fs.writeFile(path.join(data,'transactions/manual.json'),JSON.stringify({id:'manual',phase:'installed'}));
   await beforeStart?.({data,root});
-  await harness.start({settings:JSON.parse(await fs.readFile(path.join(data,'settings.json'),'utf8')),preload,clock});
+  await harness.start({settings:JSON.parse(await fs.readFile(path.join(data,'settings.json'),'utf8')),preload,clock,supervisor,env});
   cookie=await harness.login();
   const post=(route,body={})=>fetch(base+route,{method:'POST',headers:{cookie,origin:base,'content-type':'application/json'},body:JSON.stringify(body)});
   const get=async route=>{const result=await fetch(base+route,{headers:{cookie}});assert.equal(result.status,200,await result.clone().text());return result.json()};
@@ -118,7 +118,8 @@ export async function reviewFixture({pauses=false,recovery=false,clock=false,nod
    while(events(name).length<count){if(Date.now()>stop)assert.fail(name+' event '+count+' did not arrive: '+harness.diagnostics());await new Promise(resolve=>setTimeout(resolve,20))}
    return events(name);
   };
-  return {root,data,files,mockBase,nodes,hold,calls,changes,post,get,items,confirm,approve,allMutations,journals,settled,preserved,close,showNodes,addFilm,events,eventually,tick:harness.tick,state:harness.state,diagnostics:harness.diagnostics};
+  const restart=async()=>{await harness.stop();await harness.start({settings:JSON.parse(await fs.readFile(path.join(data,'settings.json'),'utf8')),preload,clock,supervisor,env});cookie=await harness.login();};
+  return {root,data,files,mockBase,nodes,hold,calls,changes,post,get,items,confirm,approve,allMutations,journals,settled,preserved,close,restart,showNodes,addFilm,events,eventually,tick:harness.tick,state:harness.state,diagnostics:harness.diagnostics};
  }catch(error){await close();throw error}
 }
 

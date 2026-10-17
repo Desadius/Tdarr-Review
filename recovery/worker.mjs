@@ -10,7 +10,7 @@ import {quotaFor,deferConfirmedLimit,inspectDeferredLimit,reconcileDeferredLimit
 import {loadApprovalRegistry,registryHasApproval} from './approval-registry.mjs';
 import {registryAllowedModes} from './frozen-config.mjs';
 import {configDigest,detectConfigChange,startupValidator} from './config-watch.mjs';
-import {RecoveryRefusal,readRecoveryConfig,exitRefused} from './recovery-mode.mjs';
+import {RecoveryRefusal,exitRefused} from './recovery-mode.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -18,15 +18,19 @@ import {DatabaseSync} from 'node:sqlite';
 import {classify,confirmed,relative,bindHistory,bindApprovedImport,blocked,identity,within} from './policy.mjs';
 import {readHeader} from './container-header.mjs';
 import {lowPriorityHash} from './full-hash.mjs';
+import {createWorkerControl} from './control.mjs';
+import {readRuntimeRecoveryConfig} from './managed-config.mjs';
 
 const DATA=process.env.DATA_ROOT||'/data';
 // The container runs the worker as PID 1, which ignores signals without a handler.
 // A stop ends an idle wait at once; work already in progress is never cut short here.
 let stopping=false,wake=()=>{};
+const control=createWorkerControl({wake:()=>wake()});
+const canStart=()=>!stopping&&control.canStart();
 for(const signal of ['SIGTERM','SIGINT'])process.on(signal,()=>{if(stopping)return;stopping=true;console.log('Recovery: '+signal+' received; stopping after the current step');wake();});
 // Refuse (exit 78) before any state, registry or API access when the mode or config.json is unusable.
 const configFile=path.join(DATA,'config.json');
-const {mode,cfg,text:configText}=await readRecoveryConfig({file:configFile,mode:process.env.RECOVERY_MODE}).catch(e=>{if(e instanceof RecoveryRefusal)return exitRefused(e);throw e;});
+const {mode,cfg,text:configText,managed}=await readRuntimeRecoveryConfig({data:DATA,mode:process.env.RECOVERY_MODE}).catch(e=>{if(e instanceof RecoveryRefusal)return exitRefused(e);throw e;});
 const loadedConfigDigest=configDigest(configText);
 const stateFile=path.join(DATA,'state.json');
 let state=JSON.parse(await fs.readFile(stateFile,'utf8').catch(e=>{if(e.code!=='ENOENT')throw e;return '{"version":1,"jobs":{},"cases":{}}'}));
@@ -168,6 +172,7 @@ async function repair(c,{reuseConfirmedEvidence=false}={}){
 }
 async function observe(){
  for(const c of Object.values(state.cases).filter(x=>['waiting_replacement','replacement_queue_intent'].includes(x.status))){
+  if(!canStart())return;
   try {
   const m=await rad('/movie/'+c.movieId);
   if(c.status==='replacement_queue_intent'&&(!m.movieFileId||m.movieFileId!==(c.replacement?.movieFileId)||!m.movieFile))throw Object.assign(Error('Replacement Radarr identity disappeared after handoff intent'),{code:'TDARR_HANDOFF_BINDING'});
@@ -196,6 +201,7 @@ async function observe(){
 }
 async function resumeDeferred(){
  for(const c of Object.values(state.cases).filter(c=>['deferred_cooldown','defer_cooldown_intent'].includes(c.status))){
+  if(!canStart())return;
   try{
    const deps={cfg,state,c,td,phase,idle,safeSource,sample,readBinding};
    if(c.status==='defer_cooldown_intent')await reconcileDeferredIntent(deps);
@@ -208,6 +214,7 @@ async function resumeDeferred(){
 }
 async function resumeDailyLimit(){
  for(const c of Object.values(state.cases).filter(c=>['deferred_limit','defer_limit_intent'].includes(c.status)&&c.approval==null)){
+  if(!canStart())return;
   try{
    const deps={cfg,state,c,td,phase,idle,safeSource,sample,readBinding};
    if(c.status==='defer_limit_intent')await reconcileDeferredLimitIntent(deps);
@@ -235,17 +242,25 @@ async function ensureApprovedFloor(c,movie){
 }
 async function tick(){
  await publishNow(()=>liveStatus.refresh());
+ if(!canStart())return;
  try{await refreshOriginalLanguages({cfg,rad,atomic});delete state.languageMetadataError;}catch(e){state.languageMetadataError=e.message;}
- await maintainWaitingSources({cfg,state,rad,td,phase,save,command,idle,safeSource,sample});
+ if(!canStart())return;
+ await maintainWaitingSources({cfg,state,rad,td,phase,save,command,idle,safeSource,sample,canStart});
+ if(!canStart())return;
  await observe();
+ if(!canStart())return;
  await resumeDeferred();
+ if(!canStart())return;
  await resumeDailyLimit();
- await processPending({approvals:pendingApprovals,cfg,state,safeSource,identity,phase,repair});
+ if(!canStart())return;
+ await processPending({approvals:pendingApprovals,cfg,state,safeSource,identity,phase,repair,canStart});
+ if(!canStart())return;
  await publishNow(()=>liveStatus.refresh());
- for(const c of Object.values(state.cases).filter(c=>c.status==='replacement_imported'&&cfg.enabled!==false)){try{await retainCase(c,{mediaRoot:cfg.mediaRoot,quarantineRoot:cfg.quarantineRoot,atomicCase:save});delete c.retentionError;}catch(e){c.retentionError=e.message;}}
+ for(const c of Object.values(state.cases).filter(c=>c.status==='replacement_imported'&&cfg.enabled!==false)){if(!canStart())return;try{await retainCase(c,{mediaRoot:cfg.mediaRoot,quarantineRoot:cfg.quarantineRoot,atomicCase:save});delete c.retentionError;}catch(e){c.retentionError=e.message;}}
  // Catch these files even when Tdarr has silently classified them Not required.
  if(cfg.detectTerminalHeaders){
   for(const f of rows('filejsondb').filter(f=>f.DB===cfg.libraryId&&['Queued','Not required','Transcode error','Hold'].includes(f.TranscodeDecisionMaker)&&String(f._id).toLowerCase().endsWith('.mkv'))){
+   if(!canStart())return;
    let c;
    try{
     const rel=relative(f._id,cfg.sourceRoot),s=await safeSource(rel),id=identity(f._id,s.fp);
@@ -261,6 +276,7 @@ async function tick(){
  const jobs=rows('jobsjsondb').filter(j=>j.DB===cfg.libraryId&&j.end&&/error/i.test(j.status)&&j.end>=cfg.since).sort((a,b)=>b.end-a.end);
  const all=rows('jobsjsondb');
  for(const j of jobs){
+  if(!canStart())return;
   // Reconsider previously unrecognized reports once after extending the
   // decoder allowlist. Never reopen an existing case or a manual decision.
   if(state.jobs[j._id]&&!['not_structural_decode_error','not_confirmed_decode_error_v2'].includes(state.jobs[j._id]))continue;
@@ -284,15 +300,31 @@ async function tick(){
 // Never replay uncertain API mutations after restart. The journal stays reviewable.
 for(const c of Object.values(state.cases))if(!['manual','no_action','dry_run','waiting_replacement','waiting_source_kept','replacement_imported','replacement_queue_intent','deferred_limit','defer_limit_intent','deferred_cooldown','defer_cooldown_intent'].includes(c.status))await phase(c,'manual','Interrupted '+c.status+'; inspect journal before any retry');
 console.log('Tdarr recovery started; mode='+mode);
+control.ready();
 const pause=ms=>new Promise(r=>{const t=setTimeout(r,ms);wake=()=>{clearTimeout(t);r();};});
 // Edits to config.json apply only after a restart; report them instead of applying them mid-case.
 // The same gate as start-up: an edit that the mode or the approval registry would refuse is reported invalid.
 const validateEditedConfig=startupValidator({data:DATA,mode,getState:()=>state});
 async function noteConfigChange(){
+  if(managed){
+   let change=null;
+   try{const current=await readRuntimeRecoveryConfig({data:DATA,mode,checkActivation:false});if(configDigest(current.text)!==loadedConfigDigest){await loadApprovalRegistry({data:DATA,cfg:current.cfg,state:structuredClone(state)});change={detectedAt:state.configChange?.detectedAt||new Date().toISOString(),restartRequired:true,valid:true,error:null};}}
+   catch{change={detectedAt:state.configChange?.detectedAt||new Date().toISOString(),restartRequired:true,valid:false,error:'Managed settings would not pass startup checks'};}
+   if(change)state.configChange=change;else delete state.configChange;return;
+  }
   const change=await detectConfigChange({file:configFile,loadedDigest:loadedConfigDigest,previous:state.configChange,validate:validateEditedConfig});
   if(change&&change!==state.configChange)console.error('Recovery: config.json changed since start-up; restart the worker to apply it'+(change.valid?'':' after fixing it ('+change.error+')'));
   if(change)state.configChange=change;else delete state.configChange;
 }
-while(!stopping){try{await noteConfigChange();await tick();state.lastError=null;}catch(e){state.lastError=e.message;console.error('Recovery: '+e.message);}await publishNow(()=>liveStatus.refresh());await save();if(process.argv.includes('--once')||stopping)break;await pause(cfg.pollSeconds*1000);}
+while(!stopping&&!control.stopped()){
+ if(canStart()){
+  try{await noteConfigChange();await tick();state.lastError=null;}catch(e){state.lastError=e.message;console.error('Recovery: '+e.message);}
+  await publishNow(()=>liveStatus.refresh());await save();
+ }
+ control.checkpoint();
+ if(process.argv.includes('--once')||stopping||control.stopped())break;
+ await pause(cfg.pollSeconds*1000);
+}
 await publishNow(()=>liveStatus.close());
-if(stopping){console.log('Recovery stopped');process.exit(0);}
+control.close();
+if(stopping||control.stopped()){console.log('Recovery stopped');process.exit(0);}

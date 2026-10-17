@@ -7,6 +7,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
+import {checkManualQuarantine} from './quarantine-path.mjs';
 const runProbe=promisify(execFile);
 export const hasNorwegianAudio=streams=>streams.some(s=>s.codec_type==='audio'&&['nor','no','nob','nb','nno','nn'].includes(String(s.tags?.language||'').toLowerCase())&&!/commentary|komentar|commentaire/i.test(s.tags?.title||''));
 
@@ -49,9 +50,9 @@ export function replacementProfile(profile,current,badId,dualId){
  return p;
 }
 export function canResume(c){return ['waiting','imported','restored','manual'].includes(c.phase)||(c.phase==='queue_intent'&&!!c.replacementRelative&&!!c.replacementSourceFP);}
-export function createReplacement({data,getConfig,safeFile,hash,atomicJSON,tdarr,pauseDispatch,verifyPaused=async()=>{},isWorkerBusy=async()=>false,resume,onProgress}){
+export function createReplacement({data,getConfig,getConnection,safeFile,hash,atomicJSON,tdarr,pauseDispatch,verifyPaused=async()=>{},isWorkerBusy=async()=>false,resume,onProgress}){
  const connectionFile=path.join(data,'radarr.json'),directory=path.join(data,'radarr-replacements');let observing=false,mutating=false;
- async function connection(){return validateConnection(JSON.parse(await fs.readFile(connectionFile,'utf8')));}
+ async function connection(){const value=getConnection?await getConnection():JSON.parse(await fs.readFile(connectionFile,'utf8'));if(!value?.url)throw Object.assign(Error('Vyplň adresu Radarru, API klíč a cestu knihovny v Radarru.'),{code:'ENOENT'});return validateConnection(value);}
  async function api(c,route,method='GET',body){
   let r;try{r=await fetch(c.url+'/api/v3'+route,{method,redirect:'error',headers:{'X-Api-Key':c.apiKey,'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(30000)})}catch{throw Error('Radarr neodpovídá. Stav operace ověř před opakováním.');}
   if(!r.ok)throw Error('Radarr '+route.split('?')[0]+': HTTP '+r.status);
@@ -95,14 +96,7 @@ export function createReplacement({data,getConfig,safeFile,hash,atomicJSON,tdarr
   if(hash(a.fp+'|'+b.fp)!==item.snapshot)throw Error('Soubory se změnily. Obnov přehled.');
   const con=await connection(),m=matchMovie(await api(con,'/movie'),con.mediaRoot,item.relative,a.stat.size),all=await list();
   const sourceRoot=await fs.realpath(cfg.mediaRoot),quarantine=con.quarantineRoot||path.join(path.dirname(sourceRoot),'.tdarr-review-quarantine');
-  if(quarantine===sourceRoot||quarantine.startsWith(sourceRoot+path.sep)||sourceRoot.startsWith(quarantine+path.sep))throw Error('Karanténa originálů musí ležet mimo filmovou knihovnu.');
-  const parent=path.dirname(quarantine);if(await fs.realpath(parent)!==parent)throw Error('Rodič karantény nesmí být symlink.');await fs.access(parent,fs.constants.W_OK);
-  if((await fs.stat(parent)).dev!==a.stat.dev)throw Error('Karanténa musí ležet na stejném souborovém systému jako originál.');
-  if(process.platform==='linux'){
-   const mounts=(await fs.readFile('/proc/self/mountinfo','utf8')).trim().split('\n').map(line=>{const fields=line.split(' ');return {id:fields[0],point:fields[4].replace(/\\([0-7]{3})/g,(_,v)=>String.fromCharCode(parseInt(v,8)))}});
-   const mount=p=>mounts.filter(m=>p===m.point||p.startsWith(m.point==='/'?'/':m.point+'/')).sort((a,b)=>b.point.length-a.point.length)[0]?.id;
-   if(mount(a.path)!==mount(parent))throw Error('Originál a karanténu připoj jedním společným Docker mountem. Přesun mezi mounty není bezpečně možný.');
-  }
+  await checkManualQuarantine({mediaRoot:sourceRoot,quarantineRoot:quarantine,source:a.path});
   if(all.some(c=>c.movieId===m.id&&!['restored','imported'].includes(c.phase)))throw Error('Pro tento film už existuje neuzavřená žádost o náhradu.');
   if((await api(con,'/queue?pageSize=1000')).records.some(q=>q.movieId===m.id))throw Error('Radarr už má pro tento film stažení ve frontě.');
   const profile=await api(con,'/qualityprofile/'+m.qualityProfileId);

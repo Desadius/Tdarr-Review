@@ -19,10 +19,11 @@ export function validatePending(a){
  if(!['quant_step_size larger than huff_lsbs','Read past end of XLL band data'].includes(a.signature))throw Error('Unsupported signature');
 }
 export const quotaAvailable=(state,limit,now=Date.now())=>Number.isInteger(limit)&&limit>0&&Object.values(state.cases||{}).filter(c=>c.mutationStarted&&now-c.mutationStarted<86400000).length<limit;
-export async function processPending({approvals,cfg,state,safeSource,identity,phase,repair}){
+export async function processPending({approvals,cfg,state,safeSource,identity,phase,repair,canStart=()=>true}){
  const changed=frozenConfigDifference(approvals.config,cfg);if(changed!==null)throw Error('Pending recovery mapping changed '+changed);
  if(!cfg.enabled)return;
  for(const a of approvals.cases){let c=state.cases[a.id];if(c&&c.status!=='deferred_limit')continue;
+  if(!canStart())return;
   try{validatePending(a);const s=await safeSource(a.relative);if(s.fp!==a.fp||s.size!==a.size||identity(a.file,s.fp)!==a.id)throw Error('Frozen identity changed');
    c=state.cases[a.id]||(state.cases[a.id]={id:a.id,file:a.file,relative:a.relative,source:s.p,size:s.size,fp:s.fp,approval:a,created:new Date().toISOString()});
    if(!quotaAvailable(state,cfg.maxRepairsPerDay)){if(c.status!=='deferred_limit')await phase(c,'deferred_limit','Potvrzená chyba originálu; obnova čeká na uvolnění denního limitu. Originál zachován.');continue;}

@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import {BUSY_POLICIES,busyFor,mutationKind} from './busy-guards.mjs';
 
 test('every mutating route has an explicit concurrency policy',()=>{
+ assert.equal(mutationKind('POST','/api/shared-settings/draft'),'sharedSettings');assert.equal(mutationKind('POST','/api/shared-settings/test'),'sharedSettings');
+ // Apply owns its independent asynchronous coordinator; cancel must remain available while it waits.
+ assert.equal(mutationKind('POST','/api/shared-settings/apply'),null);assert.equal(mutationKind('POST','/api/shared-settings/cancel'),null);
  const id='a'.repeat(24);
  const routes={settings:['/api/settings','/api/settings/test'],radarrSettings:['/api/radarr/settings','/api/radarr/settings/test'],previewSettings:['/api/preview-settings'],batch:['/api/approve-batch'],restore:[`/api/radarr/requests/${id}/restore`],reviewSession:[`/api/items/${id}/review-session`]};
  for(const action of ['approve','reject','replace','recheck'])routes[action]=[`/api/items/${id}/${action}`];

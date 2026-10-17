@@ -7,11 +7,14 @@ import {previewRoutes} from './routes/previews.mjs';
 import {settingsRoutes} from './routes/settings.mjs';
 import {staticRoutes} from './routes/static.mjs';
 import {nodeRoutes} from './routes/nodes.mjs';
+import {sharedSettingsRoutes} from './routes/shared-settings.mjs';
 
-const modules={libraryRoutes,itemRoutes,previewRoutes,settingsRoutes,nodeRoutes,staticRoutes};
+const modules={libraryRoutes,itemRoutes,previewRoutes,settingsRoutes,nodeRoutes,staticRoutes,sharedSettingsRoutes};
 const ID='a'.repeat(24);
 // Every authenticated route served before the split of server.mjs (#12).
 const ROUTES=[
+ ...['','/status','/audit'].map(p=>['GET','/api/shared-settings'+p,'sharedSettingsRoutes']),
+ ...['draft','test','apply','cancel'].map(p=>['POST','/api/shared-settings/'+p,'sharedSettingsRoutes']),
  ['GET','/api/artwork/review/'+ID,'libraryRoutes'],['GET','/api/artwork/request/'+ID,'libraryRoutes'],
  ['GET','/api/statistics','libraryRoutes'],['GET','/api/quarantine','libraryRoutes'],
  ['GET','/api/radarr/settings','libraryRoutes'],['POST','/api/radarr/settings','libraryRoutes'],['POST','/api/radarr/settings/test','libraryRoutes'],
@@ -24,7 +27,7 @@ const ROUTES=[
  ['GET','/api/preview-settings','previewRoutes'],['POST','/api/preview-settings','previewRoutes'],['GET','/api/items/'+ID+'/preview-status','previewRoutes'],
  ['POST','/api/items/'+ID+'/audio-compare','previewRoutes'],['POST','/api/items/'+ID+'/frames','previewRoutes'],
  ['GET','/api/settings','settingsRoutes'],['POST','/api/settings','settingsRoutes'],['POST','/api/settings/test','settingsRoutes'],['POST','/api/node-restores/keep','nodeRoutes'],
- ...['/','/app.js','/ui-kit.js','/recovery-view.js','/comparison.js','/settings-dialogs.js','/quarantine.js','/statistics.js','/error-messages.js','/review-workflow.js','/av-player.js','/review-model.js','/i18n.js','/messages.en.js','/style.css','/favicon.svg'].map(p=>['GET',p,'staticRoutes']),
+ ...['/shared-settings-view.js','/shared-settings-messages.js','/','/app.js','/ui-kit.js','/recovery-view.js','/comparison.js','/settings-dialogs.js','/quarantine.js','/statistics.js','/error-messages.js','/review-workflow.js','/av-player.js','/review-model.js','/i18n.js','/messages.en.js','/style.css','/favicon.svg'].map(p=>['GET',p,'staticRoutes']),
 ];
 const TOUCHED=Symbol('ctx touched');
 // A server context that records any use, so a module that does not own a route

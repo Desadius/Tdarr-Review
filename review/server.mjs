@@ -40,11 +40,18 @@ import {settingsRoutes} from './routes/settings.mjs';
 import {staticRoutes} from './routes/static.mjs';
 import {nodeRoutes} from './routes/nodes.mjs';
 import {previewCodeVersion as readPreviewCodeVersion} from './preview-version.mjs';
+import {createSharedSettingsStore,readActiveSettings} from './shared-settings.mjs';
+import {createSettingsApply} from './settings-apply.mjs';
+import {createRecoveryControlClient} from './recovery-control.mjs';
+import {sharedSettingsRoutes} from './routes/shared-settings.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 const DATA=process.env.DATA_ROOT||'/data',PORT=Number(process.env.PORT||8270),APP_VERSION=await appVersion();
 const configfile=path.join(DATA,'settings.json');
-let config=validate(JSON.parse(await fs.readFile(configfile,'utf8').catch(e=>{if(e.code!=='ENOENT')throw e;return JSON.stringify(defaults())})));
+let activeSettings=await readActiveSettings(DATA,{checkPrivate:false});
+let config=activeSettings?.review||validate(JSON.parse(await fs.readFile(configfile,'utf8').catch(e=>{if(e.code!=='ENOENT')throw e;return JSON.stringify(defaults())})));
+const sharedSettings=createSharedSettingsStore({data:DATA});
+const activeConnection=async()=>activeSettings?activeSettings.radarr:JSON.parse(await fs.readFile(path.join(DATA,'radarr.json'),'utf8'));
 let MEDIA,REVIEW,TDARR,DB,FFPROBE,HOST;
 function applyConfig(){({mediaRoot:MEDIA,reviewRoot:REVIEW,tdarrUrl:TDARR,database:DB,ffprobe:FFPROBE}=config);HOST=new URL(config.publicOrigin).host;}
 applyConfig();
@@ -223,8 +230,8 @@ async function keepNodePaused(name){
 const pendingRestores=()=>state.pauses.map(p=>({name:p.name,pausedAt:p.pausedAt||null,title:p.for?.title||null}));
 async function verifyPaused(item){const nodes=await tdarr('/api/v2/get-nodes');if(Object.values(nodes).some(n=>!n.nodePaused)||workerBusy(nodes,item))throw new Error('Během výměny se změnil stav nodů. Originál nebyl vyměněn.');}
 
-const replacements=createReplacement({data:DATA,getConfig:()=>config,safeFile,hash,atomicJSON,tdarr,pauseDispatch,verifyPaused,isWorkerBusy:async item=>workerBusy(await tdarr('/api/v2/get-nodes'),item),resume,onProgress:stage=>progress(stage)});
-const artwork=createArtwork({data:DATA,getConnection:async()=>JSON.parse(await fs.readFile(path.join(DATA,'radarr.json'),'utf8'))});
+const replacements=createReplacement({data:DATA,getConfig:()=>config,getConnection:activeConnection,safeFile,hash,atomicJSON,tdarr,pauseDispatch,verifyPaused,isWorkerBusy:async item=>workerBusy(await tdarr('/api/v2/get-nodes'),item),resume,onProgress:stage=>progress(stage)});
+const artwork=createArtwork({data:DATA,getConnection:activeConnection});
 await replacements.recover();
 // Operator log of a finished approval, rejection or replacement request (never review evidence).
 const outcomeLog=o=>({id:o.id,title:o.title,action:o.action,outcome:o.status,message:o.message,warning:o.warning,requestId:o.requestId,jobId:o.jobId,reason:o.rejectionReason,elapsedSeconds:o.elapsedSeconds,savedBytes:o.savedBytes});
@@ -240,7 +247,8 @@ async function replacementAction(item,reason){
   try{await recordDecision(DATA,{event:'replacement',id:item.id,title:item.title,relative:item.relative,reviewRelative:item.reviewRelative,snapshot:item.snapshot,jobId:item.jobId,reason,requestId:outcome.requestId,outcome:outcome.status,message:outcome.message})}catch(e){auditFailed(outcome,e)}
   state.history.unshift(outcome);state.history=state.history.slice(0,150);await save();active=null;cache=null;logEvent('action.finished',outcomeLog(outcome))}
 }
-const replacementTimer=setInterval(()=>{if(!busyFor('background'))void replacements.observe().then(()=>replacements.cleanup()).catch(e=>console.error('Radarr status: '+e.message));},60000);replacementTimer.unref();
+let replacementTask=null;
+const replacementTimer=setInterval(()=>{if(!replacementTask&&!busyFor('background'))replacementTask=replacements.observe().then(()=>replacements.cleanup()).catch(e=>console.error('Radarr status: '+e.message)).finally(()=>{replacementTask=null});},60000);replacementTimer.unref();
 
 // Recover/inspect transactions before restarting dispatch; never replay approvals after restart.
 const recovery=await recoverTransactions(path.join(DATA,'transactions'));
@@ -398,7 +406,7 @@ const authTimer=setInterval(()=>{pruneAuthAttempts(authAttempts);if(pruneSession
 // Getters/setters keep the module variables above authoritative, so the scan,
 // transaction and preview code shares exactly the state the routes change.
 const ctx={
- ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,artwork,reviewSessions,previewPairs,previewPlans,previewAttempts,
+ ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,artwork,reviewSessions,previewPairs,previewPlans,previewAttempts,sharedSettings,
  get config(){return config},set config(value){config=value},
  get previewSettings(){return previewSettings},set previewSettings(value){previewSettings=value},
  get state(){return state},
@@ -415,7 +423,11 @@ const ctx={
  applyConfig,save,busyFor,keepNodePaused,pendingRestores,scan,perform,performBatch,replacementAction,resume,readRows,dbRows,verifyReviewItem,reviewMutationBlocked,
  previewIdentity,previewPair,previewVersion,previewPreparation,planPreviewItem,preparePreviews,forgetPreviews,
 };
-const routes=[libraryRoutes,itemRoutes,previewRoutes,settingsRoutes,nodeRoutes,staticRoutes];
+const activateSettings=value=>{activeSettings=value;config=value.review;applyConfig();statsCache=null;state.items={};state.reviewSessions={};cache=null;cacheAt=0;previewPairs.clear();previewPlans.clear();previewAttempts.clear();};
+activateSettings.flush=async()=>{await previews.invalidate({all:true});await save();};
+const localOff={requestDrain:async()=>({state:'off'}),status:async()=>({state:'off'}),cancel:async()=>({state:'off'}),stopAfterDrain:async()=>({state:'stopped'}),restart:async()=>({state:'off'}),wait:async()=>({state:'off'})};
+ctx.settingsApply=await createSettingsApply({data:DATA,store:sharedSettings,mode:process.env.RECOVERY_MODE||'off',control:!process.connected&&(!process.env.RECOVERY_MODE||process.env.RECOVERY_MODE==='off')?localOff:createRecoveryControlClient(),safe:()=>!busyFor('settings')&&!replacementTask&&!previewPlanning,barrier:value=>{settingsBusy=value;},activate:activateSettings,readRows});
+const routes=[sharedSettingsRoutes,libraryRoutes,itemRoutes,previewRoutes,settingsRoutes,nodeRoutes,staticRoutes];
 const server=http.createServer(async(req,res)=>{
   let releasePreviewBackground=false;const request={mutation:null};
   try {

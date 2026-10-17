@@ -14,8 +14,9 @@ export function eligibleRelease(r,profile,badTitles,current){
  if(!profile.items.some(i=>i.allowed&&(i.quality?.id===q||i.items?.some(w=>w.allowed!==false&&w.quality?.id===q))))return false;
  return (r.rejections||[]).every(x=>/^(Existing file on disk|Existing file meets)/i.test(x));
 }
-export async function maintainWaitingSources({cfg,state,rad,td,phase,save,command,idle,safeSource,sample}){
+export async function maintainWaitingSources({cfg,state,rad,td,phase,save,command,idle,safeSource,sample,canStart=()=>true}){
  for(const c of Object.values(state.cases).filter(c=>['waiting_replacement','waiting_source_kept'].includes(c.status))){
+  if(!canStart())return;
   try{
    const m=await rad('/movie/'+c.movieId),queue=(await rad('/queue?pageSize=1000')).records.filter(q=>q.movieId===c.movieId);
    c.tmdbId=m.tmdbId;c.titleSlug=m.titleSlug;c.latestQueue=queue.map(downloadQueue);
