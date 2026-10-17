@@ -79,6 +79,40 @@ function visibleDraft(draft){const result={review:entries(draft.review,Object.ke
 function changed(before,after){const fields=[];for(const section of ['review','radarr','recovery'])for(const key of new Set([...Object.keys(before?.[section]||{}),...Object.keys(after?.[section]||{})]))if(!sameValue(before?.[section]?.[key],after?.[section]?.[key]))fields.push(section+'.'+key);return fields;}
 function auditEntry(doc,{action,result,fields=[],now}){doc.audit.push({at:new Date(now).toISOString(),action,result,fields,generation:doc.generation,revision:hash(JSON.stringify(doc.draft))});doc.audit=doc.audit.slice(-AUDIT_LIMIT);}
 
+const processNonce=crypto.randomUUID(),bootPattern=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;let bootId;
+async function lifetime(pid){
+ if(process.platform==='linux'){
+  bootId??=fs.readFile('/proc/sys/kernel/random/boot_id','utf8').then(text=>{const value=text.trim();if(!bootPattern.test(value))fail('settings_lock_invalid');return value;}).catch(()=>fail('settings_lock_invalid'));
+  let stat;try{stat=await fs.readFile('/proc/'+pid+'/stat','utf8');}catch(e){if(e.code==='ENOENT'||e.code==='ESRCH')return null;fail('settings_lock_invalid');}
+  // comm is parenthesized and can itself contain spaces and ')' characters.
+  const fields=stat.slice(stat.lastIndexOf(')')+1).trim().split(/\s+/),startTime=fields[19];
+  if(!/^\d+$/.test(startTime||''))fail('settings_lock_invalid');
+  if(fields[0]==='Z'||fields[0]==='X')return null;
+  return {version:1,pid,bootId:await bootId,startTime};
+ }
+ if(pid===process.pid)return {version:1,pid,nonce:processNonce};
+ try{process.kill(pid,0);return {pid};}catch(e){if(e.code==='ESRCH')return null;if(e.code==='EPERM')return {pid};throw e;}
+}
+async function liveOwner(owner){
+ if(!object(owner)||!Number.isSafeInteger(owner.pid)||owner.pid<=0)fail('settings_lock_invalid');
+ const running=await lifetime(owner.pid);if(!running)return false;
+ // PID-only records from older binaries cannot prove a live owner has expired.
+ if(owner.version===undefined)return true;
+ if(owner.version!==1)fail('settings_lock_invalid');
+ if(process.platform==='linux'){
+  if(typeof owner.bootId!=='string'||!bootPattern.test(owner.bootId)||typeof owner.startTime!=='string'||!/^\d{1,32}$/.test(owner.startTime))fail('settings_lock_invalid');
+  return owner.bootId===running.bootId&&owner.startTime===running.startTime;
+ }
+ if(typeof owner.nonce!=='string'||!owner.nonce||owner.nonce.length>128)fail('settings_lock_invalid');
+ // Self has an exact lifetime nonce; unknown live foreign PIDs stay conservative off Linux.
+ return owner.pid!==process.pid||owner.nonce===processNonce;
+}
+async function readOwner(file){
+ try{const stat=await fs.lstat(file);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>4096)fail('settings_lock_invalid');
+  let value;try{value=JSON.parse(await fs.readFile(file,'utf8'));}catch(e){if(e.code==='ENOENT')return null;fail('settings_lock_invalid');}return value;
+ }catch(e){if(e.code==='ENOENT')return null;throw e;}
+}
+
 export function createSharedSettingsStore({data,env=process.env,now=Date.now}){
  const file=path.join(data,FILE),recoveryData=path.join(data,'recovery');
  async function inputs(){const [review,radarr,recovery]=await Promise.all([read(path.join(data,'settings.json')),read(path.join(data,'radarr.json')),read(path.join(recoveryData,'config.json'))]);return {review,radarr,recovery};}
@@ -91,18 +125,25 @@ export function createSharedSettingsStore({data,env=process.env,now=Date.now}){
   return {doc,revision,legacy,registry:registry.value,external};
  }
  async function lock(fn){
-  await fs.mkdir(data,{recursive:true});const target=file+'.lock',prepared=target+'.'+crypto.randomUUID();
-  // Install a complete owner record exclusively. A process crash cannot leave an ownerless lock.
-  await fs.writeFile(prepared,JSON.stringify({pid:process.pid}),{flag:'wx',mode:0o600});
-  try{for(let attempt=0;;attempt++){try{await fs.link(prepared,target);break;}catch(e){
-    if(e.code!=='EEXIST')throw e;if(attempt)fail('settings_busy');
-    let owner;try{owner=JSON.parse(await fs.readFile(target,'utf8'));}catch{fail('settings_lock_invalid');}
-    if(!Number.isSafeInteger(owner.pid)||owner.pid<=0)fail('settings_lock_invalid');
-    try{process.kill(owner.pid,0);fail('settings_busy');}catch(error){if(error.code!=='ESRCH')throw error;}
-    await fs.unlink(target);
-   }}
-   try{return await fn();}finally{await fs.unlink(target);}
-  }finally{await fs.rm(prepared,{force:true});}
+  await fs.mkdir(data,{recursive:true});const prefix=path.basename(file)+'.lock.owner-',id=crypto.randomUUID(),candidate=path.join(data,prefix+id),prepared=file+'.lock.prepare-'+id;
+  const owner=await lifetime(process.pid);if(!owner)fail('settings_lock_invalid');
+  let handle;
+  try{
+   handle=await fs.open(prepared,'wx',0o600);await handle.writeFile(JSON.stringify(owner));await handle.sync();await handle.close();handle=null;
+   // Each immutable candidate has its own name. Never unlink a fixed lock pathname that
+   // another reclaimer could have replaced with a new live owner's record.
+   await fs.link(prepared,candidate);await fs.unlink(prepared);
+   const legacy=await readOwner(file+'.lock');if(legacy&&await liveOwner(legacy))fail('settings_busy');
+   const names=(await fs.readdir(data)).filter(name=>name.startsWith(prefix));if(names.length>256)fail('settings_busy');
+   for(const name of names){
+    if(!/^[a-f0-9-]{36}$/.test(name.slice(prefix.length)))fail('settings_lock_invalid');
+    const other=path.join(data,name);if(other===candidate)continue;
+    const record=await readOwner(other);if(!record)continue;
+    if(await liveOwner(record))fail('settings_busy');
+    await fs.rm(other,{force:true});
+   }
+   return await fn();
+  }finally{await handle?.close();await fs.rm(candidate,{force:true});await fs.rm(prepared,{force:true});}
  }
  async function guards(s,resolved,{pending=false}={}){
   if(s.registry){if(s.registry.version!==1||!object(s.registry.config)||!Array.isArray(s.registry.cases))fail('settings_registry_invalid');const field=frozenConfigDifference(s.registry.config,resolved.recovery);if(field)fail('settings_frozen',field);

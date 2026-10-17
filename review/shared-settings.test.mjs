@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import {spawn} from 'node:child_process';
+import {once} from 'node:events';
 import {createSharedSettingsStore,readActiveSettings} from './shared-settings.mjs';
 
 async function fixture(t){const data=await fs.mkdtemp(path.join(os.tmpdir(),'shared-settings-'));t.after(()=>fs.rm(data,{recursive:true,force:true}));return data;}
@@ -133,6 +135,44 @@ test('restart reclaims dead process locks and history remains bounded and value-
  for(let i=0;i<201;i++)await assert.doesNotReject(store.recordOutcome({action:'startup',result:'failure'}));
  const history=await createSharedSettingsStore({data,env:{}}).audit();assert.equal(history.length,200);assert.equal(history.at(-1).result,'failure');assert.equal(JSON.stringify(history).includes('private-key'),false);
  assert.ok(history.every(entry=>/^[a-f0-9]{64}$/.test(entry.revision)));
+});
+test('a stale settings lock with a reused current PID does not block a new process lifetime',async t=>{
+ const {data,store,saved}=await configured(t);
+ const bootId=process.platform==='linux'?(await fs.readFile('/proc/sys/kernel/random/boot_id','utf8')).trim():'00000000-0000-0000-0000-000000000000';
+ const stale=JSON.stringify({version:1,pid:process.pid,bootId,startTime:'0',nonce:'previous-process-lifetime'}),candidate=path.join(data,'shared-settings.json.lock.owner-00000000-0000-0000-0000-000000000001');
+ await fs.writeFile(path.join(data,'shared-settings.json.lock'),stale);await fs.writeFile(candidate,stale);
+ await assert.doesNotReject(store.saveDraft({revision:saved.revision,patch:{review:{label:'After PID reuse'}}}));
+ assert.equal((await store.current()).draft.review.label,'After PID reuse');
+ await assert.rejects(fs.access(candidate),{code:'ENOENT'});
+});
+test('a previous boot cannot own a live PID with the same process start ticks',{skip:process.platform!=='linux'?'Requires Linux boot and process identity':false},async t=>{
+ const {data,store,saved}=await configured(t),stat=await fs.readFile('/proc/self/stat','utf8'),startTime=stat.slice(stat.lastIndexOf(')')+1).trim().split(/\s+/)[19];
+ await fs.writeFile(path.join(data,'shared-settings.json.lock'),JSON.stringify({version:1,pid:process.pid,bootId:'00000000-0000-0000-0000-000000000000',startTime}));
+ await assert.doesNotReject(store.saveDraft({revision:saved.revision,patch:{review:{label:'After reboot'}}}));
+});
+test('two store instances in the same live process cannot write through an owned lock',{timeout:10000},async t=>{
+ const {data,store,saved}=await configured(t),other=createSharedSettingsStore({data,env:{RECOVERY_MODE:'verify'}}),rename=fs.rename;
+ let entered,release;const holding=new Promise(resolve=>entered=resolve),released=new Promise(resolve=>release=resolve);let writing,paused=false;
+ try{
+  fs.rename=async function(source,target){if(!paused&&target===path.join(data,'shared-settings.json')){paused=true;entered();await released;}return rename(source,target);};
+  writing=store.saveDraft({revision:saved.revision,patch:{review:{label:'Owned operation'}}});await holding;
+  await assert.rejects(other.saveDraft({revision:saved.revision,patch:{review:{label:'Concurrent overwrite'}}}),{code:'settings_busy'});
+ }finally{release();await writing;fs.rename=rename;}
+ assert.equal((await store.current()).draft.review.label,'Owned operation');
+ assert.equal((await fs.readdir(data)).filter(name=>name.includes('.lock.owner-')).length,0);
+});
+test('a live subprocess excludes other writers and its crashed lifetime is reclaimable',{timeout:30000},async t=>{
+ const {data,store,saved}=await configured(t);
+ const program=`import fs from 'node:fs/promises';const {createSharedSettingsStore}=await import(process.argv[1]);const rename=fs.rename;fs.rename=async(a,b)=>{if(b.endsWith('shared-settings.json')){process.send({holding:true});await new Promise(resolve=>process.once('message',resolve));}return rename(a,b)};await createSharedSettingsStore({data:process.argv[2],env:{RECOVERY_MODE:'verify'}}).saveDraft({revision:process.argv[3],patch:{review:{label:'Subprocess'}}});process.disconnect();`;
+ const child=spawn(process.execPath,['--input-type=module','--eval',program,new URL('./shared-settings.mjs',import.meta.url).href,data,saved.revision],{stdio:['ignore','ignore','pipe','ipc']});
+ let diagnostics='';child.stderr.on('data',chunk=>diagnostics+=chunk);const exited=once(child,'exit');
+ t.after(async()=>{if(child.exitCode===null&&child.signalCode===null){child.kill('SIGKILL');await exited;}});
+ const [message]=await Promise.race([once(child,'message'),exited.then(()=>{throw Error('Subprocess exited before holding: '+diagnostics);})]);assert.equal(message.holding,true);
+ await assert.rejects(store.saveDraft({revision:saved.revision,patch:{review:{label:'Concurrent parent'}}}),{code:'settings_busy'});
+ child.kill('SIGKILL');await exited;
+ await assert.doesNotReject(store.saveDraft({revision:saved.revision,patch:{review:{label:'After subprocess crash'}}}));
+ assert.equal((await store.current()).draft.review.label,'After subprocess crash');
+ assert.equal((await fs.readdir(data)).filter(name=>name.includes('.lock.owner-')).length,0);
 });
 test('advancing clock permits first-run saves and completed diagnostic cases do not block mappings',async t=>{
  let time=1700000000000;const data=await fixture(t),store=createSharedSettingsStore({data,env:{},now:()=>time});
