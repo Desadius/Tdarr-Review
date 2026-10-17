@@ -78,7 +78,7 @@ test('follow-up binding follows the recorded replacement identity and accepts on
   const f=fixture();f.parent.replacementSourceFP=stored;
   assert.equal(replacementFollowup(f.parent,f)?.binding??null,expected[variant],variant);
  }
- for(const fp of ['1:2:100:-4:5','1:2:100:1e+21:5','9007199254740992:2:100:4:5']){
+ for(const fp of ['1:2:100:-4:5','1:2:100:1e+21:5','01:2:100:4:5','9007199254740992:2:100:4:5']){
   const f=fixture();f.parent.replacementSourceFP=fp;f.child.fp=fp;f.child.id=identity(f.child.file,fp);
   assert.equal(replacementFollowup(f.parent,f)?.binding??null,fp.startsWith('9007')?'exact':null,fp);
  }

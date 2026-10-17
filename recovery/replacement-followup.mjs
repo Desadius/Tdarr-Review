@@ -1,12 +1,12 @@
 import {identity} from './policy.mjs';
+import {compareIdentity} from './file-identity.mjs';
 
 // Display linkage only. It grants no authority and never changes either case.
+// It also keeps its stricter rule: only non-negative plain decimal fields.
 function matchFingerprint(stored,current){
- if(typeof stored!=='string'||typeof current!=='string')return null;
- const a=stored.split(':'),b=current.split(':');
- if(a.length!==5||b.length!==5||[...a,...b].some(x=>!/^\d+(?:\.\d+)?$/.test(x)||!Number.isFinite(Number(x))))return null;
- if(stored===current)return 'exact';
- return a.slice(0,4).every((x,i)=>x===b[i])?'ctime_changed':null;
+ if(![stored,current].every(v=>typeof v==='string'&&v.split(':').every(x=>/^\d+(?:\.\d+)?$/.test(x))))return null;
+ const change=compareIdentity(stored,current);
+ return change==='same'?'exact':change==='ctime-changed'?'ctime_changed':null;
 }
 export function replacementFollowup(parent,{cfg,state}){
  if(parent.status!=='replacement_imported'||parent.cleanup?.approvedAt||parent.cleanup?.complete||!parent.replacementSourceFP||!parent.replacementRelative||!Number.isInteger(parent.movieId)||parent.movieId<=0||!Number.isInteger(parent.replacement?.movieFileId)||parent.replacement.movieFileId<=0||!Number.isSafeInteger(parent.replacement?.size)||parent.replacement.size<=0)return null;
