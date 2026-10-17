@@ -2,7 +2,7 @@
 
 ## Persistent data and backups
 
-Back up Review `/data` (it includes Recovery's `config.json`, state and private approval registry in `/data/recovery/`), the source/configuration version and the media-parent approval records. Review state includes its access key, sessions, history, transactions and Radarr requests. It is private operational data, not repository content.
+Back up Review `/data` (including managed `shared-settings.json`, the `settings-activation.json` interruption fence, and Recovery's legacy `config.json`, state and private approval registry in `/data/recovery/`), the source/configuration version and the media-parent approval records. Review state includes its access key, sessions, history, transactions and Radarr requests. It is private operational data, not repository content.
 
 `state.json` keeps only the latest 150 history entries. The durable decision records are separate append-only files in Review `/data` (mode 0600, each record fsynced):
 
@@ -37,6 +37,10 @@ docker compose logs --tail 40 review
 
 For a source build, replace `pull` with `build` and omit `--no-build`. For a Docker template installation, use Unraid's normal update flow after the idle/backup checks. An immutable `sha-<commit>` tag can be recorded in Repository (or `REVIEW_IMAGE_TAG` for Compose) to pin or roll back the application. Do not run an additional container against the same `/data` as a workaround. Rollback uses the previous image/source, with existing transaction evidence retained; verify schema compatibility before restoring old state.
 
+## Managed settings operation
+
+Use the [shared draft/test/apply workflow](USER-GUIDE.md#configure-review-and-recovery) for ordinary settings. Save alone does not restart a process. Apply waits for positively acknowledged Recovery drain and Review safety guards, commits one complete generation and restarts only Recovery. Cancel is available before stopping/commit. A failed new start or ambiguous activation leaves Recovery stopped, with no automatic rollback or replay; Review remains available to correct the draft. Private exception revocations require explicit file-refresh acknowledgement before another Apply. Frozen evidence and unfinished-case mappings require separate migration, never an override in the editor.
+
 ## Web UI unavailable after restart
 
 Verify the container exists, its status, its mapped port, Unraid Autostart and startup logs. Check data-directory ownership, valid settings JSON and runtime support for `node:sqlite`. Do not reset data/delete transaction journals merely to make the UI load.
@@ -69,7 +73,7 @@ Inspect the film's detail and durable journal. Preserve `.tdarr-review-*.old`, `
 
 ## Recovery configuration was edited
 
-Recovery applies its private `config.json` only at start-up (`/data/recovery/config.json` in the unified container). After an edit the worker logs `config.json changed since start-up; restart the worker to apply it` and the shared status file shows `configChange.restartRequired: true`. If `configChange.valid` is `false`, correct the file first: a restart with invalid JSON, or with a change the approval registry refuses (`error` names the rule), stops the worker. Then restart the Review container while both applications are idle, as described in step 2 of *Update an existing deployment*. Review shows the same notice in the Recovery view (red when the edited file is invalid), together with warnings about original decoding or mutating work. Reverting the edit clears the configuration notice without a restart.
+For unmanaged legacy configuration, Recovery applies its private `config.json` only at start-up (`/data/recovery/config.json` in the unified container). After an edit the worker logs `config.json changed since start-up; restart the worker to apply it` and the shared status file shows `configChange.restartRequired: true`. If `configChange.valid` is `false`, correct the file first: a restart with invalid JSON, or with a change the approval registry refuses (`error` names the rule), stops the worker. Then restart the Review container while both applications are idle, as described in step 2 of *Update an existing deployment*. Review shows the same notice in the Recovery view (red when the edited file is invalid), together with warnings about original decoding or mutating work. Reverting the edit clears the configuration notice without a restart.
 
 ## Review event log
 
@@ -100,7 +104,7 @@ docker inspect --format '{{json .State.Health.Log}}' tdarr-review
 
 These conditions are reported, not treated as failures: the container stays healthy so that a restart policy or auto-heal tool does not restart Review during a pending transaction or node restore. The check fails only when Review does not answer or its UI is not served: it also requests `/` and `/app.js` and needs a 200 for each. Recovery exiting or refusing startup does not stop Review or fail the container check. A missing runtime-state file is shown as **Off** without attention, and a missing Recovery case-status file is not flagged.
 
-The supervisor writes `/data/recovery/runtime-state.json` at startup and on state changes. Its timestamp has no heartbeat freshness threshold. **Refused** remains until the container is restarted after correcting the reported cause; **Restarting** follows the supervisor's backoff. `crash-loop` remains visible during restarts and running attempts until the worker has run continuously for ten minutes. The authenticated `GET /api/recovery/runtime` diagnostics remain available if the separate film-case status cannot be read; the UI keeps that case-data error and does not mark old cases fresh. Runtime status never changes approval, file-exchange recovery or quarantine decisions. See [Recovery worker status](USER-GUIDE.md#recovery-worker-status) for the state meanings.
+The supervisor writes `/data/recovery/runtime-state.json` at startup and on state changes. Its timestamp has no heartbeat freshness threshold. **Refused** requires correcting the cause and a new explicit Apply for managed settings (or controlled container restart for legacy startup); **Restarting** follows the supervisor's backoff. `crash-loop` remains visible during restarts and running attempts until the worker has run continuously for ten minutes. The authenticated `GET /api/recovery/runtime` diagnostics remain available if the separate film-case status cannot be read; the UI keeps that case-data error and does not mark old cases fresh. Runtime status never changes approval, file-exchange recovery or quarantine decisions. See [Recovery worker status](USER-GUIDE.md#recovery-worker-status) for the state meanings.
 
 ## Recovery status is stale
 

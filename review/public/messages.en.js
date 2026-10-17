@@ -1,5 +1,7 @@
+import sharedSettingsMessages from './shared-settings-messages.js?v=20261017-settings1';
+import {ERROR_MESSAGES} from './error-messages.js?v=20261017-settings1';
 export default {
-  "exact": {
+  "exact": {...Object.fromEntries(Object.values(ERROR_MESSAGES).map(message=>[message.cs,message.en])),...sharedSettingsMessages,
     "Nastavení právě používá jiná operace. Zkus to za chvíli.": "Another operation is using settings. Try again shortly.",
     "Nastavení se změnilo. Načti aktuální návrh a zkus to znovu.": "Settings changed. Reload the current draft and try again.",
     "Relace řízení Recovery vypršela.": "Recovery control session expired.",

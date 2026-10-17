@@ -27,7 +27,7 @@ const ROUTES=[
  ['GET','/api/preview-settings','previewRoutes'],['POST','/api/preview-settings','previewRoutes'],['GET','/api/items/'+ID+'/preview-status','previewRoutes'],
  ['POST','/api/items/'+ID+'/audio-compare','previewRoutes'],['POST','/api/items/'+ID+'/frames','previewRoutes'],
  ['GET','/api/settings','settingsRoutes'],['POST','/api/settings','settingsRoutes'],['POST','/api/settings/test','settingsRoutes'],['POST','/api/node-restores/keep','nodeRoutes'],
- ...['/','/app.js','/ui-kit.js','/recovery-view.js','/comparison.js','/settings-dialogs.js','/quarantine.js','/statistics.js','/error-messages.js','/review-workflow.js','/av-player.js','/review-model.js','/i18n.js','/messages.en.js','/style.css','/favicon.svg'].map(p=>['GET',p,'staticRoutes']),
+ ...['/shared-settings-view.js','/shared-settings-messages.js','/','/app.js','/ui-kit.js','/recovery-view.js','/comparison.js','/settings-dialogs.js','/quarantine.js','/statistics.js','/error-messages.js','/review-workflow.js','/av-player.js','/review-model.js','/i18n.js','/messages.en.js','/style.css','/favicon.svg'].map(p=>['GET',p,'staticRoutes']),
 ];
 const TOUCHED=Symbol('ctx touched');
 // A server context that records any use, so a module that does not own a route
