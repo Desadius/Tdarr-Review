@@ -10,7 +10,7 @@ import {quotaFor,deferConfirmedLimit,inspectDeferredLimit,reconcileDeferredLimit
 import {loadApprovalRegistry,registryHasApproval} from './approval-registry.mjs';
 import {registryAllowedModes} from './frozen-config.mjs';
 import {configDigest,detectConfigChange,startupValidator} from './config-watch.mjs';
-import {RecoveryRefusal,readRecoveryConfig,exitRefused} from './recovery-mode.mjs';
+import {RecoveryRefusal,exitRefused} from './recovery-mode.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -19,6 +19,7 @@ import {classify,confirmed,relative,bindHistory,bindApprovedImport,blocked,ident
 import {readHeader} from './container-header.mjs';
 import {lowPriorityHash} from './full-hash.mjs';
 import {createWorkerControl} from './control.mjs';
+import {readRuntimeRecoveryConfig} from './managed-config.mjs';
 
 const DATA=process.env.DATA_ROOT||'/data';
 // The container runs the worker as PID 1, which ignores signals without a handler.
@@ -29,7 +30,7 @@ const canStart=()=>!stopping&&control.canStart();
 for(const signal of ['SIGTERM','SIGINT'])process.on(signal,()=>{if(stopping)return;stopping=true;console.log('Recovery: '+signal+' received; stopping after the current step');wake();});
 // Refuse (exit 78) before any state, registry or API access when the mode or config.json is unusable.
 const configFile=path.join(DATA,'config.json');
-const {mode,cfg,text:configText}=await readRecoveryConfig({file:configFile,mode:process.env.RECOVERY_MODE}).catch(e=>{if(e instanceof RecoveryRefusal)return exitRefused(e);throw e;});
+const {mode,cfg,text:configText,managed}=await readRuntimeRecoveryConfig({data:DATA,mode:process.env.RECOVERY_MODE}).catch(e=>{if(e instanceof RecoveryRefusal)return exitRefused(e);throw e;});
 const loadedConfigDigest=configDigest(configText);
 const stateFile=path.join(DATA,'state.json');
 let state=JSON.parse(await fs.readFile(stateFile,'utf8').catch(e=>{if(e.code!=='ENOENT')throw e;return '{"version":1,"jobs":{},"cases":{}}'}));
@@ -305,6 +306,12 @@ const pause=ms=>new Promise(r=>{const t=setTimeout(r,ms);wake=()=>{clearTimeout(
 // The same gate as start-up: an edit that the mode or the approval registry would refuse is reported invalid.
 const validateEditedConfig=startupValidator({data:DATA,mode,getState:()=>state});
 async function noteConfigChange(){
+  if(managed){
+   let change=null;
+   try{const current=await readRuntimeRecoveryConfig({data:DATA,mode,checkActivation:false});if(configDigest(current.text)!==loadedConfigDigest){await loadApprovalRegistry({data:DATA,cfg:current.cfg,state:structuredClone(state)});change={detectedAt:state.configChange?.detectedAt||new Date().toISOString(),restartRequired:true,valid:true,error:null};}}
+   catch{change={detectedAt:state.configChange?.detectedAt||new Date().toISOString(),restartRequired:true,valid:false,error:'Managed settings would not pass startup checks'};}
+   if(change)state.configChange=change;else delete state.configChange;return;
+  }
   const change=await detectConfigChange({file:configFile,loadedDigest:loadedConfigDigest,previous:state.configChange,validate:validateEditedConfig});
   if(change&&change!==state.configChange)console.error('Recovery: config.json changed since start-up; restart the worker to apply it'+(change.valid?'':' after fixing it ('+change.error+')'));
   if(change)state.configChange=change;else delete state.configChange;

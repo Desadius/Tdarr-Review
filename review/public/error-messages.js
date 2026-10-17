@@ -2,6 +2,8 @@
 // (which also sends the Czech text as `error` for older clients) and the browser UI.
 // Add a code here instead of a new literal message in a route.
 export const ERROR_MESSAGES=Object.freeze({
+ settings_busy:Object.freeze({cs:'Nastavení právě používá jiná operace. Zkus to za chvíli.',en:'Another operation is using settings. Try again shortly.'}),
+ settings_conflict:Object.freeze({cs:'Nastavení se změnilo. Načti aktuální návrh a zkus to znovu.',en:'Settings changed. Reload the current draft and try again.'}),
  recovery_control_session_expired:Object.freeze({cs:'Relace řízení Recovery vypršela.',en:'Recovery control session expired.'}),
  recovery_control_stopping:Object.freeze({cs:'Správce Recovery se ukončuje.',en:'Recovery supervisor stopping.'}),
  recovery_control_pending:Object.freeze({cs:'Použití změn Recovery již probíhá.',en:'Recovery apply already pending.'}),

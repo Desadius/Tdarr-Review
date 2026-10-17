@@ -8,6 +8,7 @@ import {atomicJSON} from './core.mjs';
 import {REFUSED_EXIT} from '../recovery/recovery-mode.mjs';
 import {randomUUID} from 'node:crypto';
 import {CONTROL_VERSION,controlMessage,sendControl,validId} from './recovery-control.mjs';
+import {readSettingsActivation} from './settings-activation.mjs';
 
 export const STATE_FILE='runtime-state.json';
 
@@ -48,7 +49,7 @@ export async function supervise({mode,dataRoot,review,recovery,restart=RESTART,s
  const crashLoopReason=()=>crashes>=restart.crashLoopAfter?'crash-loop':null;
  const startRecovery=()=>{
   const [command,...args]=[...lowPriority,...recovery];
-  const child=worker=spawn(command,args,{stdio:['ignore','inherit','pipe','ipc'],env:{...process.env,DATA_ROOT:recoveryData,RECOVERY_MODE:mode,RECOVERY_CONTROL_SESSION:session}});
+  const child=worker=spawn(command,args,{stdio:['ignore','inherit','pipe','ipc'],env:{...process.env,DATA_ROOT:recoveryData,RECOVERY_MODE:mode,RECOVERY_CONTROL_SESSION:session,RECOVERY_ACTIVATION_ID:control?.state==='starting'?control.id:''}});
   child.on('message',m=>{
    if(worker!==child||!controlMessage(m)||m.channel!=='recovery-worker'||m.session!==session)return;
    if(m.event==='ready'&&control?.state==='starting')control.state='running';
@@ -154,7 +155,10 @@ export async function supervise({mode,dataRoot,review,recovery,restart=RESTART,s
  const onSignal=signal=>{if(stopping)return;reviewChild.kill(signal);void stopRecovery('shutdown',signal);};
  for(const signal of SIGNALS)process.on(signal,onSignal);
  try{
-  if(mode!=='off')startRecovery();
+  if(mode!=='off'){
+   const marker=await readSettingsActivation(dataRoot);
+   if(marker?.blocking)await update({state:'refused',reason:'settings-activation-incomplete'});else if(!stopping)startRecovery();
+  }
   const status=await reviewExit;
   await stopRecovery('review-exited');
   await writes;

@@ -10,6 +10,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {identity,bindHistory} from './policy.mjs';
 import {fp} from './waiting-source.mjs';
 import {DEFERRED_HOLD_UNTIL} from './replacement-gate.mjs';
+import {createSharedSettingsStore} from '../review/shared-settings.mjs';
 
 // Exercise the actual journal/worker wiring, using only disposable files,
 // loopback APIs and a synthetic decoder. No production media or API contacts.
@@ -66,6 +67,16 @@ async function fixture({terminalHeader=false,mode='repair',largeSource=false}={}
  async function cleanup(){db.close();await new Promise(r=>server.close(r));assert(root.startsWith(path.resolve(os.tmpdir())+path.sep)&&path.basename(root).startsWith('recovery-worker-'));await fs.rm(root,{recursive:true,force:true});}
  return {root,cfg,state,parent,movie,row,requests,file,relative,source,sourceFP,size,sourceBytes,data,write,run,daemon,result,unchanged,cleanup,id:identity(file,sourceFP),binding:bindHistory(movie,history,movie.movieFile.path,size),allowRepair:()=>{allowRepair=true;},onHold:callback=>{beforeHold=callback;},setDecoder:script=>fs.writeFile(cfg.ffmpeg,script,{mode:0o755})};
 }
+
+test('actual worker loads committed shared authority without a legacy worker config file',{skip:process.platform!=='linux'},async()=>{
+ const f=await fixture({mode:'verify'});try{
+  await f.write();f.state.jobs['fixture-job']='manual: fixture';await f.write();
+  await fs.mkdir(path.join(f.root,'recovery'));await fs.writeFile(path.join(f.root,'recovery/config.json'),JSON.stringify(f.cfg));
+  const store=createSharedSettingsStore({data:f.root,env:{RECOVERY_MODE:'verify'}}),current=await store.current();await store.applyGeneration({revision:current.revision});
+  await fs.unlink(path.join(f.data,'config.json'));
+  const output=await f.run();assert.match(output,/Tdarr recovery started; mode=verify/);assert.equal(f.requests.filter(r=>r.method!=='GET').length,0);await f.unchanged();
+ }finally{await f.cleanup();}
+});
 
 test('actual worker retries an old unrecognized XLL report, links its exact parent and preserves cooldown',{skip:process.platform!=='linux'},async()=>{
  const f=await fixture();try{

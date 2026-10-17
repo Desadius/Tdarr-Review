@@ -14,6 +14,13 @@ const linux={skip:process.platform!=='linux'?'Requires Linux signals, ionice and
 // is ready, then fails every time instead of now and then. supervisor-delayed.test.mjs runs this file so.
 const test=(name,...rest)=>nodeTest(DELAY_MS?name+' (stand-ins delayed '+DELAY_MS+' ms)':name,...rest);
 
+test('an interrupted activation refuses initial Recovery startup while Review remains available',linux,async t=>{
+ const run=await start({mode:'verify',beforeStart:async({dataRoot})=>fs.writeFile(path.join(dataRoot,'settings-activation.json'),JSON.stringify({version:1,id:'interrupted-apply',state:'committing',blocking:true}))});t.after(()=>stop(run));
+ await started(run,'review');const state=await waitFor(async()=>{const s=await run.readState();return s.state!=='off'&&s;});
+ assert.equal(state.state,'refused');
+ assert.equal(state.reason,'settings-activation-incomplete');assert.equal(state.lastStartedAt,null);assert.equal((await run.readEvents()).some(e=>e.name==='recovery'),false);
+});
+
 // Waits for n Recovery restarts and returns the time from each recorded exit to the next recorded start:
 // the supervisor's restart delay plus noise, without the stand-in's run or test pause (#98).
 const restartGaps=(run,n)=>waitFor(async()=>{

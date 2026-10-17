@@ -49,9 +49,9 @@ export function replacementProfile(profile,current,badId,dualId){
  return p;
 }
 export function canResume(c){return ['waiting','imported','restored','manual'].includes(c.phase)||(c.phase==='queue_intent'&&!!c.replacementRelative&&!!c.replacementSourceFP);}
-export function createReplacement({data,getConfig,safeFile,hash,atomicJSON,tdarr,pauseDispatch,verifyPaused=async()=>{},isWorkerBusy=async()=>false,resume,onProgress}){
+export function createReplacement({data,getConfig,getConnection,safeFile,hash,atomicJSON,tdarr,pauseDispatch,verifyPaused=async()=>{},isWorkerBusy=async()=>false,resume,onProgress}){
  const connectionFile=path.join(data,'radarr.json'),directory=path.join(data,'radarr-replacements');let observing=false,mutating=false;
- async function connection(){return validateConnection(JSON.parse(await fs.readFile(connectionFile,'utf8')));}
+ async function connection(){const value=getConnection?await getConnection():JSON.parse(await fs.readFile(connectionFile,'utf8'));if(!value?.url)throw Object.assign(Error('Vyplň adresu Radarru, API klíč a cestu knihovny v Radarru.'),{code:'ENOENT'});return validateConnection(value);}
  async function api(c,route,method='GET',body){
   let r;try{r=await fetch(c.url+'/api/v3'+route,{method,redirect:'error',headers:{'X-Api-Key':c.apiKey,'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(30000)})}catch{throw Error('Radarr neodpovídá. Stav operace ověř před opakováním.');}
   if(!r.ok)throw Error('Radarr '+route.split('?')[0]+': HTTP '+r.status);

@@ -7,11 +7,14 @@ import {previewRoutes} from './routes/previews.mjs';
 import {settingsRoutes} from './routes/settings.mjs';
 import {staticRoutes} from './routes/static.mjs';
 import {nodeRoutes} from './routes/nodes.mjs';
+import {sharedSettingsRoutes} from './routes/shared-settings.mjs';
 
-const modules={libraryRoutes,itemRoutes,previewRoutes,settingsRoutes,nodeRoutes,staticRoutes};
+const modules={libraryRoutes,itemRoutes,previewRoutes,settingsRoutes,nodeRoutes,staticRoutes,sharedSettingsRoutes};
 const ID='a'.repeat(24);
 // Every authenticated route served before the split of server.mjs (#12).
 const ROUTES=[
+ ...['','/status','/audit'].map(p=>['GET','/api/shared-settings'+p,'sharedSettingsRoutes']),
+ ...['draft','test','apply','cancel'].map(p=>['POST','/api/shared-settings/'+p,'sharedSettingsRoutes']),
  ['GET','/api/artwork/review/'+ID,'libraryRoutes'],['GET','/api/artwork/request/'+ID,'libraryRoutes'],
  ['GET','/api/statistics','libraryRoutes'],['GET','/api/quarantine','libraryRoutes'],
  ['GET','/api/radarr/settings','libraryRoutes'],['POST','/api/radarr/settings','libraryRoutes'],['POST','/api/radarr/settings/test','libraryRoutes'],

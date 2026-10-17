@@ -75,7 +75,10 @@ export function validateSharedSettings(draft,{complete=false,mode='off',fileOnly
  for(const k of ['stableMinutes','movieCooldownDays','since'])if(resolved.recovery[k]>Number.MAX_SAFE_INTEGER)fail('settings_invalid','recovery.'+k);
  return resolved;
 }
-function visibleDraft(draft){const result={review:entries(draft.review,Object.keys(defaults({}))),radarr:entries(draft.radarr,radarrKeys),recovery:entries(draft.recovery,recoveryKeys)};delete result.radarr.apiKey;result.radarr.hasApiKey=!!draft.radarr.apiKey;return result;}
+// Imported legacy inputs are not yet schema-validated. Never project userinfo/query values,
+// including alternative migration endpoints. Keep private input intact for explicit correction.
+function publicEndpoint(value){try{const u=new URL(value);return ['http:','https:'].includes(u.protocol)&&!u.username&&!u.password&&!u.search&&!u.hash?value:'';}catch{return '';}}
+function visibleDraft(draft){const result={review:entries(draft.review,Object.keys(defaults({}))),radarr:entries(draft.radarr,radarrKeys),recovery:entries(draft.recovery,recoveryKeys)};delete result.radarr.apiKey;result.radarr.hasApiKey=!!draft.radarr.apiKey;for(const key of ['tdarrUrl','publicOrigin'])result.review[key]=publicEndpoint(result.review[key]);result.radarr.url=publicEndpoint(result.radarr.url);return result;}
 function changed(before,after){const fields=[];for(const section of ['review','radarr','recovery'])for(const key of new Set([...Object.keys(before?.[section]||{}),...Object.keys(after?.[section]||{})]))if(!sameValue(before?.[section]?.[key],after?.[section]?.[key]))fields.push(section+'.'+key);return fields;}
 function auditEntry(doc,{action,result,fields=[],now}){doc.audit.push({at:new Date(now).toISOString(),action,result,fields,generation:doc.generation,revision:hash(JSON.stringify(doc.draft))});doc.audit=doc.audit.slice(-AUDIT_LIMIT);}
 
@@ -163,8 +166,8 @@ export function createSharedSettingsStore({data,env=process.env,now=Date.now}){
  async function current(){if(!(await read(file)).value)await lock(async()=>{if(!(await read(file)).value){const doc=initial(await inputs(),env,now());doc.draft.radarr.quarantineRoot??=path.posix.join(path.posix.dirname(doc.draft.review.mediaRoot),'.tdarr-review-quarantine');auditEntry(doc,{action:'create',result:'success',now:now()});await durable(file,doc);}});return outward(await snapshot());}
  async function publicSettings(){const value=await current(),s=await snapshot(),previous=s.legacy.recovery.value||{},migrationChoices=value.conflicts.map(field=>{const [section,key]=field.split('.'),legacyKey=section==='radarr'?({url:'radarrUrl',apiKey:'radarrApiKey',mediaRoot:'radarrRoot'}[key]):key;
   if(field==='legacyFiles')return {field};if(key==='apiKey')return {field,secret:true,hasSharedValue:!!value.draft.radarr.apiKey,hasRecoveryValue:!!previous.radarrApiKey};
-  return {field,sharedValue:value.draft[section]?.[key],recoveryValue:previous[legacyKey]};});
-  return {...value,migrationChoices,active:value.active?{review:clone(value.active.review),radarr:{...visibleDraft(value.active).radarr},recovery:entries(value.active.recovery,recoveryKeys)}:null,draft:visibleDraft(value.draft)};}
+  const sanitize=['tdarrUrl','publicOrigin','url'].includes(key)?publicEndpoint:clone;return {field,sharedValue:sanitize(value.draft[section]?.[key]),recoveryValue:sanitize(previous[legacyKey])};});
+  return {...value,migrationChoices,active:value.active?visibleDraft(value.active):null,draft:visibleDraft(value.draft)};}
  function requireRecovery(s){return !!s.legacy.recovery.value||!!(s.doc.active?.review.libraryId&&s.doc.active?.radarr.url&&s.doc.active?.radarr.apiKey);}
  async function validate({revision,forApply=false,acknowledgeHistory=false}={}){const s=await snapshot();if(revision!==undefined&&revision!==s.revision)fail('settings_conflict');const c=outward(s);if(forApply&&c.conflicts.length)fail('settings_migration_conflict');if(forApply&&c.requiresHistoryAcknowledgement&&!acknowledgeHistory)fail('settings_history_acknowledgement');const result=validateSharedSettings(s.doc.draft,{complete:forApply,mode:env.RECOVERY_MODE,fileOnly:s.doc.fileOnly,requireRecovery:requireRecovery(s)});await guards(s,result,{pending:forApply});return result;}
  async function saveDraft({revision,patch,resolutions=[],acknowledgeHistory=false}){return lock(async()=>{
