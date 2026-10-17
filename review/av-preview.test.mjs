@@ -43,6 +43,20 @@ test('seek recovery excludes other codecs, non-earlier seeks, aborts, permission
  for(const error of [Error('Permission denied'),Error('Příprava náhledu překročila 90 sekund.'),Error('Náhled překročil limit velikosti.'),Object.assign(seekError(decoderErrors),{previewExitCode:null}),seekError(decoderErrors+'\nPermission denied'),seekError(decoderErrors+'\n[libx264 @ 0x123abc] Error initializing output stream'),seekError('[h264 @ 0x123abc] Invalid NAL unit size'),seekError('')])assert.equal(canRetryPreviewSeek(error,seekContext),false);
 });
 
+const mmco='[h264 @ 0x58b4eae58e00] mmco: unref short failure';
+test('H264 mmco unref failure after a mid-GOP seek qualifies alone or with the other seek diagnostics',()=>{
+ for(const diagnostics of [mmco+'\n',`${mmco}\n${mmco}\n`,decoderErrors+'\n'+mmco,'[matroska,webm @ 0xabcdef] File is broken, keyframes not correctly marked!\n'+mmco])assert.equal(canRetryPreviewSeek(seekError(diagnostics),seekContext),true,diagnostics);
+ for(const context of [{...seekContext,video:{codec_name:'hevc'}},{...seekContext,video:{codec_name:'mpeg2video'}},{...seekContext,seconds:2},{...seekContext,seconds:0},{...seekContext,signal:{aborted:true}}])assert.equal(canRetryPreviewSeek(seekError(mmco),context),false);
+ assert.equal(canRetryPreviewSeek(Object.assign(seekError(mmco),{previewExitCode:null}),seekContext),false);
+ for(const diagnostics of [mmco+' at frame 12','[h264 @ 0x123abc] mmco: unref short failure: fatal','[h264 @ 0x123abc] mmco: unref long failure','[hevc @ 0x123abc] mmco: unref short failure',mmco+'\n[h264 @ 0x123abc] Missing reference picture, default is 0',mmco+'\n[h264 @ 0x123abc] co located POCs unavailable',mmco+'\n    Last message repeated 5 times',mmco+'\n[aac @ 0x123abc] Error submitting frame to encoder'])assert.equal(canRetryPreviewSeek(seekError(diagnostics),seekContext),false,diagnostics);
+});
+
+test('mmco unref failure retries once with 30 seconds of preroll and keeps the original error if it repeats',async()=>{
+ const attempts=[];assert.equal(await withPreviewSeekRetry(async preroll=>{attempts.push(preroll);if(preroll===2)throw seekError(mmco);return 'validated MP4'},seekContext),'validated MP4');assert.deepEqual(attempts,[2,30]);
+ let count=0;const failure=seekError(mmco);await assert.rejects(withPreviewSeekRetry(async()=>{count++;throw failure},seekContext),error=>error===failure);assert.equal(count,2);
+ const controller=new AbortController();let calls=0;await assert.rejects(withPreviewSeekRetry(async()=>{calls++;controller.abort();throw seekError(mmco)},{...seekContext,signal:controller.signal}),error=>error.previewDiagnostics===mmco);assert.equal(calls,1);
+});
+
 test('eligible retry runs once; failure never becomes readiness and abort never triggers a retry',async()=>{
  const attempts=[];const result=await withPreviewSeekRetry(async preroll=>{attempts.push(preroll);if(preroll===2)throw seekError(decoderErrors);return 'validated MP4'},seekContext);
  assert.equal(result,'validated MP4');assert.deepEqual(attempts,[2,30]);

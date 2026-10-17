@@ -27,5 +27,12 @@ try{
   assert(result.width<=width*numerator/denominator&&result.height<=height,'Source was needlessly enlarged');
   if(name==='oversized')assert.deepEqual([result.width,result.height],[1920,1080]);
  }
+ // Open-GOP H.264 seeked one second past a 20-second keyframe emits only 'mmco: unref short failure'.
+ const openGop=path.join(root,'open-gop.mkv');
+ await command(exe,['-v','error','-f','lavfi','-i','testsrc2=size=320x180:rate=24','-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-t','60','-c:v','libx264','-preset','veryfast','-x264-params','open-gop=1:keyint=480:min-keyint=480:b-pyramid=normal:ref=8:bframes=3','-c:a','aac',openGop]);
+ const gopSource=JSON.parse(await command(probe,['-v','error','-show_streams','-show_format','-of','json',openGop])),gopVideo=gopSource.streams.find(s=>s.codec_type==='video'),gopAudio=gopSource.streams.find(s=>s.codec_type==='audio');
+ const recovered=await extractPreview(exe,openGop,gopAudio.index,41,Number(gopSource.format.start_time||0),gopVideo,'compact'),recoveredClip=path.join(root,'open-gop.mp4');await fs.writeFile(recoveredClip,Buffer.from(recovered,'base64'));
+ const recoveredMeta=JSON.parse(await command(probe,['-v','error','-show_streams','-show_format','-of','json',recoveredClip]));
+ assert(recoveredMeta.streams.some(s=>s.codec_name==='h264')&&recoveredMeta.streams.some(s=>s.codec_name==='aac'));assert(Number(recoveredMeta.format.duration)>11.8,`Recovered clip lasts ${recoveredMeta.format.duration}s`);
  console.log(JSON.stringify({passed:true,containerStart:base,originalOnsetMs:onset(original),previewOnsetMs:onset(copy),duration:Number(m.format.duration)}));
 }finally{await fs.rm(root,{recursive:true,force:true})}

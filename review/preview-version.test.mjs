@@ -10,6 +10,13 @@ test('diagnostic policy changes invalidate the renderer identity without changin
  assert.notEqual(await previewCodeVersion(read),initial);
 });
 
+test('seek retry policy changes invalidate the renderer identity',async()=>{
+ const sources=new Map(),read=file=>{if(!sources.has(file))sources.set(file,'synthetic source: '+file);return sources.get(file)};
+ const initial=await previewCodeVersion(read);
+ sources.set('av-preview.mjs','synthetic seek retry accepting one more decoder diagnostic');
+ assert.notEqual(await previewCodeVersion(read),initial);
+});
+
 test('renderer identity reads real renderer sources and fails closed if diagnostics cannot be read',async()=>{
  assert.match(await previewCodeVersion(),/^[a-f0-9]{64}$/);
  await assert.rejects(previewCodeVersion(file=>{
