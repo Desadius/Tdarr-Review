@@ -96,6 +96,15 @@ test('legacy conflicts require explicit field decisions and preserve file-only e
  const projection=JSON.stringify(await store.public());assert.equal(projection.includes('private-evidence'),false);assert.equal(projection.includes('private-case'),false);assert.equal(projection.includes('legacy-key'),false);
  await assert.rejects(store.saveDraft({revision:(await store.current()).revision,patch:{recovery:{approvedCaseIds:[]}}}),{code:'settings_invalid'});
 });
+
+test('every legacy Radarr connection conflict offers and resolves the same private source',async t=>{
+ const {data,store}=await legacyFixture(t),previous=JSON.parse(await fs.readFile(path.join(data,'recovery/config.json'),'utf8'));
+ Object.assign(previous,{radarrUrl:'http://127.0.0.1:7999/recovery',radarrApiKey:'synthetic-legacy-connection-key',radarrRoot:'/legacy-radarr-library'});await writeRecovery(data,previous);
+ const imported=await store.public();assert.deepEqual(imported.conflicts,['radarr.url','radarr.apiKey','radarr.mediaRoot']);
+ assert.equal(imported.migrationChoices.find(c=>c.field==='radarr.url').recoveryValue,'http://127.0.0.1:7999/recovery');assert.equal(imported.migrationChoices.find(c=>c.field==='radarr.mediaRoot').recoveryValue,'/legacy-radarr-library');assert.equal(imported.migrationChoices.find(c=>c.field==='radarr.apiKey').hasRecoveryValue,true);assert.equal(JSON.stringify(imported).includes('synthetic-legacy-connection-key'),false);
+ const saved=await store.saveDraft({revision:imported.revision,patch:{},resolutions:[{field:'radarr.url',source:'recovery'},{field:'radarr.apiKey',source:'recovery'},{field:'radarr.mediaRoot',source:'recovery'}]});await store.applyGeneration({revision:saved.revision});const active=await readActiveSettings(data);
+ assert.equal(active.radarr.url,'http://127.0.0.1:7999/recovery');assert.equal(active.radarr.mediaRoot,'/legacy-radarr-library');assert.equal(active.radarr.apiKey,'synthetic-legacy-connection-key');assert.equal((await store.public()).conflicts.length,0);assert.equal(JSON.stringify(await store.public()).includes('synthetic-legacy-connection-key'),false);
+});
 test('actual registry frozen fields block edits including arbitrary file-only keys',async t=>{
  const {data,store}=await legacyFixture(t);
  await writeRecovery(data,{version:1,config:{maxRepairsPerDay:3,approvedCaseIds:['private-case']},cases:[]},'pending-approvals.json');

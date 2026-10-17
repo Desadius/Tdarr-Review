@@ -2,6 +2,7 @@
 // (which also sends the Czech text as `error` for older clients) and the browser UI.
 // Add a code here instead of a new literal message in a route.
 export const ERROR_MESSAGES=Object.freeze({
+ settings_manual_quarantine_unavailable:Object.freeze({cs:'Karanténa originálů v Review není dostupná nebo není bezpečně připojená.',en:'The Review original quarantine is unavailable or is not safely mounted.'}),
  settings_busy:Object.freeze({cs:'Nastavení právě používá jiná operace. Zkus to za chvíli.',en:'Another operation is using settings. Try again shortly.'}),
  settings_conflict:Object.freeze({cs:'Nastavení se změnilo. Načti aktuální návrh a zkus to znovu.',en:'Settings changed. Reload the current draft and try again.'}),
  settings_invalid:{cs:'Oprav označené pole návrhu.',en:'Correct the indicated draft field.'},

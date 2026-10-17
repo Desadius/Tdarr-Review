@@ -9,6 +9,8 @@ import {loadApprovalRegistry} from '../recovery/approval-registry.mjs';
 const FILE='shared-settings.json',MAX_BYTES=4*1024*1024,AUDIT_LIMIT=200;
 const recoveryKeys=['sourceRoot','quarantineRoot','reports','stableMinutes','decodeTimeoutHours','fullSourceHash','confirmDelaySeconds','maxRepairsPerDay','movieCooldownDays','pollSeconds','detectTerminalHeaders','since'];
 const radarrKeys=['url','apiKey','mediaRoot','quarantineRoot','preferCzechEnglish'];
+const legacyRadarrKeys=Object.freeze({url:'radarrUrl',apiKey:'radarrApiKey',mediaRoot:'radarrRoot'});
+const legacyKey=(section,key)=>section==='radarr'?legacyRadarrKeys[key]:key;
 const shared=['tdarrUrl','libraryId','mediaRoot','reviewRoot','reviewPrefixes','database','ffmpeg','ffprobe'];
 const mappingKeys=['tdarrUrl','radarrUrl','libraryId','sourceRoot','mediaRoot','radarrRoot','quarantineRoot','reviewRoot','reviewPrefixes'];
 const clone=structuredClone;
@@ -50,7 +52,7 @@ function initial(inputs,env,now){
  const conflicts=[];
  if(inputs.review.value&&inputs.recovery.value){for(const k of shared)if(Object.hasOwn(previous,k)&&!sameValue(review[k],previous[k]))conflicts.push('review.'+k);
   if(previous.sourceRoot&&!review.sourceRoots.includes(previous.sourceRoot))conflicts.push('recovery.sourceRoot');}
- if(inputs.radarr.value&&inputs.recovery.value)for(const [k,r] of [['url','radarrUrl'],['apiKey','radarrApiKey'],['mediaRoot','radarrRoot']])if(Object.hasOwn(previous,r)&&!sameValue(radarr[k],previous[r]))conflicts.push('radarr.'+k);
+ if(inputs.radarr.value&&inputs.recovery.value)for(const [k,r] of Object.entries(legacyRadarrKeys))if(Object.hasOwn(previous,r)&&!sameValue(radarr[k],previous[r]))conflicts.push('radarr.'+k);
  return {version:1,generation:0,active:null,draft:{review:clone(review),radarr:clone(radarr),recovery},conflicts,legacy:Object.fromEntries(Object.entries(inputs).map(([k,v])=>[k,v.digest])),historyExplicit:!!inputs.recovery.value,fileOnly:privateFields(previous),audit:[]};
 }
 // Resolved snapshots contain credentials and file-only exceptions; RECOVERY_MODE alone sets enabled.
@@ -164,9 +166,9 @@ export function createSharedSettingsStore({data,env=process.env,now=Date.now}){
  }
  function outward(s){return {revision:s.revision,managed:!!s.doc.active,generation:s.doc.generation,active:clone(s.doc.active),draft:clone(s.doc.draft),conflicts:[...s.doc.conflicts,...(s.external.length?['legacyFiles']:[])],historyUsesSetupTime:!s.doc.historyExplicit,requiresHistoryAcknowledgement:!!s.doc.historyExplicit&&s.doc.draft.recovery.since<(s.doc.active?.recovery.since??s.legacy.recovery.value?.since??s.doc.draft.recovery.since)};}
  async function current(){if(!(await read(file)).value)await lock(async()=>{if(!(await read(file)).value){const doc=initial(await inputs(),env,now());doc.draft.radarr.quarantineRoot??=path.posix.join(path.posix.dirname(doc.draft.review.mediaRoot),'.tdarr-review-quarantine');auditEntry(doc,{action:'create',result:'success',now:now()});await durable(file,doc);}});return outward(await snapshot());}
- async function publicSettings(){const value=await current(),s=await snapshot(),previous=s.legacy.recovery.value||{},migrationChoices=value.conflicts.map(field=>{const [section,key]=field.split('.'),legacyKey=section==='radarr'?({url:'radarrUrl',apiKey:'radarrApiKey',mediaRoot:'radarrRoot'}[key]):key;
-  if(field==='legacyFiles')return {field};if(key==='apiKey')return {field,secret:true,hasSharedValue:!!value.draft.radarr.apiKey,hasRecoveryValue:!!previous.radarrApiKey};
-  const sanitize=['tdarrUrl','publicOrigin','url'].includes(key)?publicEndpoint:clone;return {field,sharedValue:sanitize(value.draft[section]?.[key]),recoveryValue:sanitize(previous[legacyKey])};});
+ async function publicSettings(){const value=await current(),s=await snapshot(),previous=s.legacy.recovery.value||{},migrationChoices=value.conflicts.map(field=>{const [section,key]=field.split('.'),recoveryKey=legacyKey(section,key);
+  if(field==='legacyFiles')return {field};if(key==='apiKey')return {field,secret:true,hasSharedValue:!!value.draft.radarr.apiKey,hasRecoveryValue:!!previous[recoveryKey]};
+  const sanitize=['tdarrUrl','publicOrigin','url'].includes(key)?publicEndpoint:clone;return {field,sharedValue:sanitize(value.draft[section]?.[key]),recoveryValue:sanitize(previous[recoveryKey])};});
   return {...value,migrationChoices,active:value.active?visibleDraft(value.active):null,draft:visibleDraft(value.draft)};}
  function requireRecovery(s){return !!s.legacy.recovery.value||!!(s.doc.active?.review.libraryId&&s.doc.active?.radarr.url&&s.doc.active?.radarr.apiKey);}
  async function validate({revision,forApply=false,acknowledgeHistory=false}={}){const s=await snapshot();if(revision!==undefined&&revision!==s.revision)fail('settings_conflict');const c=outward(s);if(forApply&&c.conflicts.length)fail('settings_migration_conflict');if(forApply&&c.requiresHistoryAcknowledgement&&!acknowledgeHistory)fail('settings_history_acknowledgement');const result=validateSharedSettings(s.doc.draft,{complete:forApply,mode:env.RECOVERY_MODE,fileOnly:s.doc.fileOnly,requireRecovery:requireRecovery(s)});await guards(s,result,{pending:forApply});return result;}
@@ -178,8 +180,8 @@ export function createSharedSettingsStore({data,env=process.env,now=Date.now}){
   if(resolvedFields.some(k=>!outward(s).conflicts.includes(k)))fail('settings_invalid','resolutions');
   for(const decision of resolutions.filter(v=>typeof v!=='string')){
    if(!object(decision)||!['shared','recovery'].includes(decision.source)||Object.keys(decision).some(k=>!['field','source'].includes(k)))fail('settings_invalid','resolutions');
-   if(decision.source==='recovery'){const [section,key]=decision.field.split('.'),legacyKey=section==='radarr'?({url:'radarrUrl',apiKey:'radarrApiKey',mediaRoot:'radarrRoot'}[key]):key;
-    if(!Object.hasOwn(s.legacy.recovery.value||{},legacyKey)||!object(draft[section]))fail('settings_invalid','resolutions');draft[section][key]=clone(s.legacy.recovery.value[legacyKey]);}
+   if(decision.source==='recovery'){const [section,key]=decision.field.split('.'),recoveryKey=legacyKey(section,key);
+    if(!Object.hasOwn(s.legacy.recovery.value||{},recoveryKey)||!object(draft[section]))fail('settings_invalid','resolutions');draft[section][key]=clone(s.legacy.recovery.value[recoveryKey]);}
   }
   if(resolvedFields.includes('legacyFiles'))s.doc.fileOnly=initial(s.legacy,env,now()).fileOnly;
   for(const section of Object.keys(patch))for(const [key,value] of Object.entries(patch[section])){if(section==='radarr'&&key==='apiKey'&&value==='')continue;draft[section][key]=clone(value);}
