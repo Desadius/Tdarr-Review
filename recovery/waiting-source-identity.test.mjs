@@ -9,7 +9,7 @@ import {identityVariants} from '../review/test-helpers/identity-variants.mjs';
 
 // The preserved original is compared with its recorded identity without ctime: moving
 // it into quarantine and linking it back into the library both change ctime.
-const accepted={same:true,ctimeChanged:true,deviceChanged:false,deviceAndCtimeChanged:false,inodeChanged:false,fourFields:true,emptyCtime:true,textCtime:true,textDevice:false,sixFields:true,missing:false};
+const accepted={same:true,ctimeChanged:true,deviceChanged:false,deviceAndCtimeChanged:false,inodeChanged:false,fourFields:false,emptyCtime:false,textCtime:false,textDevice:false,sixFields:false,missing:false};
 const good={downloadAllowed:true,title:'new release',guid:'new-guid',indexerId:2,quality:{quality:{id:30,resolution:1080}},rejections:[]};
 
 async function fixture({status,kept=false,movie}){
@@ -35,8 +35,7 @@ async function fixture({status,kept=false,movie}){
  return {c,cfg,deps,source,quarantine,downloads,exists,cleanup:()=>fs.rm(root,{recursive:true,force:true})};
 }
 function expectRefusal(c,variant,message){
- if(variant==='missing')assert.match(c.observationError,/Cannot read properties of undefined/,variant);
- else assert.equal(c.observationError,message,variant);
+ assert.equal(c.observationError,message,variant);
 }
 
 test('a missing replacement returns the quarantined original only when its recorded identity matches',async()=>{

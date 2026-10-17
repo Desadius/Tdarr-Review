@@ -4,9 +4,10 @@ import {relative as safeRelative} from './policy.mjs';
 import {replacementFollowup} from './replacement-followup.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {identityOf} from './file-identity.mjs';
+import {identityOf,compareIdentity} from './file-identity.mjs';
 const FOREVER=253402300799000;
-export const samePreserved=(a,b)=>a.split(':').slice(0,4).join(':')===b.split(':').slice(0,4).join(':');
+// Quarantine moves and library links change the preserved original's ctime.
+const samePreserved=(current,stored)=>['same','ctime-changed'].includes(compareIdentity(stored,current));
 export function eligibleRelease(r,profile,badTitles,current){
  if(!r.downloadAllowed||badTitles.has(r.title))return false;
  const q=r.quality?.quality?.id;
