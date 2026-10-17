@@ -1,7 +1,8 @@
 // Stored file identity variants for tests of every identity comparison. Changed
-// fields stay numbers, so only the deliberately malformed variants are malformed.
+// fields stay numbers that differ even beyond 2^53, so only the deliberately
+// malformed variants are malformed.
 export function identityVariants(fp){
- const [dev,ino,size,mtime,ctime]=fp.split(':'),bump=v=>String(Number(v)+1000),join=(...v)=>v.join(':');
+ const [dev,ino,size,mtime,ctime]=fp.split(':'),bump=v=>String(Number(v)<0?Number(v)*2:Number(v)*2+1),join=(...v)=>v.join(':');
  return {
   same:fp,
   ctimeChanged:join(dev,ino,size,mtime,bump(ctime)),
