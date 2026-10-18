@@ -7,7 +7,7 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import {spawn} from 'node:child_process';
 import {DatabaseSync} from 'node:sqlite';
-import {identity,bindHistory} from './policy.mjs';
+import {caseId,bindHistory} from './policy.mjs';
 import {identityOf} from './file-identity.mjs';
 import {DEFERRED_HOLD_UNTIL} from './replacement-gate.mjs';
 import {createSharedSettingsStore} from '../review/shared-settings.mjs';
@@ -65,7 +65,7 @@ async function fixture({terminalHeader=false,mode='repair',largeSource=false}={}
  async function result(){assert.equal((await fs.stat(root+'/media/.tdarr-recovery-status.json')).mode&0o777,0o644);assert.equal((await fs.stat(data+'/state.json')).mode&0o777,0o600);return {state:JSON.parse(await fs.readFile(data+'/state.json')),public:JSON.parse(await fs.readFile(root+'/media/.tdarr-recovery-status.json'))};}
  async function unchanged(){assert.equal(identityOf(await fs.stat(source)),sourceFP);assert.equal(await fs.readFile(source,'utf8'),sourceBytes);assert.equal(await fs.readFile(parent.quarantine,'utf8'),'PRESERVED PARENT');assert.equal(forbidden,false,'worker attempted an unexpected download or API mutation');}
  async function cleanup(){db.close();await new Promise(r=>server.close(r));assert(root.startsWith(path.resolve(os.tmpdir())+path.sep)&&path.basename(root).startsWith('recovery-worker-'));await fs.rm(root,{recursive:true,force:true});}
- return {root,cfg,state,parent,movie,row,requests,file,relative,source,sourceFP,size,sourceBytes,data,write,run,daemon,result,unchanged,cleanup,id:identity(file,sourceFP),binding:bindHistory(movie,history,movie.movieFile.path,size),allowRepair:()=>{allowRepair=true;},onHold:callback=>{beforeHold=callback;},setDecoder:script=>fs.writeFile(cfg.ffmpeg,script,{mode:0o755})};
+ return {root,cfg,state,parent,movie,row,requests,file,relative,source,sourceFP,size,sourceBytes,data,write,run,daemon,result,unchanged,cleanup,id:caseId(file,sourceFP),binding:bindHistory(movie,history,movie.movieFile.path,size),allowRepair:()=>{allowRepair=true;},onHold:callback=>{beforeHold=callback;},setDecoder:script=>fs.writeFile(cfg.ffmpeg,script,{mode:0o755})};
 }
 
 test('actual worker loads committed shared authority without a legacy worker config file',{skip:process.platform!=='linux'},async()=>{

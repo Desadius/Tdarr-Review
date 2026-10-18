@@ -3,7 +3,7 @@ import {constants} from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {validatePending} from './pending-approved.mjs';
-import {identity,relative} from './policy.mjs';
+import {caseId,relative} from './policy.mjs';
 import {canonical,sameValue,frozenConfigDifference} from './frozen-config.mjs';
 import {text,relativePrefix} from './config-values.mjs';
 import {identityOf} from './file-identity.mjs';
@@ -48,7 +48,7 @@ function validateFrozenIdentity(a,cfg,id){
  if(!['movieId','movieFileId','importId','grabId','size'].every(k=>positive(a[k])))fail('incomplete frozen movie/import identity');
  if(!text(a.authorization)||!text(a.sourceTitle)||!text(a.downloadId)||!text(a.fp)||!absolutePOSIX(a.file)||!text(a.relative))fail('incomplete frozen authorization or source');
  let rel;try{rel=relative(a.file,cfg.sourceRoot);}catch{fail('source is outside the frozen library');}
- if(a.relative!==rel||identity(a.file,a.fp)!==id)fail('frozen source identity does not match');
+ if(a.relative!==rel||caseId(a.file,a.fp)!==id)fail('frozen source identity does not match');
  const parts=a.fp.split(':').map(Number);
  if(parts.length!==5||a.fp.split(':').some(x=>!/^\d+(?:\.\d+)?$/.test(x))||parts.some(x=>!Number.isFinite(x)||x<0)||parts[2]!==a.size)fail('invalid frozen filesystem fingerprint');
 }

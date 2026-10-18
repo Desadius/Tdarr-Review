@@ -77,5 +77,5 @@ export function bindApprovedImport(movie,history,radarrPath,size,approval){
  if(h.length!==1)throw Error('Approved original import is ambiguous');
  return {mode:'exact_title_exclusion',...approval};
 }
-export const identity=(file,fp)=>crypto.createHash('sha256').update(file+'\n'+fp).digest('hex').slice(0,24);
+export const caseId=(file,fp)=>crypto.createHash('sha256').update(file+'\n'+fp).digest('hex').slice(0,24);
 export function within(root,rel){const p=path.resolve(root,rel);if(!p.startsWith(path.resolve(root)+path.sep))throw Error('Path escapes root');return p;}
