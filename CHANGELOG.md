@@ -9,6 +9,7 @@ This records the implemented application features. Versions before 1.10.0 were d
 - The overview labels each film's review state (ready, in progress, completed, deferred, duration difference, technically blocked) with text and an icon, and selection mode explains why a film cannot be selected for batch approval, with a link to its review and the number of selectable films (English and Czech). A disabled selection no longer comes without a reason.
 
 - Kino layout, first part: on windows at least 1200 CSS px wide the film review fills the whole window, the review steps become a compact bar and the image/video comparison takes most of the height (bounded by height on ultrawide screens, aspect ratio kept); still frames sit above their time controls. Narrower windows and high zoom keep the existing compact layout.
+- Attention lists unresolved exchange transactions read-only with the film, journal phase, reason and journal file name, and points to the manual inspection steps (English and Czech). The `recovery` field of `/api/items` now carries that projection instead of the raw journals, so it no longer exposes filesystem paths.
 
 - In the library (gallery) view, the savings and the **Review** (**Posoudit**) button sit at the bottom of every card, so the buttons in one row line up regardless of title length, blocking reasons or preview status.
 

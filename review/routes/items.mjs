@@ -1,4 +1,5 @@
 import path from 'node:path';
+import {unresolvedTransactions} from '../unresolved-transactions.mjs';
 import {createReadStream} from 'node:fs';
 import {safeFile} from '../core.mjs';
 import {rejectionReason} from '../rejection-audit.mjs';
@@ -17,7 +18,7 @@ export async function itemRoutes(ctx,req,res,url,request){
  }
  if(url.pathname==='/api/items'&&req.method==='GET'){
   const items=await ctx.scan();
-  return reply(res,200,{version:ctx.APP_VERSION,label:ctx.config.label,serverTime:Date.now(),items,previews:Object.fromEntries(items.filter(item=>item.snapshot).map(item=>[item.id,ctx.previewPreparation(item.id,item.snapshot)])),reviewSessions:ctx.reviewSessions.list(items),active:ctx.active,batch:ctx.state.batch||null,batchRunning:ctx.batchRunning,history:ctx.state.history,recovery:ctx.recovery,restorePending:ctx.state.pauses.length,pendingRestores:ctx.pendingRestores()});
+  return reply(res,200,{version:ctx.APP_VERSION,label:ctx.config.label,serverTime:Date.now(),items,previews:Object.fromEntries(items.filter(item=>item.snapshot).map(item=>[item.id,ctx.previewPreparation(item.id,item.snapshot)])),reviewSessions:ctx.reviewSessions.list(items),active:ctx.active,batch:ctx.state.batch||null,batchRunning:ctx.batchRunning,history:ctx.state.history,recovery:unresolvedTransactions(ctx.recovery,items,ctx.config.mediaRoot),restorePending:ctx.state.pauses.length,pendingRestores:ctx.pendingRestores()});
  }
  const reviewSession=/^\/api\/items\/([a-f0-9]{24})\/review-session$/.exec(url.pathname);
  if(reviewSession&&req.method==='GET'){

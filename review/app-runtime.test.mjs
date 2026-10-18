@@ -215,6 +215,24 @@ if(typeof vm.SourceTextModule!=='function'){
   assert.equal(box('Unreviewed film').disabled,false);assert.equal(why('Unreviewed film').hidden,true);
   assert.match(dom.getElementById('selectionHint').textContent,en?/Selectable: 2 of 3/:/Lze vybrat: 2 z 3/);
  });
+ for(const language of ['cs','en'])test('unresolved exchange transactions are listed read-only with film, phase and reason in '+language,async()=>{
+  const en=language==='en',recovery=[{id:'tx1',journal:'tx1.json',phase:'installed',reason:'needs-inspection',title:reviewItem.title,itemId:reviewItem.id},{id:'tx2.json',journal:'tx2.json',phase:'unknown',reason:'unreadable',title:null,itemId:null}];
+  const f=await appFixture(language,{itemsData:{items:[reviewItem],recovery},routes:{['/api/items/'+reviewItem.id+'/review-session']:{data:{snapshot:reviewItem.snapshot,revision:0,requirements:{hdr:false},complete:false,session:{method:'review',device:'',step:0,scope:{originalIndex:1,reviewIndex:2,seconds:10},checks:{},note:'',deferred:false}}},['/api/items/'+reviewItem.id+'/audio-compare']:{data:{original:[],review:[]}}}}),dom=f.document,box=dom.getElementById('transactions');
+  assert.equal(box.hidden,false);
+  assert.match(box.textContent,en?/Unfinished exchanges need manual inspection \(2\)/:/Nedokončené výměny vyžadují ruční kontrolu \(2\)/);
+  assert.match(box.textContent,en?/Phase: Result installed/:/Fáze: Výsledek nainstalován/);
+  assert.match(box.textContent,en?/cannot be proven safe to restore automatically/:/nelze prokazatelně vrátit automaticky/);
+  assert.match(box.textContent,en?/Film cannot be identified.*Phase: Unknown phase.*cannot be read or verified/:/Film nelze určit.*Fáze: Neznámá fáze.*nelze přečíst ani ověřit/);
+  assert.match(box.textContent,en?/Exchange record: tx1\.json/:/Záznam výměny: tx1\.json/);
+  assert.match(box.textContent,/OPERATIONS\.md/);
+  const buttons=box.querySelectorAll('button');assert.equal(buttons.length,1,'only navigation, no action on the transaction');
+  await buttons[0].emit('click');for(let i=0;i<4;i++)await flush();
+  assert.equal(dom.getElementById('filmDetail').open,true);
+  assert.equal(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,0,'nothing is written');
+ });
+ test('no unresolved exchange transaction keeps the panel hidden',async()=>{
+  const f=await appFixture('cs',{itemsData:{items:[reviewItem],recovery:[]}});assert.equal(f.document.getElementById('transactions').hidden,true);
+ });
  for(const language of ['cs','en'])test('real Review app shows API runtime and interruption changes in '+language,async()=>{
   const fixture=await appFixture(language),dom=fixture.document,runtime=dom.getElementById('recoveryRuntime'),warning=dom.getElementById('recoveryRestartWarning');
   assert.equal(dom.documentElement.lang,language);assert.equal(dom.getElementById('error').hidden,true,dom.getElementById('error').textContent);
