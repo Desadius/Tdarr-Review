@@ -58,7 +58,7 @@ The UI in `review/public/` is a set of ES modules loaded without a build step. `
 | `recovery-view.js` | Recovery progress and detail renderers |
 | `review-workflow.js`, `review-model.js`, `av-player.js`, `i18n.js` | Review steps, display rules, AV player and translations (unchanged) |
 
-Every module URL carries a `?v=` version so a release cannot mix cached old and new modules. A new UI file must also be listed in the static asset table in `review/routes/static.mjs`.
+Every module and stylesheet URL is written as `?v=__APP_VERSION__`; the static route (`review/routes/static.mjs`) replaces the placeholder with the running app version (`APP_VERSION`, else `package.json`). A release therefore cannot mix cached old and new modules, no import needs a hand edit on a version bump, and a module is never evaluated twice under two URLs (which would split module state such as the locale in `i18n.js`). `npm run check` refuses any other `?v=` value. A new UI file must also be listed in the static asset table in `review/routes/static.mjs`.
 
 ### Concurrent application actions
 
@@ -99,7 +99,7 @@ Frozen repair authority is loaded solely from persistent `/data/pending-approval
 
 Automatic replacement handoffs journal the exact imported path, fingerprint and movie-file ID. On retry, a verified existing Queued, Transcoding or terminal Tdarr record is preserved. Only an eligible Hold is released; a missing entry is scanned and read back before any queue decision. Pending transport results retain the handoff intent, while changed bindings or unsupported states require manual inspection. No remote plain-text `OK` is treated as sufficient evidence of completion.
 
-If a newer Recovery case protects the same exact source fingerprint, an older pending handoff preserves its Hold. A missing protected record is not rescanned, since scanning could dispatch the known faulty edition again. This protection is bound to the source identity, so a genuinely different future import does not inherit the previous edition's Hold.
+If a newer Recovery case protects the same exact source fingerprint, an older pending handoff preserves its Hold. A missing protected record is not rescanned, since scanning could dispatch the known faulty edition again. This protection is bound to the source identity, so a genuinely different future import does not inherit the previous edition's Hold. Review's manual Radarr replacement applies the same rule (`preservesHold` in `recovery/replacement-handoff.mjs`) before it hands an imported file to Tdarr: it reads Recovery's cases from `/data/recovery/state.json` read-only. A missing state file means Recovery never ran and protects nothing; a state that cannot be read or validated keeps the handoff pending with a visible reason and never releases a Hold or rescans.
 
 When no replacement is available, automatic Recovery may return the protected original via hardlink or exclusive copy while keeping the edition excluded from Tdarr. Before a later download, it validates both identities and removes only that recorded library link/copy. The quarantined original remains until the retention conditions are met.
 

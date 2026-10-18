@@ -1,5 +1,5 @@
 // Shared DOM and formatting helpers for the Review UI modules. No application state.
-import {tr,locale} from './i18n.js?v=20261015-outside1';
+import {tr,locale} from './i18n.js?v=__APP_VERSION__';
 
 export const $=id=>document.getElementById(id);
 export const el=(tag,cls,text,raw=false)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=raw?text:tr(text);return n};

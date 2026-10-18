@@ -17,7 +17,7 @@ Back up during an idle period. Keep media and quarantined originals protected by
 
 Source publication, Docker image publication and updating a running deployment are separate decisions. Pushing a commit or version tag runs tests only. Use [the release process](RELEASES.md) for approved image publication; installing it still requires the idle checks below.
 
-1. Inspect authenticated `/api/items` or the UI. Wait for `active`, `batchRunning`, `restorePending` and unresolved exchange transactions (`recovery`) to clear. These exchange transactions are distinct from the background movie-replacement list. A non-zero `restorePending` means Review could not yet unpause the Tdarr nodes it paused; the server retries on its own with backoff (15 s, doubling to at most 10 minutes) while no action is running. Reading `/api/items` does not trigger the retry.
+1. Inspect authenticated `/api/items` or the UI. Wait for `active`, `batchRunning`, `restorePending` and unresolved exchange transactions (`recovery`, see [Unresolved exchange transaction](#unresolved-exchange-transaction)) to clear. These exchange transactions are distinct from the background movie-replacement list. A non-zero `restorePending` means Review could not yet unpause the Tdarr nodes it paused; the server retries on its own with backoff (15 s, doubling to at most 10 minutes) while no action is running. Reading `/api/items` does not trigger the retry.
 2. Check the worker runtime state and case warnings in Review's **Recovery** view. Wait for original decoding and mutating Recovery phases to finish; refresh stale or unavailable case information and inspect worker logs before treating it as idle. A long decode is read-only, but interrupting it can leave a case requiring deliberate inspection. Runtime **Running** alone does not mean idle.
    In the unified container, stopping Review also stops Recovery. The supervisor forwards the stop signal and gives Recovery up to eight seconds before SIGKILL. An idle worker exits promptly; an interrupted or uncertain mutation retains its journal and must be inspected before retrying. Stop the container while both applications are idle rather than raising the timeout to cover a multi-hour decode.
 3. Back up code/images and private persistent data. Record the previous Git commit.
@@ -71,6 +71,19 @@ Inspect the film's detail and durable journal. Preserve `.tdarr-review-*.old`, `
 
 `manual` means an identity, mapping or mutation could not be verified. It does not mean a quarantined file should be deleted. A reason saying the recorded file identity is unreadable (`Recorded file identity is unreadable; quarantine preserved`, `Zaznamenaná identita souboru je nečitelná`, or `Neplatná identita souboru v záznamu výměny.` for an interrupted replacement) means the stored evidence itself is damaged: nothing was moved or deleted, and the case needs manual inspection of the journal and the preserved files. `Not required` means Tdarr skipped the encoding decision, not that the file is healthy or already optimized.
 
+### Unresolved exchange transaction
+
+When transaction recovery cannot prove that an interrupted replacement (exchange) is safe to roll back, Review keeps its journal pending and blocks approvals, rejections and batches (`finish_action_or_recovery`). The Attention view then lists each such transaction read-only: the film (when its original path matches a current item), the journal phase, the reason and the journal file name in `/data/transactions/`. Review offers no button that completes, rolls back or discards it. The same projection is in the `recovery` field of authenticated `/api/items`; it carries no filesystem paths. The container log (`transactions.unresolved`, `transaction.unresolved`) has the full journal for inspection.
+
+| Reason in the UI | Meaning |
+| --- | --- |
+| Recorded file identity is unreadable | The journal's `originalFP` or `reviewFP` cannot be parsed. Nothing was moved. |
+| Exchange record contains invalid paths | The journal's paths do not match the layout Review writes. Nothing was moved. |
+| Exchange record cannot be read or verified | The journal is not valid JSON, or checking it failed. |
+| Original cannot be proven safe to restore automatically | The backup or the files changed, or the exchange reached a phase after which only a person can decide. |
+
+To inspect: copy the journal first. Compare the original path, `.tdarr-review-<id>.old` (backup) and `.tdarr-review-<id>.tmp` with the recorded `originalFP` and `reviewFP` (file identity, see `GLOSSARY.md`) and the phase. Preserve every file. Review stays blocked until a restart finds the journal `complete` or `aborted`; changing it is a manual decision made only after the files are verified.
+
 ## Recovery configuration was edited
 
 For unmanaged legacy configuration, Recovery applies its private `config.json` only at start-up (`/data/recovery/config.json` in the unified container). After an edit the worker logs `config.json changed since start-up; restart the worker to apply it` and the shared status file shows `configChange.restartRequired: true`. If `configChange.valid` is `false`, correct the file first: a restart with invalid JSON, or with a change the approval registry refuses (`error` names the rule), stops the worker. Then restart the Review container while both applications are idle, as described in step 2 of *Update an existing deployment*. Review shows the same notice in the Recovery view (red when the edited file is invalid), together with warnings about original decoding or mutating work. Reverting the edit clears the configuration notice without a restart.
@@ -85,6 +98,7 @@ Review writes one JSON line per operator-relevant event to standard output, next
 | `batch.started`, `batch.finished`, `batch.interrupted` | `batchId`, `total`, `finished`, `failed`, `outcome`, `message` |
 | `node.paused`, `nodes.resume` | Tdarr node names paused for an action; nodes Review tried to resume and those still `pending` |
 | `transaction.unresolved`, `transactions.unresolved` | Exchange transactions that need manual inspection |
+| `item.reverified` | A changed film was verified and starts a fresh review (`previousSnapshot`, `snapshot`, `changes` such as `original:ctime`) |
 | `settings.saved`, `preview-settings.saved`, `radarr-settings.saved`, `quarantine.restored` | The saved non-secret values or the restored request |
 | `request.error` | `method`, `route` (without query), `status`, `message` |
 

@@ -16,6 +16,9 @@ if(typeof vm.SourceTextModule!=='function'){
 }else{
  class Element{
   constructor(tag){this.tagName=tag.toUpperCase();this.children=[];this.attributes={};this.dataset={};this.events=new Map();this.className='';this.value='';this.hidden=false;this.open=false;this.checked=false;this.disabled=false;this.ownText='';this.parentElement=null;this.style={};this.classList={add:(...names)=>{for(const name of names)this.classList.toggle(name,true)},remove:(...names)=>{for(const name of names)this.classList.toggle(name,false)},toggle:(name,on)=>{const classes=new Set(this.className.split(/\s+/).filter(Boolean));if(on??!classes.has(name))classes.add(name);else classes.delete(name);this.className=[...classes].join(' ')}}}
+  // Like the DOM, the type property reflects the type attribute (input[type=checkbox] selectors).
+  get type(){return this.attributes.type??''}
+  set type(value){this.attributes.type=String(value)}
   get textContent(){return this.ownText+this.children.map(node=>node.textContent).join('')}
   set textContent(value){this.ownText=String(value);this.children=[]}
   get firstElementChild(){return this.children.find(node=>node.tagName)||null}
@@ -181,6 +184,75 @@ if(typeof vm.SourceTextModule!=='function'){
   dom.getElementById('rejectReason').value=reason;await dom.getElementById('rejectReason').emit('input');await dom.getElementById('commit').emit('click');await dom.getElementById('confirm').close('confirm');for(let i=0;i<4;i++)await flush();
   const writes=fixture.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare'));assert.equal(writes.length,1);assert.equal(writes[0].route,'/api/items/'+reviewItem.id+'/reject');assert.equal(writes[0].body.reason,reason);
   assert.equal(fixture.calls.filter(c=>c.method==='POST'&&c.route.endsWith('/review-session')).length,0,'opening and rejecting do not confirm review');
+ });
+ for(const language of ['cs','en'])test('selection mode explains every unavailable film and updates after a saved review in '+language,async()=>{
+  const en=language==='en',ids=['c','d','e'].map(x=>x.repeat(24)),items=[{...reviewItem,id:ids[0],title:'Unreviewed film'},{...reviewItem,id:ids[1],title:'Completed film'},{...reviewItem,id:ids[2],title:'Blocked film',status:'blocked',reason:'Synthetic blocker'}];
+  const checks=Object.fromEntries(['preparation','image','audio','syncStart','syncMiddle','syncEnd'].map(key=>[key,true])),done={version:1,revision:3,requirements:{hdr:false},snapshot:reviewItem.snapshot,complete:true,session:{step:4,deferred:false,checks}};
+  const data={label:'Synthetic Review',items,history:[],recovery:[],pendingRestores:[],restorePending:0,reviewSessions:{[ids[1]]:done}};
+  const session={snapshot:reviewItem.snapshot,revision:0,requirements:{hdr:false},complete:false,session:{method:'review',device:'',step:0,scope:{originalIndex:1,reviewIndex:2,seconds:10},checks:{...checks,preparation:false},note:'',deferred:false}};
+  const f=await appFixture(language,{routes:{'/api/items':()=>({data:{...structuredClone(data),serverTime:Date.now()}}),['/api/items/'+ids[0]+'/review-session']:{data:session},['/api/items/'+ids[0]+'/audio-compare']:{data:{original:[],review:[]}}}}),dom=f.document;
+  const row=title=>dom.getElementById('list').children.find(n=>n.textContent.includes(title)),why=title=>row(title).querySelector('details.selection-why'),box=title=>row(title).querySelector('input[type=checkbox]');
+  const states=Object.fromEntries(items.map(x=>[x.title,row(x.title).querySelector('.badge').dataset.state]));
+  assert.deepEqual(states,{'Unreviewed film':'ready','Completed film':'complete','Blocked film':'blocked'});
+  assert.match(row('Completed film').querySelector('.badge').textContent,en?/Review completed/:/Posouzení dokončeno/);assert.match(row('Blocked film').querySelector('.badge').textContent,en?/Technically blocked/:/Technicky blokováno/);
+  assert.equal(row('Completed film').querySelector('.state-icon').getAttribute('aria-hidden'),'true');
+  for(const x of items)assert.equal(why(x.title).hidden,true,'no explanation outside selection mode');
+  await dom.getElementById('selectionToggle').emit('click');
+  assert.match(dom.getElementById('selectionHint').textContent,en?/batch approval of completed reviews\. Selectable: 1 of 3\./:/hromadnému schválení dokončených posouzení\. Lze vybrat: 1 z 3\./);
+  assert.equal(box('Completed film').disabled,false);assert.equal(why('Completed film').hidden,true);
+  assert.equal(box('Unreviewed film').disabled,true);assert.equal(why('Unreviewed film').hidden,false);
+  assert.match(why('Unreviewed film').querySelector('summary').textContent,en?/Why can't I select it\?/:/Proč nelze vybrat\?/);
+  assert.match(why('Unreviewed film').textContent,en?/has not been reviewed yet/:/ještě nebyl posouzen/);
+  assert.match(why('Blocked film').textContent,en?/technically blocked/:/technicky blokovaný/);
+  assert.equal(why('Unreviewed film').querySelector('button').hidden,false);
+  const writesBefore=f.calls.filter(c=>c.method==='POST').length;
+  await why('Unreviewed film').querySelector('button').emit('click');for(let i=0;i<4;i++)await flush();
+  assert.equal(dom.getElementById('filmDetail').open,true);assert.equal(dom.getElementById('detailTitle').textContent,'Unreviewed film');
+  assert.equal(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,writesBefore,'opening an explanation or review confirms nothing');
+  await dom.getElementById('filmDetail').close();
+  data.reviewSessions[ids[0]]={...done,snapshot:reviewItem.snapshot};
+  for(const timer of f.timers.filter(t=>t.ms===2000))timer.fn();for(let i=0;i<15;i++)await flush();
+  assert.equal(box('Unreviewed film').disabled,false);assert.equal(why('Unreviewed film').hidden,true);
+  assert.match(dom.getElementById('selectionHint').textContent,en?/Selectable: 2 of 3/:/Lze vybrat: 2 z 3/);
+ });
+ for(const language of ['cs','en'])test('unresolved exchange transactions are listed read-only with film, phase and reason in '+language,async()=>{
+  const en=language==='en',recovery=[{id:'tx1',journal:'tx1.json',phase:'installed',reason:'needs-inspection',title:reviewItem.title,itemId:reviewItem.id},{id:'tx2.json',journal:'tx2.json',phase:'unknown',reason:'unreadable',title:null,itemId:null}];
+  const f=await appFixture(language,{itemsData:{items:[reviewItem],recovery},routes:{['/api/items/'+reviewItem.id+'/review-session']:{data:{snapshot:reviewItem.snapshot,revision:0,requirements:{hdr:false},complete:false,session:{method:'review',device:'',step:0,scope:{originalIndex:1,reviewIndex:2,seconds:10},checks:{},note:'',deferred:false}}},['/api/items/'+reviewItem.id+'/audio-compare']:{data:{original:[],review:[]}}}}),dom=f.document,box=dom.getElementById('transactions');
+  assert.equal(box.hidden,false);
+  assert.match(box.textContent,en?/Unfinished exchanges need manual inspection \(2\)/:/Nedokončené výměny vyžadují ruční kontrolu \(2\)/);
+  assert.match(box.textContent,en?/Phase: Result installed/:/Fáze: Výsledek nainstalován/);
+  assert.match(box.textContent,en?/cannot be proven safe to restore automatically/:/nelze prokazatelně vrátit automaticky/);
+  assert.match(box.textContent,en?/Film cannot be identified.*Phase: Unknown phase.*cannot be read or verified/:/Film nelze určit.*Fáze: Neznámá fáze.*nelze přečíst ani ověřit/);
+  assert.match(box.textContent,en?/Exchange record: tx1\.json/:/Záznam výměny: tx1\.json/);
+  assert.match(box.textContent,/OPERATIONS\.md/);
+  const buttons=box.querySelectorAll('button');assert.equal(buttons.length,1,'only navigation, no action on the transaction');
+  await buttons[0].emit('click');for(let i=0;i<4;i++)await flush();
+  assert.equal(dom.getElementById('filmDetail').open,true);
+  assert.equal(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,0,'nothing is written');
+ });
+ test('no unresolved exchange transaction keeps the panel hidden',async()=>{
+  const f=await appFixture('cs',{itemsData:{items:[reviewItem],recovery:[]}});assert.equal(f.document.getElementById('transactions').hidden,true);
+ });
+ for(const language of ['cs','en'])test('changed files open a verification step instead of a review in '+language,async()=>{
+  const en=language==='en',reason='Změnil se jen čas změny metadat souboru (ctime). Shodu obsahu nelze prokázat: ověř soubory a posuď film znovu od začátku.';
+  for(const [recheck,canRecheck] of [['verify',true],[null,false]]){
+   const item={...reviewItem,status:'blocked',identityChanged:true,recheck,canRecheck,reason};
+   const f=await appFixture(language,{itemsData:{items:[item]},routes:{['/api/items/'+item.id+'/recheck']:{data:{ok:true,item:{...reviewItem}}}}}),dom=f.document;
+   const inspect=dom.querySelectorAll('button').find(n=>n.getAttribute('aria-label')===(en?'Review Fixture film':'Posoudit Fixture film'));await inspect.emit('click');for(let i=0;i<4;i++)await flush();
+   const body=dom.getElementById('detailBody');
+   assert.match(body.textContent,en?/The files changed since the film was queued/:/Soubory se od zařazení změnily/);
+   assert.match(body.textContent,en?/Only the file's metadata change time/:/Změnil se jen čas změny metadat/);
+   assert.equal(f.calls.some(c=>c.route.includes('/review-session')),false,'no review is loaded for changed files');
+   assert.equal(body.querySelectorAll('[data-check]').length,0);
+   const verify=body.querySelectorAll('button').find(n=>/Ověřit soubory a začít nové posouzení|Verify the files and start a new review/.test(n.textContent));
+   if(recheck==='verify'){
+    assert.ok(verify);assert.equal(verify.disabled,false);await verify.emit('click');for(let i=0;i<4;i++)await flush();
+    assert.deepEqual(f.calls.filter(c=>c.method==='POST').map(c=>c.route),['/api/items/'+item.id+'/recheck']);
+   }else{
+    assert.equal(verify,undefined);assert.match(body.textContent,en?/cannot be verified automatically/:/nelze ověřit automaticky/);
+    assert.equal(f.calls.filter(c=>c.method==='POST').length,0);
+   }
+  }
  });
  for(const language of ['cs','en'])test('real Review app shows API runtime and interruption changes in '+language,async()=>{
   const fixture=await appFixture(language),dom=fixture.document,runtime=dom.getElementById('recoveryRuntime'),warning=dom.getElementById('recoveryRestartWarning');

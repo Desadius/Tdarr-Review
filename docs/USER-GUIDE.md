@@ -22,6 +22,8 @@ Changing the public Review origin may prevent the old browser origin from pollin
 
 In **Attention** (**Pozornost**), choose **Review** (**Posoudit**). The **Review** workspace loads the saved assessment of this exact original/result pair. Preparation and metadata, recovery and technical evidence remain available in the other detail tabs.
 
+On a window at least 1200 CSS px wide the workspace uses the Kino layout: it fills the window, the five steps form a bar at the top and the comparison takes most of the height, with its time controls directly below. On a narrower window or at high browser zoom the compact layout with the step list is used. Switching between them only changes the layout; drafts, checks and the saved review are kept.
+
 Ready status means the implemented matching and metadata checks permit a decision; approval also requires a completed saved manual review. It does not automatically state that compression looks good. Tdarr should already have completed the appropriate health check. Review does not perform another full decode during approval.
 
 Work through the five steps. Confirmations appear alongside the tools during comparison; the final screen does not replace these checks.
@@ -68,6 +70,8 @@ Technical data still shows the evidence score: job matching (10), proven full Td
 
 ## Why a film is blocked
 
+If a replacement was interrupted and Review cannot prove that it is safe to roll back, **Attention** shows a panel "An unfinished exchange needs manual inspection" with the film, the phase and the reason. Approvals, rejections and batches stay blocked until the exchange record is inspected by hand ([Operations](OPERATIONS.md#unresolved-exchange-transaction)). The panel offers no repair action.
+
 Review only offers approval for a result produced by one of the supported transcode profiles. The rules are intentionally strict: a result that does not match them may have lost picture, HDR metadata, audio or subtitles, so the film is shown as blocked and the original stays untouched. The blocked reason names the check that failed.
 
 | Check | Rule | Example message |
@@ -94,13 +98,23 @@ Review revalidates file identities, prevents concurrent actions, pauses new Tdar
 
 Plex uses the resulting file in its existing library directory. If your server does not automatically detect the change, run a Plex library scan. There is no Plex API integration in this release.
 
-Batch selection includes only normally approvable results with individually completed current reviews. Whole-batch preflight checks every file snapshot and review revision before starting any film; one incomplete, stale or blocked selection prevents the start. A batch confirmation does not supply missing individual checks. The server then processes films sequentially and rechecks identities per film. Ordinary per-film errors are recorded; an uncertain transaction or un-restored node pause stops further work. Closing the browser does not stop the batch. After an application restart, an unfinished batch is not blindly replayed.
+Batch selection includes only normally approvable results with individually completed current reviews. Each film in the overview shows its review state with text and an icon: ready to review, review in progress, review completed, review deferred, duration difference (approve individually) or technically blocked. In selection mode ("Select") the bar states how many shown films can be selected, and every film that cannot be selected has a "Why can't I select it?" disclosure naming the missing condition or blocker, with "Open review" when the film's own review resolves it. Opening an explanation never changes a review or a decision. Whole-batch preflight checks every file snapshot and review revision before starting any film; one incomplete, stale or blocked selection prevents the start. A batch confirmation does not supply missing individual checks. The server then processes films sequentially and rechecks identities per film. Ordinary per-film errors are recorded; an uncertain transaction or un-restored node pause stops further work. Closing the browser does not stop the batch. After an application restart, an unfinished batch is not blindly replayed.
 
 ## Reject or recheck
 
 Rejection does not require completing the checklist. It requires a separate reason, recorded before removing only the Review result. The original is kept. Historical rejections without a recorded reason cannot be reconstructed.
 
 Some duration mismatches can be rechecked/remuxed or explicitly assessed individually. The completed checklist does not bypass the duration rule: a permitted exception requires its own explicit final acceptance and a check of the beginning, ending and synchronisation. It is not applied indiscriminately to batch approvals. Do not use it to hide a different edit or missing content.
+
+### Files changed since queueing
+
+If the original or the result changed after the film was queued, the film is blocked and **Review** opens a verification step instead of the checklist:
+
+- **Only the metadata change time (ctime) changed**: choose **Verify the files and start a new review** (**Ověřit soubory a začít nové posouzení**). Review checks that the Tdarr job is still the same, that FFprobe reports the same technical data, and that neither file changes while it runs. This does not prove equal content, so earlier confirmations and decisions never carry over: after success the review starts again from the first step. If anything differs, the film stays blocked with the reason.
+- **Only the device changed** (a remount): **Recheck files** compares the remaining file details.
+- **Anything else** (size, content time, inode): it cannot be verified in Review. Both files are kept; inspect them by hand.
+
+Each successful verification is written to the event log as `item.reverified` with the previous snapshot and what changed.
 
 After a completed approval/rejection, Review removes its matching receipt and empty directories. It does not recursively delete unrelated contents or follow symlinks.
 

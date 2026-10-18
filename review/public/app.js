@@ -1,13 +1,13 @@
-import {mountReviewWorkflow,classifyPreparation,preparationSummary} from '/review-workflow.js?v=20261013-prepared2';
-import {capabilities, classifyRecovery, recoveryProgress, downloadProgress, liveRecoveryRecord, projectRequests, historyWarnings, historyFollowup, recoveryFollowup, fullHashProgress} from '/review-model.js?v=20261015-outside1';
-import {$,el,fmt,date,elapsedText,etaText,poster,button,badge,keyed,makeTabs,detailsFacts} from '/ui-kit.js?v=20261017-settings1';
-import {decodeProgressView,downloadProgressView,fullHashProgressView,recoveryDetails,recoveryRuntimeView,recoveryRestartWarningView,recoveryConfigNoticeView} from '/recovery-view.js?v=20261015-outside1';
-import {installComparisons,openComparison,openAudioComparison} from '/comparison.js?v=20261013-split1';
-import {installSettingsDialogs} from '/settings-dialogs.js?v=20261017-settings1';
-import {installQuarantine,openQuarantine} from '/quarantine.js?v=20261013-split1';
-import {installStatistics,loadStatistics,statisticsLoadedAt} from '/statistics.js?v=20261013-split1';
-import {tr,locale,language,initializeLocale} from '/i18n.js?v=20261017-settings1';
-import {errorText} from '/error-messages.js?v=20261017-settings1';
+import {mountReviewWorkflow,classifyPreparation,preparationSummary} from '/review-workflow.js?v=__APP_VERSION__';
+import {capabilities, reviewState, classifyRecovery, recoveryProgress, downloadProgress, liveRecoveryRecord, projectRequests, historyWarnings, historyFollowup, recoveryFollowup, fullHashProgress} from '/review-model.js?v=__APP_VERSION__';
+import {$,el,fmt,date,elapsedText,etaText,poster,button,badge,keyed,makeTabs,detailsFacts} from '/ui-kit.js?v=__APP_VERSION__';
+import {decodeProgressView,downloadProgressView,fullHashProgressView,recoveryDetails,recoveryRuntimeView,recoveryRestartWarningView,recoveryConfigNoticeView} from '/recovery-view.js?v=__APP_VERSION__';
+import {installComparisons,openComparison,openAudioComparison} from '/comparison.js?v=__APP_VERSION__';
+import {installSettingsDialogs} from '/settings-dialogs.js?v=__APP_VERSION__';
+import {installQuarantine,openQuarantine} from '/quarantine.js?v=__APP_VERSION__';
+import {installStatistics,loadStatistics,statisticsLoadedAt} from '/statistics.js?v=__APP_VERSION__';
+import {tr,locale,language,initializeLocale} from '/i18n.js?v=__APP_VERSION__';
+import {errorText} from '/error-messages.js?v=__APP_VERSION__';
 initializeLocale();
 
 const busy=d=>!!d?.active||!!d?.batchRunning;
@@ -116,7 +116,10 @@ function updateSelection(){
  $('selectedSaving').textContent=tr(selected.size?`Možná úspora ${fmt((latest?.items||[]).filter(x=>selected.has(x.id)).reduce((s,x)=>s+x.originalBytes-x.reviewBytes,0))}`:'');
  $('bulk').hidden=!ui.selection;
  $('selectionToggle').setAttribute('aria-expanded',String(ui.selection));$('selectionToggle').setAttribute('aria-label',tr(ui.selection?'Ukončit výběr filmů':'Vybrat více filmů'));$('selectionToggle').textContent=tr(ui.selection?'Výběr zapnutý':'Vybrat více');
- for(const row of $('list').children){const checkbox=row.querySelector('input[type=checkbox]');if(checkbox){checkbox.checked=selected.has(row.dataset.key);checkbox.disabled=!caps(latest.items.find(x=>x.id===row.dataset.key)||{}).select;checkbox.closest('label').hidden=!ui.selection;}}
+ $('selectionHint').textContent=tr(`Výběr slouží k hromadnému schválení dokončených posouzení. Lze vybrat: ${eligible.length} z ${filteredItems().length}.`);
+ for(const row of $('list').children){const checkbox=row.querySelector('input[type=checkbox]');if(checkbox){const c=caps(latest.items.find(x=>x.id===row.dataset.key)||{}),why=row.querySelector('details.selection-why');checkbox.checked=selected.has(row.dataset.key);checkbox.disabled=!c.select;checkbox.closest('label').hidden=!ui.selection;
+  // A disabled checkbox cannot be the click target, so the reason is a separate disclosure.
+  if(why){why.hidden=!ui.selection||c.select;why.querySelector('p').textContent=tr(c.selectReason);why.querySelector('button').hidden=c.selectAction!=='review';}}}
 }
 $('selectionToggle').onclick=()=>{ui.selection=!ui.selection;if(!ui.selection)selected.clear();updateSelection()};
 $('selectionCancel').onclick=()=>{ui.selection=false;selected.clear();updateSelection();$('selectionToggle').focus()};
@@ -132,13 +135,25 @@ function previewPreparationBadge(item){
  if(status.progress){const progress=el('progress','preview-status-progress');progress.max=status.total||1;if(status.total>0)progress.value=Math.min(status.ready,status.total);progress.setAttribute('aria-label',tr('Připravené ukázky')+' · '+status.ready+'/'+status.total);box.append(progress)}
  return box;
 }
+const STATE_ICONS={ready:'○','in-progress':'◐',complete:'●',deferred:'⏸',duration:'⚠',blocked:'⛔'};
+function stateBadge(state){const b=badge(state.label,{ready:'ready',complete:'ready'}[state.kind]||'warning'),icon=el('span','state-icon',STATE_ICONS[state.kind],true);icon.setAttribute('aria-hidden','true');b.prepend(icon);b.dataset.state=state.kind;return b}
 function reviewRow(item){
  const row=el('article','review-row'),pick=el('label','selection'),checkbox=el('input');checkbox.type='checkbox';checkbox.setAttribute('aria-label',tr('Vybrat '+item.title));checkbox.dataset.focus='pick:'+item.id;checkbox.onchange=e=>{e.target.checked?selected.add(item.id):selected.delete(item.id);updateSelection()};pick.append(checkbox);
- const session=latest?.reviewSessions?.[item.id],deferred=session?.snapshot===item.snapshot&&session.session?.deferred;
- const info=el('div','row-info');info.append(badge(deferred?'Posouzení odloženo':item.status==='ready'?'K posouzení':'Zvláštní kontrola',deferred?'warning':item.status==='ready'?'ready':'warning'),el('h2','',item.title,true),el('p','details',deferred?session.session.note:item.status==='ready'?'Další krok: porovnej obraz a zvuk.':item.reason||'Ověř technické údaje a dostupnost souborů.'));
- info.append(previewPreparationBadge(item));
+ const session=latest?.reviewSessions?.[item.id],deferred=session?.snapshot===item.snapshot&&session.session?.deferred,state=reviewState(item,latest);
+ const why=el('details','selection-why'),whyText=el('p','details'),whyOpen=button('Otevřít posouzení',()=>openDetail('review',item.id));why.hidden=true;why.append(el('summary','','Proč nelze vybrat?'),whyText,whyOpen);
+ const info=el('div','row-info');info.append(stateBadge(state),el('h2','',item.title,true),el('p','details',deferred?session.session.note:item.status==='ready'?'Další krok: porovnej obraz a zvuk.':item.reason||'Ověř technické údaje a dostupnost souborů.'));
+ info.append(previewPreparationBadge(item),why);
  const metric=el('div','row-metric');metric.append(el('strong','saved',fmt(item.originalBytes-item.reviewBytes)),el('span','details',`${fmt(item.originalBytes)} → ${fmt(item.reviewBytes)}`));
  const inspect=button('Posoudit',()=>openDetail('review',item.id),'primary');inspect.dataset.focus='inspect:'+item.id;inspect.setAttribute('aria-label',tr('Posoudit '+item.title));row.append(pick,poster('review',item.id,item.title),info,metric,inspect);return row;
+}
+const TX_PHASES={preparing:'Příprava kopie','syncing-copy':'Zápis kopie','verifying-copy':'Ověření kopie',ready:'Kopie ověřena','original-backed-up':'Originál přesunut do zálohy','original-removed':'Originál uvolněn z místa',installed:'Výsledek nainstalován',unknown:'Neznámá fáze'};
+const TX_REASONS={'invalid-identity':'Zaznamenaná identita souboru je nečitelná; nic nebylo přesunuto.','invalid-paths':'Záznam výměny obsahuje neplatné cesty.',unreadable:'Záznam výměny nelze přečíst ani ověřit.','needs-inspection':'Originál nelze prokazatelně vrátit automaticky: záloha nebo soubory se změnily, nebo výměna pokročila za bod návratu.'};
+// Read-only: unresolved exchange transactions are inspected by hand (docs/OPERATIONS.md); Review offers no action on them.
+function renderTransactions(){
+ const list=Array.isArray(latest?.recovery)?latest.recovery.filter(t=>t&&typeof t==='object'):[],box=$('transactions');box.hidden=!list.length;if(!list.length){box.replaceChildren();return}
+ const title=el('h2','',list.length===1?'Nedokončená výměna vyžaduje ruční kontrolu':`Nedokončené výměny vyžadují ruční kontrolu (${list.length})`);title.id='transactionsTitle';
+ const rows=el('ul','transaction-list');for(const t of list){const li=el('li'),film=latest.items.find(x=>x.id===t.itemId);li.append(el('strong','',t.title||'Film nelze určit',!!t.title),el('span','details',tr('Fáze')+': '+tr(TX_PHASES[t.phase]||TX_PHASES.unknown),true),el('p','',TX_REASONS[t.reason]||TX_REASONS.unreadable),el('span','details',tr('Záznam výměny')+': '+(t.journal||'—'),true));if(film){const open=button('Otevřít film',()=>openDetail('review',film.id));open.setAttribute('aria-label',tr('Otevřít film '+film.title));li.append(open)}rows.append(li)}
+ box.replaceChildren(title,el('p','','Schválení, zamítnutí a dávky jsou zablokované, dokud záznam výměny ručně neprověříš. Review tu nic neopravuje ani nemaže; oba soubory a záznam zůstávají zachované.'),rows,el('p','details','Postup kontroly: docs/OPERATIONS.md, oddíl „Unresolved exchange transaction“.'));
 }
 function renderAttention(){
  const items=filteredItems();$('readyCount').textContent=tr((latest?.items||[]).filter(x=>x.status==='ready').length);$('blockedCount').textContent=tr((latest?.items||[]).filter(x=>x.status!=='ready').length);
@@ -149,7 +164,7 @@ function renderAttention(){
  $('events').hidden=!warnings.length&&!attention.length;
  const events=[];if(warnings.length)events.push({kind:'history',count:warnings.length});if(attention.length)events.push({kind:'recovery',count:attention.length});
  keyed($('events'),events,x=>x.kind,x=>{const row=el('div'),b=button(x.kind==='history'?'Historie':'Obnovy',()=>navigate(x.kind,{filter:x.kind==='history'?'warning':'attention'}));b.dataset.focus='event:'+x.kind;row.append(el('span','',x.kind==='history'?`${x.count} upozornění v historii`:`${x.count} obnov k ověření`),b);return row});
- updateSelection();
+ renderTransactions();updateSelection();
 }
 function recoveryRow(projected){
  const r=projected.record||projected.raw||projected,cl=projected.classification||classifyRecovery(r,Date.now()),row=el('article','recovery-row'),info=el('div','row-info');
@@ -186,9 +201,19 @@ function renderHistory(){
 }
 function guardedButton(item,cap,text,fn,cls='secondary'){const b=button(text,()=>{if(!caps(item)[cap]){error(Error(caps(item).reason||'Akce není dostupná.'));return}fn()},cls);b.dataset.cap=cap;b.disabled=!caps(item)[cap];return b}
 
+async function recheckItem(item){try{writeItem(item,'recheck');actionInFlight=true;updateGuards();await api(`/api/items/${item.id}/recheck`,{snapshot:item.snapshot});lastRender='';await load()}catch(e){error(e)}finally{actionInFlight=false;updateGuards()}}
+// Files that changed since queueing get a verification step instead of a review: old checks never apply to them.
+function changedFilesView(item){
+ const box=el('div','changed-files');box.append(el('h3','','Soubory se od zařazení změnily'),el('p','alert inline-warning',item.reason||'Soubory se od zařazení do review změnily. Vyžadují kontrolu.'),el('p','','Posouzení změněných souborů není k dispozici. Dosavadní potvrzení a rozhodnutí se na ně nevztahují.'));
+ if(item.recheck==='verify')box.append(el('p','details','Ověření zkontroluje vazbu na úlohu Tdarr, technické údaje z FFprobe a to, že se soubory během ověření nezmění. Shodu obsahu neprokazuje: po úspěchu začne nové posouzení od prvního kroku.'),guardedButton(item,'recheck','Ověřit soubory a začít nové posouzení',()=>recheckItem(item),'primary'));
+ else if(item.recheck==='remount')box.append(el('p','details','Změnilo se jen zařízení (například po připojení disku). Ověření porovná ostatní údaje souborů.'),guardedButton(item,'recheck','Znovu ověřit soubory',()=>recheckItem(item)));
+ else box.append(el('p','details','Tuto změnu nelze ověřit automaticky (změnila se velikost, obsah nebo umístění souboru). Oba soubory zůstávají zachované; zkontroluj je ručně podle docs/OPERATIONS.md.'));
+ return box;
+}
 function detailReview(item,tab){
  const box=$('detailBody');
  if(tab==='review'){
+  if(item.identityChanged){box.replaceChildren(changedFilesView(item));return}
   if(reviewWorkspace)return;
   reviewWorkspace=mountReviewWorkflow(box,item,{api,tr,formatBytes:fmt,openComparison,openAudioComparison,preparation:latest?.previews?.[item.id],
    canWrite:()=>{const current=latest?.items.find(x=>x.id===item.id);return !!current&&current.snapshot===item.snapshot&&!caps(current).writeBlocked},
@@ -215,7 +240,7 @@ function detailReview(item,tab){
   box.append(el('h3','','Doložené kontroly'));
   if(item.assessment){const x=item.assessment;box.append(el('p','',`Technická shoda ${x.score}/${x.maximum} bodů · ${x.verdict}`),el('p','details',x.note));for(const marker of x.markers||[]){const row=el('div','check-row');row.append(badge(marker.status==='pass'?'Doloženo':marker.status==='fail'?'Odchylka':'Neověřeno',marker.status==='pass'?'ready':'warning'),el('strong','',marker.label),el('p','details',marker.detail));box.append(row)}}
   const paths=el('details','help');paths.append(el('summary','','Identita a cesty souborů'),detailsFacts([['Review ID',item.id,true],['Úloha Tdarr',item.jobId||tr('Nedoloženo'),true],['Originál',item.relative||tr('Nedoloženo'),true],['Výsledek',item.reviewRelative||tr('Nedoloženo'),true],['Snapshot',item.snapshot||tr('Chybí'),true]]));box.append(paths,el('p','details','Před zápisem server znovu ověří snapshot a soubory. Health check z Tdarru se při schválení neopakuje.'));
-  if(item.canRecheck)box.append(guardedButton(item,'recheck','Znovu ověřit soubory',async()=>{try{writeItem(item,'recheck');actionInFlight=true;updateGuards();await api(`/api/items/${item.id}/recheck`,{snapshot:item.snapshot});lastRender='';await load()}catch(e){error(e)}finally{actionInFlight=false;updateGuards()}}));
+  if(item.canRecheck)box.append(guardedButton(item,'recheck',item.recheck==='verify'?'Ověřit soubory a začít nové posouzení':'Znovu ověřit soubory',()=>recheckItem(item)));
  }
 }
 function detailRequest(r,tab){
