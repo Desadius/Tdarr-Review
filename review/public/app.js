@@ -1,5 +1,5 @@
 import {mountReviewWorkflow,classifyPreparation,preparationSummary} from '/review-workflow.js?v=__APP_VERSION__';
-import {capabilities, classifyRecovery, recoveryProgress, downloadProgress, liveRecoveryRecord, projectRequests, historyWarnings, historyFollowup, recoveryFollowup, fullHashProgress} from '/review-model.js?v=__APP_VERSION__';
+import {capabilities, reviewState, classifyRecovery, recoveryProgress, downloadProgress, liveRecoveryRecord, projectRequests, historyWarnings, historyFollowup, recoveryFollowup, fullHashProgress} from '/review-model.js?v=__APP_VERSION__';
 import {$,el,fmt,date,elapsedText,etaText,poster,button,badge,keyed,makeTabs,detailsFacts} from '/ui-kit.js?v=__APP_VERSION__';
 import {decodeProgressView,downloadProgressView,fullHashProgressView,recoveryDetails,recoveryRuntimeView,recoveryRestartWarningView,recoveryConfigNoticeView} from '/recovery-view.js?v=__APP_VERSION__';
 import {installComparisons,openComparison,openAudioComparison} from '/comparison.js?v=__APP_VERSION__';
@@ -116,7 +116,10 @@ function updateSelection(){
  $('selectedSaving').textContent=tr(selected.size?`Možná úspora ${fmt((latest?.items||[]).filter(x=>selected.has(x.id)).reduce((s,x)=>s+x.originalBytes-x.reviewBytes,0))}`:'');
  $('bulk').hidden=!ui.selection;
  $('selectionToggle').setAttribute('aria-expanded',String(ui.selection));$('selectionToggle').setAttribute('aria-label',tr(ui.selection?'Ukončit výběr filmů':'Vybrat více filmů'));$('selectionToggle').textContent=tr(ui.selection?'Výběr zapnutý':'Vybrat více');
- for(const row of $('list').children){const checkbox=row.querySelector('input[type=checkbox]');if(checkbox){checkbox.checked=selected.has(row.dataset.key);checkbox.disabled=!caps(latest.items.find(x=>x.id===row.dataset.key)||{}).select;checkbox.closest('label').hidden=!ui.selection;}}
+ $('selectionHint').textContent=tr(`Výběr slouží k hromadnému schválení dokončených posouzení. Lze vybrat: ${eligible.length} z ${filteredItems().length}.`);
+ for(const row of $('list').children){const checkbox=row.querySelector('input[type=checkbox]');if(checkbox){const c=caps(latest.items.find(x=>x.id===row.dataset.key)||{}),why=row.querySelector('details.selection-why');checkbox.checked=selected.has(row.dataset.key);checkbox.disabled=!c.select;checkbox.closest('label').hidden=!ui.selection;
+  // A disabled checkbox cannot be the click target, so the reason is a separate disclosure.
+  if(why){why.hidden=!ui.selection||c.select;why.querySelector('p').textContent=tr(c.selectReason);why.querySelector('button').hidden=c.selectAction!=='review';}}}
 }
 $('selectionToggle').onclick=()=>{ui.selection=!ui.selection;if(!ui.selection)selected.clear();updateSelection()};
 $('selectionCancel').onclick=()=>{ui.selection=false;selected.clear();updateSelection();$('selectionToggle').focus()};
@@ -132,11 +135,14 @@ function previewPreparationBadge(item){
  if(status.progress){const progress=el('progress','preview-status-progress');progress.max=status.total||1;if(status.total>0)progress.value=Math.min(status.ready,status.total);progress.setAttribute('aria-label',tr('Připravené ukázky')+' · '+status.ready+'/'+status.total);box.append(progress)}
  return box;
 }
+const STATE_ICONS={ready:'○','in-progress':'◐',complete:'●',deferred:'⏸',duration:'⚠',blocked:'⛔'};
+function stateBadge(state){const b=badge(state.label,{ready:'ready',complete:'ready'}[state.kind]||'warning'),icon=el('span','state-icon',STATE_ICONS[state.kind],true);icon.setAttribute('aria-hidden','true');b.prepend(icon);b.dataset.state=state.kind;return b}
 function reviewRow(item){
  const row=el('article','review-row'),pick=el('label','selection'),checkbox=el('input');checkbox.type='checkbox';checkbox.setAttribute('aria-label',tr('Vybrat '+item.title));checkbox.dataset.focus='pick:'+item.id;checkbox.onchange=e=>{e.target.checked?selected.add(item.id):selected.delete(item.id);updateSelection()};pick.append(checkbox);
- const session=latest?.reviewSessions?.[item.id],deferred=session?.snapshot===item.snapshot&&session.session?.deferred;
- const info=el('div','row-info');info.append(badge(deferred?'Posouzení odloženo':item.status==='ready'?'K posouzení':'Zvláštní kontrola',deferred?'warning':item.status==='ready'?'ready':'warning'),el('h2','',item.title,true),el('p','details',deferred?session.session.note:item.status==='ready'?'Další krok: porovnej obraz a zvuk.':item.reason||'Ověř technické údaje a dostupnost souborů.'));
- info.append(previewPreparationBadge(item));
+ const session=latest?.reviewSessions?.[item.id],deferred=session?.snapshot===item.snapshot&&session.session?.deferred,state=reviewState(item,latest);
+ const why=el('details','selection-why'),whyText=el('p','details'),whyOpen=button('Otevřít posouzení',()=>openDetail('review',item.id));why.hidden=true;why.append(el('summary','','Proč nelze vybrat?'),whyText,whyOpen);
+ const info=el('div','row-info');info.append(stateBadge(state),el('h2','',item.title,true),el('p','details',deferred?session.session.note:item.status==='ready'?'Další krok: porovnej obraz a zvuk.':item.reason||'Ověř technické údaje a dostupnost souborů.'));
+ info.append(previewPreparationBadge(item),why);
  const metric=el('div','row-metric');metric.append(el('strong','saved',fmt(item.originalBytes-item.reviewBytes)),el('span','details',`${fmt(item.originalBytes)} → ${fmt(item.reviewBytes)}`));
  const inspect=button('Posoudit',()=>openDetail('review',item.id),'primary');inspect.dataset.focus='inspect:'+item.id;inspect.setAttribute('aria-label',tr('Posoudit '+item.title));row.append(pick,poster('review',item.id,item.title),info,metric,inspect);return row;
 }

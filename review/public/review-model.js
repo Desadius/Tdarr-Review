@@ -21,6 +21,11 @@ export function originalOutsideTooLong(record, now = Date.now()) {
 const list = value => Array.isArray(value) ? value : [];
 const hasDuration = value => typeof value === 'number' && Number.isFinite(value) && value > 0;
 
+function completedReview(item, review) {
+  const checks = review?.session?.checks;
+  return review?.version === 1 && typeof review?.requirements?.hdr === 'boolean' && (!review.requirements.hdr || (checks?.hdr === true && typeof review?.session?.device === 'string' && review.session.device.trim().length > 1)) && review?.snapshot === item?.snapshot && review?.complete === true && review?.session?.step === 4 && review?.session?.deferred === false && ['preparation','image','audio','syncStart','syncMiddle','syncEnd'].every(k=>checks?.[k] === true);
+}
+
 /** Pass authenticated/fresh explicitly. Missing state disables writes. */
 export function capabilities(item, d, context = {}) {
   const reasons = [];
@@ -37,9 +42,7 @@ export function capabilities(item, d, context = {}) {
   const normalApproval = item?.status === 'ready' && item?.canApproveDuration !== true;
   const durationApproval = item?.canApproveDuration === true && hasDuration(item?.durationA) && hasDuration(item?.durationB);
   const requestConflict = list(context.requests).some(r => r?.itemId === item?.id && !['imported', 'restored'].includes(r.phase));
-  const review = d?.reviewSessions?.[item?.id];
-  const checks = review?.session?.checks;
-  const reviewComplete = review?.version === 1 && typeof review?.requirements?.hdr === 'boolean' && (!review.requirements.hdr || (checks?.hdr === true && typeof review?.session?.device === 'string' && review.session.device.trim().length > 1)) && review?.snapshot === item?.snapshot && review?.complete === true && review?.session?.step === 4 && review?.session?.deferred === false && ['preparation','image','audio','syncStart','syncMiddle','syncEnd'].every(k=>checks?.[k] === true);
+  const reviewComplete = completedReview(item, d?.reviewSessions?.[item?.id]);
   const allowed = !writeBlocked && validItem;
   // Comparison uses POST and audio comparison stores evidence. Apply write
   // guards conservatively to previews as well as explicit file operations.
@@ -61,7 +64,38 @@ export function capabilities(item, d, context = {}) {
     writeBlocked,
     reason: reasons[0] || (!validItem ? 'Položka nemá ověřený aktuální otisk souborů.' : ''),
     reasons,
+    selectReason: allowed && reviewComplete && normalApproval ? '' : reasons[0] || (!validItem ? 'Položka nemá ověřený aktuální otisk souborů.' : reviewState(item, d).reason),
+    // Only reasons about the film itself are resolved in its review.
+    selectAction: allowed && !(reviewComplete && normalApproval) ? 'review' : null,
   };
+}
+
+// Why a film is not selectable for batch approval, by its review state.
+const SELECT_REASONS = {
+  ready: 'Film ještě nebyl posouzen. Otevři posouzení, dokonči všechny kroky a ulož ho.',
+  stale: 'Soubory se změnily od posouzení. Otevři posouzení a proveď ho znovu.',
+  'in-progress': 'Posouzení není dokončené. Otevři ho, dokonči všechny kroky a ulož ho.',
+  deferred: 'Posouzení je odložené. Otevři ho, vyřeš důvod odložení a dokonči ho.',
+  duration: 'Rozdíl délky vyžaduje samostatný souhlas; film schval jednotlivě v jeho posouzení.',
+  blocked: 'Film je technicky blokovaný a nelze ho schválit. Otevři jeho detail.',
+  complete: 'Film nyní nelze vybrat k hromadnému schválení.',
+};
+const REVIEW_STATES = {
+  ready: 'K posouzení', stale: 'K posouzení', 'in-progress': 'Posouzení rozpracováno', complete: 'Posouzení dokončeno',
+  deferred: 'Posouzení odloženo', duration: 'Rozdíl délky · schválení jednotlivě', blocked: 'Technicky blokováno',
+};
+
+/** The film's review state for the overview; technical states take precedence over review progress. */
+export function reviewState(item, d) {
+  const kind = (() => {
+    if (item?.status !== 'ready') return item?.canApproveDuration === true ? 'duration' : 'blocked';
+    const review = d?.reviewSessions?.[item?.id];
+    if (!review) return 'ready';
+    if (review.snapshot !== item.snapshot) return 'stale';
+    if (review.session?.deferred === true) return 'deferred';
+    return completedReview(item, review) ? 'complete' : 'in-progress';
+  })();
+  return {kind: kind === 'stale' ? 'ready' : kind, label: REVIEW_STATES[kind], stale: kind === 'stale', reason: SELECT_REASONS[kind]};
 }
 
 const RECOVERY_RUNNING = {
