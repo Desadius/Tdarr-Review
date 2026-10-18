@@ -468,6 +468,18 @@ test('a confirmed DTS failure without an exact Radarr release binding stays manu
   f.movie.movieFile.sceneName='Fixture.Unmatched.Release';
   await skippedV3(f,RESIDUAL,decoder(RESIDUAL,183));await f.run();const c=(await f.result()).state.cases[f.id];
   assert.ok(c,'case');assert.equal(c.status,'manual');assert.match(c.message,/grabbed release|history|binding/i);
+  // The binding failure no longer skips the original check: the damage is confirmed and the reason is exact.
+  assert.equal(c.bindingFailure.code,'grab-conflicting');assert.equal(c.evidence.checks.length,2);assert.equal(c.evidence.sourceFP,f.sourceFP);assert.equal(await decodeCalls(f),2);
+  const published=(await f.result()).public.cases.find(x=>x.id===f.id);assert.deepEqual([published.bindingFailure,published.sourceConfirmed],['grab-conflicting',true]);
+  assert.equal(f.requests.filter(r=>r.method!=='GET').length,0);await f.unchanged();
+ }finally{await f.cleanup();}
+});
+
+test('a binding failure with a cleanly decoding original records no damage and no binding reason',{skip:process.platform!=='linux'},async()=>{
+ const f=await fixture();try{
+  f.movie.movieFile.sceneName='Fixture.Unmatched.Release';
+  await skippedV3(f,RESIDUAL,'#!/usr/bin/env node\nrequire("node:fs").appendFileSync(process.env.DATA_ROOT+"/decode-calls","1\\n");console.log("out_time_us=100000000\\nprogress=end");process.exit(0);\n');await f.run();
+  const c=(await f.result()).state.cases[f.id];assert.equal(c.status,'no_action');assert.equal(c.evidence,undefined);assert.equal(c.bindingFailure,undefined);
   assert.equal(f.requests.filter(r=>r.method!=='GET').length,0);await f.unchanged();
  }finally{await f.cleanup();}
 });

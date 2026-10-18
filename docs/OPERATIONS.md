@@ -84,6 +84,10 @@ When transaction recovery cannot prove that an interrupted replacement (exchange
 
 To inspect: copy the journal first. Compare the original path, `.tdarr-review-<id>.old` (backup) and `.tdarr-review-<id>.tmp` with the recorded `originalFP` and `reviewFP` (file identity, see `GLOSSARY.md`) and the phase. Preserve every file. Review stays blocked until a restart finds the journal `complete` or `aborted`; changing it is a manual decision made only after the files are verified.
 
+### Faulty original without a release binding
+
+A Recovery case **Faulty original without a release binding** means two decodes of the unchanged original confirmed the same damage, but Radarr's history cannot identify the exact release, so Recovery made no change (no Hold, quarantine, blocklist or download). The detail says what is missing: no import of the file, an import without file ID or size, several imports from different downloads, no grab of the release, a grab whose title or download ID differs, or a grab without indexer, size, protocol or date. Recovery never fills these gaps or guesses a release. Fix the history in Radarr if possible, or replace the film manually; do not edit Recovery's state.
+
 ## Recovery configuration was edited
 
 For unmanaged legacy configuration, Recovery applies its private `config.json` only at start-up (`/data/recovery/config.json` in the unified container). After an edit the worker logs `config.json changed since start-up; restart the worker to apply it` and the shared status file shows `configChange.restartRequired: true`. If `configChange.valid` is `false`, correct the file first: a restart with invalid JSON, or with a change the approval registry refuses (`error` names the rule), stops the worker. Then restart the Review container while both applications are idle, as described in step 2 of *Update an existing deployment*. Review shows the same notice in the Recovery view (red when the edited file is invalid), together with warnings about original decoding or mutating work. Reverting the edit clears the configuration notice without a restart.

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {classify,confirmed,relative,bindHistory,blocked,within} from './policy.mjs';
+import {classify,confirmed,relative,bindHistory,bindingDiagnosis,blocked,within} from './policy.mjs';
 const corrupt={code:183,stderr:'[hevc @ 0x123] Invalid NAL unit size (-12 > 42).\nError submitting packet to decoder: Invalid data found when processing input'};
 test('DTS XLL requires matching original decoder evidence and rejects operational failures',()=>{
  const a={code:183,stderr:'[dca @ 0x123] Read past end of XLL band data\nError submitting packet to decoder: Invalid data found when processing input'};
@@ -50,4 +50,22 @@ test('timestamp-only DTS warnings, other decoders and generic invalid data stay 
   '[dca @ 0x1] Invalid data found when processing input',
   '[matroska,webm @ 0x1] Element at 0x10 ending at 0x20 exceeds containing master',
  ])assert.equal(classify({code:1,stderr}).kind,'unconfirmed',stderr);
+});
+
+test('a refused release binding is explained by what Radarr history lacks, never relaxed',()=>{
+ const imp={id:5,eventType:'downloadFolderImported',downloadId:'abc',data:{fileId:'3',importedPath:'/media/A/A.mkv',size:'42'}},grab={id:4,eventType:'grabbed',movieId:1,downloadId:'abc',sourceTitle:'release',data:{publishedDate:'2026-01-01',indexer:'Indexer',size:'50',protocol:'1'}};
+ const cases=[
+  [[],'import-missing'],
+  [[{...imp,data:{importedPath:'/media/A/A.mkv'}},grab],'import-incomplete'],
+  [[imp,{...imp,id:6,downloadId:'other'},grab],'import-conflicting'],
+  [[imp],'grab-missing'],
+  [[imp,{...grab,sourceTitle:'another.release'}],'grab-conflicting'],
+  [[imp,grab,{...grab,id:7}],'grab-conflicting'],
+  [[imp,{...grab,data:{indexer:'Indexer'}}],'grab-incomplete'],
+  [[imp,grab],null],
+ ];
+ for(const [events,code] of cases){
+  assert.equal(bindingDiagnosis(movie,events,'/media/A/A.mkv',42),code,code);
+  if(code)assert.throws(()=>bindHistory(movie,events,'/media/A/A.mkv',42),code);else assert.ok(bindHistory(movie,events,'/media/A/A.mkv',42));
+ }
 });

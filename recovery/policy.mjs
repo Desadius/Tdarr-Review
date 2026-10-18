@@ -62,6 +62,24 @@ export function bindHistory(movie,history,radarrPath,size) {
   if(!g.data?.publishedDate||!g.data?.indexer||!Number(g.data?.size)||!['1','2'].includes(String(g.data?.protocol)))throw Error('Incomplete release blocklist identity');
   return {historyId:g.id,sourceTitle:g.sourceTitle,downloadId:g.downloadId,indexer:g.data.indexer,size:Number(g.data.size),protocol:Number(g.data.protocol),publishedDate:g.data.publishedDate,movieFileId:f.id};
 }
+// Why the exact original release cannot be bound, in terms an operator can check in Radarr's history.
+// Only explains bindHistory's refusal; it never relaxes it or derives a binding.
+export const BINDING_FAILURES=Object.freeze(['import-missing','import-incomplete','import-conflicting','grab-missing','grab-conflicting','grab-incomplete']);
+export function bindingDiagnosis(movie,history,radarrPath,size) {
+  const f=movie?.movieFile,imports=history.filter(h=>h.eventType==='downloadFolderImported'&&h.data?.importedPath===radarrPath);
+  if(!imports.length)return 'import-missing';
+  const complete=imports.filter(h=>String(h.data?.fileId)===String(f?.id)&&Number(h.data?.size)===size);
+  if(!complete.length)return 'import-incomplete';
+  const ids=[...new Set(complete.map(h=>h.downloadId).filter(Boolean))];
+  if(ids.length!==1)return ids.length?'import-conflicting':'import-incomplete';
+  const grabs=history.filter(h=>h.eventType==='grabbed'&&h.movieId===movie.id);
+  const exact=grabs.filter(h=>h.downloadId===ids[0]&&h.sourceTitle===f?.sceneName);
+  if(exact.length>1)return 'grab-conflicting';
+  if(!exact.length)return grabs.some(h=>h.downloadId===ids[0]||h.sourceTitle===f?.sceneName)?'grab-conflicting':'grab-missing';
+  const g=exact[0];
+  if(!g.data?.publishedDate||!g.data?.indexer||!Number(g.data?.size)||!['1','2'].includes(String(g.data?.protocol)))return 'grab-incomplete';
+  return null;
+}
 export function blocked(entries,binding) {
   // Radarr's BlocklistResource exposes title/indexer/protocol, but not size.
   // Size was already verified against the exact grabbed history before POST.

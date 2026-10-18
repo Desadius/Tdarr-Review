@@ -15,7 +15,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
-import {classify,confirmed,relative,bindHistory,bindApprovedImport,blocked,caseId,within} from './policy.mjs';
+import {classify,confirmed,relative,bindHistory,bindApprovedImport,bindingDiagnosis,blocked,caseId,within} from './policy.mjs';
 import {readHeader} from './container-header.mjs';
 import {lowPriorityHash} from './full-hash.mjs';
 import {createWorkerControl} from './control.mjs';
@@ -97,10 +97,16 @@ async function readBinding(c){const {movie,target}=await movieFor(c);if(movie.id
 async function repair(c,{reuseConfirmedEvidence=false}={}){
   await idle(c);const before=await safeSource(c.relative);if(before.fp!==c.fp)throw Error('Source changed before verification');
   const {movie,target}=await movieFor(c);
-  c.movieId=movie.id;c.binding=bind(c,movie,await rad('/history/movie?movieId='+movie.id),target);await save();
+  c.movieId=movie.id;const history=await rad('/history/movie?movieId='+movie.id);
+  // A missing or ambiguous release binding still allows the two diagnostic decodes (no mutation),
+  // so an operator gets confirmed evidence and the exact binding reason for a manual replacement.
+  let bindingFailure=null;
+  try{c.binding=bind(c,movie,history,target);delete c.bindingFailure;}
+  catch(e){const code=!reuseConfirmedEvidence&&!isApprovedCase(c)&&!cfg.approvedImportRepairs?.[c.id]?bindingDiagnosis(movie,history,target,c.size):null;if(!code)throw e;bindingFailure={code,message:e.message};delete c.binding;}
+  await save();
   const frozen= c.status==='deferred_limit'?c.deferredLimit:c.deferredCooldown;
   if(reuseConfirmedEvidence&&JSON.stringify(c.binding)!==JSON.stringify(frozen?.binding))throw Error('Deferred source Radarr binding changed');
-  if(c.binding.mode==='exact_title_exclusion')await verifyExclusion(c);
+  if(c.binding?.mode==='exact_title_exclusion')await verifyExclusion(c);
   let hash;if(reuseConfirmedEvidence){
    if(c.evidence?.sourceFP!==c.fp||c.evidence.checks?.length!==2||!confirmed(...c.evidence.checks)||classify(c.evidence.checks[0]).signature!==c.evidence.signature)throw Error('Deferred source evidence no longer confirmed');
    hash=await sample(c.source);if(hash!==c.evidence.sampleSHA256||(await safeSource(c.relative)).fp!==c.fp)throw Error('Deferred source changed');
@@ -116,6 +122,7 @@ async function repair(c,{reuseConfirmedEvidence=false}={}){
   if((await safeSource(c.relative)).fp!==c.fp||await sample(c.source)!==hash)throw Error('Source changed or repeated reads differ');
   c.evidence={signature:classify(a).signature,sourceFP:c.fp,checks:[a,b],sampleSHA256:hash,confirmed:new Date().toISOString()};
 }
+  if(bindingFailure){c.bindingFailure=bindingFailure;await phase(c,'manual','Confirmed faulty original; the Radarr release history cannot be bound ('+bindingFailure.code+'): '+bindingFailure.message);return;}
   if(cfg.fullSourceHash===true&&!c.evidence.fullSHA256){c.evidence.fullSHA256=await fullSourceHash(c,'confirmation');await save();}
   await phase(c,'confirmed','Same structural decoding error reproduced twice in unchanged original');
   if(!cfg.enabled){await phase(c,'dry_run','Confirmed; verify mode makes no external changes');return;}
