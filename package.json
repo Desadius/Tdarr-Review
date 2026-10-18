@@ -13,6 +13,7 @@
     "test:integration": "cd review && node integration.mjs",
     "check": "node tools/check.mjs",
     "typecheck": "node tools/typecheck.mjs",
-    "changelog": "node tools/changelog.mjs"
+    "changelog": "node tools/changelog.mjs",
+    "demo:ui": "node tools/demo-ui.mjs"
   }
 }
