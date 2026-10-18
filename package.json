@@ -11,6 +11,7 @@
     "test:docker": "node tools/test-docker.mjs",
     "test:coverage": "node tools/test.mjs --coverage",
     "test:integration": "cd review && node integration.mjs",
+    "test:dts-seek": "node tools/test-dts-seek-repro.mjs",
     "check": "node tools/check.mjs",
     "typecheck": "node tools/typecheck.mjs",
     "changelog": "node tools/changelog.mjs",

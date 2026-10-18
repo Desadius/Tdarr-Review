@@ -22,6 +22,10 @@ if(typeof vm.SourceTextModule!=='function'){
   get textContent(){return this.ownText+this.children.map(node=>node.textContent).join('')}
   set textContent(value){this.ownText=String(value);this.children=[]}
   get firstElementChild(){return this.children.find(node=>node.tagName)||null}
+  // Attached to the parsed document, like the browser property (comparisons render only while connected).
+  // Constraint validation is not modelled: every value is valid.
+  get validity(){return {valid:true}}
+  get isConnected(){let node=this;while(node.parentElement)node=node.parentElement;return node.tagName==='DOCUMENT'}
   get nextElementSibling(){if(!this.parentElement)return null;const siblings=this.parentElement.children;return siblings.slice(siblings.indexOf(this)+1).find(node=>node.tagName)||null}
   append(...nodes){for(const node of nodes){node.remove();node.parentElement=this;this.children.push(node)}}
   prepend(...nodes){for(const node of nodes.reverse()){node.remove();node.parentElement=this;this.children.unshift(node)}}
@@ -291,6 +295,25 @@ if(typeof vm.SourceTextModule!=='function'){
   await focus.emit('click');assert.deepEqual([root.dataset.focus,toggle.getAttribute('aria-expanded')],['off','true']);
   assert.equal(JSON.stringify([...dom.querySelectorAll('[data-check]')].map(n=>n.checked))+panel.querySelector('textarea').value,before,'toggles keep checks and the note');
   assert.equal(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,0,'toggles write nothing');
+ });
+ for(const language of ['cs','en'])test('a failed video and audio sample names its side and offers the external player without confirming anything in '+language,async()=>{
+  const en=language==='en',checks=Object.fromEntries(['preparation','image','audio','syncStart','syncMiddle','syncEnd'].map(key=>[key,false]));
+  const record={version:1,snapshot:reviewItem.snapshot,revision:2,requirements:{hdr:false},complete:false,observations:{},session:{method:'review',device:'',step:1,scope:{originalIndex:1,reviewIndex:2,seconds:10},checks:{...checks,preparation:true},note:'Keep this note',deferred:false}};
+  const failure='Originál: Zvuk vybrané stopy nešlo po přetočení připravit ani s dřívějším začátkem dekódování (30 a 60 s). Posuď film ve vlastním přehrávači.';
+  const compare=({body})=>body?.mode==='av'&&body.cachedOnly!==true?{status:500,data:{error:failure}}:body?.cachedOnly===true?{status:202,data:{pending:true,preparation:{snapshot:reviewItem.snapshot,state:'waiting',jobs:[]}}}:{data:{original:[{index:1,label:'1: cze · dts · 6 kan. · '}],review:[{index:2,label:'2: cze · dts · 6 kan. · '}]}};
+  const f=await appFixture(language,{itemsData:{items:[reviewItem],reviewSessions:{[reviewItem.id]:record}},routes:{['/api/items/'+reviewItem.id+'/review-session']:{data:record},['/api/items/'+reviewItem.id+'/audio-compare']:compare,['/api/items/'+reviewItem.id+'/preview-status']:{data:{snapshot:reviewItem.snapshot,state:'waiting',jobs:[]}}}}),dom=f.document;
+  await dom.querySelectorAll('button').find(n=>n.getAttribute('aria-label')===(en?'Review Fixture film':'Posoudit Fixture film')).emit('click');for(let i=0;i<30;i++)await flush();
+  const avButton=dom.querySelectorAll('button').find(n=>n.textContent===(en?'Compare video and audio':'Porovnat video a zvuk'));assert.ok(avButton,'the AV comparison is mounted');
+  await avButton.emit('click');for(let i=0;i<30;i++)await flush();
+  assert.match(dom.querySelector('.comparison-status').textContent,en?/^Original: The selected audio track could not be prepared after seeking.*Review the film in your own player\.$/:/^Originál: Zvuk vybrané stopy.*vlastním přehrávači\.$/);
+  const external=dom.querySelectorAll('button').find(n=>n.textContent===(en?'Review in your own player':'Posoudit ve vlastním přehrávači'));assert.ok(external,'the external player is offered');
+  assert.deepEqual([...dom.querySelectorAll('[data-check]')].map(n=>[n.dataset.check,n.checked]),[['image',false]],'the failure confirms nothing');
+  assert.equal(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,0,'the failure writes nothing');
+  await external.emit('click');for(let i=0;i<6;i++)await flush();
+  const method=dom.querySelectorAll('select').find(n=>n.children.some(o=>o.value==='external'));assert.equal(method.value,'external','the existing external method is selected');
+  assert.ok(dom.querySelector('[data-check="preparation"]'),'the workflow returns to its first step');assert.equal(dom.querySelector('[data-check="preparation"]').checked,false,'switching the method resets the checks by the existing rule');
+  assert.ok(dom.querySelectorAll('textarea').some(n=>n.value==='Keep this note'),'the note stays');
+  assert.equal(f.calls.filter(c=>c.method==='POST'&&/approve|approval/.test(c.route)).length,0,'nothing is approved');
  });
  for(const language of ['cs','en'])test('the decision step separates approve only from approve and replace in '+language,async()=>{
   const en=language==='en',checks=Object.fromEntries(['preparation','image','audio','syncStart','syncMiddle','syncEnd'].map(key=>[key,true]));

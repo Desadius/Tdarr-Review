@@ -135,6 +135,15 @@ FFMPEG=/path/to/ffmpeg FFPROBE=/path/to/ffprobe npm run test:integration
 
 It must never point at real media or a real Tdarr/Radarr endpoint. The test server uses localhost port 18270. The approval subprocess deliberately receives an invalid decoder path so the test proves ordinary approval does not perform another complete decode.
 
+The seek-induced DTS audio regression (#183) runs the real extractor on media generated from a pinned public-domain dcadec test vector. Download it once, explicitly, into a temporary directory (the only network step; the vector is never committed), then run offline:
+
+```bash
+node tools/fetch-dts-seek-sample.mjs /tmp/tdarr-dts-samples
+DTS_SAMPLE_DIR=/tmp/tdarr-dts-samples FFMPEG=/path/to/ffmpeg FFPROBE=/path/to/ffprobe npm run test:dts-seek
+```
+
+It proves that raw FFmpeg fails after the 2 and 30 s seeks and that `extractPreview` recovers the same sample for H.264 and HEVC, compact and detail, with decoded pixels and PCM equal to a no-seek reference. It generates media under the system temporary directory and removes it.
+
 Run the generated-media AV and preview-cache HTTP fixtures with the same decoder binaries:
 
 ```bash

@@ -317,6 +317,12 @@ export default {
     "Vybrat ": "Select ",
     "K posouzení": "Ready to review",
     "Zvláštní kontrola": "Extra checks",
+    "Ukázku videa se zvukem nyní nejde připravit. Film můžeš posoudit ve vlastním přehrávači; potvrzené kontroly se tím zruší a poznámka zůstane.": "The video and audio sample cannot be prepared now. You can review the film in your own player; this clears the confirmed checks and keeps the note.",
+    "Posoudit ve vlastním přehrávači": "Review in your own player",
+    "Zvuk vybrané stopy nešlo po přetočení připravit ani s dřívějším začátkem dekódování (30 a 60 s).": "The selected audio track could not be prepared after seeking, even when decoding started earlier (30 and 60 s).",
+    "Zvuk vybrané stopy nešlo po přetočení připravit v časovém limitu 180 sekund.": "The selected audio track could not be prepared after seeking within the 180-second limit.",
+    "Příprava náhledu překročila společný časový limit 180 sekund pro originál a výsledek.": "Preparing the preview exceeded the shared 180-second limit for the original and the result.",
+    "Obnovený náhled nezačíná u požadovaného času.": "The recovered preview does not start at the requested time.",
     "Vyžádat jinou kopii přes Radarr": "Request another copy through Radarr",
     "Vyžádat jinou kopii": "Request another copy",
     "Náhrada není dostupná.": "Replacement is not available.",
@@ -1102,6 +1108,8 @@ export default {
     "Uchování ukázek od vytvoření (dny)": "Sample retention from creation (days)"
   },
   "patterns": [
+    ["Originál: {0} Posuď film ve vlastním přehrávači.", "Original: {0} Review the film in your own player."],
+    ["Výsledek Review: {0} Posuď film ve vlastním přehrávači.", "Review result: {0} Review the film in your own player."],
     ["Výběr slouží k hromadnému nahrazení schválených filmů. Lze vybrat: {0} z {1}.", "Selection is for batch replacement of approved films. Selectable: {0} of {1}."],
     ["Nahradit vybrané schválené filmy ({0})", "Replace selected approved films ({0})"],
     ["Nahradit {0} schválených filmů?", "Replace {0} approved films?"],
