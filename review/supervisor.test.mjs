@@ -66,7 +66,7 @@ for(const mode of ['verify','repair'])test('Recovery mode '+mode+' starts Recove
  const run=await start({mode});t.after(()=>stop(run));
  const [recovery,review]=await started(run,'recovery','review');
  assert.deepEqual({nice:recovery.nice,ionice:recovery.ionice,dataRoot:recovery.dataRoot,mode:recovery.mode},{nice:19,ionice:'best-effort: prio 7',dataRoot:path.join(run.dataRoot,'recovery'),mode});
- assert.equal(review.nice,0);
+ assert.equal(review.nice,os.getPriority(),'Review keeps the priority it was started with');
  const state=await waitFor(async()=>{const s=await run.readState();return s.state==='running'&&s;});
  assert.equal(state.mode,mode);assert.equal(state.restarts,0);assert.equal(state.reason,null);
  assert.ok(Date.parse(state.lastStartedAt)>0);
