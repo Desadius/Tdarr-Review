@@ -13,6 +13,11 @@ const damage = [
   /EBML header parsing failed/i,
   /quant_step_size larger than huff_lsbs/i,
   /Read past end of XLL band data/i,
+  // Decoder- and demuxer-specific structural errors, recognized only with their FFmpeg context.
+  // The context's process address is dropped from the signature (see below), and a stored
+  // signature classifies to itself, because replacement and daily-limit gates re-check it.
+  /\[dca(?: @ [^\]\r\n]*)?\] (?:Residual encoded channels are present without core|Invalid isolated sample location|Invalid bit allocation index|Failed to decode block code\(s\))/,
+  /\[matroska,webm(?: @ [^\]\r\n]*)?\] Element at 0x[0-9a-f]+ ending at 0x[0-9a-f]+ exceeds containing master element ending at 0x[0-9a-f]+/i,
 ];
 const operational = /Permission denied|Operation not permitted|Input\/output error|I\/O error|Stale file handle|No such file or directory|No space left|Connection (?:reset|refused|timed out)|Network is unreachable|Cannot allocate memory|Out of memory|Resource temporarily unavailable|Decoder .* not found|Unknown decoder|Unsupported codec/i;
 /**
@@ -25,7 +30,7 @@ const operational = /Permission denied|Operation not permitted|Input\/output err
  */
 export function classify(result) {
   if (result.timeout || result.signal || result.error || operational.test(result.stderr || '')) return {kind:'operational'};
-  const signature = damage.map(r => (result.stderr || '').match(r)?.[0]).filter(Boolean).join('\n');
+  const signature = damage.map(r => (result.stderr || '').match(r)?.[0]?.replace(/ @ [^\]\r\n]*\]/, ']')).filter(Boolean).join('\n');
   if(signature)return {kind:'corrupt',signature};
   return result.code===0&&!String(result.stderr||'').trim()?{kind:'healthy'}:{kind:'unconfirmed'};
 }
