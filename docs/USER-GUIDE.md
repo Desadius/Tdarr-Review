@@ -24,6 +24,8 @@ In **Attention** (**Pozornost**), choose **Review** (**Posoudit**). The **Review
 
 On a window at least 1200 CSS px wide the workspace uses the Kino layout: it fills the window, the five steps form a bar at the top and the comparison takes most of the height, with its time controls directly below. On a narrower window or at high browser zoom the compact layout with the step list is used. Switching between them only changes the layout; drafts, checks and the saved review are kept.
 
+In the Kino layout a film strip at the bottom of the review lists the films of the overview (with the current search) and their states. Choose a film there, or move along the strip with the arrow keys, Home and End, to switch without closing the review. Unsaved changes of the film you leave stay as its draft in this browser tab and come back when you return to it (the strip marks it **Unsaved changes**); nothing is saved or confirmed by switching, and checks never carry over to another film. If the saved review changed meanwhile in another session, the older draft is not restored.
+
 Ready status means the implemented matching and metadata checks permit a decision; approval also requires a completed saved manual review. It does not automatically state that compression looks good. Tdarr should already have completed the appropriate health check. Review does not perform another full decode during approval.
 
 Work through the five steps. Confirmations appear alongside the tools during comparison; the final screen does not replace these checks.

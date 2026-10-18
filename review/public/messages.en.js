@@ -315,6 +315,7 @@ export default {
     "Vybrat ": "Select ",
     "K posouzení": "Ready to review",
     "Zvláštní kontrola": "Extra checks",
+    "Filmy k posouzení": "Films to review",
     "Posouzení rozpracováno": "Review in progress",
     "Posouzení dokončeno": "Review completed",
     "Rozdíl délky · schválení jednotlivě": "Duration difference · approve individually",
