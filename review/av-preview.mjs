@@ -1,3 +1,5 @@
+import {validateRecoveredPreview} from './preview-validation.mjs';
+import {withMpeg2Initialization} from './mpeg2-initialization.mjs';
 import {previewErrors} from './preview-diagnostics.mjs';
 import {spawnPreview} from './preview-process.mjs';
 export const CLIP_SECONDS=12;
@@ -39,13 +41,17 @@ function extractPreviewOnce(exe,args,options){
  return new Promise((resolve,reject)=>{
   const child=spawnPreview(exe,args,options);let size=0,stderr='',failure;const chunks=[];
   const stop=message=>{failure=Error(message);child.kill('SIGKILL')};
-  const timer=setTimeout(()=>stop('Příprava náhledu překročila 90 sekund.'),90000);
+  const timer=setTimeout(()=>stop('Příprava náhledu překročila 90 sekund.'),options.timeoutMs??90000);
   child.stdout.on('data',b=>{size+=b.length;if(size>20*1024*1024)stop('Náhled překročil limit velikosti. Zvol rychlý profil nebo porovnej původní snímky v rozlišení 1 : 1.');else chunks.push(b)});
   child.stderr.on('data',b=>{stderr=(stderr+b).slice(-16384)});
-  child.on('error',e=>{clearTimeout(timer);reject(e)});
+  child.on('error',e=>{failure=e;});
   child.on('close',code=>{clearTimeout(timer);const data=Buffer.concat(chunks);if(failure)return reject(failure);if(code||previewErrors(stderr).trim()||data.length<32||data.toString('ascii',4,8)!=='ftyp'){const error=Error('Nelze připravit náhled: '+stderr);error.previewDiagnostics=stderr;error.previewExitCode=code;return reject(error)}resolve(data.toString('base64'))});
  });
 }
 export function extractPreview(exe,file,index,seconds,startTime,video,profileName='compact',options={}){
- return withPreviewSeekRetry(preroll=>extractPreviewOnce(exe,previewArgs(file,index,seconds,startTime,video,profileName,preroll),options),{seconds,video,signal:options.signal});
+ return withMpeg2Initialization(file,async(input,timeoutMs)=>{
+  const deadline=Date.now()+timeoutMs;
+  const result=await withPreviewSeekRetry(preroll=>extractPreviewOnce(exe,previewArgs(input,index,seconds,startTime,video,profileName,preroll),{...options,timeoutMs}),{seconds,video,signal:options.signal});
+  return input===file?result:validateRecoveredPreview(exe,result,{...options,deadline,frameRate:Number(String(video.avg_frame_rate).split('/')[0])/Number(String(video.avg_frame_rate).split('/')[1])});
+ },{signal:options.signal});
 }

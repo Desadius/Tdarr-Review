@@ -1,3 +1,4 @@
+import {withMpeg2Initialization} from './mpeg2-initialization.mjs';
 import {previewErrors} from './preview-diagnostics.mjs';
 import {spawnPreview} from './preview-process.mjs';
 export function listeningArgs(file,index,seconds,startTime=0){
@@ -10,12 +11,16 @@ export function encodeListeningPCM(buffer){
  for(let i=0;i<buffer.length;i+=4)if(!Number.isFinite(buffer.readFloatLE(i)))throw Error('Neplatné zvukové vzorky.');
  return {pcm:buffer.toString('base64'),sampleRate:48000,frames:buffer.length/4};
 }
-export function extractListeningAudio(exe,file,index,seconds,startTime=0,options={}){
+function extractListeningAudioOnce(exe,file,index,seconds,startTime=0,options={}){
  const args=listeningArgs(file,index,seconds,startTime);
  return new Promise((resolve,reject)=>{const p=spawnPreview(exe,args,options);const chunks=[];let bytes=0,stderr='',failure;
- const timer=setTimeout(()=>{failure=Error('Příprava poslechu překročila 60 sekund.');p.kill('SIGKILL')},60000);
+ const timer=setTimeout(()=>{failure=Error('Příprava poslechu překročila 60 sekund.');p.kill('SIGKILL')},options.timeoutMs??60000);
  p.stdout.on('data',b=>{bytes+=b.length;if(bytes>48000*12*4){failure=Error('Příliš dlouhý zvukový úsek.');p.kill('SIGKILL')}else chunks.push(b)});
- p.stderr.on('data',b=>{stderr=(stderr+b).slice(-16384)});p.on('error',e=>{clearTimeout(timer);reject(e)});
- p.on('close',code=>{clearTimeout(timer);try{if(failure)throw failure;if(code||previewErrors(stderr).trim())throw Error('Poslech nelze připravit: '+stderr);resolve(encodeListeningPCM(Buffer.concat(chunks)))}catch(e){reject(e)}});
+ p.stderr.on('data',b=>{stderr=(stderr+b).slice(-16384)});p.on('error',e=>{failure=e;});
+ p.on('close',code=>{clearTimeout(timer);try{if(failure)throw failure;if(code||previewErrors(stderr).trim())throw Object.assign(Error('Poslech nelze připravit: '+stderr),{previewExitCode:code,previewDiagnostics:stderr});resolve(encodeListeningPCM(Buffer.concat(chunks)))}catch(e){reject(e)}});
  });
+}
+
+export function extractListeningAudio(exe,file,index,seconds,startTime=0,options={}){
+ return withMpeg2Initialization(file,(input,timeoutMs)=>extractListeningAudioOnce(exe,input,index,seconds,startTime,{...options,timeoutMs}),{signal:options.signal,budgetMs:60000});
 }
