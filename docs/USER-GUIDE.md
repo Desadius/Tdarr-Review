@@ -22,6 +22,8 @@ Changing the public Review origin may prevent the old browser origin from pollin
 
 In **Attention** (**Pozornost**), choose **Review** (**Posoudit**). The **Review** workspace loads the saved assessment of this exact original/result pair. Preparation and metadata, recovery and technical evidence remain available in the other detail tabs.
 
+On a window at least 1200 CSS px wide the workspace uses the Kino layout: it fills the window, the five steps form a bar at the top and the comparison takes most of the height, with its time controls directly below. On a narrower window or at high browser zoom the compact layout with the step list is used. Switching between them only changes the layout; drafts, checks and the saved review are kept.
+
 Ready status means the implemented matching and metadata checks permit a decision; approval also requires a completed saved manual review. It does not automatically state that compression looks good. Tdarr should already have completed the appropriate health check. Review does not perform another full decode during approval.
 
 Work through the five steps. Confirmations appear alongside the tools during comparison; the final screen does not replace these checks.
