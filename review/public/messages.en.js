@@ -315,6 +315,8 @@ export default {
     "Vybrat ": "Select ",
     "K posouzení": "Ready to review",
     "Zvláštní kontrola": "Extra checks",
+    "Kontroly a rozhodnutí": "Checks and decision",
+    "Soustředit se na obraz": "Focus on the picture",
     "Posouzení rozpracováno": "Review in progress",
     "Posouzení dokončeno": "Review completed",
     "Rozdíl délky · schválení jednotlivě": "Duration difference · approve individually",

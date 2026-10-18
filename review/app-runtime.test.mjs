@@ -44,8 +44,10 @@ if(typeof vm.SourceTextModule!=='function'){
   close(value){if(value!==undefined)this.returnValue=value;this.open=false;return this.emit('close')}
   setCustomValidity(value){this.validationMessage=value}
   reportValidity(){return !this.validationMessage}
-  focus(){}
+  // Like the DOM, focusing an element makes it the document's active element.
+  focus(){if(activeDocument)activeDocument.activeElement=this}
  }
+ let activeDocument=null;
  class TextNode extends Element{constructor(value){super('');this.tagName=null;this.nodeValue=value}get textContent(){return this.nodeValue}set textContent(value){this.nodeValue=value}}
  function browserDocument(html){
   const root=new Element('document'),stack=[root],voids=new Set(['meta','link','input','img','br','hr','source']);
@@ -56,7 +58,7 @@ if(typeof vm.SourceTextModule!=='function'){
   }
   const document={documentElement:root.querySelector('html'),body:root.querySelector('body'),createElement:tag=>new Element(tag),getElementById:id=>root.querySelector('#'+id),querySelector:selector=>root.querySelector(selector),querySelectorAll:selector=>root.querySelectorAll(selector),addEventListener(){},createTreeWalker(node){const texts=[];const walk=entry=>{if(entry.tagName===null)texts.push(entry);for(const child of entry.children)walk(child)};walk(node);let index=-1;return {nextNode(){this.currentNode=texts[++index];return !!this.currentNode}}}};
   for(const select of root.querySelectorAll('select'))select.value=(select.children.find(n=>n.hasAttribute('selected'))||select.children[0])?.value||'';
-  document.activeElement=document.body;return document;
+  document.activeElement=document.body;activeDocument=document;return document;
  }
  const flush=()=>new Promise(resolve=>setImmediate(resolve));
  async function appFixture(language,{itemsData={},routes={}}={}){
@@ -253,6 +255,23 @@ if(typeof vm.SourceTextModule!=='function'){
     assert.equal(f.calls.filter(c=>c.method==='POST').length,0);
    }
   }
+ });
+ for(const language of ['cs','en'])test('the checks panel and focus mode toggle the layout only, with focus moved deliberately, in '+language,async()=>{
+  const en=language==='en',checks=Object.fromEntries(['preparation','image','audio','syncStart','syncMiddle','syncEnd'].map(key=>[key,false]));
+  const record={version:1,snapshot:reviewItem.snapshot,revision:2,requirements:{hdr:false},complete:false,observations:{},session:{method:'review',device:'',step:0,scope:{originalIndex:1,reviewIndex:2,seconds:10},checks:{...checks,preparation:true},note:'Draft note',deferred:false}};
+  const f=await appFixture(language,{itemsData:{items:[reviewItem],reviewSessions:{[reviewItem.id]:record}},routes:{['/api/items/'+reviewItem.id+'/review-session']:{data:record},['/api/items/'+reviewItem.id+'/audio-compare']:{data:{original:[],review:[]}}}}),dom=f.document;
+  const inspect=dom.querySelectorAll('button').find(n=>n.getAttribute('aria-label')===(en?'Review Fixture film':'Posoudit Fixture film'));await inspect.emit('click');for(let i=0;i<6;i++)await flush();
+  const root=dom.querySelector('.review-workflow'),panel=dom.querySelector('.workflow-panel'),toggle=dom.querySelector('[data-panel-toggle]'),focus=dom.querySelector('[data-focus-toggle]');
+  assert.ok(panel.querySelector('[data-check]'),'checks are in the panel');assert.ok(panel.querySelector('textarea'),'the note is in the panel');assert.ok(panel.querySelector('.workflow-actions'),'decisions are in the panel');
+  assert.equal(toggle.getAttribute('aria-controls'),panel.id);assert.equal(toggle.textContent,en?'Checks and decision':'Kontroly a rozhodnutí');
+  assert.deepEqual([root.dataset.panel,root.dataset.focus,toggle.getAttribute('aria-expanded'),focus.getAttribute('aria-pressed')],['open','off','true','false']);
+  const before=JSON.stringify([...dom.querySelectorAll('[data-check]')].map(n=>n.checked))+panel.querySelector('textarea').value;
+  await toggle.emit('click');assert.deepEqual([root.dataset.panel,toggle.getAttribute('aria-expanded')],['closed','false']);assert.equal(dom.activeElement,toggle,'closing returns focus to the toggle');
+  await toggle.emit('click');assert.equal(root.dataset.panel,'open');assert.ok(panel.contains(dom.activeElement),'opening moves focus into the panel');
+  await focus.emit('click');assert.deepEqual([root.dataset.focus,focus.getAttribute('aria-pressed'),toggle.getAttribute('aria-expanded')],['on','true','false']);
+  await focus.emit('click');assert.deepEqual([root.dataset.focus,toggle.getAttribute('aria-expanded')],['off','true']);
+  assert.equal(JSON.stringify([...dom.querySelectorAll('[data-check]')].map(n=>n.checked))+panel.querySelector('textarea').value,before,'toggles keep checks and the note');
+  assert.equal(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,0,'toggles write nothing');
  });
  for(const language of ['cs','en'])test('real Review app shows API runtime and interruption changes in '+language,async()=>{
   const fixture=await appFixture(language),dom=fixture.document,runtime=dom.getElementById('recoveryRuntime'),warning=dom.getElementById('recoveryRestartWarning');

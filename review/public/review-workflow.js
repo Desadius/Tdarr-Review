@@ -51,13 +51,26 @@ export function createCachedPreviewLoader({load,readPreparation,current,onReady,
 }
 
 /** A saved session records manual observations; opening or playing a preview never confirms a check. */
+// Kino layout: the checks/decision panel and focus mode are viewer preferences, kept across films.
+const layout={panel:'open',focus:false};
+try{const saved=JSON.parse(sessionStorage.getItem('tdarr-review-layout')||'null');if(saved?.panel==='closed')layout.panel='closed'}catch{}
 export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openAudioComparison,onSession=()=>{},onPreparation=()=>{},preparation=null,onApprove=()=>{},onReject=()=>{},onDeferred=()=>{},canApprove=()=>false,tr=x=>x,formatBytes=x=>String(x)}={}){
  const make=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=tr(text);return n};
  const button=(text,fn,cls='secondary')=>{const n=make('button',cls,text);n.type='button';n.onclick=fn;return n};
  let dead=false,loaded=false,saving=false,conflict=false,stale=false,revision=0,session=null,baseline=null,complete=false,tracks=null,toolCleanups=[],metadataLoading=false,hdrRequired=false,observations={},scopeValid=true,explainingSave=false;
  const cacheKey='tdarr-review-draft:'+item.id+':'+item.snapshot;
  const root=make('div','review-workflow'),sidebar=make('nav','workflow-nav'),main=make('section','workflow-main'),status=make('p','workflow-status'),warning=make('div','alert workflow-warning'),steps=make('div','workflow-step-buttons'),preparationPanel=make('div','preview-preparation');
- sidebar.setAttribute('aria-label',tr('Kroky posouzení'));status.setAttribute('role','status');warning.setAttribute('role','alert');warning.hidden=true;sidebar.append(make('p','eyebrow','POSOUZENÍ'),steps,status);root.append(sidebar,main);host.replaceChildren(root);
+ sidebar.setAttribute('aria-label',tr('Kroky posouzení'));status.setAttribute('role','status');warning.setAttribute('role','alert');warning.hidden=true;
+ // Panel and focus toggles only change the layout; they never change review state.
+ const panelId='workflow-panel-'+item.id,panelToggle=button('Kontroly a rozhodnutí',()=>setPanel(layout.panel==='open'?'closed':'open',true)),focusToggle=button('Soustředit se na obraz',()=>setFocus(!layout.focus));
+ panelToggle.dataset.panelToggle='';panelToggle.setAttribute('aria-controls',panelId);focusToggle.dataset.focusToggle='';
+ const layoutTools=make('div','workflow-layout-tools');layoutTools.append(panelToggle,focusToggle);
+ sidebar.append(make('p','eyebrow','POSOUZENÍ'),steps,status,layoutTools);root.append(sidebar,main);host.replaceChildren(root);
+ function applyLayout(){root.dataset.panel=layout.panel;root.dataset.focus=layout.focus?'on':'off';panelToggle.setAttribute('aria-expanded',String(layout.panel==='open'&&!layout.focus));focusToggle.setAttribute('aria-pressed',String(layout.focus))}
+ function setPanel(next,moveFocus=false){layout.panel=next;layout.focus=false;try{sessionStorage.setItem('tdarr-review-layout',JSON.stringify({panel:next}))}catch{}applyLayout();
+  if(!moveFocus)return;if(next==='open')root.querySelector('.workflow-panel')?.querySelector('input,textarea,select,button:not([disabled])')?.focus();else panelToggle.focus()}
+ function setFocus(on){layout.focus=on;applyLayout();focusToggle.focus()}
+ applyLayout();
  const sessionDirty=()=>!!session&&JSON.stringify(session)!==JSON.stringify(baseline);
  const cache=()=>{if(!session||!loaded||dead)return;try{sessionStorage.setItem(cacheKey,JSON.stringify({revision,session}))}catch{}};
  const clearTools=()=>{scopeValid=true;for(const cleanup of toolCleanups.splice(0))cleanup?.()};
@@ -220,10 +233,11 @@ export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openA
    const summary=make('ul','workflow-summary');for(const [i,[label]]of STEPS.slice(0,4).entries())summary.append(make('li','',tr(label)+' · '+tr(stepChecks(i).every(key=>session.checks[key])?'Potvrzeno':'Neověřeno')));if(hdrRequired)summary.append(make('li','','HDR/Dolby Vision · '+(session.checks.hdr?tr('Potvrzeno'):tr('Neověřeno'))));for(const [key,label]of [['syncStart','Začátek filmu'],['syncMiddle','Střed filmu'],['syncEnd','Konec filmu']])summary.append(make('li','',tr(label)+' · '+observationText(key)));tools.append(summary);checks.hidden=true;
    const approve=button(item.canApproveDuration?'Posoudit rozdíl délky':'Schválit a nahradit',onApprove,'primary');approve.dataset.workflowApprove='';tools.append(approve);
   }
-  main.append(tools,checks);
-  const note=make('textarea');note.rows=3;note.maxLength=2000;note.value=session.note;markWrite(note);note.placeholder=tr('Co jsi zjistil nebo co zbývá ověřit?');note.oninput=()=>{session.note=note.value;cache();updateSaveButton()};main.append(field('Poznámka k posouzení',note));
+  // Checks, note and decisions live in one panel; in the wide layout it takes its own column beside the comparison.
+  const panel=make('aside','workflow-panel');panel.id=panelId;panel.setAttribute('aria-label',tr('Kontroly a rozhodnutí'));main.append(tools,panel);panel.append(checks);
+  const note=make('textarea');note.rows=3;note.maxLength=2000;note.value=session.note;markWrite(note);note.placeholder=tr('Co jsi zjistil nebo co zbývá ověřit?');note.oninput=()=>{session.note=note.value;cache();updateSaveButton()};panel.append(field('Poznámka k posouzení',note));
   const actions=make('div','workflow-actions');if(session.step<4){const next=button('Uložit a pokračovat',saveStep,'primary');next.dataset.stepSave='';markWrite(next);actions.append(next)}actions.append(markWrite(button(session.step===4?'Uložit poznámku':'Uložit rozpracované posouzení',()=>saveDraft())));
-  const defer=button('Odložit posouzení',()=>saveDraft(true));defer.dataset.defer='';markWrite(defer);actions.append(defer,markWrite(button('Zamítnout převod',onReject,'reject')));main.append(actions,make('p','details','Přehrání ukázky ani graf nepotvrzuje kvalitu. Kontroly potvrzuješ a ukládáš výslovně. Pro odložení je potřeba poznámka.'));cache();updateSaveButton();refreshGuard();
+  const defer=button('Odložit posouzení',()=>saveDraft(true));defer.dataset.defer='';markWrite(defer);actions.append(defer,markWrite(button('Zamítnout převod',onReject,'reject')));panel.append(actions,make('p','details','Přehrání ukázky ani graf nepotvrzuje kvalitu. Kontroly potvrzuješ a ukládáš výslovně. Pro odložení je potřeba poznámka.'));cache();updateSaveButton();refreshGuard();
  }
  function observe(record){
   if(dead||!loaded||saving||!record||record.snapshot!==item.snapshot||record.revision<=revision)return;
