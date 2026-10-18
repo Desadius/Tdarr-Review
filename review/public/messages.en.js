@@ -319,6 +319,8 @@ export default {
     "Tento film se právě nahrazuje nebo čeká v dávce. Posoudit ho půjde až po dokončení.": "This film is being replaced or waits in the batch. It can be reviewed once that finishes.",
     "Průběh je vidět v přehledu. Mezitím můžeš posuzovat jiné filmy.": "Progress is shown in the overview. Meanwhile you can review other films.",
     "Film se právě nahrazuje nebo čeká v dávce.": "This film is being replaced or waits in the batch.",
+    "Kontroly a rozhodnutí": "Checks and decision",
+    "Soustředit se na obraz": "Focus on the picture",
     "Schváleno · čeká na nahrazení": "Approved · waiting for replacement",
     "Posouzení je dokončené, ale film ještě není schválený. Otevři ho a v kroku Rozhodnutí zvol Schválit.": "The review is complete, but the film is not approved yet. Open it and choose Approve in the Decision step.",
     "Film nyní nelze vybrat k hromadnému nahrazení.": "This film cannot be selected for batch replacement right now.",
