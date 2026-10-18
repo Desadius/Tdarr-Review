@@ -8,6 +8,7 @@ import {extractAudio,alignment} from './audio-compare.mjs';
 import {remountOnly,unreadableIdentity,durationException} from './recheck.mjs';
 import {defaults,validate,mapReview} from './config.mjs';
 import {extractFrame} from './frames.mjs';
+import {lowPriorityCommand} from './low-priority.mjs';
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -96,7 +97,7 @@ async function previewPair(request,{background=false}={}){
  let pair=previewPairs.get(key);
  if(!pair){
   const lower=background&&process.platform==='linux';
-  const read=file=>command(lower?'/usr/bin/ionice':FFPROBE,[...(lower?['-c','2','-n','7','/usr/bin/nice','-n','19',FFPROBE]:[]),'-v','error','-show_streams','-show_format','-of','json',file],{timeout:30000}).then(JSON.parse);
+  const read=file=>command(...lowPriorityCommand(FFPROBE,['-v','error','-show_streams','-show_format','-of','json',file],lower),{timeout:30000}).then(JSON.parse);
   const [pa,pb]=await Promise.all([read(a.path),read(b.path)]);
   await previewIdentity(request);pair={a,b,pa,pb};
   previewPairs.set(key,pair);while(previewPairs.size>40)previewPairs.delete(previewPairs.keys().next().value);
