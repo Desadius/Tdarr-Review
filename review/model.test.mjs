@@ -374,6 +374,16 @@ test('approval only is offered once per completed review; only approved films en
   assert.deepEqual([reviewState(ready,approvedClear).kind,reviewState(ready,approvedClear).label],['approved','Schváleno · čeká na nahrazení']);
 });
 
+test('a Recovery case without a release binding names what Radarr history lacks', () => {
+  const base={id:'r'.repeat(24),source:'recovery',phase:'manual',title:'Film',statusUpdated:new Date(NOW).toISOString()};
+  const confirmedCase=classifyRecovery({...base,bindingFailure:'grab-missing',sourceConfirmed:true},NOW);
+  assert.deepEqual([confirmedCase.category,confirmedCase.label],['attention','Vadný originál bez vazby na vydání']);
+  assert.match(confirmedCase.nextStep,/chybí stažení \(grab\)/);assert.match(confirmedCase.nextStep,/potvrzená dvěma kontrolami/);
+  const unconfirmed=classifyRecovery({...base,bindingFailure:'import-conflicting',sourceConfirmed:false},NOW);
+  assert.equal(unconfirmed.label,'Chybí vazba na vydání v Radarru');assert.doesNotMatch(unconfirmed.nextStep,/potvrzená/);
+  assert.equal(classifyRecovery({...base,bindingFailure:'unknown-code'},NOW).label,'Obnova vyžaduje kontrolu');
+});
+
 test('during a replacement other films stay reviewable while the film in the operation and media actions are locked', () => {
   const other={...ready,canRecheck:true},running={...clear,active:{id:'f'.repeat(24)},restorePending:1};
   const caps=capabilities(other,running,context);

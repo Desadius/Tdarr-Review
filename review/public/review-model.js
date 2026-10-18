@@ -123,6 +123,15 @@ export function reviewState(item, d) {
   return {kind: kind === 'stale' ? 'ready' : kind, label: REVIEW_STATES[kind], stale: kind === 'stale', reason: SELECT_REASONS[kind]};
 }
 
+// What Radarr's history lacks when Recovery cannot bind the original release (recovery/policy.mjs bindingDiagnosis).
+const BINDING_FAILURES = {
+  'import-missing': 'Historie Radarru neobsahuje import tohoto souboru.',
+  'import-incomplete': 'Import v historii Radarru nemá ID souboru nebo velikost odpovídající souboru.',
+  'import-conflicting': 'Historie Radarru obsahuje k souboru více importů z různých stažení.',
+  'grab-missing': 'V historii Radarru chybí stažení (grab) původního vydání.',
+  'grab-conflicting': 'Stažení a import v historii Radarru se liší názvem vydání nebo ID stažení; podobný název nestačí.',
+  'grab-incomplete': 'Stažení původního vydání v historii Radarru nemá indexer, velikost, protokol nebo datum vydání.',
+};
 const RECOVERY_RUNNING = {
   candidate: ['Ověřuje se originál', 'Vyčkej na výsledek kontroly.'],
   verifying: ['Kontrola originálu', 'Vyčkej na výsledek kontroly.'],
@@ -187,6 +196,10 @@ export function classifyRecovery(record, now = Date.now()) {
     category = 'done'; label = 'Náhrada schválena'; nextStep = 'Karanténa zůstává do termínu automatického úklidu.';
   } else if (r.phase === 'restored') {
     category = 'done'; label = 'Obě kopie byly vráceny'; nextStep = 'Vrácený převod před případným schválením znovu ověř v Review.';
+  } else if (r.phase === 'manual' && r.source === 'recovery' && BINDING_FAILURES[r.bindingFailure]) {
+    // Confirmed faulty original whose exact release Radarr's history cannot identify (#153).
+    category = 'attention'; label = r.sourceConfirmed === true ? 'Vadný originál bez vazby na vydání' : 'Chybí vazba na vydání v Radarru';
+    nextStep = BINDING_FAILURES[r.bindingFailure] + (r.sourceConfirmed === true ? ' Vada originálu je potvrzená dvěma kontrolami; originál zůstává beze změny v knihovně.' : '');
   } else if (r.phase === 'manual') {
     category = 'attention'; label = 'Obnova vyžaduje kontrolu'; nextStep = 'Otevři detail a ověř zachované kopie před další akcí.';
   } else if (r.phase === 'deferred_limit') {
