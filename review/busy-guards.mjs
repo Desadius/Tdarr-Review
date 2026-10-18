@@ -9,6 +9,8 @@ export const BUSY_POLICIES=Object.freeze({
  // These actions join an existing scan for their own fresh preflight. Their
  // reservation prevents a second mutation while that scan is awaited.
  approve:Object.freeze([...foreground,...settled]),
+ // Queueing a confirmed replacement during a running one checks every other approve blocker.
+ approveQueued:Object.freeze([...foreground.filter(flag=>!['active','batchRunning'].includes(flag)),...settled]),
  reject:Object.freeze([...foreground,...settled]),
  batch:Object.freeze([...foreground,...settled]),
  replace:Object.freeze([...foreground,...settled]),

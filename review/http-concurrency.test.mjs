@@ -25,7 +25,8 @@ test('HTTP every media and settings mutation is excluded during an approval; rea
   const gate=f.hold('/api/v2/update-node',body=>body.data.nodeUpdates.nodePaused);assert.equal((await f.approve(a)).status,202);await deadline(gate.entered,'approval dispatch pause');
   // Reviewing and comparing another film stays possible during a replacement (#155, review/concurrent-review-http.test.mjs);
   // every media, settings and restore mutation is still excluded.
-  const reviewWork=new Set(['review-session','frames','audio-compare','approval'].map(action=>`/api/items/${b.id}/${action}`));
+  // Approving another film during a replacement queues it (review/replacement-queue-http.test.mjs).
+  const reviewWork=new Set(['review-session','frames','audio-compare','approval','approve'].map(action=>`/api/items/${b.id}/${action}`));
   for(const [route,body] of f.allMutations(b,session)){if(reviewWork.has(route))continue;const result=await f.post(route,body);assert.equal(result.status,409,route+' '+await result.clone().text())}
   const readonly=await f.post(`/api/items/${b.id}/frames`,{snapshot:b.snapshot,seconds:0,cachedOnly:true});assert.equal(readonly.status,202);
   const tracks=await f.post(`/api/items/${b.id}/audio-compare`,{snapshot:b.snapshot,mode:'tracks'});assert.equal(tracks.status,200);

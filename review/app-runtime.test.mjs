@@ -316,6 +316,15 @@ if(typeof vm.SourceTextModule!=='function'){
   assert.equal(await open('Fixture film'),null,'the film being replaced shows no checklist');assert.match(dom.getElementById('detailBody').textContent,/Tento film se právě nahrazuje nebo čeká v dávce/);
   assert.equal(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,0);
  });
+ test('during another replacement a confirmed replacement says it will be queued; interrupted queue entries are listed',async()=>{
+  const checks=Object.fromEntries(['preparation','image','audio','syncStart','syncMiddle','syncEnd'].map(key=>[key,true]));
+  const done={version:1,snapshot:reviewItem.snapshot,revision:3,requirements:{hdr:false},complete:true,observations:{},session:{method:'review',device:'',step:4,scope:{originalIndex:1,reviewIndex:2,seconds:10},checks,note:'',deferred:false}};
+  const f=await appFixture('cs',{itemsData:{items:[reviewItem],reviewSessions:{[reviewItem.id]:done},active:{id:'f'.repeat(24),title:'Jiný film',action:'approve',stage:'Kopíruji',started:Date.now()},restorePending:1,queueInterrupted:[{id:'e'.repeat(24),title:'Přerušený film',queuedAt:'2026-10-18T10:00:00Z',interruptedAt:'2026-10-18T11:00:00Z'}]},routes:{['/api/items/'+reviewItem.id+'/review-session']:{data:done},['/api/items/'+reviewItem.id+'/audio-compare']:{data:{original:[],review:[]}}}}),dom=f.document;
+  const box=dom.getElementById('queueInterrupted');assert.equal(box.hidden,false);assert.match(box.textContent,/Restart přerušil čekající nahrazení.*Přerušený film/);
+  await dom.querySelectorAll('button').find(n=>n.getAttribute('aria-label')==='Posoudit Fixture film').emit('click');for(let i=0;i<6;i++)await flush();
+  const replace=dom.querySelector('[data-workflow-approve]');assert.equal(replace.disabled,false,'approve and replace stays available');
+  await replace.emit('click');assert.equal(dom.getElementById('confirm').open,true);assert.match(dom.getElementById('dialogText').textContent,/zařadí do fronty/);
+ });
  for(const language of ['cs','en'])test('real Review app shows API runtime and interruption changes in '+language,async()=>{
   const fixture=await appFixture(language),dom=fixture.document,runtime=dom.getElementById('recoveryRuntime'),warning=dom.getElementById('recoveryRestartWarning');
   assert.equal(dom.documentElement.lang,language);assert.equal(dom.getElementById('error').hidden,true,dom.getElementById('error').textContent);

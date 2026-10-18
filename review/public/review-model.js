@@ -33,11 +33,12 @@ export function capabilities(item, d, context = {}) {
   if (context.fresh !== true) reasons.push('Obnov aktuální stav před další akcí.');
   if (!d || !Array.isArray(d.recovery)) reasons.push('Stav výměn nelze ověřit.');
   const operation = !!(d?.active || d?.batchRunning || d?.batch?.status === 'running');
-  const inOperation = d?.active?.id === item?.id || (d?.batch?.status === 'running' && list(d?.batch?.remaining).some(x => x?.id === item?.id));
+  const queued = list(d?.replacementQueue).some(q => q?.id === item?.id);
+  const inOperation = queued || d?.active?.id === item?.id || (d?.batch?.status === 'running' && list(d?.batch?.remaining).some(x => x?.id === item?.id));
   // Reviews and comparisons of other films continue while a replacement runs; media actions wait.
   const reviewReasons = [...reasons];
   if (operation) reasons.push('Jiná akce nebo dávka právě probíhá.');
-  if (inOperation) reviewReasons.push('Film se právě nahrazuje nebo čeká v dávce.');
+  if (inOperation) reviewReasons.push(queued ? 'Film čeká ve frontě na nahrazení.' : 'Film se právě nahrazuje nebo čeká v dávce.');
   for (const target of [reasons, reviewReasons]) if (list(d?.recovery).length) target.push('Nedokončená výměna vyžaduje kontrolu.');
   // Node pauses held by the running operation are not unresolved restores.
   if (d?.restorePending) { reasons.push('Nejprve je nutné obnovit původní stav nodů.'); if (!operation) reviewReasons.push('Nejprve je nutné obnovit původní stav nodů.'); }
@@ -55,12 +56,16 @@ export function capabilities(item, d, context = {}) {
   // The server lists only approvals still valid for the current snapshot and saved review revision.
   const approved = reviewComplete && !!d?.approvals?.[item?.id];
   const allowed = !writeBlocked && validItem;
+  const queueApprove = operation && !inOperation && !reviewWriteBlocked && validItem;
   // Comparison uses POST and audio comparison stores evidence. Apply write
   // guards conservatively to previews as well as explicit file operations.
   const previewAllowed = !reviewWriteBlocked && validItem;
   const restorePhase = ['waiting', 'manual'].includes(item?.phase);
   return {
-    approve: allowed && reviewComplete && (normalApproval || durationApproval),
+    // During another replacement an explicitly confirmed one is queued on the server (#155).
+    approve: (allowed || queueApprove) && reviewComplete && (normalApproval || durationApproval),
+    queueApprove,
+    queued,
     // Batch replacement takes only films explicitly approved ("Schválit") for their current review.
     approveBatch: allowed && reviewComplete && normalApproval && approved,
     select: allowed && reviewComplete && normalApproval && approved,
@@ -97,9 +102,10 @@ const SELECT_REASONS = {
   blocked: 'Film je technicky blokovaný a nelze ho schválit. Otevři jeho detail.',
   complete: 'Posouzení je dokončené, ale film ještě není schválený. Otevři ho a v kroku Rozhodnutí zvol Schválit.',
   approved: 'Film nyní nelze vybrat k hromadnému nahrazení.',
+  queued: 'Film už čeká ve frontě na nahrazení.',
 };
 const REVIEW_STATES = {
-  ready: 'K posouzení', stale: 'K posouzení', 'in-progress': 'Posouzení rozpracováno', complete: 'Posouzení dokončeno', approved: 'Schváleno · čeká na nahrazení',
+  ready: 'K posouzení', stale: 'K posouzení', 'in-progress': 'Posouzení rozpracováno', complete: 'Posouzení dokončeno', approved: 'Schváleno · čeká na nahrazení', queued: 'Ve frontě na nahrazení',
   deferred: 'Posouzení odloženo', duration: 'Rozdíl délky · schválení jednotlivě', blocked: 'Technicky blokováno',
 };
 
@@ -111,6 +117,7 @@ export function reviewState(item, d) {
     if (!review) return 'ready';
     if (review.snapshot !== item.snapshot) return 'stale';
     if (review.session?.deferred === true) return 'deferred';
+    if (list(d?.replacementQueue).some(q => q?.id === item.id)) return 'queued';
     return completedReview(item, review) ? (d?.approvals?.[item.id] ? 'approved' : 'complete') : 'in-progress';
   })();
   return {kind: kind === 'stale' ? 'ready' : kind, label: REVIEW_STATES[kind], stale: kind === 'stale', reason: SELECT_REASONS[kind]};
