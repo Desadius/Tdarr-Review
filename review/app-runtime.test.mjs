@@ -62,12 +62,12 @@ if(typeof vm.SourceTextModule!=='function'){
  }
  const flush=()=>new Promise(resolve=>setImmediate(resolve));
  async function appFixture(language,{itemsData={},routes={}}={}){
-  const html=await fs.readFile(new URL('./public/index.html',import.meta.url),'utf8'),document=browserDocument(html),calls=[],timers=[],storage=new Map();let now=Date.now(),overviewError=null,fallbackRuntime=null,fallbackStatus=200;
+  const html=await fs.readFile(new URL('./public/index.html',import.meta.url),'utf8'),document=browserDocument(html),calls=[],timers=[],storage=new Map(),session=new Map();let now=Date.now(),overviewError=null,fallbackRuntime=null,fallbackStatus=200;
   class BrowserDate extends Date{constructor(...args){super(...(args.length?args:[now]))}static now(){return now}}
   const runtime={present:true,version:1,mode:'repair',state:'running',reason:null};
   let response={requests:[{id:'b'.repeat(24),source:'recovery',title:'Synthetic movie',phase:'verifying',canRestore:false,statusUpdated:new Date().toISOString()}],recoveryRuntime:runtime,recoveryConfig:{restartRequired:true,valid:true}};
   const location=new URL('http://localhost/?lang='+language+'#recovery'),navigations=[];location.assign=value=>navigations.push(value);
-  const context=vm.createContext({document,location,URL,URLSearchParams,Option:class extends Element{constructor(label,value){super('option');this.textContent=label;this.value=value}},Date:BrowserDate,console,AbortController,NodeFilter:{SHOW_TEXT:4},localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)},sessionStorage:{getItem:()=>null,removeItem(){},setItem(){}},history:{replaceState(){}},addEventListener(){},setInterval(fn,ms){timers.push({fn,ms});return timers.length},clearInterval(){},setTimeout,clearTimeout,fetch:async(route,options)=>{
+  const context=vm.createContext({document,location,URL,URLSearchParams,Option:class extends Element{constructor(label,value){super('option');this.textContent=label;this.value=value}},Date:BrowserDate,console,AbortController,NodeFilter:{SHOW_TEXT:4},localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)},sessionStorage:{getItem:key=>session.has(key)?session.get(key):null,removeItem:key=>session.delete(key),setItem:(key,value)=>session.set(key,String(value))},history:{replaceState(){}},addEventListener(){},setInterval(fn,ms){timers.push({fn,ms});return timers.length},clearInterval(){},setTimeout,clearTimeout,fetch:async(route,options)=>{
    calls.push({route,method:options.method,body:options.body?JSON.parse(options.body):undefined});
    const configured=routes[route]||routes[route.split('?')[0]],fixture=typeof configured==='function'?await configured({route,body:options.body?JSON.parse(options.body):undefined}):configured;if(fixture)return {status:fixture.status||200,ok:!fixture.status||fixture.status<400,json:async()=>structuredClone(fixture.data)};if(route==='/api/radarr/requests'&&overviewError)return {status:overviewError.status,ok:false,json:async()=>({error:overviewError.message})};
    if(route==='/api/recovery/runtime'&&fallbackStatus!==200)return {status:fallbackStatus,ok:false,json:async()=>({error:'synthetic runtime unavailable'})};
@@ -255,6 +255,24 @@ if(typeof vm.SourceTextModule!=='function'){
     assert.equal(f.calls.filter(c=>c.method==='POST').length,0);
    }
   }
+ });
+ for(const language of ['cs','en'])test('the film strip switches films without losing a draft or carrying checks over in '+language,async()=>{
+  const en=language==='en',second={...reviewItem,id:'c'.repeat(24),snapshot:'d'.repeat(64),title:'Second film'};
+  const blank=item=>({version:1,snapshot:item.snapshot,revision:1,requirements:{hdr:false},complete:false,observations:{},session:{method:'review',device:'',step:0,scope:{originalIndex:1,reviewIndex:2,seconds:10},checks:Object.fromEntries(['preparation','image','audio','syncStart','syncMiddle','syncEnd'].map(key=>[key,false])),note:'',deferred:false}});
+  const routes={};for(const item of [reviewItem,second]){routes['/api/items/'+item.id+'/review-session']={data:blank(item)};routes['/api/items/'+item.id+'/audio-compare']={data:{original:[],review:[]}}}
+  const f=await appFixture(language,{itemsData:{items:[reviewItem,second],reviewSessions:{[reviewItem.id]:blank(reviewItem),[second.id]:blank(second)}},routes}),dom=f.document,settle=async()=>{for(let i=0;i<6;i++)await flush()};
+  const inspect=dom.querySelectorAll('button').find(n=>n.getAttribute('aria-label')===(en?'Review Fixture film':'Posoudit Fixture film'));await inspect.emit('click');await settle();
+  const strip=dom.getElementById('filmStrip'),entry=id=>strip.querySelector('[data-film="'+id+'"]'),check=()=>dom.getElementById('detailBody').querySelector('[data-check="preparation"]');
+  assert.equal(strip.hidden,false);assert.equal(strip.querySelectorAll('.film-strip-item').length,2);assert.equal(entry(reviewItem.id).getAttribute('aria-current'),'true');
+  const box=check();box.checked=true;await box.emit('change');
+  await entry(second.id).emit('click');await settle();
+  assert.equal(dom.getElementById('detailTitle').textContent,'Second film');assert.equal(entry(second.id).getAttribute('aria-current'),'true');
+  assert.equal(check().checked,false,'checks never carry over to another film');
+  assert.match(entry(reviewItem.id).textContent,en?/Unsaved changes|Draft/:/Rozpracované změny/);
+  await entry(reviewItem.id).emit('click');await settle();
+  assert.equal(dom.getElementById('detailTitle').textContent,'Fixture film');assert.equal(check().checked,true,'the draft comes back');
+  entry(reviewItem.id).onkeydown({key:'ArrowRight',preventDefault(){}});assert.equal(dom.activeElement?.dataset?.film,second.id,'arrow keys move along the strip');
+  assert.equal(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,0,'switching saves nothing');
  });
  for(const language of ['cs','en'])test('the checks panel and focus mode toggle the layout only, with focus moved deliberately, in '+language,async()=>{
   const en=language==='en',checks=Object.fromEntries(['preparation','image','audio','syncStart','syncMiddle','syncEnd'].map(key=>[key,false]));

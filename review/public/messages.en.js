@@ -315,6 +315,7 @@ export default {
     "Vybrat ": "Select ",
     "K posouzení": "Ready to review",
     "Zvláštní kontrola": "Extra checks",
+    "Filmy k posouzení": "Films to review",
     "Kontroly a rozhodnutí": "Checks and decision",
     "Soustředit se na obraz": "Focus on the picture",
     "Schváleno · čeká na nahrazení": "Approved · waiting for replacement",
