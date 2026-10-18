@@ -1,7 +1,7 @@
 // Recovery progress and detail renderers. Pure: they read only the record passed in.
-import {tr,locale} from './i18n.js?v=20261015-outside1';
-import {downloadProgress,recoveryIsBusy,recoveryConfigNotice,originalOutsideTooLong} from './review-model.js?v=20261015-outside1';
-import {el,fmt,date,elapsedText,etaText,detailsFacts} from './ui-kit.js?v=20261015-outside1';
+import {tr,locale} from './i18n.js?v=__APP_VERSION__';
+import {downloadProgress,recoveryIsBusy,recoveryConfigNotice,originalOutsideTooLong} from './review-model.js?v=__APP_VERSION__';
+import {el,fmt,date,elapsedText,etaText,detailsFacts} from './ui-kit.js?v=__APP_VERSION__';
 
 export function recoveryRuntimeView(runtime,translate=tr){
  const labels={off:'Off',running:'Běží',restarting:'Restartuje se',refused:'Spuštění odmítnuto',stopped:'Zastaveno',unreadable:'Stav nelze přečíst'};

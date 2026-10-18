@@ -1,5 +1,5 @@
-import sharedSettingsMessages from './shared-settings-messages.js?v=20261017-settings1';
-import {ERROR_MESSAGES} from './error-messages.js?v=20261017-settings1';
+import sharedSettingsMessages from './shared-settings-messages.js?v=__APP_VERSION__';
+import {ERROR_MESSAGES} from './error-messages.js?v=__APP_VERSION__';
 export default {
   "exact": {...Object.fromEntries(Object.values(ERROR_MESSAGES).map(message=>[message.cs,message.en])),...sharedSettingsMessages,
     "Nastavení právě používá jiná operace. Zkus to za chvíli.": "Another operation is using settings. Try again shortly.",

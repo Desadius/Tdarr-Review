@@ -4,6 +4,8 @@ This records the implemented application features. Versions before 1.10.0 were d
 
 ## Unreleased
 
+- Every browser module now loads under one URL carrying the app version, filled in by the server. Previously some modules (for example `i18n.js`, `ui-kit.js`, `review-model.js`) were imported under different `?v=` strings and evaluated twice, which could split module state such as the interface language.
+
 - In the library (gallery) view, the savings and the **Review** (**Posoudit**) button sit at the bottom of every card, so the buttons in one row line up regardless of title length, blocking reasons or preview status.
 
 - Review's manual Radarr replacement uses Recovery's Tdarr handoff, download-queue projection and quarantine retention modules instead of its own copies. The handoff now refuses a target that is not a normalized absolute path (for example a Tdarr source root containing `//`) before contacting Tdarr; the request stays visible with the error instead of querying or rescanning a wrong path.

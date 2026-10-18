@@ -1,7 +1,7 @@
 // Quarantine listing dialog.
-import {tr} from '/i18n.js?v=20261013-retention1';
-import {quarantineLifecycle} from '/review-model.js?v=20261013-signals1';
-import {$,el,button,fmt,date,detailsFacts} from '/ui-kit.js?v=20261013-split1';
+import {tr} from '/i18n.js?v=__APP_VERSION__';
+import {quarantineLifecycle} from '/review-model.js?v=__APP_VERSION__';
+import {$,el,button,fmt,date,detailsFacts} from '/ui-kit.js?v=__APP_VERSION__';
 
 let app=null;
 const api=(route,body)=>app.api(route,body);

@@ -58,7 +58,7 @@ The UI in `review/public/` is a set of ES modules loaded without a build step. `
 | `recovery-view.js` | Recovery progress and detail renderers |
 | `review-workflow.js`, `review-model.js`, `av-player.js`, `i18n.js` | Review steps, display rules, AV player and translations (unchanged) |
 
-Every module URL carries a `?v=` version so a release cannot mix cached old and new modules. A new UI file must also be listed in the static asset table in `review/routes/static.mjs`.
+Every module and stylesheet URL is written as `?v=__APP_VERSION__`; the static route (`review/routes/static.mjs`) replaces the placeholder with the running app version (`APP_VERSION`, else `package.json`). A release therefore cannot mix cached old and new modules, no import needs a hand edit on a version bump, and a module is never evaluated twice under two URLs (which would split module state such as the locale in `i18n.js`). `npm run check` refuses any other `?v=` value. A new UI file must also be listed in the static asset table in `review/routes/static.mjs`.
 
 ### Concurrent application actions
 

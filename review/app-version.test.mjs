@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {appVersion} from './app-version.mjs';
-import {versionMismatches} from '../tools/version-consistency.mjs';
+import {versionMismatches,moduleVersionLiterals} from '../tools/version-consistency.mjs';
 
 const repo=new URL('..',import.meta.url);
 
@@ -31,5 +31,16 @@ test('package.json, Dockerfile defaults and .env.example agree; a mismatch is re
   await fs.writeFile(path.join(root,'Dockerfile'),'FROM x\nARG APP_VERSION=1.9.0\n');
   await fs.writeFile(path.join(root,'.env.example'),'PUID=99\n');
   assert.deepEqual(await versionMismatches(root),['Dockerfile APP_VERSION is 1.9.0, package.json is 2.0.0','.env.example REVIEW_IMAGE_TAG is missing, package.json is 2.0.0']);
+ }finally{await fs.rm(root,{recursive:true,force:true})}
+});
+
+test('browser module URLs use only the app-version placeholder; a hand-written version is reported',async()=>{
+ assert.deepEqual(await moduleVersionLiterals(fileURLToPath(repo)),[]);
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'module-version-'));
+ try{
+  await fs.mkdir(path.join(root,'review','public'),{recursive:true});
+  await fs.writeFile(path.join(root,'review','public','app.js'),"import {tr} from './i18n.js?v=__APP_VERSION__';import {el} from './ui-kit.js?v=20261013-split1';");
+  await fs.writeFile(path.join(root,'review','public','index.html'),'<script type="module" src="/app.js?v=__APP_VERSION__"></script>');
+  assert.deepEqual(await moduleVersionLiterals(root),['review/public/app.js uses ?v=20261013-split1 instead of ?v=__APP_VERSION__']);
  }finally{await fs.rm(root,{recursive:true,force:true})}
 });
