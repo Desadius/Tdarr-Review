@@ -4,6 +4,8 @@ This records the implemented application features. Versions before 1.10.0 were d
 
 ## Unreleased
 
+- In the library (gallery) view, the savings and the **Review** (**Posoudit**) button sit at the bottom of every card, so the buttons in one row line up regardless of title length, blocking reasons or preview status.
+
 - Review's manual Radarr replacement uses Recovery's Tdarr handoff, download-queue projection and quarantine retention modules instead of its own copies. The handoff now refuses a target that is not a normalized absolute path (for example a Tdarr source root containing `//`) before contacting Tdarr; the request stays visible with the error instead of querying or rescanning a wrong path.
 
 - Recovery recognizes four DTS core decoder errors (`Residual encoded channels are present without core`, `Invalid isolated sample location`, `Invalid bit allocation index`, `Failed to decode block code(s)`) and the Matroska `exceeds containing master element` structure error as candidates for its independent two-pass original check, with signatures free of process addresses. A Matroska structure error counts even with FFmpeg exit 0. Tdarr jobs skipped earlier as `not_confirmed_decode_error_v3` are reconsidered once; still-unrecognized ones become `not_confirmed_decode_error_v4`. Two matching decodes of the unchanged original and an exact Radarr binding remain required, and operational failures still win.
