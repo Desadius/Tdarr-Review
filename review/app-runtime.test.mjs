@@ -62,12 +62,13 @@ if(typeof vm.SourceTextModule!=='function'){
  }
  const flush=()=>new Promise(resolve=>setImmediate(resolve));
  async function appFixture(language,{itemsData={},routes={}}={}){
+  const windowListeners={};
   const html=await fs.readFile(new URL('./public/index.html',import.meta.url),'utf8'),document=browserDocument(html),calls=[],timers=[],storage=new Map(),session=new Map();let now=Date.now(),overviewError=null,fallbackRuntime=null,fallbackStatus=200;
   class BrowserDate extends Date{constructor(...args){super(...(args.length?args:[now]))}static now(){return now}}
   const runtime={present:true,version:1,mode:'repair',state:'running',reason:null};
   let response={requests:[{id:'b'.repeat(24),source:'recovery',title:'Synthetic movie',phase:'verifying',canRestore:false,statusUpdated:new Date().toISOString()}],recoveryRuntime:runtime,recoveryConfig:{restartRequired:true,valid:true}};
   const location=new URL('http://localhost/?lang='+language+'#recovery'),navigations=[];location.assign=value=>navigations.push(value);
-  const context=vm.createContext({document,location,URL,URLSearchParams,Option:class extends Element{constructor(label,value){super('option');this.textContent=label;this.value=value}},Date:BrowserDate,console,AbortController,NodeFilter:{SHOW_TEXT:4},localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)},sessionStorage:{getItem:key=>session.has(key)?session.get(key):null,removeItem:key=>session.delete(key),setItem:(key,value)=>session.set(key,String(value))},history:{replaceState(){}},addEventListener(){},setInterval(fn,ms){timers.push({fn,ms});return timers.length},clearInterval(){},setTimeout,clearTimeout,fetch:async(route,options)=>{
+  const context=vm.createContext({document,location,URL,URLSearchParams,Option:class extends Element{constructor(label,value){super('option');this.textContent=label;this.value=value}},Date:BrowserDate,console,AbortController,NodeFilter:{SHOW_TEXT:4},localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)},sessionStorage:{getItem:key=>session.has(key)?session.get(key):null,removeItem:key=>session.delete(key),setItem:(key,value)=>session.set(key,String(value))},history:{replaceState(){}},addEventListener(type,fn){(windowListeners[type]||=[]).push(fn)},setInterval(fn,ms){timers.push({fn,ms});return timers.length},clearInterval(){},setTimeout,clearTimeout,fetch:async(route,options)=>{
    calls.push({route,method:options.method,body:options.body?JSON.parse(options.body):undefined});
    const configured=routes[route]||routes[route.split('?')[0]],fixture=typeof configured==='function'?await configured({route,body:options.body?JSON.parse(options.body):undefined}):configured;if(fixture)return {status:fixture.status||200,ok:!fixture.status||fixture.status<400,json:async()=>structuredClone(fixture.data)};if(route==='/api/radarr/requests'&&overviewError)return {status:overviewError.status,ok:false,json:async()=>({error:overviewError.message})};
    if(route==='/api/recovery/runtime'&&fallbackStatus!==200)return {status:fallbackStatus,ok:false,json:async()=>({error:'synthetic runtime unavailable'})};
@@ -82,7 +83,7 @@ if(typeof vm.SourceTextModule!=='function'){
   await app.link((specifier,referencing)=>moduleFor(specifier.startsWith('/')?new URL(specifier.slice(1),publicRoot):new URL(specifier,referencing.identifier)));
   await app.evaluate();for(let i=0;i<10;i++)await flush();
   const refresh=async()=>{await document.getElementById('recoveryRefresh').emit('click');for(let i=0;i<10;i++)await flush()};
-  return {document,calls,timers,storage,navigations,async tick(){for(const timer of timers.filter(t=>t.ms===1000))timer.fn();for(let i=0;i<15;i++)await flush();},async update(value){response=value;await refresh()},async failOverview(runtime,status=500,runtimeStatus=200){overviewError={status,message:'synthetic shared case status invalid'};fallbackRuntime=runtime;fallbackStatus=runtimeStatus;now+=60000;await refresh()}};
+  return {document,calls,timers,storage,navigations,async hash(value){location.hash=value;for(const fn of windowListeners.hashchange||[])fn();for(let i=0;i<6;i++)await flush()},async tick(){for(const timer of timers.filter(t=>t.ms===1000))timer.fn();for(let i=0;i<15;i++)await flush();},async update(value){response=value;await refresh()},async failOverview(runtime,status=500,runtimeStatus=200){overviewError={status,message:'synthetic shared case status invalid'};fallbackRuntime=runtime;fallbackStatus=runtimeStatus;now+=60000;await refresh()}};
  }
  const sharedFixture={revision:'fixture-revision',managed:false,generation:0,active:null,historyUsesSetupTime:true,conflicts:[],migrationChoices:[],history:[],apply:{state:'idle'},draft:{review:{label:'Fixture',publicOrigin:'http://localhost',tdarrUrl:'http://127.0.0.1:8266',libraryId:'fixture',sourceRoots:['/tdarr-films','/alias'],tdarrReviewRoot:'/tdarr-review',mediaRoot:'/media',reviewRoot:'/review',reviewPrefixes:[],database:'/db',ffmpeg:'/ffmpeg',ffprobe:'/ffprobe'},radarr:{url:'http://127.0.0.1:7878',mediaRoot:'/radarr-films',quarantineRoot:'/radarr-quarantine',preferCzechEnglish:true,hasApiKey:true},recovery:{sourceRoot:'/tdarr-films',quarantineRoot:'/recovery-quarantine',reports:'/reports',stableMinutes:10,confirmDelaySeconds:30,pollSeconds:300,decodeTimeoutHours:12,maxRepairsPerDay:3,movieCooldownDays:30,fullSourceHash:false,detectTerminalHeaders:true,since:1700000000000}}};
  test('both legacy settings entry points open one guided shared draft without applying',async()=>{
@@ -315,6 +316,26 @@ if(typeof vm.SourceTextModule!=='function'){
   assert.equal((await open('Second film')).disabled,false,'another film stays reviewable');
   assert.equal(await open('Fixture film'),null,'the film being replaced shows no checklist');assert.match(dom.getElementById('detailBody').textContent,/Tento film se právě nahrazuje nebo čeká v dávce/);
   assert.equal(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,0);
+ });
+ test('a confirmed binding-failure case offers the manual Radarr replacement only with the server offer and a reason',async()=>{
+  const id='c'.repeat(24),record={id,source:'recovery',title:'Vadný film',phase:'manual',bindingFailure:'grab-missing',sourceConfirmed:true,canRestore:false,statusUpdated:new Date().toISOString()};
+  const f=await appFixture('cs',{routes:{['/api/recovery/cases/'+id+'/replace-source']:{status:202,data:{ok:true}}}}),dom=f.document;
+  await f.update({requests:[{...record,sourceReplacementBlocked:'Originál se od potvrzení vady změnil.'}],recoveryRuntime:{present:true,version:1,mode:'repair',state:'running',reason:null}});
+  await f.hash('#recovery?filter=attention');
+  await dom.querySelectorAll('button').find(n=>n.getAttribute('aria-label')==='Prohlédnout obnovu Vadný film').emit('click');for(let i=0;i<6;i++)await flush();
+  await dom.getElementById('detailTabs-recovery').emit('click');for(let i=0;i<4;i++)await flush();
+  assert.equal(dom.querySelector('[data-cap="replaceSource"]'),null,'no offer, no action');assert.match(dom.getElementById('detailBody').textContent,/Originál se od potvrzení vady změnil/);
+  dom.getElementById('filmDetail').close();
+  await f.update({requests:[{...record,sourceReplacement:{snapshot:'s'.repeat(64)}}],recoveryRuntime:{present:true,version:1,mode:'repair',state:'running',reason:null}});
+  await f.hash('#recovery?filter=attention');
+  await dom.querySelectorAll('button').find(n=>n.getAttribute('aria-label')==='Prohlédnout obnovu Vadný film').emit('click');for(let i=0;i<6;i++)await flush();
+  assert.match(dom.getElementById('detailBody').textContent,/vyžádat přes Radarr na kartě Obnova/);
+  await dom.getElementById('detailTabs-recovery').emit('click');for(let i=0;i<4;i++)await flush();
+  const offer=dom.querySelector('[data-cap="replaceSource"]');assert.equal(offer.disabled,false);
+  await offer.emit('click');assert.equal(dom.getElementById('confirm').open,true);assert.equal(dom.getElementById('rejectReasonBox').hidden,false,'a reason is required');
+  assert.equal(f.calls.some(c=>c.route.includes('replace-source')),false,'opening the dialog changes nothing');
+  dom.getElementById('rejectReason').value='Potvrzená vada';dom.getElementById('confirm').returnValue='confirm';await dom.getElementById('confirm').close();for(let i=0;i<8;i++)await flush();
+  const sent=f.calls.find(c=>c.route==='/api/recovery/cases/'+id+'/replace-source');assert.deepEqual(sent.body,{snapshot:'s'.repeat(64),reason:'Potvrzená vada'});
  });
  test('during another replacement a confirmed replacement says it will be queued; interrupted queue entries are listed',async()=>{
   const checks=Object.fromEntries(['preparation','image','audio','syncStart','syncMiddle','syncEnd'].map(key=>[key,true]));

@@ -20,7 +20,7 @@ const ROUTES=[
  ['GET','/api/radarr/settings','libraryRoutes'],['POST','/api/radarr/settings','libraryRoutes'],['POST','/api/radarr/settings/test','libraryRoutes'],
  ['GET','/api/radarr/requests','libraryRoutes'],['POST','/api/radarr/requests/'+ID+'/restore','libraryRoutes'],
  ['GET','/api/recovery/runtime','libraryRoutes'],
- ['GET','/api/items','itemRoutes'],['POST','/api/items/'+ID+'/replace','itemRoutes'],
+ ['GET','/api/items','itemRoutes'],['POST','/api/items/'+ID+'/replace','itemRoutes'],['POST','/api/recovery/cases/'+ID+'/replace-source','itemRoutes'],
  ['GET','/api/items/'+ID+'/review-session','itemRoutes'],['POST','/api/items/'+ID+'/review-session','itemRoutes'],
  ['POST','/api/approve-batch','itemRoutes'],['POST','/api/items/'+ID+'/recheck','itemRoutes'],['POST','/api/items/'+ID+'/approval','itemRoutes'],
  ['POST','/api/items/'+ID+'/approve','itemRoutes'],['POST','/api/items/'+ID+'/reject','itemRoutes'],['GET','/api/items/'+ID+'/video','itemRoutes'],
@@ -78,4 +78,25 @@ test('HTTP mutation gate refuses a claimed route before dispatch and releases la
  assert.equal(blocked.status,409);
  assert.deepEqual(await f.routeCalls(),[],'blocked mutation never dispatches');
  assert.equal((await f.request('/api/settings',{headers:{cookie}})).status,200,'read remains available');
+});
+
+// The manual replacement of a confirmed faulty original without a Review result (#153) starts only
+// for the server's current candidate snapshot; a refused case, a stale snapshot or a busy server never starts it.
+test('a source-only replacement starts only for the current candidate snapshot of an offered case',async()=>{
+ const run=async({candidate,snapshot='s1',busy=false,reason='Vadný originál',items=[]})=>{
+  const started=[],out={};
+  const ctx={replacements:{sourceCandidate:async id=>{if(!candidate)throw Error('Tento případ Recovery nenabízí ruční náhradu.');return {...candidate,id}}},scan:async()=>items,busyFor:()=>busy?'active':null,replacementAction:async(item,why)=>{started.push([item.id,why])}};
+  const req={method:'POST',headers:{},async *[Symbol.asyncIterator](){yield JSON.stringify({snapshot,reason})}};
+  const res={writeHead(status){out.status=status;return this},end(text){out.body=JSON.parse(text)},on(){}};
+  const pathname='/api/recovery/cases/'+ID+'/replace-source';
+  assert.equal(await itemRoutes(ctx,req,res,new URL(pathname,'http://review.test'),{mutation:null}),true);
+  return {...out,started};
+ };
+ const offered={snapshot:'s1',sourceOnly:true,relative:'Film/a.mkv'};
+ assert.deepEqual(await run({candidate:offered}),{status:202,body:{ok:true},started:[[ID,'Vadný originál']]});
+ const stale=await run({candidate:offered,snapshot:'old'});assert.deepEqual([stale.status,stale.body.code,stale.started],[409,'item_changed',[]]);
+ const refused=await run({candidate:null});assert.deepEqual([refused.status,refused.started],[409,[]]);assert.match(refused.body.error,/nenabízí/);
+ const reviewed=await run({candidate:offered,items:[{id:'e'.repeat(24),relative:'Film/a.mkv'}]});assert.deepEqual([reviewed.status,reviewed.started],[409,[]]);assert.equal(reviewed.body.code,'item_has_review_result');
+ const busy=await run({candidate:offered,busy:true});assert.deepEqual([busy.status,busy.started],[409,[]]);
+ const noReason=await run({candidate:offered,reason:''});assert.deepEqual([noReason.status,noReason.started],[400,[]]);
 });

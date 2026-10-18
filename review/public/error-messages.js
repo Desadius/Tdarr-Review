@@ -69,6 +69,7 @@ export const ERROR_MESSAGES=Object.freeze({
  recheck_failed:Object.freeze({cs:"Ověření se nezdařilo; film zůstává zablokovaný. Důvod je v detailu filmu.",en:"Verification failed; the film stays blocked. The reason is in the film's detail."}),
  files_changed:Object.freeze({cs:"Obnov přehled, soubory se změnily.",en:"Refresh the overview; the files have changed."}),
  recheck_unsafe:Object.freeze({cs:"Tuto změnu nelze bezpečně znovu ověřit. Obnov přehled.",en:"This change cannot be safely rechecked. Refresh the overview."}),
+ item_has_review_result:Object.freeze({cs:"Pro tento film existuje výsledek v Review. Požádej o jinou kopii z jeho posouzení.",en:"This film has a result in Review. Request another copy from its review."}),
  item_unmapped:Object.freeze({cs:"Soubor nelze bezpečně přiřadit k originálu.",en:"The file cannot be safely matched to the original."}),
  batch_item_changed:Object.freeze({cs:"Některý vybraný film se změnil nebo ho nelze schválit. Obnov přehled.",en:"A selected movie has changed or cannot be approved. Refresh the overview."}),
  batch_size:Object.freeze({cs:"Vyber 1 až 100 filmů.",en:"Select 1 to 100 movies."}),

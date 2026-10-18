@@ -390,3 +390,42 @@ test('an unreadable Recovery state fails closed: no Tdarr write and a visible re
   }finally{await f.cleanup()}
  }
 });
+
+// A Recovery case stopped as manual because the Radarr release history cannot be bound, with the
+// damage confirmed by two decodes, offers the manual replacement without a Review result (#153).
+const caseId='d'.repeat(24);
+async function bindingCase(f,change={}){
+ const a=await fs.stat(f.source),fp=statIdentity(a);
+ const c={id:caseId,status:'manual',relative:'Film/a.mkv',fp,movieId:42,bindingFailure:{code:'grab-missing',message:'no grab'},evidence:{sourceFP:fp,checks:[{},{}]},...change};
+ await fs.mkdir(path.join(f.data,'recovery'),{recursive:true});await f.atomicJSON(path.join(f.data,'recovery','state.json'),{cases:{[caseId]:c}});
+ await f.atomicJSON(path.join(path.dirname(f.media),'.tdarr-recovery-status.json'),{version:1,updated:new Date().toISOString(),cases:[{id:caseId,phase:'manual',source:'recovery',bindingFailure:'grab-missing',sourceConfirmed:true}]});
+ return c;
+}
+test('a confirmed binding-failure case offers a source-only manual replacement that keeps the original in quarantine',async()=>{
+ const f=await fixture();try{
+  await bindingCase(f);const offered=(await f.service.list()).find(r=>r.id===caseId);assert.equal(typeof offered.sourceReplacement?.snapshot,'string');
+  const item=await f.service.sourceCandidate(caseId);assert.equal(item.snapshot,offered.sourceReplacement.snapshot);
+  const result=await f.service.run(item,'Potvrzená vada originálu');assert.equal(result.phase,'waiting');assert.equal(f.movie.movieFileId,0);
+  const journal=JSON.parse(await fs.readFile(path.join(f.data,'radarr-replacements',result.id+'.json')));
+  assert.deepEqual([journal.sourceOnly,journal.recoveryCaseId,journal.bindingFailure,journal.reviewQuarantine,journal.reviewPath],[true,caseId,'grab-missing',undefined,null]);
+  assert.equal(await fs.readFile(journal.originalQuarantine,'utf8'),'ORIGINAL');assert.equal(await fs.readFile(f.output,'utf8'),'TRANSCODE','an unrelated Review file is never moved');
+  assert(!f.calls.some(v=>v.method==='DELETE'));assert.equal(f.tdcalls.filter(v=>v.p==='/api/v2/bulk-update-files'&&v.b.updatedObj.TranscodeDecisionMaker==='Hold').length,1,'the original keeps a protective Hold');
+  const after=(await f.service.list()).find(r=>r.id===caseId);assert.deepEqual([after.sourceReplacement,after.sourceReplacementBlocked],[undefined,undefined],'an open request is neither offered again nor reported as a refusal');
+  await assert.rejects(()=>f.service.run(item,'again'),/neuzavřená|Soubory|ENOENT/,'a used confirmation cannot run again');
+  const restored=await f.service.restore(result.id);assert.equal(restored.phase,'restored');assert.equal(await fs.readFile(f.source,'utf8'),'ORIGINAL');
+ }finally{await f.cleanup()}
+});
+test('the source-only replacement is refused for unconfirmed, other or changed cases before any external change',async()=>{
+ const variants={unconfirmed:{evidence:undefined},singleCheck:c=>({evidence:{...c.evidence,checks:[{}]}}),notManual:{status:'confirmed'},unknownCode:{bindingFailure:{code:'other'}},otherMovie:{movieId:43},changedSource:'append',staleSnapshot:'stale'};
+ for(const [name,change]of Object.entries(variants)){const f=await fixture();try{
+  const base=await bindingCase(f);if(typeof change==='function')await bindingCase(f,change(base));else if(typeof change==='object')await bindingCase(f,change);
+  let item;
+  if(name==='otherMovie'||name==='staleSnapshot'){item=await f.service.sourceCandidate(caseId);if(name==='staleSnapshot')item={...item,snapshot:'stale'}}
+  else if(name==='changedSource'){item=await f.service.sourceCandidate(caseId);await fs.appendFile(f.source,'X')}
+  else {await assert.rejects(()=>f.service.sourceCandidate(caseId),/nenabízí/,name);assert.equal((await f.service.list()).find(r=>r.id===caseId).sourceReplacement,undefined,name);continue}
+  await assert.rejects(()=>f.service.run(item,'reason'),undefined,name);
+  assert(!f.calls.some(v=>v.method!=='GET'),name+': no Radarr change');assert.deepEqual(f.tdcalls,[],name+': no Tdarr change');
+  assert.match(await fs.readFile(f.source,'utf8'),/^ORIGINAL/,name);
+  if(name==='changedSource')assert.match((await f.service.list()).find(r=>r.id===caseId).sourceReplacementBlocked,/změnil/);
+ }finally{await f.cleanup()}}
+});
