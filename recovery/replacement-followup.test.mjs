@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {identity} from './policy.mjs';
+import {caseId} from './policy.mjs';
 import {replacementFollowup,replacementFollowupId,projectReplacementFollowups} from './replacement-followup.mjs';
 import {classifyRecovery} from '../review/public/review-model.js';
 import {identityVariants} from '../review/test-helpers/identity-variants.mjs';
 
 function fixture(){
  const cfg={sourceRoot:'/media/movies'},relative='Film/new.mkv',fp='1:2:100:4:5',file=cfg.sourceRoot+'/'+relative;
- const child={id:identity(file,fp),movieId:1,file,relative,fp,size:100,binding:{movieFileId:11}};
+ const child={id:caseId(file,fp),movieId:1,file,relative,fp,size:100,binding:{movieFileId:11}};
  const parent={id:'a'.repeat(24),status:'replacement_imported',movieId:1,replacementRelative:relative,replacementSourceFP:fp,replacement:{movieFileId:11,size:100}};
  return {cfg,parent,child,state:{cases:{parent,child}}};
 }
@@ -25,10 +25,10 @@ test('history without exact binding, approved sources and ambiguous entries neve
  const f=fixture();f.state.cases.duplicate={...f.child};assert.equal(replacementFollowupId(f.parent,f),null);
 });
 test('ctime-only differences link display with an explicit flag, never rewriting identity or authority',()=>{
- const f=fixture();f.child.fp='1:2:100:4:6';f.child.id=identity(f.child.file,f.child.fp);const before=structuredClone(f.state);
+ const f=fixture();f.child.fp='1:2:100:4:6';f.child.id=caseId(f.child.file,f.child.fp);const before=structuredClone(f.state);
  assert.deepEqual(replacementFollowup(f.parent,f),{id:f.child.id,binding:'ctime_changed'});assert.deepEqual(f.state,before);
  for(const fp of ['9:2:100:4:6','1:9:100:4:6','1:2:101:4:6','1:2:100:9:6','1:2:100:4:NaN']){
-  f.child.fp=fp;f.child.id=identity(f.child.file,fp);assert.equal(replacementFollowup(f.parent,f),null);
+  f.child.fp=fp;f.child.id=caseId(f.child.file,fp);assert.equal(replacementFollowup(f.parent,f),null);
  }
 });
 test('public follow-up is bounded, one level deep and contains no evidence or authority',()=>{
@@ -79,7 +79,7 @@ test('follow-up binding follows the recorded replacement identity and accepts on
   assert.equal(replacementFollowup(f.parent,f)?.binding??null,expected[variant],variant);
  }
  for(const fp of ['1:2:100:-4:5','1:2:100:1e+21:5','01:2:100:4:5','9007199254740992:2:100:4:5']){
-  const f=fixture();f.parent.replacementSourceFP=fp;f.child.fp=fp;f.child.id=identity(f.child.file,fp);
+  const f=fixture();f.parent.replacementSourceFP=fp;f.child.fp=fp;f.child.id=caseId(f.child.file,fp);
   assert.equal(replacementFollowup(f.parent,f)?.binding??null,fp.startsWith('9007')?'exact':null,fp);
  }
 });
