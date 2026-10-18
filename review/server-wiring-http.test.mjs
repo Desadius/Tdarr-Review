@@ -15,8 +15,8 @@ const MOVIE=7,ID='e'.repeat(24);
 // The smallest JPEG the artwork validator accepts: SOI, a 1x1 SOF0, SOS and EOI.
 const JPEG=Buffer.from('ffd8ffc00011080001000103011100021101031101ffda000801010000003f00d2cf20ffd9','hex');
 
-async function fixture({env,status,beforeStart}={}){
- const harness=await serverHarness(),calls=[];
+async function fixture({env,status,beforeStart,host}={}){
+ const harness=await serverHarness({host}),calls=[];
  const radarr=http.createServer((req,res)=>{
   calls.push(req.url);
   if(req.headers['x-api-key']!=='synthetic-artwork-key'){res.writeHead(401);return res.end()}
@@ -115,7 +115,7 @@ test('HTTP the Radarr request overview carries Recovery cases and only the safe 
 
 test('HTTP /health answers loopback clients before login and is hidden from other addresses',linuxServer,async t=>{
  const address=Object.values(os.networkInterfaces()).flat().find(entry=>entry&&entry.family==='IPv4'&&!entry.internal)?.address;
- const f=await fixture();try{
+ const f=await fixture({host:'0.0.0.0'});try{
   const local=await f.get('/health',{});assert.equal(local.status,200);assert.ok(Array.isArray((await local.json()).attention));
   if(!address)return t.skip('no non-loopback IPv4 interface to connect from');
   // Connect to the server's own non-loopback address, so the request does not come from loopback.
