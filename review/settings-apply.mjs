@@ -4,7 +4,7 @@ import {randomUUID} from 'node:crypto';
 import {checkPaths} from './config.mjs';
 import {readActiveSettings} from './shared-settings.mjs';
 import {readSettingsActivation,writeSettingsActivation,settingsPublicOrigin} from './settings-activation.mjs';
-import {settingsError} from './routes/shared-settings.mjs';
+import {settingsError} from './settings-errors.mjs';
 import {checkManualQuarantine} from './quarantine-path.mjs';
 
 const error=code=>Object.assign(Error(code),{code,status:409});

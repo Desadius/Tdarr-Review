@@ -154,6 +154,17 @@ test('HTTP failed new worker startup keeps the committed generation, stops Recov
  const retry=await f.post('/api/shared-settings/apply',{revision:(await resolved.json()).revision});assert.equal(retry.status,202);assert.equal((await settled(f,(await retry.json()).id)).state,'succeeded');assert.equal((await f.get('/api/recovery/runtime')).state,'running');
 });
 
+test('HTTP failed legacy Review and Radarr saves are audited and return the correction revision; failed tests are not saves',linuxServer,async t=>{
+ const f=await serverHarness();t.after(()=>f.close());await f.start();const cookie=await f.login(),headers={cookie};
+ const failures=async()=>(await (await f.request('/api/shared-settings',{headers})).json()).history.filter(entry=>entry.action==='save'&&entry.result==='failure').length;
+ for(const [route,payload] of [['/api/settings',{config:{label:'x'.repeat(5000)}}],['/api/radarr/settings',{url:'synthetic-not-a-url',apiKey:'synthetic-failed-key',mediaRoot:'/radarr'}]]){
+  const before=await failures(),stale=await f.request(route,{method:'POST',headers,body:{revision:'stale-revision',...payload}});
+  assert.equal(stale.status,409,route);const failed=await stale.json();assert.equal(failed.code,'settings_conflict',route);assert.equal(typeof failed.revision,'string',route);assert.equal(await failures(),before+1,route);
+  const test=await f.request(route+'/test',{method:'POST',headers,body:{revision:'stale-revision'}});assert.equal(test.status,409,route);const refused=await test.json();assert.match(refused.code,/^settings_/,route);assert.equal(refused.revision,undefined,route);assert.equal(await failures(),before+1,route);
+  assert.equal(JSON.stringify(await (await f.request('/api/shared-settings',{headers})).json()).includes('synthetic-failed-key'),false);
+ }
+});
+
 test('HTTP legacy Review and Radarr saves stage the same draft without activating a connection',linuxServer,async t=>{
  const f=await serverHarness();t.after(()=>f.close());await f.start();const cookie=await f.login(),headers={cookie};
  const old=await (await f.request('/api/settings',{headers})).json();
