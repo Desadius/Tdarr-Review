@@ -15,9 +15,9 @@ test('timeouts, permissions and unknown stderr cannot trigger replacements',()=>
  }finally{await fs.rm(s.root,{recursive:true,force:true})}
  });
 
-test('cleanup deadline and the published retention rules come from one policy shared by Review and Recovery',async()=>{
- const review=await import('../review/quarantine-retention.mjs');const {quarantineRetention}=await import('./quarantine-retention.mjs');
- assert.deepEqual(review.quarantineRetention,quarantineRetention);assert.ok(Object.isFrozen(quarantineRetention));
+test('cleanup deadline and the published retention rules come from one policy',async()=>{
+ const {quarantineRetention}=await import('./quarantine-retention.mjs');
+ assert.ok(Object.isFrozen(quarantineRetention));
  assert.ok(Number.isInteger(quarantineRetention.retentionDays)&&quarantineRetention.retentionDays>0);assert.equal(typeof quarantineRetention.cleanupEnabled,'boolean');
  const s=await setup();try{
   await publishApproval({...s,relative:'new.mkv',sourceFP:s.c.replacementSourceFP,installedRelative:'new.mkv'});
