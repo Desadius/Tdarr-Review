@@ -139,6 +139,8 @@ Off remains off throughout this protocol. Requests exist only in supervisor memo
 
 Up to 1.11.0 Recovery ran in its own container with its own `/data`, the media parent at `/storage` and read-only `/review` and `/reports`. Since 2.0.0 it shares the Review container, its user (UID 99:100) and Review's mappings; there is no separate Recovery image or Compose service. Its data root is `/data/recovery/` (`config.json`, `state.json`, the private `pending-approvals.json` and caches). Recovery may write only there, to the shared status file `.tdarr-recovery-status.json` in the parent of its media root, to the original-language cache, to quarantine and through the library operations it already performs; never to `/review` or elsewhere in `/data`. With the container boundary gone, this is a convention guarded by tests, not by mounts ([ADR 0001](adr/0001-recovery-runs-inside-review.md)).
 
+Review imports the modules it shares with Recovery straight from `recovery/` (for example `file-identity.mjs`, `download-queue.mjs`, `quarantine-retention.mjs` and the Tdarr handoff `replacement-handoff.mjs`) instead of keeping copies. The image installs Review at `/review-app/` and Recovery at `/recovery/`, so a `../recovery/` import resolves the same way in the repository and in the container.
+
 Frozen approval evidence is never rewritten to fit the new defaults. An installation migrated from the separate container keeps its frozen `/storage` roots by mapping `/storage` to the same host folder as `/media`, so Review and Recovery still address the same files and status file ([2.0 migration](MIGRATE-TO-2.0.md)).
 
 ### Recovery runtime state file
