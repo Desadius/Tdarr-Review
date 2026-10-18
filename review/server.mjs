@@ -5,7 +5,7 @@ import {publishApproval} from './quarantine-retention.mjs';
 import {extractListeningAudio} from './audio-listen.mjs';
 import {assessment} from './assessment.mjs';
 import {extractAudio,alignment} from './audio-compare.mjs';
-import {remountOnly,unreadableIdentity,durationException} from './recheck.mjs';
+import {identityChange,unreadableIdentity,durationException} from './recheck.mjs';
 import {defaults,validate,mapReview} from './config.mjs';
 import {extractFrame} from './frames.mjs';
 import {lowPriorityCommand} from './low-priority.mjs';
@@ -299,30 +299,43 @@ async function scan(force=false,recheckId=null,owner=null){
         const a=await safeFile(MEDIA,relative),b=await safeFile(REVIEW,rel);
         item.originalBytes=a.stat.size;item.reviewBytes=b.stat.size;item.saving=100*(1-b.stat.size/a.stat.size);
         item.snapshot=hash(a.fp+'|'+b.fp);
+        const prior=state.items[id],changed=!!prior&&prior.snapshot!==item.snapshot;
+        // Until this pass succeeds, a changed item is only offered for verification (also when a later check fails).
+        if(changed)item.identityChanged=true;
+        const change=changed?identityChange(prior,a.fp,b.fp):{recheck:null,changes:[]};
+        item.canRecheck=!!change.recheck;item.recheck=change.recheck;
         const job=matchReviewJob(jobs,{
           receipt:mapping.receipt,libraryId:config.libraryId,sourceRoots:config.sourceRoots,
           relative,sourceBytes:a.stat.size,outputBytes:b.stat.size,
         });
         if(b.stat.mtimeMs>Date.now()-120000)throw new Error('Soubor je čerstvě vytvořený. Čekám na dokončení zápisu.');
-        const prior=state.items[id];
-        const changed=prior&&prior.snapshot!==item.snapshot;
         const refreshed=changed&&prior.originalFP===a.fp&&prior.jobId!==job._id;
-        const remounted=changed&&remountOnly(prior,a.fp,b.fp);
-        item.canRecheck=!!remounted;
-        const rechecked=remounted&&recheckId===id;
-        if(changed&&!refreshed&&!rechecked)throw new Error(unreadableIdentity(prior)?'Zaznamenaná identita souboru je nečitelná. Vyžaduje kontrolu.':'Soubory se od zařazení do review změnily. Vyžadují kontrolu.');
+        const rechecked=!refreshed&&!!change.recheck&&recheckId===id;
+        if(changed&&!refreshed&&!rechecked){
+         // The list shows the new snapshot only as a blocked item to verify; no review of it is offered.
+         item.identityChanged=true;
+         throw new Error(unreadableIdentity(prior)?'Zaznamenaná identita souboru je nečitelná. Vyžaduje kontrolu.':change.recheck==='verify'?'Změnil se jen čas změny metadat souboru (ctime). Shodu obsahu nelze prokázat: ověř soubory a posuď film znovu od začátku.':'Soubory se od zařazení do review změnily. Vyžadují kontrolu.');
+        }
         let info=(refreshed||rechecked)?null:prior?.info;
         if(info?.evidenceVersion!==1||typeof info.reviewRequirements?.hdr!=='boolean')info=null;
         if(!info){const pa=await probe(FFPROBE,a.path),pb=await probe(FFPROBE,b.path);info={...inspect(pa,pb),reviewRequirements:reviewRequirements(pa,pb)}}
+        if(rechecked){
+         // Verification: the same Tdarr job binding (matched above), unchanged technical metadata and
+         // identities that stayed stable while probing. It never claims equal content.
+         if(change.recheck==='verify'&&(prior.jobId!==job._id||JSON.stringify(info)!==JSON.stringify(prior.info))){item.identityChanged=true;throw new Error('Technické údaje nebo úloha Tdarr se od zařazení změnily; nové posouzení nelze založit.')}
+         const [a2,b2]=[await safeFile(MEDIA,relative),await safeFile(REVIEW,rel)];
+         if(a2.fp!==a.fp||b2.fp!==b.fp){item.identityChanged=true;throw new Error('Soubor se během ověření změnil. Vyžaduje kontrolu.')}
+         logEvent('item.reverified',{id,title:item.title,previousSnapshot:prior.snapshot,snapshot:item.snapshot,changes:change.changes});
+        }
         Object.assign(item,info);
         item.canApproveDuration=durationException(info)&&b.stat.size<a.stat.size;
         if(info.durationMismatch){item.status='blocked';item.reason='Rozdílná délka — vyžaduje zvláštní kontrolu, automatické schválení je zablokované.'}
         else if(b.stat.size>=a.stat.size){item.status='blocked';item.reason='Výsledek není menší než originál.'}
         else item.reason=`Úspora ${item.saving.toFixed(1)} %; rozdíl délky ${(info.durationB-info.durationA).toFixed(3)} s. ${item.saving>75?'Výrazné zmenšení: porovnej detaily obrazu, zrno a tmavé scény.':'Před schválením posuď obraz a zvuk při přehrávání.'}`;
-        item.jobId=job._id;
+        item.jobId=job._id;delete item.identityChanged;item.canRecheck=false;item.recheck=null;
         const samples=prior?.snapshot===item.snapshot?(prior.audioSamples||[]):[];
         item.assessment=assessment(item,info,{job:true,health:await jobHealth(job),samples});
-        state.items[id]={snapshot:item.snapshot,info,originalFP:a.fp,reviewFP:b.fp,relative,outputRelative,reviewRelative:rel,jobId:job._id,audioSamples:samples};
+        state.items[id]={snapshot:item.snapshot,info,originalFP:a.fp,reviewFP:b.fp,relative,outputRelative,reviewRelative:rel,jobId:job._id,audioSamples:samples,...(rechecked?{reverified:{at:new Date().toISOString(),previousSnapshot:prior.snapshot,changes:change.changes}}:prior?.snapshot===item.snapshot&&prior.reverified?{reverified:prior.reverified}:{})};
       }catch(e){item.status='blocked';item.reason=e.message}
       if(!item.assessment)item.assessment=assessment(item,null);
       list.push(item);

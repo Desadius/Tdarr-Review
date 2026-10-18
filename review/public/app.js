@@ -186,9 +186,19 @@ function renderHistory(){
 }
 function guardedButton(item,cap,text,fn,cls='secondary'){const b=button(text,()=>{if(!caps(item)[cap]){error(Error(caps(item).reason||'Akce není dostupná.'));return}fn()},cls);b.dataset.cap=cap;b.disabled=!caps(item)[cap];return b}
 
+async function recheckItem(item){try{writeItem(item,'recheck');actionInFlight=true;updateGuards();await api(`/api/items/${item.id}/recheck`,{snapshot:item.snapshot});lastRender='';await load()}catch(e){error(e)}finally{actionInFlight=false;updateGuards()}}
+// Files that changed since queueing get a verification step instead of a review: old checks never apply to them.
+function changedFilesView(item){
+ const box=el('div','changed-files');box.append(el('h3','','Soubory se od zařazení změnily'),el('p','alert inline-warning',item.reason||'Soubory se od zařazení do review změnily. Vyžadují kontrolu.'),el('p','','Posouzení změněných souborů není k dispozici. Dosavadní potvrzení a rozhodnutí se na ně nevztahují.'));
+ if(item.recheck==='verify')box.append(el('p','details','Ověření zkontroluje vazbu na úlohu Tdarr, technické údaje z FFprobe a to, že se soubory během ověření nezmění. Shodu obsahu neprokazuje: po úspěchu začne nové posouzení od prvního kroku.'),guardedButton(item,'recheck','Ověřit soubory a začít nové posouzení',()=>recheckItem(item),'primary'));
+ else if(item.recheck==='remount')box.append(el('p','details','Změnilo se jen zařízení (například po připojení disku). Ověření porovná ostatní údaje souborů.'),guardedButton(item,'recheck','Znovu ověřit soubory',()=>recheckItem(item)));
+ else box.append(el('p','details','Tuto změnu nelze ověřit automaticky (změnila se velikost, obsah nebo umístění souboru). Oba soubory zůstávají zachované; zkontroluj je ručně podle docs/OPERATIONS.md.'));
+ return box;
+}
 function detailReview(item,tab){
  const box=$('detailBody');
  if(tab==='review'){
+  if(item.identityChanged){box.replaceChildren(changedFilesView(item));return}
   if(reviewWorkspace)return;
   reviewWorkspace=mountReviewWorkflow(box,item,{api,tr,formatBytes:fmt,openComparison,openAudioComparison,preparation:latest?.previews?.[item.id],
    canWrite:()=>{const current=latest?.items.find(x=>x.id===item.id);return !!current&&current.snapshot===item.snapshot&&!caps(current).writeBlocked},
@@ -215,7 +225,7 @@ function detailReview(item,tab){
   box.append(el('h3','','Doložené kontroly'));
   if(item.assessment){const x=item.assessment;box.append(el('p','',`Technická shoda ${x.score}/${x.maximum} bodů · ${x.verdict}`),el('p','details',x.note));for(const marker of x.markers||[]){const row=el('div','check-row');row.append(badge(marker.status==='pass'?'Doloženo':marker.status==='fail'?'Odchylka':'Neověřeno',marker.status==='pass'?'ready':'warning'),el('strong','',marker.label),el('p','details',marker.detail));box.append(row)}}
   const paths=el('details','help');paths.append(el('summary','','Identita a cesty souborů'),detailsFacts([['Review ID',item.id,true],['Úloha Tdarr',item.jobId||tr('Nedoloženo'),true],['Originál',item.relative||tr('Nedoloženo'),true],['Výsledek',item.reviewRelative||tr('Nedoloženo'),true],['Snapshot',item.snapshot||tr('Chybí'),true]]));box.append(paths,el('p','details','Před zápisem server znovu ověří snapshot a soubory. Health check z Tdarru se při schválení neopakuje.'));
-  if(item.canRecheck)box.append(guardedButton(item,'recheck','Znovu ověřit soubory',async()=>{try{writeItem(item,'recheck');actionInFlight=true;updateGuards();await api(`/api/items/${item.id}/recheck`,{snapshot:item.snapshot});lastRender='';await load()}catch(e){error(e)}finally{actionInFlight=false;updateGuards()}}));
+  if(item.canRecheck)box.append(guardedButton(item,'recheck',item.recheck==='verify'?'Ověřit soubory a začít nové posouzení':'Znovu ověřit soubory',()=>recheckItem(item)));
  }
 }
 function detailRequest(r,tab){
