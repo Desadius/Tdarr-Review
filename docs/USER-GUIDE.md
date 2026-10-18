@@ -92,6 +92,8 @@ If a film is blocked by one of these rules, check the Tdarr flow and plugin sett
 
 ## Approve
 
+While a film is being replaced (alone or in a batch), you can keep reviewing other films: open them, compare picture and sound and save your checks, notes and approvals. The film being replaced, and films still waiting in the batch, show that they are locked until their replacement finishes. Further replacements, rejections and batches still wait until the running one ends.
+
 Decision offers two separate actions:
 
 - **Approve** (**Schválit**) records your decision for exactly this pair of files and this saved review, and returns to the overview. Nothing is copied, moved or deleted and no replacement is scheduled. The film shows **Approved · waiting for replacement** (**Schváleno · čeká na nahrazení**) and survives a restart. Saving the review again or any change of the files makes the approval stale; the film then needs a new decision.

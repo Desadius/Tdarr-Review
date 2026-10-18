@@ -220,9 +220,11 @@ function detailReview(item,tab){
  const box=$('detailBody');
  if(tab==='review'){
   if(item.identityChanged){box.replaceChildren(changedFilesView(item));return}
+  // The film being replaced (or waiting in the running batch) offers no review until its operation ends.
+  if(caps(item).inOperation){reviewWorkspace?.destroy();reviewWorkspace=null;const busy=el('div','changed-files');busy.append(el('h3','','Film se právě nahrazuje'),el('p','alert inline-warning','Tento film se právě nahrazuje nebo čeká v dávce. Posoudit ho půjde až po dokončení.'),el('p','details','Průběh je vidět v přehledu. Mezitím můžeš posuzovat jiné filmy.'));box.replaceChildren(busy);return}
   if(reviewWorkspace)return;
   reviewWorkspace=mountReviewWorkflow(box,item,{api,tr,formatBytes:fmt,openComparison,openAudioComparison,preparation:latest?.previews?.[item.id],
-   canWrite:()=>{const current=latest?.items.find(x=>x.id===item.id);return !!current&&current.snapshot===item.snapshot&&!caps(current).writeBlocked},
+   canWrite:()=>{const current=latest?.items.find(x=>x.id===item.id);return !!current&&current.snapshot===item.snapshot&&!caps(current).reviewWriteBlocked},
    canApprove:()=>{const current=latest?.items.find(x=>x.id===item.id);return !!current&&current.snapshot===item.snapshot&&caps(current).approve},
    canApproveOnly:()=>{const current=latest?.items.find(x=>x.id===item.id);return !!current&&current.snapshot===item.snapshot&&caps(current).approveOnly},
    isApproved:()=>!!latest?.approvals?.[item.id],
