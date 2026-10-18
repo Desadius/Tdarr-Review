@@ -51,7 +51,7 @@ export function createCachedPreviewLoader({load,readPreparation,current,onReady,
 }
 
 /** A saved session records manual observations; opening or playing a preview never confirms a check. */
-export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openAudioComparison,onSession=()=>{},onPreparation=()=>{},preparation=null,onApprove=()=>{},onReject=()=>{},onDeferred=()=>{},canApprove=()=>false,tr=x=>x,formatBytes=x=>String(x)}={}){
+export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openAudioComparison,onSession=()=>{},onPreparation=()=>{},preparation=null,onApprove=()=>{},onApproveOnly=()=>{},onReject=()=>{},onDeferred=()=>{},canApprove=()=>false,canApproveOnly=()=>false,isApproved=()=>false,tr=x=>x,formatBytes=x=>String(x)}={}){
  const make=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=tr(text);return n};
  const button=(text,fn,cls='secondary')=>{const n=make('button',cls,text);n.type='button';n.onclick=fn;return n};
  let dead=false,loaded=false,saving=false,conflict=false,stale=false,revision=0,session=null,baseline=null,complete=false,tracks=null,toolCleanups=[],metadataLoading=false,hdrRequired=false,observations={},scopeValid=true,explainingSave=false;
@@ -92,6 +92,7 @@ export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openA
   if(explainingSave)renderSaveReasons();
   for(const n of root.querySelectorAll('[data-preview-control]'))n.disabled=!allowed()||n.dataset.previewBusy==='true'||n.dataset.previewInvalid==='true';
   const approve=root.querySelector('[data-workflow-approve]');if(approve)approve.disabled=!allowed()||!complete||sessionDirty()||!canApprove();
+  const only=root.querySelector('[data-workflow-approve-only]');if(only){const done=isApproved();only.disabled=done||!allowed()||!complete||sessionDirty()||!canApproveOnly();only.textContent=tr(done?'Schváleno · čeká na nahrazení':'Schválit')}
  }
  function showWarning(message,reload=false){explainingSave=false;warning.replaceChildren(make('p','',message));if(reload)warning.append(button('Načíst uložený stav',()=>loadSession(false)));warning.hidden=false;refreshGuard()}
  function applyRecord(record,{render=true}={}){
@@ -218,7 +219,9 @@ export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openA
   }else{
    tools.append(make('p','',complete&&!sessionDirty()?'Všechny kontroly jsou potvrzené a uložené. Můžeš rozhodnout o výsledku.':'Nejprve ulož dokončené posouzení.'),make('p','details',tr('Způsob posouzení:')+' '+tr(session.method==='review'?'Nástroje v Review':'Vlastní přehrávač / TV')+(session.device?' · '+session.device:'')));
    const summary=make('ul','workflow-summary');for(const [i,[label]]of STEPS.slice(0,4).entries())summary.append(make('li','',tr(label)+' · '+tr(stepChecks(i).every(key=>session.checks[key])?'Potvrzeno':'Neověřeno')));if(hdrRequired)summary.append(make('li','','HDR/Dolby Vision · '+(session.checks.hdr?tr('Potvrzeno'):tr('Neověřeno'))));for(const [key,label]of [['syncStart','Začátek filmu'],['syncMiddle','Střed filmu'],['syncEnd','Konec filmu']])summary.append(make('li','',tr(label)+' · '+observationText(key)));tools.append(summary);checks.hidden=true;
-   const approve=button(item.canApproveDuration?'Posoudit rozdíl délky':'Schválit a nahradit',onApprove,'primary');approve.dataset.workflowApprove='';tools.append(approve);
+   // Two separate decisions: approve only (no file is touched) or approve and replace now.
+   if(!item.canApproveDuration){const only=button('Schválit',()=>onApproveOnly(revision),'primary');only.dataset.workflowApproveOnly='';tools.append(make('p','details','Schválit uloží rozhodnutí bez nahrazení: oba soubory zůstanou beze změny a film počká na hromadné nahrazení schválených filmů. Schválit a nahradit spustí nahrazení hned po potvrzení.'),only)}
+   const approve=button(item.canApproveDuration?'Posoudit rozdíl délky':'Schválit a nahradit',onApprove,item.canApproveDuration?'primary':'secondary');approve.dataset.workflowApprove='';tools.append(approve);
   }
   main.append(tools,checks);
   const note=make('textarea');note.rows=3;note.maxLength=2000;note.value=session.note;markWrite(note);note.placeholder=tr('Co jsi zjistil nebo co zbývá ověřit?');note.oninput=()=>{session.note=note.value;cache();updateSaveButton()};main.append(field('Poznámka k posouzení',note));

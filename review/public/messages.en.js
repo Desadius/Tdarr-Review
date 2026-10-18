@@ -316,6 +316,12 @@ export default {
     "K posouzení": "Ready to review",
     "Zvláštní kontrola": "Extra checks",
     "Filmy k posouzení": "Films to review",
+    "Schváleno · čeká na nahrazení": "Approved · waiting for replacement",
+    "Posouzení je dokončené, ale film ještě není schválený. Otevři ho a v kroku Rozhodnutí zvol Schválit.": "The review is complete, but the film is not approved yet. Open it and choose Approve in the Decision step.",
+    "Film nyní nelze vybrat k hromadnému nahrazení.": "This film cannot be selected for batch replacement right now.",
+    "Schválit uloží rozhodnutí bez nahrazení: oba soubory zůstanou beze změny a film počká na hromadné nahrazení schválených filmů. Schválit a nahradit spustí nahrazení hned po potvrzení.": "Approve records the decision without replacing anything: both files stay unchanged and the film waits for a batch replacement of approved films. Approve and replace starts the replacement right after confirmation.",
+    "HROMADNÉ NAHRAZENÍ": "BATCH REPLACEMENT",
+    "Schválit": "Approve",
     "Posouzení rozpracováno": "Review in progress",
     "Posouzení dokončeno": "Review completed",
     "Rozdíl délky · schválení jednotlivě": "Duration difference · approve individually",
@@ -1063,6 +1069,10 @@ export default {
     "Uchování ukázek od vytvoření (dny)": "Sample retention from creation (days)"
   },
   "patterns": [
+    ["Výběr slouží k hromadnému nahrazení schválených filmů. Lze vybrat: {0} z {1}.", "Selection is for batch replacement of approved films. Selectable: {0} of {1}."],
+    ["Nahradit vybrané schválené filmy ({0})", "Replace selected approved films ({0})"],
+    ["Nahradit {0} schválených filmů?", "Replace {0} approved films?"],
+    ["Nahradit {0} filmů", "Replace {0} films"],
     ["Výběr slouží k hromadnému schválení dokončených posouzení. Lze vybrat: {0} z {1}.", "Selection is for batch approval of completed reviews. Selectable: {0} of {1}."],
     ["Nedokončené výměny vyžadují ruční kontrolu ({0})", "Unfinished exchanges need manual inspection ({0})"],
     ["Otevřít film {0}", "Open film {0}", {"raw": [0]}],

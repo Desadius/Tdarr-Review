@@ -60,7 +60,7 @@ test('HTTP approval is excluded during interactive preview and its failure relea
 for(const state of ['pauses','recovery'])test(`HTTP ${state} blocks media mutation while safe configuration stays available`,linux,async()=>{
  const f=await fixture({[state]:true});try{
   const item=(await f.items()).items[0];
-  for(const action of ['approve','reject','replace','recheck','review-session'])assert.equal((await f.post(`/api/items/${item.id}/${action}`,{snapshot:item.snapshot,reviewRevision:0,reason:'Synthetic reason'})).status,409,action);
+  for(const action of ['approve','reject','replace','recheck','review-session','approval'])assert.equal((await f.post(`/api/items/${item.id}/${action}`,{snapshot:item.snapshot,reviewRevision:0,reason:'Synthetic reason'})).status,409,action);
   assert.equal((await f.post('/api/approve-batch',{items:[item]})).status,409);assert.equal((await f.post(`/api/radarr/requests/${'f'.repeat(24)}/restore`,{confirm:true})).status,409);
   const settings=await f.get('/api/settings');assert.equal((await f.post('/api/settings/test',settings)).status,409);assert.equal((await f.post('/api/settings',settings)).status,409);
   const cacheSettings=await f.get('/api/preview-settings');assert.equal((await f.post('/api/preview-settings',cacheSettings)).status,200);
