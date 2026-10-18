@@ -66,7 +66,7 @@ Every module and stylesheet URL is written as `?v=__APP_VERSION__`; the static r
 
 | Action | Additional blockers beyond foreground work | Deliberate allowance |
 | --- | --- | --- |
-| Approve, reject, batch, Radarr replacement | Unresolved replacement recovery and owned node pauses | Join an existing scan for fresh preflight; the request keeps its foreground reservation while waiting. |
+| Approve, reject, batch, Radarr replacement | Unresolved replacement recovery and owned node pauses | Join an existing scan for fresh preflight; the request keeps its foreground reservation while waiting. An approval confirmed while another replacement or batch runs is queued instead of refused (`state.replacementQueue`, one entry per film): when nothing else replaces media, the queue starts each entry from a fresh scan under a foreground reservation, and `perform` checks its snapshot and review revision again. Queued entries never run by themselves after a restart; they become `queueInterrupted` and need a new confirmation. |
 | Quarantine restore, recheck | Scan, unresolved recovery and owned pauses | None. These change media bindings and must start from idle state. |
 | Main settings save/test | Scan, statistics calculation, unresolved recovery and owned pauses | None. These may change the media/API configuration used by those operations. |
 | Radarr settings save/test, preview cache settings | Scan | Remain available during unresolved recovery/owned pauses because they cannot replace media or resume Tdarr dispatch. |

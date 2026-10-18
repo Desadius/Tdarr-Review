@@ -22,7 +22,7 @@ test('all mutation policies exclude foreground work and a running node resume',(
   // (that is when a node the user paused would be resumed), never during a resume.
   // Reviews and previews of other films continue during a replacement or batch (#155); the
   // routes refuse the film in the operation itself.
-  const operation=['reviewSession','preview'].includes(kind)?[]:['active','batchRunning'];
+  const operation=['reviewSession','preview','approveQueued'].includes(kind)?[]:['active','batchRunning'];
   const flags=kind==='keepPaused'?['foreground','resumeTask']:['foreground',...operation,'resumeTask','previewBusy','settingsBusy'];
   for(const flag of ['active','batchRunning'])if(!operation.includes(flag)&&kind!=='keepPaused')assert.equal(busyFor(kind,{[flag]:true}),null,`${kind} continues during ${flag}`);
   for(const flag of flags)assert.equal(busyFor(kind,{[flag]:true}),flag,`${kind}: ${flag}`);

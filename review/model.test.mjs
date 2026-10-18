@@ -67,7 +67,7 @@ test('every global blocker disables all file/evidence writes including restore',
   for(const delta of states) {
     const caps=capabilities({...ready,canRecheck:true},{...clear,...delta},context);
     // A running replacement keeps comparisons and review writes of other films available (#155).
-    for(const name of writes) if(!(operation.has(JSON.stringify(delta))&&['compareImage','compareAudio'].includes(name)&&delta.restorePending===undefined)) assert.equal(caps[name],false,`${name}: ${JSON.stringify(delta)}`);
+    for(const name of writes) if(!(operation.has(JSON.stringify(delta))&&['compareImage','compareAudio','approve'].includes(name)&&delta.restorePending===undefined)) assert.equal(caps[name],false,`${name}: ${JSON.stringify(delta)}`);
     assert.equal(capabilities(restore,{...clear,...delta},context).restore,false);
     assert.ok(caps.reason);
   }
@@ -378,7 +378,10 @@ test('during a replacement other films stay reviewable while the film in the ope
   const other={...ready,canRecheck:true},running={...clear,active:{id:'f'.repeat(24)},restorePending:1};
   const caps=capabilities(other,running,context);
   assert.deepEqual([caps.compareImage,caps.compareAudio,caps.reviewWriteBlocked],[true,true,false],'other film');
-  for(const name of ['approve','approveBatch','reject','replace','recheck']) assert.equal(caps[name],false,name);
+  for(const name of ['approveBatch','reject','replace','recheck']) assert.equal(caps[name],false,name);
+  assert.deepEqual([caps.approve,caps.queueApprove],[true,true],'a confirmed replacement of another film is queued');
+  const waiting=capabilities(other,{...running,replacementQueue:[{id:ready.id}]},context);
+  assert.deepEqual([waiting.queued,waiting.reviewWriteBlocked,waiting.approve,waiting.reviewReason],[true,true,false,'Film čeká ve frontě na nahrazení.'],'a queued film is locked');
   const own=capabilities({...ready,id:'f'.repeat(24)},running,context);
   assert.deepEqual([own.compareImage,own.reviewWriteBlocked,own.reviewReason],[false,true,'Film se právě nahrazuje nebo čeká v dávce.']);
   const queued=capabilities(other,{...clear,batch:{status:'running',remaining:[{id:ready.id}]}},context);
