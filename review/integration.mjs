@@ -109,9 +109,10 @@ try{
   assert.equal(done.history[0].status,'success',JSON.stringify(done));assert.equal(done.history[0].action,'approve');assert.equal(done.history[0].warning,undefined);
   await assert.rejects(fs.stat(review),{code:'ENOENT'});assert.equal(await sha256(original),reviewHash);assert.deepEqual(changes,[true,false]);
 
-  // Exactly one batch wins; unrelated approve/reject calls stay excluded.
+  // Exactly one batch wins; a film in the running batch and rejections stay excluded.
+  // (Approving another film meanwhile queues it: review/replacement-queue-http.test.mjs.)
   const batches=await Promise.all([batch([a,b]),batch([a,b])]);assert.deepEqual(batches.map(r=>r.status).sort(),[202,409]);
-  assert.equal((await single(guardA)).status,409);assert.equal((await single(blocked,'reject')).status,409);
+  const inBatch=await single(b);assert.equal(inBatch.status,409);assert.equal((await inBatch.json()).code,'item_in_operation');assert.equal((await single(blocked,'reject')).status,409);
   done=await waitFor(s=>!s.active&&!s.batchRunning&&s.batch?.status==='complete'&&s.history.length===3);
   assert.equal(done.batch.total,2);assert.equal(done.batch.finished,2);assert.equal(done.batch.failed,0);assert.deepEqual(done.batch.remaining,[]);
   assert.deepEqual(done.batch.results.map(r=>[r.title,r.status]),[['Batch A','success'],['Batch B','success']]);
