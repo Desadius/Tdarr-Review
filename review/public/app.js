@@ -140,6 +140,15 @@ function reviewRow(item){
  const metric=el('div','row-metric');metric.append(el('strong','saved',fmt(item.originalBytes-item.reviewBytes)),el('span','details',`${fmt(item.originalBytes)} → ${fmt(item.reviewBytes)}`));
  const inspect=button('Posoudit',()=>openDetail('review',item.id),'primary');inspect.dataset.focus='inspect:'+item.id;inspect.setAttribute('aria-label',tr('Posoudit '+item.title));row.append(pick,poster('review',item.id,item.title),info,metric,inspect);return row;
 }
+const TX_PHASES={preparing:'Příprava kopie','syncing-copy':'Zápis kopie','verifying-copy':'Ověření kopie',ready:'Kopie ověřena','original-backed-up':'Originál přesunut do zálohy','original-removed':'Originál uvolněn z místa',installed:'Výsledek nainstalován',unknown:'Neznámá fáze'};
+const TX_REASONS={'invalid-identity':'Zaznamenaná identita souboru je nečitelná; nic nebylo přesunuto.','invalid-paths':'Záznam výměny obsahuje neplatné cesty.',unreadable:'Záznam výměny nelze přečíst ani ověřit.','needs-inspection':'Originál nelze prokazatelně vrátit automaticky: záloha nebo soubory se změnily, nebo výměna pokročila za bod návratu.'};
+// Read-only: unresolved exchange transactions are inspected by hand (docs/OPERATIONS.md); Review offers no action on them.
+function renderTransactions(){
+ const list=Array.isArray(latest?.recovery)?latest.recovery.filter(t=>t&&typeof t==='object'):[],box=$('transactions');box.hidden=!list.length;if(!list.length){box.replaceChildren();return}
+ const title=el('h2','',list.length===1?'Nedokončená výměna vyžaduje ruční kontrolu':`Nedokončené výměny vyžadují ruční kontrolu (${list.length})`);title.id='transactionsTitle';
+ const rows=el('ul','transaction-list');for(const t of list){const li=el('li'),film=latest.items.find(x=>x.id===t.itemId);li.append(el('strong','',t.title||'Film nelze určit',!!t.title),el('span','details',tr('Fáze')+': '+tr(TX_PHASES[t.phase]||TX_PHASES.unknown),true),el('p','',TX_REASONS[t.reason]||TX_REASONS.unreadable),el('span','details',tr('Záznam výměny')+': '+(t.journal||'—'),true));if(film){const open=button('Otevřít film',()=>openDetail('review',film.id));open.setAttribute('aria-label',tr('Otevřít film '+film.title));li.append(open)}rows.append(li)}
+ box.replaceChildren(title,el('p','','Schválení, zamítnutí a dávky jsou zablokované, dokud záznam výměny ručně neprověříš. Review tu nic neopravuje ani nemaže; oba soubory a záznam zůstávají zachované.'),rows,el('p','details','Postup kontroly: docs/OPERATIONS.md, oddíl „Unresolved exchange transaction“.'));
+}
 function renderAttention(){
  const items=filteredItems();$('readyCount').textContent=tr((latest?.items||[]).filter(x=>x.status==='ready').length);$('blockedCount').textContent=tr((latest?.items||[]).filter(x=>x.status!=='ready').length);
  $('saving').textContent=tr(fmt((latest?.items||[]).filter(x=>x.status==='ready').reduce((s,x)=>s+x.originalBytes-x.reviewBytes,0)));
@@ -149,7 +158,7 @@ function renderAttention(){
  $('events').hidden=!warnings.length&&!attention.length;
  const events=[];if(warnings.length)events.push({kind:'history',count:warnings.length});if(attention.length)events.push({kind:'recovery',count:attention.length});
  keyed($('events'),events,x=>x.kind,x=>{const row=el('div'),b=button(x.kind==='history'?'Historie':'Obnovy',()=>navigate(x.kind,{filter:x.kind==='history'?'warning':'attention'}));b.dataset.focus='event:'+x.kind;row.append(el('span','',x.kind==='history'?`${x.count} upozornění v historii`:`${x.count} obnov k ověření`),b);return row});
- updateSelection();
+ renderTransactions();updateSelection();
 }
 function recoveryRow(projected){
  const r=projected.record||projected.raw||projected,cl=projected.classification||classifyRecovery(r,Date.now()),row=el('article','recovery-row'),info=el('div','row-info');

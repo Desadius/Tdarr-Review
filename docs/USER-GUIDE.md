@@ -68,6 +68,8 @@ Technical data still shows the evidence score: job matching (10), proven full Td
 
 ## Why a film is blocked
 
+If a replacement was interrupted and Review cannot prove that it is safe to roll back, **Attention** shows a panel "An unfinished exchange needs manual inspection" with the film, the phase and the reason. Approvals, rejections and batches stay blocked until the exchange record is inspected by hand ([Operations](OPERATIONS.md#unresolved-exchange-transaction)). The panel offers no repair action.
+
 Review only offers approval for a result produced by one of the supported transcode profiles. The rules are intentionally strict: a result that does not match them may have lost picture, HDR metadata, audio or subtitles, so the film is shown as blocked and the original stays untouched. The blocked reason names the check that failed.
 
 | Check | Rule | Example message |
