@@ -50,6 +50,8 @@ export default {
     "Vráceno do knihovny:": "Returned to the library:",
     "Po přepnutí na Repair Recovery znovu ověří aktuální stav a automaticky pokračuje.": "After switching to Repair, Recovery revalidates the current state and resumes automatically.",
 
+    "Ověř kompatibilitu dekodéru nebo vyžádej novou výslovně povolenou náhradu. Originál zůstává zachovaný; tento případ nepovoluje automatické nahrazení.": "Check decoder compatibility or request a newly and explicitly authorized replacement. The original remains preserved; this case grants no automatic replacement authority.",
+    "Chybí přesná historie vydání. Zachovej originál a zkontroluj údaje v Radarru; případná náhrada potřebuje nové výslovné oprávnění.": "Exact release history is missing. Preserve the original and inspect the Radarr records; any replacement needs new explicit authorization.",
     "Restart nebo aktualizace kontejneru s Review přeruší Recovery. Počkej na dokončení kontroly originálu nebo změn prováděných Recovery. Přerušená kontrola není důkazem poškození.": "Restarting or updating the container running Review interrupts Recovery. Wait for the original check or changes made by Recovery to finish. An interrupted check is not evidence of corruption.",
     "Stav Recovery": "Recovery status",
     "Běží": "Running",

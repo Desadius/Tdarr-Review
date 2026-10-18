@@ -15,7 +15,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
-import {classify,confirmed,relative,bindHistory,bindApprovedImport,blocked,caseId,within} from './policy.mjs';
+import {classify,confirmed,originalFailureReport,fatalMpeg2Input,PREMATURE_EOF,relative,bindHistory,bindApprovedImport,blocked,caseId,within} from './policy.mjs';
 import {readHeader} from './container-header.mjs';
 import {lowPriorityHash} from './full-hash.mjs';
 import {createWorkerControl} from './control.mjs';
@@ -39,6 +39,7 @@ const pendingApprovals=await loadApprovalRegistry({data:DATA,cfg,state}).catch(e
 const isApprovedCase=c=>registryHasApproval(pendingApprovals,c);
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 import {atomicJson as atomic} from './atomic-json.mjs';
+import {hasFiniteTruncation} from './matroska-bounds.mjs';
 import {identityOf} from './file-identity.mjs';
 async function save(){state.updated=new Date().toISOString();await atomic(stateFile,state);}
 async function publishNow(run){try{await run();delete state.statusPublicationError;}catch(e){state.statusPublicationError=e.message;console.error('Recovery status publication: '+e.message);}}
@@ -69,6 +70,7 @@ async function decode(c,pass){
   let result;
   try{result=await runOriginalDecode({ffmpeg:cfg.ffmpeg,file:c.source,headerDamage:c.headerDamage,timeoutMs:cfg.decodeTimeoutHours*3600000,onProgressData:createDecodeProgressParser(measurement=>liveStatus.updateDecode(c,measurement,pass))});}
   finally{await publishNow(()=>liveStatus.finishDecode(c));}
+  if(classify(result).signature===PREMATURE_EOF)result.finiteContainerTruncation=await hasFiniteTruncation(c.source);
   await atomic(path.join(DATA,c.id+'-decode-'+pass+'.json'),result);return result;
 }
 async function idle(c){
@@ -97,7 +99,9 @@ async function readBinding(c){const {movie,target}=await movieFor(c);if(movie.id
 async function repair(c,{reuseConfirmedEvidence=false}={}){
   await idle(c);const before=await safeSource(c.relative);if(before.fp!==c.fp)throw Error('Source changed before verification');
   const {movie,target}=await movieFor(c);
-  c.movieId=movie.id;c.binding=bind(c,movie,await rad('/history/movie?movieId='+movie.id),target);await save();
+  c.movieId=movie.id;
+  try{c.binding=bind(c,movie,await rad('/history/movie?movieId='+movie.id),target);}catch(e){if(c.discoveryKind&&c.discoveryKind!=='structural')e.message+=' Zachovej originál a otevři podrobnosti Recovery; chybějící historii nenahrazuj odhadem. Náhrada vyžaduje nové výslovné oprávnění.';throw e;}
+  await save();
   const frozen= c.status==='deferred_limit'?c.deferredLimit:c.deferredCooldown;
   if(reuseConfirmedEvidence&&JSON.stringify(c.binding)!==JSON.stringify(frozen?.binding))throw Error('Deferred source Radarr binding changed');
   if(c.binding.mode==='exact_title_exclusion')await verifyExclusion(c);
@@ -106,6 +110,13 @@ async function repair(c,{reuseConfirmedEvidence=false}={}){
    hash=await sample(c.source);if(hash!==c.evidence.sampleSHA256||(await safeSource(c.relative)).fp!==c.fp)throw Error('Deferred source changed');
   }else if(isApprovedCase(c)){validatePending(c.approval);hash=await sample(c.source);if((await safeSource(c.relative)).fp!==c.fp)throw Error('Source changed');c.evidence={signature:c.approval.signature,independentChecks:c.approval.checks,sampleSHA256:hash,confirmed:new Date().toISOString()};}else{
   hash=await sample(c.source);const a=await decode(c,1);
+  if(fatalMpeg2Input(a)){
+   await delay(cfg.confirmDelaySeconds*1000);const b=await decode(c,2);
+   if((await safeSource(c.relative)).fp!==c.fp||await sample(c.source)!==hash)throw Error('Source changed or repeated reads differ');
+   c.originalCheckKind=fatalMpeg2Input(b)?'compatibility':'unconfirmed';
+   c.compatibilityChecks={sourceFP:c.fp,checks:[a,b],sampleSHA256:hash};
+   await phase(c,'manual',fatalMpeg2Input(b)?'MPEG-2 se dvakrát nepodařilo dekódovat od začátku. Ověř kompatibilitu dekodéru nebo vyžádej výslovně povolenou náhradu; originál zůstává zachovaný.':'Opakované kontroly nepotvrdily stejnou chybu MPEG-2; originál zůstává zachovaný.');return;
+  }
   if(classify(a).kind!=='corrupt'){
    if(classify(a).kind==='healthy'&&(await sample(c.source)!==hash||(await safeSource(c.relative)).fp!==c.fp))throw Error('Source changed during original decode; clean result does not apply to current source');
    c.originalCheckKind=classify(a).kind;await phase(c,'no_action','Original check: '+classify(a).kind+'; no Radarr action');return;
@@ -275,23 +286,28 @@ async function tick(){
   }
  }
  const jobs=rows('jobsjsondb').filter(j=>j.DB===cfg.libraryId&&j.end&&/error/i.test(j.status)&&j.end>=cfg.since).sort((a,b)=>b.end-a.end);
- const all=rows('jobsjsondb');
- for(const j of jobs){
+ const all=rows('jobsjsondb');let inspected=0;
+ // Persist rotation even for unreadable reports: retention must not starve older jobs.
+ const previous=jobs.findIndex(j=>j._id===state.reportScanCursor),scanJobs=[...jobs.slice(previous+1),...jobs.slice(0,previous+1)];
+ for(const j of scanJobs){
   if(!canStart())return;
   // Reconsider previously unrecognized reports once after extending the
   // decoder allowlist. Never reopen an existing case or a manual decision.
-  if(state.jobs[j._id]&&!['not_structural_decode_error','not_confirmed_decode_error_v2','not_confirmed_decode_error_v3'].includes(state.jobs[j._id]))continue;
+  if(state.jobs[j._id]&&!['not_structural_decode_error','not_confirmed_decode_error_v2','not_confirmed_decode_error_v3','not_confirmed_decode_error_v4'].includes(state.jobs[j._id]))continue;
   if(all.some(k=>k.file===j.file&&k.start>j.start)){state.jobs[j._id]='superseded';continue;}
+  if(inspected++>=100)break;
+  state.reportScanCursor=j._id;
   let report;
   try{report=await fs.readFile(within(cfg.reports,j.job.footprintId+'/'+j.job.fileId),'utf8');}catch{continue;}
-  if(classify({code:1,stderr:report}).kind!=='corrupt'){state.jobs[j._id]='not_confirmed_decode_error_v4';continue;}
+  const discoveryKind=originalFailureReport(report);
+  if(!discoveryKind){state.jobs[j._id]='not_confirmed_decode_error_v5';continue;}
   let c;
   try{
    const rel=relative(j.file,cfg.sourceRoot),s=await safeSource(rel),id=caseId(j.file,s.fp);
    if(Object.values(state.cases).some(c=>c.skipCurrentEdition&&c.file===j.file&&c.preservedSourceFP===s.fp))continue;
    state.jobs[j._id]=id;
    if(state.cases[id])continue;
-   c=state.cases[id]={id,jobId:j._id,file:j.file,relative:rel,source:s.p,size:s.size,fp:s.fp,created:new Date().toISOString()};
+   c=state.cases[id]={id,discoveryKind,jobId:j._id,file:j.file,relative:rel,source:s.p,size:s.size,fp:s.fp,created:new Date().toISOString()};
    await phase(c,'candidate','Tdarr decoder error candidate');await repair(c);
   }catch(e){if(c)await phase(c,'manual',e.message);else state.jobs[j._id]='manual: '+e.message;}
   await save();return; // One heavy original check at a time.
