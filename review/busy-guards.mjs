@@ -54,6 +54,7 @@ export function mutationKind(method,pathname){
  if(pathname==='/api/approve-batch')return 'batch';
  if(pathname==='/api/node-restores/keep')return 'keepPaused';
  if(/^\/api\/radarr\/requests\/[a-f0-9]{24}\/restore$/.test(pathname))return 'restore';
- const action=/^\/api\/items\/[a-f0-9]{24}\/(approve|reject|replace|recheck|review-session)$/.exec(pathname)?.[1];
- return action==='review-session'?'reviewSession':action||null;
+ const action=/^\/api\/items\/[a-f0-9]{24}\/(approve|reject|replace|recheck|review-session|approval)$/.exec(pathname)?.[1];
+ // Approval without replacement writes review state only, like a saved review.
+ return action==='review-session'||action==='approval'?'reviewSession':action||null;
 }
