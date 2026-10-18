@@ -315,6 +315,8 @@ export default {
     "Vybrat ": "Select ",
     "K posouzení": "Ready to review",
     "Zvláštní kontrola": "Extra checks",
+    "Kontroly a rozhodnutí": "Checks and decision",
+    "Soustředit se na obraz": "Focus on the picture",
     "Schváleno · čeká na nahrazení": "Approved · waiting for replacement",
     "Posouzení je dokončené, ale film ještě není schválený. Otevři ho a v kroku Rozhodnutí zvol Schválit.": "The review is complete, but the film is not approved yet. Open it and choose Approve in the Decision step.",
     "Film nyní nelze vybrat k hromadnému nahrazení.": "This film cannot be selected for batch replacement right now.",

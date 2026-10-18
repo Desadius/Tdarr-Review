@@ -1,0 +1,1 @@
+- Kino layout: the checks, note and decision buttons sit in a panel beside the comparison on wide windows. **Checks and decision** opens or closes it and **Focus on the picture** hides it together with helper texts; neither changes the review. Narrow windows are unchanged. English and Czech.

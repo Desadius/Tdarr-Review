@@ -24,6 +24,8 @@ In **Attention** (**Pozornost**), choose **Review** (**Posoudit**). The **Review
 
 On a window at least 1200 CSS px wide the workspace uses the Kino layout: it fills the window, the five steps form a bar at the top and the comparison takes most of the height, with its time controls directly below. On a narrower window or at high browser zoom the compact layout with the step list is used. Switching between them only changes the layout; drafts, checks and the saved review are kept.
 
+In the Kino layout the checks, the note and the decision buttons are in a panel beside the comparison. **Checks and decision** (**Kontroly a rozhodnutí**) opens or closes it, and **Focus on the picture** (**Soustředit se na obraz**) hides the panel and helper texts so the comparison gets more height. Both only change the layout and stay as you left them when you open another film; nothing is saved or confirmed by them. On narrower windows the panel stays below the comparison as before.
+
 Ready status means the implemented matching and metadata checks permit a decision; approval also requires a completed saved manual review. It does not automatically state that compression looks good. Tdarr should already have completed the appropriate health check. Review does not perform another full decode during approval.
 
 Work through the five steps. Confirmations appear alongside the tools during comparison; the final screen does not replace these checks.
