@@ -897,6 +897,7 @@ export default {
     "Kontrolní součet kopie nesouhlasí.": "The copy checksum does not match.",
     "Originál nahrazen; review se změnilo a nebylo odstraněno.": "The original was replaced; the review file changed and was not deleted.",
     "Neplatný úsek nebo stopa.": "Invalid segment or track.",
+    "Neúplný náhled.": "Incomplete preview.",
     "Neúplný zvukový úsek.": "Incomplete audio segment.",
     "Neplatné zvukové vzorky.": "Invalid audio samples.",
     "Příprava poslechu překročila 60 sekund.": "Listening preparation exceeded 60 seconds.",
