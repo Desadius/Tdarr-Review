@@ -43,6 +43,8 @@ export function capabilities(item, d, context = {}) {
   const durationApproval = item?.canApproveDuration === true && hasDuration(item?.durationA) && hasDuration(item?.durationB);
   const requestConflict = list(context.requests).some(r => r?.itemId === item?.id && !['imported', 'restored'].includes(r.phase));
   const reviewComplete = completedReview(item, d?.reviewSessions?.[item?.id]);
+  // The server lists only approvals still valid for the current snapshot and saved review revision.
+  const approved = reviewComplete && !!d?.approvals?.[item?.id];
   const allowed = !writeBlocked && validItem;
   // Comparison uses POST and audio comparison stores evidence. Apply write
   // guards conservatively to previews as well as explicit file operations.
@@ -50,8 +52,11 @@ export function capabilities(item, d, context = {}) {
   const restorePhase = ['waiting', 'manual'].includes(item?.phase);
   return {
     approve: allowed && reviewComplete && (normalApproval || durationApproval),
-    approveBatch: allowed && reviewComplete && normalApproval,
-    select: allowed && reviewComplete && normalApproval,
+    // Batch replacement takes only films explicitly approved ("Schválit") for their current review.
+    approveBatch: allowed && reviewComplete && normalApproval && approved,
+    select: allowed && reviewComplete && normalApproval && approved,
+    approveOnly: allowed && reviewComplete && normalApproval && !approved,
+    approved,
     reject: allowed,
     replace: allowed && context.requestsFresh !== false && !requestConflict,
     recheck: allowed && item?.canRecheck === true,
@@ -64,9 +69,9 @@ export function capabilities(item, d, context = {}) {
     writeBlocked,
     reason: reasons[0] || (!validItem ? 'Položka nemá ověřený aktuální otisk souborů.' : ''),
     reasons,
-    selectReason: allowed && reviewComplete && normalApproval ? '' : reasons[0] || (!validItem ? 'Položka nemá ověřený aktuální otisk souborů.' : reviewState(item, d).reason),
+    selectReason: allowed && reviewComplete && normalApproval && approved ? '' : reasons[0] || (!validItem ? 'Položka nemá ověřený aktuální otisk souborů.' : reviewState(item, d).reason),
     // Only reasons about the film itself are resolved in its review.
-    selectAction: allowed && !(reviewComplete && normalApproval) ? 'review' : null,
+    selectAction: allowed && !(reviewComplete && normalApproval && approved) ? 'review' : null,
   };
 }
 
@@ -78,10 +83,11 @@ const SELECT_REASONS = {
   deferred: 'Posouzení je odložené. Otevři ho, vyřeš důvod odložení a dokonči ho.',
   duration: 'Rozdíl délky vyžaduje samostatný souhlas; film schval jednotlivě v jeho posouzení.',
   blocked: 'Film je technicky blokovaný a nelze ho schválit. Otevři jeho detail.',
-  complete: 'Film nyní nelze vybrat k hromadnému schválení.',
+  complete: 'Posouzení je dokončené, ale film ještě není schválený. Otevři ho a v kroku Rozhodnutí zvol Schválit.',
+  approved: 'Film nyní nelze vybrat k hromadnému nahrazení.',
 };
 const REVIEW_STATES = {
-  ready: 'K posouzení', stale: 'K posouzení', 'in-progress': 'Posouzení rozpracováno', complete: 'Posouzení dokončeno',
+  ready: 'K posouzení', stale: 'K posouzení', 'in-progress': 'Posouzení rozpracováno', complete: 'Posouzení dokončeno', approved: 'Schváleno · čeká na nahrazení',
   deferred: 'Posouzení odloženo', duration: 'Rozdíl délky · schválení jednotlivě', blocked: 'Technicky blokováno',
 };
 
@@ -93,7 +99,7 @@ export function reviewState(item, d) {
     if (!review) return 'ready';
     if (review.snapshot !== item.snapshot) return 'stale';
     if (review.session?.deferred === true) return 'deferred';
-    return completedReview(item, review) ? 'complete' : 'in-progress';
+    return completedReview(item, review) ? (d?.approvals?.[item.id] ? 'approved' : 'complete') : 'in-progress';
   })();
   return {kind: kind === 'stale' ? 'ready' : kind, label: REVIEW_STATES[kind], stale: kind === 'stale', reason: SELECT_REASONS[kind]};
 }

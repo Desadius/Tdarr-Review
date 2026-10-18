@@ -7,7 +7,7 @@ test('every mutating route has an explicit concurrency policy',()=>{
  // Apply owns its independent asynchronous coordinator; cancel must remain available while it waits.
  assert.equal(mutationKind('POST','/api/shared-settings/apply'),null);assert.equal(mutationKind('POST','/api/shared-settings/cancel'),null);
  const id='a'.repeat(24);
- const routes={settings:['/api/settings','/api/settings/test'],radarrSettings:['/api/radarr/settings','/api/radarr/settings/test'],previewSettings:['/api/preview-settings'],batch:['/api/approve-batch'],restore:[`/api/radarr/requests/${id}/restore`],reviewSession:[`/api/items/${id}/review-session`]};
+ const routes={settings:['/api/settings','/api/settings/test'],radarrSettings:['/api/radarr/settings','/api/radarr/settings/test'],previewSettings:['/api/preview-settings'],batch:['/api/approve-batch'],restore:[`/api/radarr/requests/${id}/restore`],reviewSession:[`/api/items/${id}/review-session`,`/api/items/${id}/approval`]};
  for(const action of ['approve','reject','replace','recheck'])routes[action]=[`/api/items/${id}/${action}`];
  for(const [kind,paths] of Object.entries(routes))for(const route of paths){assert.equal(mutationKind('POST',route),kind);assert.ok(BUSY_POLICIES[kind]);assert.equal(mutationKind('GET',route),null)}
  assert.equal(mutationKind('POST','/api/login'),null);

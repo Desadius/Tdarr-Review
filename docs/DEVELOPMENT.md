@@ -86,6 +86,10 @@ codex execpolicy check --pretty --rules .codex/rules/tdarr-review.rules -- gh pr
 codex execpolicy check --pretty --rules .codex/rules/tdarr-review.rules -- ssh tower           # prompt
 ```
 
+## Changelog fragments
+
+A user-visible change adds `changelog.d/<issue>-<topic>.md` with one list item instead of editing `CHANGELOG.md` ([format](../changelog.d/README.md)). Pull requests that each add their own fragment merge in any order without a conflict. `npm run check` refuses a misnamed fragment, more than one list item, a merge-conflict marker or a relative link that does not exist (links are written relative to the repository root, as in `CHANGELOG.md`). `npm run changelog` prints the assembled Unreleased section; the release step is in [RELEASES.md](RELEASES.md).
+
 ## Type checking
 
 `npm run typecheck` checks JSDoc types with TypeScript, without emitting code. It currently covers `review/core.mjs` (transaction journal, file identity, command and exchange options) and `recovery/policy.mjs` (decode results and their classification). A file joins the check by starting with `// @ts-check` and being listed in `tsconfig.typecheck.json`; `strict` is off until more modules are annotated.

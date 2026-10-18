@@ -61,7 +61,7 @@ Source publication, Docker image publication and updating a running installation
 - deploy to or restart any Unraid/server installation;
 - bump the version in `package.json` unless asked.
 
-When a change is user-visible, add an entry to `CHANGELOG.md` under an unreleased heading and update the relevant document in `docs/`.
+When a change is user-visible, add a changelog fragment `changelog.d/<issue>-<topic>.md` (one list item, see [changelog.d/README.md](changelog.d/README.md)) instead of editing `CHANGELOG.md`, and update the relevant document in `docs/`.
 
 ## Pracovní režim
 

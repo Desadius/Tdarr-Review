@@ -2,6 +2,8 @@
 
 This records the implemented application features. Versions before 1.10.0 were deployed snapshots and are not published Git tags.
 
+Changes merged since the last release are listed under Unreleased below and as fragments in [changelog.d/](changelog.d/README.md); `npm run changelog` prints both together. A release moves them under its version heading.
+
 ## Unreleased
 
 - Every browser module now loads under one URL carrying the app version, filled in by the server. Previously some modules (for example `i18n.js`, `ui-kit.js`, `review-model.js`) were imported under different `?v=` strings and evaluated twice, which could split module state such as the interface language.

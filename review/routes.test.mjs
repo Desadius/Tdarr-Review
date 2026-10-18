@@ -22,7 +22,7 @@ const ROUTES=[
  ['GET','/api/recovery/runtime','libraryRoutes'],
  ['GET','/api/items','itemRoutes'],['POST','/api/items/'+ID+'/replace','itemRoutes'],
  ['GET','/api/items/'+ID+'/review-session','itemRoutes'],['POST','/api/items/'+ID+'/review-session','itemRoutes'],
- ['POST','/api/approve-batch','itemRoutes'],['POST','/api/items/'+ID+'/recheck','itemRoutes'],
+ ['POST','/api/approve-batch','itemRoutes'],['POST','/api/items/'+ID+'/recheck','itemRoutes'],['POST','/api/items/'+ID+'/approval','itemRoutes'],
  ['POST','/api/items/'+ID+'/approve','itemRoutes'],['POST','/api/items/'+ID+'/reject','itemRoutes'],['GET','/api/items/'+ID+'/video','itemRoutes'],
  ['GET','/api/preview-settings','previewRoutes'],['POST','/api/preview-settings','previewRoutes'],['GET','/api/items/'+ID+'/preview-status','previewRoutes'],
  ['POST','/api/items/'+ID+'/audio-compare','previewRoutes'],['POST','/api/items/'+ID+'/frames','previewRoutes'],

@@ -2,6 +2,8 @@
 
 Prepare and test a version before requesting publication approval. Record its changes and test results in the changelog and verification document.
 
+Unreleased changes are fragments in `changelog.d/` (see [its README](../changelog.d/README.md)). When preparing a release, run `npm run changelog -- --release <version> <YYYY-MM-DD>`: it moves the Unreleased entries and all fragments under the new version heading in `CHANGELOG.md` and deletes the fragments. Commit that change with the version bump; it is part of the source publication and needs the same approval.
+
 `package.json` holds the version. When preparing a release, set the same value as the `ARG APP_VERSION` default in `Dockerfile` and as `REVIEW_IMAGE_TAG` in `.env.example`; `npm run check` fails while they disagree. Review reports the version from the image's `APP_VERSION` (set from the build argument) or, in a source checkout, from `package.json`. Version numbers in the documentation are prose and are updated by hand.
 
 Since 2.0.0 there is one image, `ghcr.io/desadius/tdarr-review`, which contains Recovery. The separate Recovery image and the Compose `recovery` service are discontinued; release notes and the update step point users of the former two-container setup to [the 2.0 migration guide](MIGRATE-TO-2.0.md).

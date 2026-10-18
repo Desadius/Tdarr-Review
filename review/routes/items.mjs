@@ -1,4 +1,6 @@
 import path from 'node:path';
+import {recordApproval,currentApproval,publicApprovals} from '../approvals.mjs';
+import {logEvent} from '../log.mjs';
 import {unresolvedTransactions} from '../unresolved-transactions.mjs';
 import {createReadStream} from 'node:fs';
 import {safeFile} from '../core.mjs';
@@ -20,7 +22,7 @@ export async function itemRoutes(ctx,req,res,url,request){
  }
  if(url.pathname==='/api/items'&&req.method==='GET'){
   const items=await ctx.scan();
-  return reply(res,200,{version:ctx.APP_VERSION,label:ctx.config.label,serverTime:Date.now(),items,previews:Object.fromEntries(items.filter(item=>item.snapshot).map(item=>[item.id,ctx.previewPreparation(item.id,item.snapshot)])),reviewSessions:ctx.reviewSessions.list(items.filter(item=>!item.identityChanged)),active:ctx.active,batch:ctx.state.batch||null,batchRunning:ctx.batchRunning,history:ctx.state.history,recovery:unresolvedTransactions(ctx.recovery,items,ctx.config.mediaRoot),restorePending:ctx.state.pauses.length,pendingRestores:ctx.pendingRestores()});
+  return reply(res,200,{version:ctx.APP_VERSION,label:ctx.config.label,serverTime:Date.now(),items,previews:Object.fromEntries(items.filter(item=>item.snapshot).map(item=>[item.id,ctx.previewPreparation(item.id,item.snapshot)])),reviewSessions:ctx.reviewSessions.list(items.filter(item=>!item.identityChanged)),approvals:publicApprovals(ctx.state,items.filter(item=>!item.identityChanged),ctx.reviewSessions.list(items.filter(item=>!item.identityChanged))),active:ctx.active,batch:ctx.state.batch||null,batchRunning:ctx.batchRunning,history:ctx.state.history,recovery:unresolvedTransactions(ctx.recovery,items,ctx.config.mediaRoot),restorePending:ctx.state.pauses.length,pendingRestores:ctx.pendingRestores()});
  }
  const reviewSession=/^\/api\/items\/([a-f0-9]{24})\/review-session$/.exec(url.pathname);
  if(reviewSession&&req.method==='GET'){
@@ -41,7 +43,9 @@ export async function itemRoutes(ctx,req,res,url,request){
   if(!Array.isArray(b.items)||!b.items.length||b.items.length>100)return reply(res,400,apiError('batch_size'));
   if(new Set(b.items.map(x=>x.id)).size!==b.items.length)return reply(res,400,apiError('batch_duplicate'));
   const list=await ctx.scan(true,null,request.mutation),items=[];
-  for(const chosen of b.items){const item=list.find(x=>x.id===chosen.id);if(!item||item.status!=='ready'||item.snapshot!==chosen.snapshot)return reply(res,409,apiError('batch_item_changed'));ctx.reviewSessions.approval(item.id,item.snapshot,chosen.reviewRevision);items.push({...item,reviewRevision:chosen.reviewRevision})}
+  for(const chosen of b.items){const item=list.find(x=>x.id===chosen.id);if(!item||item.status!=='ready'||item.snapshot!==chosen.snapshot)return reply(res,409,apiError('batch_item_changed'));ctx.reviewSessions.approval(item.id,item.snapshot,chosen.reviewRevision);
+   // Batch replacement takes only films explicitly approved for exactly this snapshot and review revision.
+   if(!currentApproval(ctx.state,item,chosen.reviewRevision))return reply(res,409,apiError('batch_item_not_approved'));items.push({...item,reviewRevision:chosen.reviewRevision})}
   if(ctx.busyFor('batch',request.mutation))return reply(res,409,apiError('busy_action_or_batch'));
   void ctx.performBatch(items);
   return reply(res,202,{ok:true,count:items.length});
@@ -54,6 +58,19 @@ export async function itemRoutes(ctx,req,res,url,request){
   const refreshed=(await ctx.scan(true,item.id,request.mutation)).find(x=>x.id===item.id);
   if(!refreshed||refreshed.identityChanged)return reply(res,409,{...apiError('recheck_failed'),reason:refreshed?.reason||null});
   return reply(res,200,{ok:true,item:refreshed});
+ }
+ const approval=/^\/api\/items\/([a-f0-9]{24})\/approval$/.exec(url.pathname);
+ if(approval&&req.method==='POST'){
+  // Records the decision only: no file is moved, copied or deleted and no replacement is scheduled.
+  if(ctx.reviewMutationBlocked())return reply(res,409,apiError('finish_action_or_recovery'));
+  const b=await body(req),list=await ctx.scan(true,null,request.mutation),item=list.find(x=>x.id===approval[1]);
+  if(!item||!item.snapshot||item.snapshot!==b.snapshot)return reply(res,409,apiError(item?.identityChanged?'item_needs_verification':'item_changed'));
+  if(item.status!=='ready')return reply(res,409,apiError('approval_individual_only'));
+  if(!ctx.state.items[item.id])return reply(res,409,apiError('item_unmapped'));
+  ctx.reviewSessions.approval(item.id,item.snapshot,b.reviewRevision);
+  const record=recordApproval(ctx.state,{id:item.id,snapshot:item.snapshot,reviewRevision:b.reviewRevision});await ctx.save();
+  logEvent('item.approved',{id:item.id,title:item.title,snapshot:item.snapshot,reviewRevision:b.reviewRevision});
+  return reply(res,200,{ok:true,approval:{approvedAt:record.approvedAt,reviewRevision:record.reviewRevision}});
  }
  const action=/^\/api\/items\/([a-f0-9]{24})\/(approve|reject)$/.exec(url.pathname);
  if(action&&req.method==='POST'){

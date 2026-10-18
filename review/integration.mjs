@@ -65,7 +65,8 @@ try{
   const postJSON=(route,body)=>fetch(base+route,{method:'POST',headers:{cookie,origin:base,'content-type':'application/json'},body:JSON.stringify(body)});
   const revisions={};
   const single=(item,action='approve',snapshot=item.snapshot)=>postJSON(`/api/items/${item.id}/${action}`,{snapshot,reviewRevision:revisions[item.id],reason:action==='reject'?'Synthetic rejection reason':undefined});
-  const batch=items=>postJSON('/api/approve-batch',{items:items.map(({id,snapshot})=>({id,snapshot,reviewRevision:revisions[id]}))});
+  // Batch replacement takes only explicitly approved films: record "Schválit" first (refused for an incomplete review).
+  const batch=async items=>{for(const {id,snapshot} of items)await postJSON(`/api/items/${id}/approval`,{snapshot,reviewRevision:revisions[id]});return postJSON('/api/approve-batch',{items:items.map(({id,snapshot})=>({id,snapshot,reviewRevision:revisions[id]}))})};
   const waitFor=async predicate=>{
     let state;for(let i=0;i<240;i++){state=await get();if(predicate(state))return state;await new Promise(r=>setTimeout(r,100))}
     assert.fail('Operation did not finish: '+JSON.stringify(state)+' '+errors);

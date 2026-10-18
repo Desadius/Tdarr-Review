@@ -53,8 +53,9 @@ test('safe defaults and identity validation prevent actions from incomplete data
 
 test('valid ready item offers writes only under current authenticated state', () => {
   const caps=capabilities({...ready,canRecheck:true},clear,context);
-  for(const name of ['approve','approveBatch','select','reject','replace','recheck','compareImage','compareAudio','download']) assert.equal(caps[name],true,name);
+  for(const name of ['approve','approveOnly','reject','replace','recheck','compareImage','compareAudio','download']) assert.equal(caps[name],true,name);
   assert.equal(caps.restore,false);
+  for(const name of ['approveBatch','select','approved']) assert.equal(caps[name],false,name+' needs an explicit approval');
   assert.equal(caps.writeBlocked,false);
 });
 
@@ -339,7 +340,9 @@ test('every film that cannot be selected says why and what to do next', () => {
     const caps=capabilities(item,d,ctx);
     assert.equal(caps.select,false,name);assert.match(caps.selectReason,reason,name);assert.equal(caps.selectAction,action,name);
   }
-  const selectable=capabilities(ready,clear,context);
+  const approvedClear={...clear,approvals:{[ready.id]:{reviewRevision:1}}};
+  const unapproved=capabilities(ready,clear,context);assert.equal(unapproved.select,false);assert.match(unapproved.selectReason,/není schválený/);assert.equal(unapproved.selectAction,'review');
+  const selectable=capabilities(ready,approvedClear,context);
   assert.equal(selectable.select,true);assert.equal(selectable.selectReason,'');assert.equal(selectable.selectAction,null);
 });
 
@@ -355,4 +358,16 @@ test('review state separates ready, in progress, completed, deferred and blocked
     [{...ready,status:'blocked'},{reviewSessions:{[id]:completedReview}},'blocked',/Technicky blokováno/],
   ];
   for(const [item,d,kind,label] of kinds){const state=reviewState(item,d);assert.equal(state.kind,kind,kind);assert.match(state.label,label,kind);}
+});
+
+test('approval only is offered once per completed review; only approved films enter a batch', () => {
+  const approvedClear={...clear,approvals:{[ready.id]:{reviewRevision:1}}};
+  const before=capabilities(ready,clear,context),after=capabilities(ready,approvedClear,context);
+  assert.deepEqual([before.approveOnly,before.approveBatch,before.approved],[true,false,false]);
+  assert.deepEqual([after.approveOnly,after.approveBatch,after.select,after.approved],[false,true,true,true]);
+  assert.equal(after.approve,true,'approve and replace stays available individually');
+  assert.equal(capabilities({...ready,status:'duration',canApproveDuration:true},approvedClear,context).approveOnly,false,'a duration exception is decided individually');
+  const stale={...clear,approvals:{[ready.id]:{reviewRevision:1}},reviewSessions:{[ready.id]:{...completedReview,complete:false}}};
+  assert.equal(capabilities(ready,stale,context).select,false,'an approval without a complete current review never counts');
+  assert.deepEqual([reviewState(ready,approvedClear).kind,reviewState(ready,approvedClear).label],['approved','Schváleno · čeká na nahrazení']);
 });

@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
+import {changelogProblems} from './changelog.mjs';
 import {versionMismatches,moduleVersionLiterals} from './version-consistency.mjs';
 import {sourceTextViolations} from './source-text-tests.mjs';
 async function walk(root){
@@ -18,6 +19,9 @@ console.log('JavaScript syntax checked.');
 const mismatches=[...await versionMismatches(),...await moduleVersionLiterals()];
 if(mismatches.length){for(const line of mismatches)console.error('Version mismatch: '+line);process.exit(1);}
 console.log('Versions agree with package.json.');
+const fragments=await changelogProblems();
+if(fragments.length){for(const line of fragments)console.error('Changelog fragment: '+line);process.exit(1);}
+console.log('Changelog fragments are valid.');
 const sourceText=await sourceTextViolations();
 if(sourceText.length){for(const line of sourceText)console.error('Source-text test: '+line);process.exit(1);}
 console.log('No new tests read implementation source text.');

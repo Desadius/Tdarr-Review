@@ -190,17 +190,17 @@ if(typeof vm.SourceTextModule!=='function'){
  for(const language of ['cs','en'])test('selection mode explains every unavailable film and updates after a saved review in '+language,async()=>{
   const en=language==='en',ids=['c','d','e'].map(x=>x.repeat(24)),items=[{...reviewItem,id:ids[0],title:'Unreviewed film'},{...reviewItem,id:ids[1],title:'Completed film'},{...reviewItem,id:ids[2],title:'Blocked film',status:'blocked',reason:'Synthetic blocker'}];
   const checks=Object.fromEntries(['preparation','image','audio','syncStart','syncMiddle','syncEnd'].map(key=>[key,true])),done={version:1,revision:3,requirements:{hdr:false},snapshot:reviewItem.snapshot,complete:true,session:{step:4,deferred:false,checks}};
-  const data={label:'Synthetic Review',items,history:[],recovery:[],pendingRestores:[],restorePending:0,reviewSessions:{[ids[1]]:done}};
+  const data={label:'Synthetic Review',items,history:[],recovery:[],pendingRestores:[],restorePending:0,reviewSessions:{[ids[1]]:done},approvals:{[ids[1]]:{reviewRevision:3,approvedAt:'2026-10-18T10:00:00Z'}}};
   const session={snapshot:reviewItem.snapshot,revision:0,requirements:{hdr:false},complete:false,session:{method:'review',device:'',step:0,scope:{originalIndex:1,reviewIndex:2,seconds:10},checks:{...checks,preparation:false},note:'',deferred:false}};
   const f=await appFixture(language,{routes:{'/api/items':()=>({data:{...structuredClone(data),serverTime:Date.now()}}),['/api/items/'+ids[0]+'/review-session']:{data:session},['/api/items/'+ids[0]+'/audio-compare']:{data:{original:[],review:[]}}}}),dom=f.document;
   const row=title=>dom.getElementById('list').children.find(n=>n.textContent.includes(title)),why=title=>row(title).querySelector('details.selection-why'),box=title=>row(title).querySelector('input[type=checkbox]');
   const states=Object.fromEntries(items.map(x=>[x.title,row(x.title).querySelector('.badge').dataset.state]));
-  assert.deepEqual(states,{'Unreviewed film':'ready','Completed film':'complete','Blocked film':'blocked'});
-  assert.match(row('Completed film').querySelector('.badge').textContent,en?/Review completed/:/Posouzení dokončeno/);assert.match(row('Blocked film').querySelector('.badge').textContent,en?/Technically blocked/:/Technicky blokováno/);
+  assert.deepEqual(states,{'Unreviewed film':'ready','Completed film':'approved','Blocked film':'blocked'});
+  assert.match(row('Completed film').querySelector('.badge').textContent,en?/Approved · waiting for replacement/:/Schváleno · čeká na nahrazení/);assert.match(row('Blocked film').querySelector('.badge').textContent,en?/Technically blocked/:/Technicky blokováno/);
   assert.equal(row('Completed film').querySelector('.state-icon').getAttribute('aria-hidden'),'true');
   for(const x of items)assert.equal(why(x.title).hidden,true,'no explanation outside selection mode');
   await dom.getElementById('selectionToggle').emit('click');
-  assert.match(dom.getElementById('selectionHint').textContent,en?/batch approval of completed reviews\. Selectable: 1 of 3\./:/hromadnému schválení dokončených posouzení\. Lze vybrat: 1 z 3\./);
+  assert.match(dom.getElementById('selectionHint').textContent,en?/batch replacement of approved films\. Selectable: 1 of 3\./:/hromadnému nahrazení schválených filmů\. Lze vybrat: 1 z 3\./);
   assert.equal(box('Completed film').disabled,false);assert.equal(why('Completed film').hidden,true);
   assert.equal(box('Unreviewed film').disabled,true);assert.equal(why('Unreviewed film').hidden,false);
   assert.match(why('Unreviewed film').querySelector('summary').textContent,en?/Why can't I select it\?/:/Proč nelze vybrat\?/);
@@ -212,7 +212,7 @@ if(typeof vm.SourceTextModule!=='function'){
   assert.equal(dom.getElementById('filmDetail').open,true);assert.equal(dom.getElementById('detailTitle').textContent,'Unreviewed film');
   assert.equal(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,writesBefore,'opening an explanation or review confirms nothing');
   await dom.getElementById('filmDetail').close();
-  data.reviewSessions[ids[0]]={...done,snapshot:reviewItem.snapshot};
+  data.reviewSessions[ids[0]]={...done,snapshot:reviewItem.snapshot};data.approvals[ids[0]]={reviewRevision:3,approvedAt:'2026-10-18T11:00:00Z'};
   for(const timer of f.timers.filter(t=>t.ms===2000))timer.fn();for(let i=0;i<15;i++)await flush();
   assert.equal(box('Unreviewed film').disabled,false);assert.equal(why('Unreviewed film').hidden,true);
   assert.match(dom.getElementById('selectionHint').textContent,en?/Selectable: 2 of 3/:/Lze vybrat: 2 z 3/);
@@ -272,6 +272,21 @@ if(typeof vm.SourceTextModule!=='function'){
   await focus.emit('click');assert.deepEqual([root.dataset.focus,toggle.getAttribute('aria-expanded')],['off','true']);
   assert.equal(JSON.stringify([...dom.querySelectorAll('[data-check]')].map(n=>n.checked))+panel.querySelector('textarea').value,before,'toggles keep checks and the note');
   assert.equal(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,0,'toggles write nothing');
+ });
+ for(const language of ['cs','en'])test('the decision step separates approve only from approve and replace in '+language,async()=>{
+  const en=language==='en',checks=Object.fromEntries(['preparation','image','audio','syncStart','syncMiddle','syncEnd'].map(key=>[key,true]));
+  const record={version:1,snapshot:reviewItem.snapshot,revision:3,requirements:{hdr:false},complete:true,observations:{},session:{method:'review',device:'',step:4,scope:{originalIndex:1,reviewIndex:2,seconds:10},checks,note:'',deferred:false}};
+  const f=await appFixture(language,{itemsData:{items:[reviewItem],reviewSessions:{[reviewItem.id]:record},approvals:{}},routes:{['/api/items/'+reviewItem.id+'/review-session']:{data:record},['/api/items/'+reviewItem.id+'/audio-compare']:{data:{original:[],review:[]}},['/api/items/'+reviewItem.id+'/approval']:{data:{ok:true,approval:{reviewRevision:3}}}}}),dom=f.document;
+  const inspect=dom.querySelectorAll('button').find(n=>n.getAttribute('aria-label')===(en?'Review Fixture film':'Posoudit Fixture film'));await inspect.emit('click');for(let i=0;i<6;i++)await flush();
+  const only=dom.querySelector('[data-workflow-approve-only]'),replace=dom.querySelector('[data-workflow-approve]');
+  assert.ok(only&&replace);assert.equal(only.textContent,en?'Approve':'Schválit');assert.match(replace.textContent,en?/Approve and replace/:/Schválit a nahradit/);
+  assert.equal(only.disabled,false);
+  await replace.emit('click');assert.equal(dom.getElementById('confirm').open,true);await dom.getElementById('confirm').close('cancel');for(let i=0;i<4;i++)await flush();
+  assert.equal(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,0,'cancelling the replacement dialog records nothing');
+  await only.emit('click');for(let i=0;i<6;i++)await flush();
+  const writes=f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare'));
+  assert.deepEqual(writes.map(c=>[c.route,c.body]),[['/api/items/'+reviewItem.id+'/approval',{snapshot:reviewItem.snapshot,reviewRevision:3}]]);
+  assert.equal(dom.getElementById('filmDetail').open,false,'approve only returns to the overview');
  });
  for(const language of ['cs','en'])test('real Review app shows API runtime and interruption changes in '+language,async()=>{
   const fixture=await appFixture(language),dom=fixture.document,runtime=dom.getElementById('recoveryRuntime'),warning=dom.getElementById('recoveryRestartWarning');

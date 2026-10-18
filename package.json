@@ -12,6 +12,7 @@
     "test:coverage": "node tools/test.mjs --coverage",
     "test:integration": "cd review && node integration.mjs",
     "check": "node tools/check.mjs",
-    "typecheck": "node tools/typecheck.mjs"
+    "typecheck": "node tools/typecheck.mjs",
+    "changelog": "node tools/changelog.mjs"
   }
 }
