@@ -1,0 +1,1 @@
+- Surface original-media bitrate-preflight failures in Recovery, confirm finite Matroska truncation conservatively, and preserve fatal MPEG-2 compatibility failures as actionable manual cases.

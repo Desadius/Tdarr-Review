@@ -122,3 +122,10 @@ for(const [language,instruction] of [['cs','Originál je mimo knihovnu déle ne�
  const early=recoveryVerifyPauseView(record(23*3600000),translate);
  assert.equal(textContent(early).includes(instruction),false);assert.doesNotMatch(early.className,/failure/);
 }));
+
+test('preflight compatibility and missing-history cases give explicit bilingual next actions',()=>withDocument(()=>{
+ for(const [record,cs,en]of [
+  [{phase:'manual',originalCheckKind:'compatibility'},'Ověř kompatibilitu dekodéru','Check decoder compatibility'],
+  [{phase:'manual',reason:'Missing or ambiguous original grabbed release'},'Chybí přesná historie vydání','Exact release history is missing']
+ ])for(const language of ['cs','en'])assert.ok(textContent(recoveryDetails(record,createTranslator(language))).includes(language==='en'?en:cs));
+}));
