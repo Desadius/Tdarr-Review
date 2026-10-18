@@ -9,13 +9,14 @@ import {REFUSED_EXIT} from '../recovery/recovery-mode.mjs';
 import {randomUUID} from 'node:crypto';
 import {CONTROL_VERSION,controlMessage,sendControl,validId} from './recovery-control.mjs';
 import {readSettingsActivation} from './settings-activation.mjs';
+import {LOW_PRIORITY} from './low-priority.mjs';
 
 export const STATE_FILE='runtime-state.json';
 
 // Container entrypoint: runs Review and, in Recovery mode verify or repair, Recovery (docs/ARCHITECTURE.md, Supervisor).
 /**
  * @typedef {{initialMs:number,maxMs:number,crashLoopAfter:number,stableMs:number}} RestartPolicy
- * @param {{mode?:string,dataRoot:string,review:string[],recovery:string[],restart?:RestartPolicy,stopGraceMs?:number,lowPriority?:string[]}} options
+ * @param {{mode?:string,dataRoot:string,review:string[],recovery:string[],restart?:RestartPolicy,stopGraceMs?:number,lowPriority?:readonly string[]}} options
  * @returns {Promise<number>}
  */
 export async function supervise({mode,dataRoot,review,recovery,restart=RESTART,stopGraceMs=8000,lowPriority=LOW_PRIORITY}){
@@ -178,8 +179,6 @@ function refusalReason(stderr){
 /** @type {RestartPolicy} */
 const RESTART={initialMs:10000,maxMs:300000,crashLoopAfter:5,stableMs:600000};
 
-// Recovery runs at the lowest best-effort I/O priority (7) and CPU niceness 19, so reviewing stays responsive.
-const LOW_PRIORITY=['/usr/bin/ionice','-c','2','-n','7','/usr/bin/nice','-n','19'];
 
 async function publish(directory,snapshot){
  try{

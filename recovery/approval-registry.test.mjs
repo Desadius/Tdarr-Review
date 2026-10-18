@@ -5,7 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {identity} from './policy.mjs';
+import {caseId} from './policy.mjs';
 import {processPending} from './pending-approved.mjs';
 import {loadApprovalRegistry,registryHasApproval,migrateApprovalRegistry} from './approval-registry.mjs';
 import {configDigest,detectConfigChange,startupValidator} from './config-watch.mjs';
@@ -16,7 +16,7 @@ function evidence(){
  const frozen={enabled:true,libraryId:'fixture-library',sourceRoot:'/media/movies',mediaRoot:'/storage/movies',radarrRoot:'/radarr/movies',quarantineRoot:'/storage/.tdarr-corrupt',reviewRoot:'/review',reviewPrefixes:['PROD-Movies'],maxRepairsPerDay:3};
  const cfg={...frozen,tdarrUrl:'http://127.0.0.1:9',radarrUrl:'http://127.0.0.1:9',radarrApiKey:'fixture-only',database:'/tdarr/SQL/database.db',reports:'/tdarr/JobReports',ffmpeg:'/usr/bin/ffmpeg',stableMinutes:0,decodeTimeoutHours:1,confirmDelaySeconds:0,movieCooldownDays:30,pollSeconds:300,since:0};
  const a={movieId:1,movieFileId:11,sourceTitle:'DISPOSABLE.Fixture.Release',relative:'Fixture/file.mkv',file:cfg.sourceRoot+'/Fixture/file.mkv',fp:'1:2:101:1000:1001',size:101,importId:21,grabId:22,downloadId:'DISPOSABLE-download',legacyMissingImportSize:true,signature:'quant_step_size larger than huff_lsbs',authorization:'Synthetic evidence only; never a production authorization'};
- a.id=identity(a.file,a.fp);
+ a.id=caseId(a.file,a.fp);
  a.checks=['7.1.4-Jellyfin','9.0.2-Gyan'].map(version=>({version,file:a.file,bytes:a.size,sourceUnchanged:true,hostIdentityUnchanged:true,timeout:false,exit:1,naturalComplete:false,stoppedAfterEvidence:true,decodeMarkers:[a.signature],stderrTail:a.signature}));
  const registry={version:1,config:structuredClone(frozen),cases:[a]};
  const state={version:1,jobs:{},cases:{[a.id]:{id:a.id,file:a.file,relative:a.relative,size:a.size,fp:a.fp,status:'deferred_limit',approval:structuredClone(a)}}};
@@ -39,7 +39,7 @@ test('managed offline CLI refuses corrupt authority without migrating matching l
  const failed=await run();assert.equal(failed.code,1);assert.equal(failed.stdout,'');assert.equal(failed.stderr.includes('SYNTHETIC-MANAGED-SECRET'),false);await assert.rejects(fs.stat(f.target),{code:'ENOENT'});assert.deepEqual(await fs.readFile(path.join(f.data,'state.json')),before);
 });
 function importedHistory(f,shape='legacy'){
- const a=structuredClone(f.a);Object.assign(a,{movieId:2,movieFileId:12,importId:23,grabId:24,relative:'Historical/file.mkv',file:f.cfg.sourceRoot+'/Historical/file.mkv',fp:'1:3:202:2000:2001',size:202,downloadId:'DISPOSABLE-historical-download',sourceTitle:'DISPOSABLE.Historical.Release'});a.id=identity(a.file,a.fp);
+ const a=structuredClone(f.a);Object.assign(a,{movieId:2,movieFileId:12,importId:23,grabId:24,relative:'Historical/file.mkv',file:f.cfg.sourceRoot+'/Historical/file.mkv',fp:'1:3:202:2000:2001',size:202,downloadId:'DISPOSABLE-historical-download',sourceTitle:'DISPOSABLE.Historical.Release'});a.id=caseId(a.file,a.fp);
  for(const c of a.checks){c.file=a.file;c.bytes=a.size;}
  const id=a.id;
  if(shape==='legacy'){delete a.id;delete a.checks;delete a.signature;Object.assign(a,{humanAuthorizedAt:'2026-01-01T00:00:00Z',linux:{synthetic:true},windows:{synthetic:true},linuxBuild:'synthetic-linux-build',windowsBuild:'synthetic-windows-build'});}
@@ -111,7 +111,7 @@ test('present registry preserves strictly bound imported legacy and earlier pend
  for(const shape of ['legacy','pending']){
   const historical=importedHistory(f,shape),state=structuredClone(f.state);state.cases[historical.id]=historical;
   const registry=await loadApprovalRegistry({...f,state});assert.equal(registry.cases.length,1);assert.equal(registryHasApproval(registry,historical),false);assert.deepEqual(state.cases[historical.id],historical);
-  const repaired=[];await processPending({approvals:registry,cfg:f.cfg,state,safeSource:async rel=>{assert.equal(rel,f.a.relative);return {p:f.cfg.mediaRoot+'/'+rel,fp:f.a.fp,size:f.a.size};},identity,phase:async(c,status,message)=>Object.assign(c,{status,message}),repair:async c=>{repaired.push(c.id);c.status='waiting_replacement';}});
+  const repaired=[];await processPending({approvals:registry,cfg:f.cfg,state,safeSource:async rel=>{assert.equal(rel,f.a.relative);return {p:f.cfg.mediaRoot+'/'+rel,fp:f.a.fp,size:f.a.size};},caseId,phase:async(c,status,message)=>Object.assign(c,{status,message}),repair:async c=>{repaired.push(c.id);c.status='waiting_replacement';}});
   assert.deepEqual(repaired,[f.a.id]);assert.equal(state.cases[historical.id].status,'replacement_imported');assert.equal(registryHasApproval(registry,historical),false);
  }
 });
@@ -254,7 +254,7 @@ test('in Verify every frozen key other than enabled still requires an exact matc
 });
 test('the pending-approval loop accepts Verify against a Repair approval without running it',async t=>{
  const f=await fixture(t);let repairs=0;
- const run=cfg=>processPending({approvals:f.registry,cfg,state:f.state,safeSource:async()=>({p:'/x',fp:f.a.fp,size:f.a.size}),identity:()=>f.a.id,phase:async()=>{},repair:async()=>{repairs++;}});
+ const run=cfg=>processPending({approvals:f.registry,cfg,state:f.state,safeSource:async()=>({p:'/x',fp:f.a.fp,size:f.a.size}),caseId:()=>f.a.id,phase:async()=>{},repair:async()=>{repairs++;}});
  await run(verifyCfg(f));assert.equal(repairs,0,'frozen approvals never run in Verify');
  await assert.rejects(run({...verifyCfg(f),libraryId:'another-library'}),/Pending recovery mapping changed libraryId/);
  const toVerify={...f.registry,config:{...f.registry.config,enabled:false}};
