@@ -274,6 +274,23 @@ if(typeof vm.SourceTextModule!=='function'){
   entry(reviewItem.id).onkeydown({key:'ArrowRight',preventDefault(){}});assert.equal(dom.activeElement?.dataset?.film,second.id,'arrow keys move along the strip');
   assert.equal(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,0,'switching saves nothing');
  });
+ for(const language of ['cs','en'])test('the checks panel and focus mode toggle the layout only, with focus moved deliberately, in '+language,async()=>{
+  const en=language==='en',checks=Object.fromEntries(['preparation','image','audio','syncStart','syncMiddle','syncEnd'].map(key=>[key,false]));
+  const record={version:1,snapshot:reviewItem.snapshot,revision:2,requirements:{hdr:false},complete:false,observations:{},session:{method:'review',device:'',step:0,scope:{originalIndex:1,reviewIndex:2,seconds:10},checks:{...checks,preparation:true},note:'Draft note',deferred:false}};
+  const f=await appFixture(language,{itemsData:{items:[reviewItem],reviewSessions:{[reviewItem.id]:record}},routes:{['/api/items/'+reviewItem.id+'/review-session']:{data:record},['/api/items/'+reviewItem.id+'/audio-compare']:{data:{original:[],review:[]}}}}),dom=f.document;
+  const inspect=dom.querySelectorAll('button').find(n=>n.getAttribute('aria-label')===(en?'Review Fixture film':'Posoudit Fixture film'));await inspect.emit('click');for(let i=0;i<6;i++)await flush();
+  const root=dom.querySelector('.review-workflow'),panel=dom.querySelector('.workflow-panel'),toggle=dom.querySelector('[data-panel-toggle]'),focus=dom.querySelector('[data-focus-toggle]');
+  assert.ok(panel.querySelector('[data-check]'),'checks are in the panel');assert.ok(panel.querySelector('textarea'),'the note is in the panel');assert.ok(panel.querySelector('.workflow-actions'),'decisions are in the panel');
+  assert.equal(toggle.getAttribute('aria-controls'),panel.id);assert.equal(toggle.textContent,en?'Checks and decision':'Kontroly a rozhodnutí');
+  assert.deepEqual([root.dataset.panel,root.dataset.focus,toggle.getAttribute('aria-expanded'),focus.getAttribute('aria-pressed')],['open','off','true','false']);
+  const before=JSON.stringify([...dom.querySelectorAll('[data-check]')].map(n=>n.checked))+panel.querySelector('textarea').value;
+  await toggle.emit('click');assert.deepEqual([root.dataset.panel,toggle.getAttribute('aria-expanded')],['closed','false']);assert.equal(dom.activeElement,toggle,'closing returns focus to the toggle');
+  await toggle.emit('click');assert.equal(root.dataset.panel,'open');assert.ok(panel.contains(dom.activeElement),'opening moves focus into the panel');
+  await focus.emit('click');assert.deepEqual([root.dataset.focus,focus.getAttribute('aria-pressed'),toggle.getAttribute('aria-expanded')],['on','true','false']);
+  await focus.emit('click');assert.deepEqual([root.dataset.focus,toggle.getAttribute('aria-expanded')],['off','true']);
+  assert.equal(JSON.stringify([...dom.querySelectorAll('[data-check]')].map(n=>n.checked))+panel.querySelector('textarea').value,before,'toggles keep checks and the note');
+  assert.equal(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,0,'toggles write nothing');
+ });
  for(const language of ['cs','en'])test('the decision step separates approve only from approve and replace in '+language,async()=>{
   const en=language==='en',checks=Object.fromEntries(['preparation','image','audio','syncStart','syncMiddle','syncEnd'].map(key=>[key,true]));
   const record={version:1,snapshot:reviewItem.snapshot,revision:3,requirements:{hdr:false},complete:true,observations:{},session:{method:'review',device:'',step:4,scope:{originalIndex:1,reviewIndex:2,seconds:10},checks,note:'',deferred:false}};
