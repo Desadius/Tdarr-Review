@@ -65,6 +65,7 @@ function ask(item,action){
  const approve=action==='approve';
  let text=approve?`Po ověření identity souborů a kontrolního součtu kopie se původní film (${fmt(item.originalBytes)}) nahradí výsledkem (${fmt(item.reviewBytes)}). Původní verze bude odstraněna. Plex bude používat nový soubor. Health check z Tdarru se neopakuje. Akce může trvat několik minut.`:'Odstraní se pouze překódovaný soubor z review. Originál v knihovně médií zůstane zachovaný.';
  pending={item,action};if(approve)pending.reviewRevision=latest?.reviewSessions?.[item.id]?.revision;
+ if(approve&&caps(item).queueApprove)text+=' Právě probíhá jiné nahrazení: tento film se zařadí do fronty a nahradí se po jeho dokončení. Před nahrazením se soubory i posouzení znovu ověří.';
  if(approve&&item.canApproveDuration){pending.acceptDuration=true;text+=` Výslovně přijímáš rozdíl délky: originál ${item.durationA.toFixed(3)} s, výstup ${item.durationB.toFixed(3)} s, rozdíl ${(item.durationB-item.durationA).toFixed(3)} s. Potvrď pouze po kontrole začátku, konce a synchronizace zvuku.`}
  confirmSetup(approve?'SCHVÁLENÍ VÝSLEDKU':'ZAMÍTNUTÍ VÝSLEDKU',item.title,text,approve?(pending.acceptDuration?'Přijmout rozdíl a nahradit originál':'Schválit a nahradit'):'Zamítnout a odstranit',!approve);
  $('rejectReason').value=drafts.get(item.id+':'+action)||'';$('confirm').showModal();
@@ -149,7 +150,7 @@ function previewPreparationBadge(item){
  if(status.progress){const progress=el('progress','preview-status-progress');progress.max=status.total||1;if(status.total>0)progress.value=Math.min(status.ready,status.total);progress.setAttribute('aria-label',tr('Připravené ukázky')+' · '+status.ready+'/'+status.total);box.append(progress)}
  return box;
 }
-const STATE_ICONS={ready:'○','in-progress':'◐',complete:'●',deferred:'⏸',duration:'⚠',blocked:'⛔'};
+const STATE_ICONS={ready:'○','in-progress':'◐',complete:'●',approved:'✓',queued:'⧗',deferred:'⏸',duration:'⚠',blocked:'⛔'};
 function stateBadge(state){const b=badge(state.label,{ready:'ready',complete:'ready'}[state.kind]||'warning'),icon=el('span','state-icon',STATE_ICONS[state.kind],true);icon.setAttribute('aria-hidden','true');b.prepend(icon);b.dataset.state=state.kind;return b}
 function reviewRow(item){
  const row=el('article','review-row'),pick=el('label','selection'),checkbox=el('input');checkbox.type='checkbox';checkbox.setAttribute('aria-label',tr('Vybrat '+item.title));checkbox.dataset.focus='pick:'+item.id;checkbox.onchange=e=>{e.target.checked?selected.add(item.id):selected.delete(item.id);updateSelection()};pick.append(checkbox);
@@ -169,6 +170,11 @@ function renderTransactions(){
  const rows=el('ul','transaction-list');for(const t of list){const li=el('li'),film=latest.items.find(x=>x.id===t.itemId);li.append(el('strong','',t.title||'Film nelze určit',!!t.title),el('span','details',tr('Fáze')+': '+tr(TX_PHASES[t.phase]||TX_PHASES.unknown),true),el('p','',TX_REASONS[t.reason]||TX_REASONS.unreadable),el('span','details',tr('Záznam výměny')+': '+(t.journal||'—'),true));if(film){const open=button('Otevřít film',()=>openDetail('review',film.id));open.setAttribute('aria-label',tr('Otevřít film '+film.title));li.append(open)}rows.append(li)}
  box.replaceChildren(title,el('p','','Schválení, zamítnutí a dávky jsou zablokované, dokud záznam výměny ručně neprověříš. Review tu nic neopravuje ani nemaže; oba soubory a záznam zůstávají zachované.'),rows,el('p','details','Postup kontroly: docs/OPERATIONS.md, oddíl „Unresolved exchange transaction“.'));
 }
+// Queued replacements that a restart interrupted are never run by themselves; they need a new confirmation.
+function renderQueueInterrupted(){
+ const list=Array.isArray(latest?.queueInterrupted)?latest.queueInterrupted:[],box=$('queueInterrupted');box.hidden=!list.length;if(!list.length){box.replaceChildren();return}
+ box.replaceChildren(el('h2','','Restart přerušil čekající nahrazení'),el('p','','Tyto filmy čekaly ve frontě a po restartu se nenahradily. Pokud je chceš stále nahradit, otevři jejich posouzení a potvrď nahrazení znovu.'),...list.map(q=>el('p','details',q.title,true)));
+}
 function renderAttention(){
  const items=filteredItems();$('readyCount').textContent=tr((latest?.items||[]).filter(x=>x.status==='ready').length);$('blockedCount').textContent=tr((latest?.items||[]).filter(x=>x.status!=='ready').length);
  $('saving').textContent=tr(fmt((latest?.items||[]).filter(x=>x.status==='ready').reduce((s,x)=>s+x.originalBytes-x.reviewBytes,0)));
@@ -178,7 +184,7 @@ function renderAttention(){
  $('events').hidden=!warnings.length&&!attention.length;
  const events=[];if(warnings.length)events.push({kind:'history',count:warnings.length});if(attention.length)events.push({kind:'recovery',count:attention.length});
  keyed($('events'),events,x=>x.kind,x=>{const row=el('div'),b=button(x.kind==='history'?'Historie':'Obnovy',()=>navigate(x.kind,{filter:x.kind==='history'?'warning':'attention'}));b.dataset.focus='event:'+x.kind;row.append(el('span','',x.kind==='history'?`${x.count} upozornění v historii`:`${x.count} obnov k ověření`),b);return row});
- renderTransactions();updateSelection();if(ui.detail)renderFilmStrip();
+ renderTransactions();renderQueueInterrupted();updateSelection();if(ui.detail)renderFilmStrip();
 }
 function recoveryRow(projected){
  const r=projected.record||projected.raw||projected,cl=projected.classification||classifyRecovery(r,Date.now()),row=el('article','recovery-row'),info=el('div','row-info');
@@ -229,7 +235,7 @@ function detailReview(item,tab){
  if(tab==='review'){
   if(item.identityChanged){box.replaceChildren(changedFilesView(item));return}
   // The film being replaced (or waiting in the running batch) offers no review until its operation ends.
-  if(caps(item).inOperation){reviewWorkspace?.destroy();reviewWorkspace=null;const busy=el('div','changed-files');busy.append(el('h3','','Film se právě nahrazuje'),el('p','alert inline-warning','Tento film se právě nahrazuje nebo čeká v dávce. Posoudit ho půjde až po dokončení.'),el('p','details','Průběh je vidět v přehledu. Mezitím můžeš posuzovat jiné filmy.'));box.replaceChildren(busy);return}
+  if(caps(item).inOperation){reviewWorkspace?.destroy();reviewWorkspace=null;const busy=el('div','changed-files');busy.append(el('h3','','Film se právě nahrazuje'),el('p','alert inline-warning',caps(item).queued?'Tento film čeká ve frontě na nahrazení. Posoudit ho půjde až po dokončení.':'Tento film se právě nahrazuje nebo čeká v dávce. Posoudit ho půjde až po dokončení.'),el('p','details','Průběh je vidět v přehledu. Mezitím můžeš posuzovat jiné filmy.'));box.replaceChildren(busy);return}
   if(reviewWorkspace)return;
   reviewWorkspace=mountReviewWorkflow(box,item,{api,tr,formatBytes:fmt,openComparison,openAudioComparison,preparation:latest?.previews?.[item.id],
    canWrite:()=>{const current=latest?.items.find(x=>x.id===item.id);return !!current&&current.snapshot===item.snapshot&&!caps(current).reviewWriteBlocked},

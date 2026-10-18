@@ -34,7 +34,7 @@ export async function itemRoutes(ctx,req,res,url,request){
  }
  if(url.pathname==='/api/items'&&req.method==='GET'){
   const items=await ctx.scan();
-  return reply(res,200,{version:ctx.APP_VERSION,label:ctx.config.label,serverTime:Date.now(),items,previews:Object.fromEntries(items.filter(item=>item.snapshot).map(item=>[item.id,ctx.previewPreparation(item.id,item.snapshot)])),reviewSessions:ctx.reviewSessions.list(items.filter(item=>!item.identityChanged)),approvals:publicApprovals(ctx.state,items.filter(item=>!item.identityChanged),ctx.reviewSessions.list(items.filter(item=>!item.identityChanged))),active:ctx.active,batch:ctx.state.batch||null,batchRunning:ctx.batchRunning,history:ctx.state.history,recovery:unresolvedTransactions(ctx.recovery,items,ctx.config.mediaRoot),restorePending:ctx.state.pauses.length,pendingRestores:ctx.pendingRestores()});
+  return reply(res,200,{version:ctx.APP_VERSION,label:ctx.config.label,serverTime:Date.now(),items,previews:Object.fromEntries(items.filter(item=>item.snapshot).map(item=>[item.id,ctx.previewPreparation(item.id,item.snapshot)])),reviewSessions:ctx.reviewSessions.list(items.filter(item=>!item.identityChanged)),approvals:publicApprovals(ctx.state,items.filter(item=>!item.identityChanged),ctx.reviewSessions.list(items.filter(item=>!item.identityChanged))),active:ctx.active,batch:ctx.state.batch||null,batchRunning:ctx.batchRunning,history:ctx.state.history,recovery:unresolvedTransactions(ctx.recovery,items,ctx.config.mediaRoot),replacementQueue:ctx.state.replacementQueue.map(({id,title,queuedAt})=>({id,title,queuedAt})),queueInterrupted:ctx.state.queueInterrupted.map(({id,title,queuedAt,interruptedAt})=>({id,title,queuedAt,interruptedAt})),restorePending:ctx.state.pauses.length,pendingRestores:ctx.pendingRestores()});
  }
  const reviewSession=/^\/api\/items\/([a-f0-9]{24})\/review-session$/.exec(url.pathname);
  if(reviewSession&&req.method==='GET'){
@@ -96,6 +96,13 @@ export async function itemRoutes(ctx,req,res,url,request){
   if(action[2]==='approve'&&item.status!=='ready'&&!acceptDuration)return reply(res,409,{error:item.reason});
   if(!ctx.state.items[item.id])return reply(res,409,apiError('item_unmapped'));
   if(action[2]==='approve')ctx.reviewSessions.approval(item.id,item.snapshot,b.reviewRevision);
+  // Another replacement runs: queue this explicitly confirmed one (checked again when its turn comes).
+  if(request.queueOnly){
+   if(action[2]!=='approve')return reply(res,409,apiError('busy_action_or_batch'));
+   // The film being replaced or still waiting in the batch cannot be queued again; a queued one is not duplicated.
+   if(ctx.itemInOperation(item.id)&&!ctx.state.replacementQueue.some(q=>q.id===item.id))return reply(res,409,apiError('item_in_operation'));
+   return reply(res,202,{ok:true,...await ctx.enqueueReplacement(item,{reviewRevision:b.reviewRevision,acceptDuration})});
+  }
   // Claim before yielding so two simultaneous clicks cannot start two transactions.
   if(ctx.busyFor(action[2],request.mutation))return reply(res,409,apiError('busy_action_or_batch'));
   void ctx.perform(action[2],{...item,reviewRevision:b.reviewRevision},acceptDuration,reason);

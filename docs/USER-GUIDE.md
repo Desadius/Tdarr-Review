@@ -95,7 +95,7 @@ If a film is blocked by one of these rules, check the Tdarr flow and plugin sett
 
 ## Approve
 
-While a film is being replaced (alone or in a batch), you can keep reviewing other films: open them, compare picture and sound and save your checks, notes and approvals. The film being replaced, and films still waiting in the batch, show that they are locked until their replacement finishes. Further replacements, rejections and batches still wait until the running one ends.
+While a film is being replaced (alone or in a batch), you can keep reviewing other films: open them, compare picture and sound and save your checks, notes and approvals. The film being replaced, and films still waiting in the batch, show that they are locked until their replacement finishes. If you confirm **Approve and replace** for another film meanwhile, it is queued and replaced after the running replacement ends, one film at a time; repeating the confirmation adds nothing. A queued film is locked like the one being replaced. Before its turn its files and review are checked again; if they changed, it is not replaced and both files stay. Rejections and batches still wait until the running replacement ends. After a restart, queued replacements are not started by themselves: Attention lists them as interrupted, and you confirm them again if you still want them.
 
 Decision offers two separate actions:
 

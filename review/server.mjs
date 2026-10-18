@@ -69,6 +69,11 @@ import { rejectionReason, recordRejection } from './rejection-audit.mjs';
 import {createReplacement} from './radarr-replacement.mjs';
 let state=JSON.parse(await fs.readFile(statefile,'utf8').catch(()=>'{"items":{},"history":[],"sessions":{},"pauses":[]}'));
 if(!state.reviewSessions||typeof state.reviewSessions!=='object'||Array.isArray(state.reviewSessions))state.reviewSessions={};
+// Confirmed replacements wait here while another replacement or batch runs (#155). After a restart
+// nothing queued runs by itself: the entries are kept as interrupted until the person confirms again.
+if(!Array.isArray(state.replacementQueue))state.replacementQueue=[];
+if(!Array.isArray(state.queueInterrupted))state.queueInterrupted=[];
+if(state.replacementQueue.length){const at=new Date().toISOString();state.queueInterrupted.push(...state.replacementQueue.map(q=>({id:q.id,title:q.title,queuedAt:q.queuedAt,interruptedAt:at})));state.queueInterrupted=state.queueInterrupted.slice(-50);state.replacementQueue=[]}
 for(const h of state.history||[])if(h.status==='error'&&h.message?.includes('Unexpected token')&&h.message.includes('OK'))h.fixedIn='1.1.0';
 let previewBusy=false;
 let active=null,scanPromise=null,cache=null,cacheAt=0,batchRunning=false;
@@ -77,7 +82,36 @@ let mutationOwner=null;
 // block reviews of other films. Once the operation ends, any pause left behind blocks as before.
 const operationPauses=()=>!!(active||batchRunning);
 // The film being replaced, or waiting in the running batch, accepts no review, approval or preview work.
-function itemInOperation(id){return active?.id===id||!!(batchRunning&&state.batch?.remaining?.some(x=>x.id===id))}
+function itemInOperation(id){return active?.id===id||!!(batchRunning&&state.batch?.remaining?.some(x=>x.id===id))||state.replacementQueue.some(q=>q.id===id)}
+// Adds a confirmed replacement to the queue; a repeated request for the same film adds nothing.
+async function enqueueReplacement(item,{reviewRevision,acceptDuration=false}){
+ const existing=state.replacementQueue.find(q=>q.id===item.id);if(existing)return {queued:true,duplicate:true,position:state.replacementQueue.indexOf(existing)+1};
+ state.replacementQueue.push({id:item.id,title:item.title,snapshot:item.snapshot,reviewRevision,acceptDuration:acceptDuration===true,queuedAt:new Date().toISOString()});
+ state.queueInterrupted=state.queueInterrupted.filter(q=>q.id!==item.id);await save();
+ logEvent('replacement.queued',{id:item.id,title:item.title,position:state.replacementQueue.length});
+ return {queued:true,duplicate:false,position:state.replacementQueue.length};
+}
+// Runs queued replacements one at a time once nothing else replaces media. Each one starts from a
+// fresh scan: a changed snapshot or review revision fails that entry and keeps both files.
+let queueRunning=false;
+async function drainQueue(){
+ if(queueRunning)return;queueRunning=true;
+ try{
+  while(!active&&!batchRunning&&state.replacementQueue.length){
+   if(busyFor('approve'))break;
+   // Reserve foreground work like a request does, so nothing else starts while the entry is checked.
+   const q=state.replacementQueue[0],owner={kind:'queue'};mutationOwner=owner;
+   let fresh=null;try{fresh=(await scan(true,null,owner)).find(x=>x.id===q.id)}catch{}
+   state.replacementQueue.shift();await save();
+   if(!fresh||fresh.snapshot!==q.snapshot){
+    const outcome={id:q.id,title:q.title,action:'approve',status:'error',message:'Soubory se od zařazení do fronty změnily; nahrazení neproběhlo a oba soubory zůstaly zachované.',time:new Date().toISOString()};
+    state.history.unshift(outcome);state.history=state.history.slice(0,150);mutationOwner=null;await save();logEvent('action.finished',outcomeLog(outcome));continue;
+   }
+   // perform() sets active before its first await, so the reservation hands over without a gap.
+   const running=perform('approve',{...fresh,reviewRevision:q.reviewRevision},q.acceptDuration);mutationOwner=null;await running;
+  }
+ }finally{queueRunning=false;if(mutationOwner?.kind==='queue')mutationOwner=null}
+}
 function busyFor(kind,owner=null){
  return policyBusyFor(kind,{foreground:mutationOwner&&mutationOwner!==owner,active,batchRunning,resumeTask,previewBusy,settingsBusy,reviewSessions:reviewSessions.busy,scan:scanPromise,recovery:recovery.length,pauses:operationPauses()?0:state.pauses.length,statistics:statsTask,previewHolds:previewMutationHolds});
 }
@@ -252,7 +286,7 @@ async function replacementAction(item,reason){
  catch(e){outcome={id:item.id,title:item.title,action:'replace',status:'error',message:e.message,rejectionReason:reason,time:new Date().toISOString()};}
  finally{
   try{await recordDecision(DATA,{event:'replacement',id:item.id,title:item.title,relative:item.relative,reviewRelative:item.reviewRelative,snapshot:item.snapshot,jobId:item.jobId,reason,requestId:outcome.requestId,outcome:outcome.status,message:outcome.message})}catch(e){auditFailed(outcome,e)}
-  state.history.unshift(outcome);state.history=state.history.slice(0,150);await save();active=null;cache=null;logEvent('action.finished',outcomeLog(outcome))}
+  state.history.unshift(outcome);state.history=state.history.slice(0,150);await save();active=null;cache=null;logEvent('action.finished',outcomeLog(outcome));void drainQueue().catch(e=>console.error('Replacement queue: '+e.message))}
 }
 let replacementTask=null;
 const replacementTimer=setInterval(()=>{if(!replacementTask&&!busyFor('background'))replacementTask=replacements.observe().then(()=>replacements.cleanup()).catch(e=>console.error('Radarr status: '+e.message)).finally(()=>{replacementTask=null});},60000);replacementTimer.unref();
@@ -400,7 +434,7 @@ async function perform(action,item,acceptDuration=false,reason){
     outcome={id:item.id,title:item.title,action,rejectionReason:action==='reject'?reason:undefined,jobId:item.jobId||previous?.jobId,reviewSession:reviewEvidence,status:'error',message:e.message,time:new Date().toISOString()};state.history.unshift(outcome);
     if(journal){const t=JSON.parse(await fs.readFile(journal,'utf8').catch(()=>'{"phase":"unknown"}'));if(!['aborted','complete'].includes(t.phase)){recovery.push({...t,id:t.id||'unknown',journal});logEvent('transaction.unresolved',{transaction:t.id||'unknown',phase:t.phase,id:item.id,title:item.title})}}
   }finally{if(action==='reject'){try{await recordRejection(DATA,{event:'completed',...outcome})}catch(e){outcome.warning=[outcome.warning,'Uložení výsledku do archivu zamítnutí selhalo: '+e.message].filter(Boolean).join(' ');}}
-    if(action==='approve'){try{await recordDecision(DATA,{event:'approval',id:item.id,title:item.title,relative:item.relative,outputRelative:item.outputRelative,reviewRelative:item.reviewRelative,snapshot:item.snapshot,jobId:outcome.jobId,originalBytes:item.originalBytes,reviewBytes:item.reviewBytes,reviewSession:reviewEvidence,acceptedDurationDifference:outcome.acceptedDurationDifference,transaction:journal?path.basename(journal,'.json'):null,outcome:outcome.status,message:outcome.message,warning:outcome.warning,savedBytes:outcome.savedBytes,elapsedSeconds:outcome.elapsedSeconds})}catch(e){auditFailed(outcome,e)}}if(!recovery.length){progress('Obnovuji původní stav nodů',6,'resume');await resume()}state.history=state.history.slice(0,150);await save();active=null;cache=null;logEvent('action.finished',outcomeLog(outcome))}
+    if(action==='approve'){try{await recordDecision(DATA,{event:'approval',id:item.id,title:item.title,relative:item.relative,outputRelative:item.outputRelative,reviewRelative:item.reviewRelative,snapshot:item.snapshot,jobId:outcome.jobId,originalBytes:item.originalBytes,reviewBytes:item.reviewBytes,reviewSession:reviewEvidence,acceptedDurationDifference:outcome.acceptedDurationDifference,transaction:journal?path.basename(journal,'.json'):null,outcome:outcome.status,message:outcome.message,warning:outcome.warning,savedBytes:outcome.savedBytes,elapsedSeconds:outcome.elapsedSeconds})}catch(e){auditFailed(outcome,e)}}if(!recovery.length){progress('Obnovuji původní stav nodů',6,'resume');await resume()}state.history=state.history.slice(0,150);await save();active=null;cache=null;logEvent('action.finished',outcomeLog(outcome));void drainQueue().catch(e=>console.error('Replacement queue: '+e.message))}
   return outcome;
 }
 async function performBatch(items){
@@ -417,7 +451,7 @@ async function performBatch(items){
     }
     if(state.batch.status==='running')state.batch.status='complete';
   }catch(e){state.batch.status='interrupted';state.batch.message=e.message;console.error(e)}
-  finally{state.batch.ended=new Date().toISOString();await save();batchRunning=false;cache=null;logEvent('batch.finished',{batchId:state.batch.id,outcome:state.batch.status,finished:state.batch.finished,failed:state.batch.failed,total:state.batch.total,message:state.batch.message})}
+  finally{state.batch.ended=new Date().toISOString();await save();batchRunning=false;cache=null;void drainQueue().catch(e=>console.error('Replacement queue: '+e.message));logEvent('batch.finished',{batchId:state.batch.id,outcome:state.batch.status,finished:state.batch.finished,failed:state.batch.failed,total:state.batch.total,message:state.batch.message})}
 }
 const authAttempts=new Map();
 // Expired sessions and finished rate-limit windows are dropped hourly and on each login, so neither grows without bound.
@@ -440,7 +474,7 @@ const ctx={
  get statsCache(){return statsCache},set statsCache(value){statsCache=value},
  get statsTask(){return statsTask},set statsTask(value){statsTask=value},
  get mutationOwner(){return mutationOwner},set mutationOwner(value){mutationOwner=value},
- applyConfig,save,busyFor,itemInOperation,keepNodePaused,pendingRestores,scan,perform,performBatch,replacementAction,resume,readRows,dbRows,verifyReviewItem,reviewMutationBlocked,
+ applyConfig,save,busyFor,itemInOperation,enqueueReplacement,keepNodePaused,pendingRestores,scan,perform,performBatch,replacementAction,resume,readRows,dbRows,verifyReviewItem,reviewMutationBlocked,
  previewIdentity,previewPair,previewVersion,previewPreparation,planPreviewItem,preparePreviews,forgetPreviews,
 };
 const activateSettings=value=>{activeSettings=value;config=value.review;applyConfig();statsCache=null;state.items={};state.reviewSessions={};state.approvals={};cache=null;cacheAt=0;previewPairs.clear();previewPlans.clear();previewAttempts.clear();};
@@ -464,10 +498,12 @@ const server=http.createServer(async(req,res)=>{
     const kind=mutationKind(req.method,url.pathname);
     if(kind){
       const blocked=busyFor(kind);
-      if(blocked)return respond(res,409,apiError(['recovery','pauses'].includes(blocked)?'finish_action_or_recovery':'busy'));
+      // A replacement confirmed while another one runs is queued instead of refused (#155).
+      if(kind==='approve'&&['active','batchRunning'].includes(blocked)&&!busyFor('approveQueued'))request.queueOnly=true;
+      else if(blocked)return respond(res,409,apiError(['recovery','pauses'].includes(blocked)?'finish_action_or_recovery':'busy'));
       // Claim before any await, including draining previews or reading a body.
       // Review writes retain their existing revision-aware serialization queue.
-      if(kind!=='reviewSession')mutationOwner=request.mutation={kind};
+      if(kind!=='reviewSession'&&!request.queueOnly)mutationOwner=request.mutation={kind};
       previewMutationHolds++;releasePreviewBackground=true;await previews.pauseBackground({wait:true});
     }
     for(const route of routes)if(await route(ctx,req,res,url,request))return;
