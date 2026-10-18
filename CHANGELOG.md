@@ -8,6 +8,8 @@ This records the implemented application features. Versions before 1.10.0 were d
 
 - The overview labels each film's review state (ready, in progress, completed, deferred, duration difference, technically blocked) with text and an icon, and selection mode explains why a film cannot be selected for batch approval, with a link to its review and the number of selectable films (English and Czech). A disabled selection no longer comes without a reason.
 
+- Kino layout, first part: on windows at least 1200 CSS px wide the film review fills the whole window, the review steps become a compact bar and the image/video comparison takes most of the height (bounded by height on ultrawide screens, aspect ratio kept); still frames sit above their time controls. Narrower windows and high zoom keep the existing compact layout.
+
 - In the library (gallery) view, the savings and the **Review** (**Posoudit**) button sit at the bottom of every card, so the buttons in one row line up regardless of title length, blocking reasons or preview status.
 
 - Review's manual Radarr replacement uses Recovery's Tdarr handoff, download-queue projection and quarantine retention modules instead of its own copies. The handoff now refuses a target that is not a normalized absolute path (for example a Tdarr source root containing `//`) before contacting Tdarr; the request stays visible with the error instead of querying or rescanning a wrong path.
