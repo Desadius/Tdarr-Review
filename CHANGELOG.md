@@ -4,6 +4,8 @@ This records the implemented application features. Versions before 1.10.0 were d
 
 ## Unreleased
 
+- The overview labels each film's review state (ready, in progress, completed, deferred, duration difference, technically blocked) with text and an icon, and selection mode explains why a film cannot be selected for batch approval, with a link to its review and the number of selectable films (English and Czech). A disabled selection no longer comes without a reason.
+
 - Restoring a manual Radarr replacement no longer reports success when the original or the Review result is in quarantine without a recorded file identity. Previously that file was silently left in quarantine while the rest of the restore completed and the request showed as restored; now nothing moves, Radarr is not changed and the request needs attention with the unreadable-identity reason.
 
 - A recorded file identity that cannot be read now never counts as a match and is reported with its own reason. Previously some malformed recorded values (four fields, an empty or non-numeric ctime or device) matched: quarantine retention could purge a quarantined original, Recovery could restore or remove a preserved copy, an interrupted replacement could be rolled back and a missing value produced a raw `TypeError`. Such cases now stay in place: an interrupted replacement stays pending with `Neplatná identita souboru v záznamu výměny.` (approvals stay blocked), replacement and Recovery cases show attention with `FILE_IDENTITY_INVALID`, and a changed review item is blocked with an unreadable-identity reason (English and Czech). Identity bytes, case IDs and the handling of valid identities are unchanged; every file identity is now produced and compared by one module.

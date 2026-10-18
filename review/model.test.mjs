@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import {capabilities, classifyRecovery, recoveryProgress, liveRecoveryRecord, projectRequests, historyWarnings, historyFollowup, RECOVERY_STALE_MS} from './public/review-model.js';
+import {capabilities, reviewState, classifyRecovery, recoveryProgress, liveRecoveryRecord, projectRequests, historyWarnings, historyFollowup, RECOVERY_STALE_MS} from './public/review-model.js';
 
 const NOW = Date.parse('2026-10-11T11:35:00Z');
 const freshTime = new Date(NOW - 30000).toISOString();
@@ -321,4 +321,38 @@ test('a Verify pause that keeps the original outside the library over 24 h needs
  assert.equal(classifyRecovery(record(RECOVERY_ORIGINAL_OUTSIDE_MS-1000),NOW).category,'waiting');
  assert.equal(classifyRecovery({...record(RECOVERY_ORIGINAL_OUTSIDE_MS+1000),statusUpdated:new Date(NOW-RECOVERY_STALE_MS-1000).toISOString()},NOW).category,'unverified','a stale status is not evidence for the notice');
  for(const patch of [{verifyPausedStep:null},{originalOutsideLibrary:false},{verifyPausedStep:'tdarr_handoff'},{originalOutsideSince:'invalid'}])assert.equal(originalOutsideTooLong({...record(RECOVERY_ORIGINAL_OUTSIDE_MS+1000),...patch},NOW),false,JSON.stringify(patch));
+});
+
+test('every film that cannot be selected says why and what to do next', () => {
+  const id=ready.id,partial={...completedReview,complete:false,session:{...completedReview.session,step:2,checks:{preparation:true}}};
+  const cases=[
+    ['not reviewed',ready,{...clear,reviewSessions:{}},context,/ještě nebyl posouzen/,'review'],
+    ['in progress',ready,{...clear,reviewSessions:{[id]:partial}},context,/není dokončené/,'review'],
+    ['deferred',ready,{...clear,reviewSessions:{[id]:{...completedReview,session:{...completedReview.session,deferred:true}}}},context,/odložené/,'review'],
+    ['stale review',ready,{...clear,reviewSessions:{[id]:{...completedReview,snapshot:'c'.repeat(64)}}},context,/změnily od posouzení/,'review'],
+    ['duration exception',{...ready,status:'duration',canApproveDuration:true},clear,context,/Rozdíl délky.*jednotlivě/,'review'],
+    ['technically blocked',{...ready,status:'blocked',reason:'Chybí zvuk.'},clear,context,/technicky blokovaný/,'review'],
+    ['global operation',ready,{...clear,batchRunning:true},context,/dávka právě probíhá/,null],
+    ['stale data',ready,clear,{authenticated:true,fresh:false},/Obnov aktuální stav/,null],
+  ];
+  for(const [name,item,d,ctx,reason,action] of cases){
+    const caps=capabilities(item,d,ctx);
+    assert.equal(caps.select,false,name);assert.match(caps.selectReason,reason,name);assert.equal(caps.selectAction,action,name);
+  }
+  const selectable=capabilities(ready,clear,context);
+  assert.equal(selectable.select,true);assert.equal(selectable.selectReason,'');assert.equal(selectable.selectAction,null);
+});
+
+test('review state separates ready, in progress, completed, deferred and blocked films', () => {
+  const id=ready.id,partial={...completedReview,complete:false,session:{...completedReview.session,step:2}};
+  const kinds=[
+    [ready,{reviewSessions:{}},'ready',/K posouzení/],
+    [ready,{reviewSessions:{[id]:partial}},'in-progress',/rozpracováno/],
+    [ready,{reviewSessions:{[id]:completedReview}},'complete',/dokončeno/],
+    [ready,{reviewSessions:{[id]:{...completedReview,session:{...completedReview.session,deferred:true}}}},'deferred',/odloženo/],
+    [ready,{reviewSessions:{[id]:{...partial,snapshot:'c'.repeat(64)}}},'ready',/K posouzení/],
+    [{...ready,status:'duration',canApproveDuration:true},{reviewSessions:{}},'duration',/Rozdíl délky/],
+    [{...ready,status:'blocked'},{reviewSessions:{[id]:completedReview}},'blocked',/Technicky blokováno/],
+  ];
+  for(const [item,d,kind,label] of kinds){const state=reviewState(item,d);assert.equal(state.kind,kind,kind);assert.match(state.label,label,kind);}
 });
