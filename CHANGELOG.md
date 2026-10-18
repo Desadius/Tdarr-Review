@@ -9,10 +9,13 @@ This records the implemented application features. Versions before 1.10.0 were d
 - The overview labels each film's review state (ready, in progress, completed, deferred, duration difference, technically blocked) with text and an icon, and selection mode explains why a film cannot be selected for batch approval, with a link to its review and the number of selectable films (English and Czech). A disabled selection no longer comes without a reason.
 
 - Kino layout, first part: on windows at least 1200 CSS px wide the film review fills the whole window, the review steps become a compact bar and the image/video comparison takes most of the height (bounded by height on ultrawide screens, aspect ratio kept); still frames sit above their time controls. Narrower windows and high zoom keep the existing compact layout.
+
 - Attention lists unresolved exchange transactions read-only with the film, journal phase, reason and journal file name, and points to the manual inspection steps (English and Czech). The `recovery` field of `/api/items` now carries that projection instead of the raw journals, so it no longer exposes filesystem paths.
 
 - In the library (gallery) view, the savings and the **Review** (**Posoudit**) button sit at the bottom of every card, so the buttons in one row line up regardless of title length, blocking reasons or preview status.
+
 - A film whose files changed only in their metadata change time (ctime) no longer loops between the list and "The item has changed". It is blocked with an explicit **Verify the files and start a new review** action that checks the Tdarr job binding, the FFprobe technical data and stable identities during verification; success starts a fresh review (earlier checks never carry over) and is logged as `item.reverified`. Other changes stay blocked with guidance, and the list no longer offers a review for an unverified snapshot (`item_needs_verification`). English and Czech.
+
 - Review's manual Radarr replacement no longer releases a Tdarr Hold that Recovery keeps for the same imported source (after confirming its own decoding error), and never rescans such a protected entry. If Recovery's state cannot be read, the handoff waits with a visible reason instead of releasing the Hold.
 
 - Review's manual Radarr replacement uses Recovery's Tdarr handoff, download-queue projection and quarantine retention modules instead of its own copies. The handoff now refuses a target that is not a normalized absolute path (for example a Tdarr source root containing `//`) before contacting Tdarr; the request stays visible with the error instead of querying or rescanning a wrong path.
@@ -30,11 +33,15 @@ This records the implemented application features. Versions before 1.10.0 were d
 - Add guided shared Review/Recovery settings in English and Czech: persistent offline drafts, explicit diagnostics and Apply/Cancel, complete atomic configuration generations, safe Recovery drain/restart, migration choices, protected frozen/in-flight mappings and bounded private audit history. Recovery mode remains controlled by RECOVERY_MODE; saving never starts repairs.
 
 - Preserve optional full-file hash progress in Recovery live status; exercise confirmation, changed-source refusal and public progress against the running worker.
+
 - Explain missing review-step requirements when Save and continue is activated, including HDR devices, manual confirmations, track pairs, saved synchronisation checks and temporary blocks (English/Czech).
 
 - Include diagnostic acceptance rules in the preview renderer identity so updates cannot reuse samples prepared under an older diagnostic policy.
+
 - The rejection archive `rejection-decisions.jsonl` no longer follows a symlink: like the decision audit, a symlink, directory or named pipe in its place is refused, so the rejection fails and keeps the review copy instead of appending to another file or blocking (#125).
+
 - The `Publish Docker images (manual)` workflow can move `latest` to an already published image by its verified digest (`promote_digest`) without rebuilding. It checks that the image exists in GHCR and that its revision label is the approved `main` commit, and leaves the version and `sha-<commit>` tags unchanged ([Releases](docs/RELEASES.md#move-latest-to-a-verified-image-without-rebuilding)).
+
 - **Recovery refuses a `config.json` with a missing setting or an unusable value** (`RECOVERY_REFUSED invalid-config`), at start-up and in the restart notice for a later edit. Until now, for example, `"stableMinutes": "10 min"` or a missing `stableMinutes` silently disabled the source stability wait, and `"detectTerminalHeaders": "false"` enabled the check. The refusal names the setting and its rule, never its value; unknown keys are still ignored. The accepted values are listed in [Configuration](docs/CONFIGURATION.md#configjson), and [a read-only check](docs/CONFIGURATION.md#check-a-configjson-before-an-update) tests a file against the new rules before you update. The shipped example and a typical 1.11 configuration pass.
 
 ## 2.0.0 — 2026-10-15
