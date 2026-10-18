@@ -6,7 +6,7 @@ import {quarantineRetention} from '../../recovery/quarantine-retention.mjs';
 import {body,reply,apiError} from './http.mjs';
 import {logEvent} from '../log.mjs';
 import {readRecoveryRuntime} from '../recovery-runtime.mjs';
-import {settingsError,failedSettingsSave} from './shared-settings.mjs';
+import {settingsRequest} from './shared-settings.mjs';
 
 // Posters, statistics, quarantine listing and Radarr replacement requests/settings.
 export async function libraryRoutes(ctx,req,res,url,request){
@@ -54,11 +54,10 @@ export async function libraryRoutes(ctx,req,res,url,request){
  }
  if(url.pathname==='/api/radarr/settings'&&req.method==='GET'){const shared=await ctx.sharedSettings.public();return reply(res,200,{...await ctx.replacements.publicSettings(),revision:shared.revision,draft:shared.draft.radarr});}
  if(['/api/radarr/settings','/api/radarr/settings/test'].includes(url.pathname)&&req.method==='POST'){
-  let saving=false;
-  try{const b=await body(req);if(url.pathname.endsWith('/test')){await ctx.settingsApply.test(b);return reply(res,200,{ok:true});}
+  return settingsRequest(ctx,res,async save=>{const b=await body(req);if(url.pathname.endsWith('/test')){await ctx.settingsApply.test(b);return reply(res,200,{ok:true});}
    const patch=Object.fromEntries(['url','apiKey','mediaRoot','quarantineRoot','preferCzechEnglish'].filter(k=>Object.hasOwn(b,k)).map(k=>[k,b[k]]));
-   saving=true;await ctx.sharedSettings.saveDraft({revision:b.revision,patch:{radarr:patch},resolutions:b.resolutions||[],acknowledgeHistory:b.acknowledgeHistory});logEvent('radarr-settings.saved',{draft:true,active:false});return reply(res,200,{ok:true,...await ctx.sharedSettings.public()});
-  }catch(error){return reply(res,error.status||409,saving?await failedSettingsSave(ctx.sharedSettings,error):settingsError(error));}
+   await save({revision:b.revision,patch:{radarr:patch},resolutions:b.resolutions||[],acknowledgeHistory:b.acknowledgeHistory});logEvent('radarr-settings.saved',{draft:true,active:false});return reply(res,200,{ok:true,...await ctx.sharedSettings.public()});
+  });
  }
  if(url.pathname==='/api/radarr/requests'&&req.method==='GET')return reply(res,200,await ctx.replacements.overview());
  // Runtime diagnostics remain readable even when the separate case snapshot fails.

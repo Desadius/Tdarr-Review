@@ -296,6 +296,20 @@ const identityAccepted={same:true,ctimeChanged:true,deviceChanged:false,deviceAn
 const statIdentity=s=>[s.dev,s.ino,s.size,s.mtimeMs,s.ctimeMs].join(':');
 const unreadableIdentity=new Set(['fourFields','emptyCtime','textCtime','textDevice','sixFields','missing']),unreadableMessage='Zaznamenaná identita souboru je nečitelná; karanténa zůstává zachovaná.';
 
+test('restore with a quarantined Review result but no recorded identity moves nothing and needs attention',async()=>{
+ const f=await fixture();try{
+  const c=await f.service.run(f.item,'reason'),journal=path.join(f.data,'radarr-replacements',c.id+'.json');
+  const record=JSON.parse(await fs.readFile(journal,'utf8'));delete record.reviewFP;await f.atomicJSON(journal,record);
+  const before=f.calls.length;
+  await assert.rejects(f.service.restore(c.id),{code:'FILE_IDENTITY_INVALID',message:unreadableMessage});
+  assert.equal(JSON.parse(await fs.readFile(journal,'utf8')).phase,'manual');
+  assert.equal(classifyRecovery((await f.service.list())[0]).category,'attention');
+  assert.equal(await fs.readFile(record.originalQuarantine,'utf8'),'ORIGINAL');await assert.rejects(fs.stat(f.source),{code:'ENOENT'});
+  assert.equal(await fs.readFile(record.reviewQuarantine,'utf8'),'TRANSCODE');await assert.rejects(fs.stat(f.output),{code:'ENOENT'});
+  assert.deepEqual(f.calls.slice(before).filter(call=>call.method!=='GET'),[]);
+ }finally{await f.cleanup()}
+});
+
 test('an interrupted handoff resumes only for the recorded replacement identity',async()=>{
  for(const [variant,resumes] of Object.entries(identityAccepted)){
   const f=await fixture();try{
@@ -319,19 +333,17 @@ test('restore returns a quarantined original only for its recorded identity',asy
    const c=await f.service.run(f.item,'reason'),journal=path.join(f.data,'radarr-replacements',c.id+'.json');
    const record=JSON.parse(await fs.readFile(journal,'utf8'));
    await f.atomicJSON(journal,{...record,originalFP:identityVariants(statIdentity(await fs.stat(record.originalQuarantine)))[variant]});
-   if(variant==='missing'){
-    // Without a recorded identity the original is not part of the restore at all.
-    assert.equal((await f.service.restore(c.id)).phase,'restored');
-    assert.equal(await fs.readFile(record.originalQuarantine,'utf8'),'ORIGINAL');await assert.rejects(fs.stat(f.source),{code:'ENOENT'});
-    assert.equal(await fs.readFile(f.output,'utf8'),'TRANSCODE');
-   }else if(restores){
+   if(restores){
     assert.equal((await f.service.restore(c.id)).phase,'restored',variant);
     assert.equal(await fs.readFile(f.source,'utf8'),'ORIGINAL',variant);
    }else{
-    await assert.rejects(f.service.restore(c.id),{message:unreadableIdentity.has(variant)?unreadableMessage:'Karanténa se změnila.'},variant);
+    const before=f.calls.length;
+    await assert.rejects(f.service.restore(c.id),unreadableIdentity.has(variant)?{code:'FILE_IDENTITY_INVALID',message:unreadableMessage}:{message:'Karanténa se změnila.'},variant);
     assert.equal(JSON.parse(await fs.readFile(journal,'utf8')).phase,'manual',variant);
     assert.equal(classifyRecovery((await f.service.list())[0]).category,'attention',variant);
     assert.equal(await fs.readFile(record.originalQuarantine,'utf8'),'ORIGINAL',variant);await assert.rejects(fs.stat(f.source),{code:'ENOENT'});
+    assert.equal(await fs.readFile(record.reviewQuarantine,'utf8'),'TRANSCODE',variant);await assert.rejects(fs.stat(f.output),{code:'ENOENT'});
+    assert.deepEqual(f.calls.slice(before).filter(call=>call.method!=='GET'),[],variant);
    }
   }finally{await f.cleanup()}
  }
