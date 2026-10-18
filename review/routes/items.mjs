@@ -7,6 +7,8 @@ import {body,reply,apiError} from './http.mjs';
 
 // Review items: listing, saved review sessions and the approve/reject/replace/recheck actions.
 // Every action rescans with its own reservation and starts only after its busy policy passes.
+// A listed item whose files changed since it was queued is offered for verification, never for review.
+const needsVerification=async(ctx,id,snapshot)=>(await ctx.scan()).some(x=>x.id===id&&x.snapshot===snapshot&&x.identityChanged===true);
 export async function itemRoutes(ctx,req,res,url,request){
  const replaceRequest=/^\/api\/items\/([a-f0-9]{24})\/replace$/.exec(url.pathname);
  if(replaceRequest&&req.method==='POST'){
@@ -18,12 +20,12 @@ export async function itemRoutes(ctx,req,res,url,request){
  }
  if(url.pathname==='/api/items'&&req.method==='GET'){
   const items=await ctx.scan();
-  return reply(res,200,{version:ctx.APP_VERSION,label:ctx.config.label,serverTime:Date.now(),items,previews:Object.fromEntries(items.filter(item=>item.snapshot).map(item=>[item.id,ctx.previewPreparation(item.id,item.snapshot)])),reviewSessions:ctx.reviewSessions.list(items),active:ctx.active,batch:ctx.state.batch||null,batchRunning:ctx.batchRunning,history:ctx.state.history,recovery:unresolvedTransactions(ctx.recovery,items,ctx.config.mediaRoot),restorePending:ctx.state.pauses.length,pendingRestores:ctx.pendingRestores()});
+  return reply(res,200,{version:ctx.APP_VERSION,label:ctx.config.label,serverTime:Date.now(),items,previews:Object.fromEntries(items.filter(item=>item.snapshot).map(item=>[item.id,ctx.previewPreparation(item.id,item.snapshot)])),reviewSessions:ctx.reviewSessions.list(items.filter(item=>!item.identityChanged)),active:ctx.active,batch:ctx.state.batch||null,batchRunning:ctx.batchRunning,history:ctx.state.history,recovery:unresolvedTransactions(ctx.recovery,items,ctx.config.mediaRoot),restorePending:ctx.state.pauses.length,pendingRestores:ctx.pendingRestores()});
  }
  const reviewSession=/^\/api\/items\/([a-f0-9]{24})\/review-session$/.exec(url.pathname);
  if(reviewSession&&req.method==='GET'){
   const id=reviewSession[1],snapshot=url.searchParams.get('snapshot'),item=ctx.state.items[id];
-  if(!item||item.snapshot!==snapshot)return reply(res,409,apiError('item_changed'));
+  if(!item||item.snapshot!==snapshot)return reply(res,409,apiError(await needsVerification(ctx,id,snapshot)?'item_needs_verification':'item_changed'));
   const verified=await ctx.verifyReviewItem(item,{id,snapshot},false);
   return reply(res,200,ctx.reviewSessions.get(id,snapshot,verified.requirements));
  }
@@ -31,6 +33,7 @@ export async function itemRoutes(ctx,req,res,url,request){
   if(ctx.reviewMutationBlocked())return reply(res,409,apiError('finish_action_or_recovery'));
   const sessionRequest=await body(req);
   if(ctx.reviewMutationBlocked())return reply(res,409,apiError('finish_action_or_recovery'));
+  if(typeof sessionRequest?.snapshot==='string'&&await needsVerification(ctx,reviewSession[1],sessionRequest.snapshot))return reply(res,409,apiError('item_needs_verification'));
   const saved=await ctx.reviewSessions.write(reviewSession[1],sessionRequest);void ctx.preparePreviews().catch(error=>console.error('Preview preparation: '+error.message));return reply(res,200,saved);
  }
  if(url.pathname==='/api/approve-batch'&&req.method==='POST'){
@@ -49,6 +52,7 @@ export async function itemRoutes(ctx,req,res,url,request){
   if(!item?.canRecheck||item.snapshot!==b.snapshot)return reply(res,409,apiError('recheck_unsafe'));
   if(ctx.busyFor('recheck',request.mutation))return reply(res,409,apiError('busy_action'));
   const refreshed=(await ctx.scan(true,item.id,request.mutation)).find(x=>x.id===item.id);
+  if(!refreshed||refreshed.identityChanged)return reply(res,409,{...apiError('recheck_failed'),reason:refreshed?.reason||null});
   return reply(res,200,{ok:true,item:refreshed});
  }
  const action=/^\/api\/items\/([a-f0-9]{24})\/(approve|reject)$/.exec(url.pathname);

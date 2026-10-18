@@ -17,7 +17,7 @@ export async function reviewFixture({pauses=false,recovery=false,clock=false,nod
  const harness=await serverHarness(),{root}=harness;
  const data=path.join(root,'data'),media=path.join(root,'media'),review=path.join(root,'review');
  const gates=[],calls=[],changes=[],nodes={fixture:{_id:'fixture',nodeName:'fixture-node',nodePaused:false,workers:{}}};
- let cookie,base=harness.base,addFilm;
+ let cookie,base=harness.base,addFilm,probeAdjust=null;
  function hold(route,predicate=()=>true){
   const entered=deferred(),released=deferred(),gate={route,predicate,entered:entered.promise,release:released.resolve};
   gate.wait=async body=>{if(predicate(body)){entered.resolve(body);await released.promise}};gates.push(gate);return gate;
@@ -36,6 +36,7 @@ export async function reviewFixture({pauses=false,recovery=false,clock=false,nod
    else if(req.url==='/fixture/probe'){
     const isReview=input.file.startsWith(review+'/');
     output={format:{duration:'60',start_time:'0'},chapters:[],streams:[{index:0,codec_type:'video',codec_name:isReview?'hevc':'h264',pix_fmt:isReview?'yuv420p10le':'yuv420p',width:320,height:180,avg_frame_rate:'24/1'},{index:1,codec_type:'audio',codec_name:'aac',channels:2,tags:{language:'eng'}}]};
+    if(probeAdjust)output=probeAdjust(input.file,output);
    }else if(req.url==='/fixture/render')output={png:'89504e470d0a1a0a'};
    else{res.writeHead(404);res.end('{}');return}
    res.setHeader('content-type','application/json');res.end(JSON.stringify(output));
@@ -119,7 +120,7 @@ export async function reviewFixture({pauses=false,recovery=false,clock=false,nod
    return events(name);
   };
   const restart=async()=>{await harness.stop();await harness.start({settings:JSON.parse(await fs.readFile(path.join(data,'settings.json'),'utf8')),preload,clock,supervisor,env});cookie=await harness.login();};
-  return {root,data,files,mockBase,nodes,hold,calls,changes,post,get,items,confirm,approve,allMutations,journals,settled,preserved,close,restart,showNodes,addFilm,events,eventually,tick:harness.tick,state:harness.state,diagnostics:harness.diagnostics};
+  return {setProbe:adjust=>{probeAdjust=adjust},root,data,files,mockBase,nodes,hold,calls,changes,post,get,items,confirm,approve,allMutations,journals,settled,preserved,close,restart,showNodes,addFilm,events,eventually,tick:harness.tick,state:harness.state,diagnostics:harness.diagnostics};
  }catch(error){await close();throw error}
 }
 

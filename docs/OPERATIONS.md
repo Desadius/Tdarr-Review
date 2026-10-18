@@ -98,6 +98,7 @@ Review writes one JSON line per operator-relevant event to standard output, next
 | `batch.started`, `batch.finished`, `batch.interrupted` | `batchId`, `total`, `finished`, `failed`, `outcome`, `message` |
 | `node.paused`, `nodes.resume` | Tdarr node names paused for an action; nodes Review tried to resume and those still `pending` |
 | `transaction.unresolved`, `transactions.unresolved` | Exchange transactions that need manual inspection |
+| `item.reverified` | A changed film was verified and starts a fresh review (`previousSnapshot`, `snapshot`, `changes` such as `original:ctime`) |
 | `settings.saved`, `preview-settings.saved`, `radarr-settings.saved`, `quarantine.restored` | The saved non-secret values or the restored request |
 | `request.error` | `method`, `route` (without query), `status`, `message` |
 

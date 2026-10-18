@@ -233,6 +233,27 @@ if(typeof vm.SourceTextModule!=='function'){
  test('no unresolved exchange transaction keeps the panel hidden',async()=>{
   const f=await appFixture('cs',{itemsData:{items:[reviewItem],recovery:[]}});assert.equal(f.document.getElementById('transactions').hidden,true);
  });
+ for(const language of ['cs','en'])test('changed files open a verification step instead of a review in '+language,async()=>{
+  const en=language==='en',reason='Změnil se jen čas změny metadat souboru (ctime). Shodu obsahu nelze prokázat: ověř soubory a posuď film znovu od začátku.';
+  for(const [recheck,canRecheck] of [['verify',true],[null,false]]){
+   const item={...reviewItem,status:'blocked',identityChanged:true,recheck,canRecheck,reason};
+   const f=await appFixture(language,{itemsData:{items:[item]},routes:{['/api/items/'+item.id+'/recheck']:{data:{ok:true,item:{...reviewItem}}}}}),dom=f.document;
+   const inspect=dom.querySelectorAll('button').find(n=>n.getAttribute('aria-label')===(en?'Review Fixture film':'Posoudit Fixture film'));await inspect.emit('click');for(let i=0;i<4;i++)await flush();
+   const body=dom.getElementById('detailBody');
+   assert.match(body.textContent,en?/The files changed since the film was queued/:/Soubory se od zařazení změnily/);
+   assert.match(body.textContent,en?/Only the file's metadata change time/:/Změnil se jen čas změny metadat/);
+   assert.equal(f.calls.some(c=>c.route.includes('/review-session')),false,'no review is loaded for changed files');
+   assert.equal(body.querySelectorAll('[data-check]').length,0);
+   const verify=body.querySelectorAll('button').find(n=>/Ověřit soubory a začít nové posouzení|Verify the files and start a new review/.test(n.textContent));
+   if(recheck==='verify'){
+    assert.ok(verify);assert.equal(verify.disabled,false);await verify.emit('click');for(let i=0;i<4;i++)await flush();
+    assert.deepEqual(f.calls.filter(c=>c.method==='POST').map(c=>c.route),['/api/items/'+item.id+'/recheck']);
+   }else{
+    assert.equal(verify,undefined);assert.match(body.textContent,en?/cannot be verified automatically/:/nelze ověřit automaticky/);
+    assert.equal(f.calls.filter(c=>c.method==='POST').length,0);
+   }
+  }
+ });
  for(const language of ['cs','en'])test('real Review app shows API runtime and interruption changes in '+language,async()=>{
   const fixture=await appFixture(language),dom=fixture.document,runtime=dom.getElementById('recoveryRuntime'),warning=dom.getElementById('recoveryRestartWarning');
   assert.equal(dom.documentElement.lang,language);assert.equal(dom.getElementById('error').hidden,true,dom.getElementById('error').textContent);

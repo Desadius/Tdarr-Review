@@ -106,6 +106,16 @@ Rejection does not require completing the checklist. It requires a separate reas
 
 Some duration mismatches can be rechecked/remuxed or explicitly assessed individually. The completed checklist does not bypass the duration rule: a permitted exception requires its own explicit final acceptance and a check of the beginning, ending and synchronisation. It is not applied indiscriminately to batch approvals. Do not use it to hide a different edit or missing content.
 
+### Files changed since queueing
+
+If the original or the result changed after the film was queued, the film is blocked and **Review** opens a verification step instead of the checklist:
+
+- **Only the metadata change time (ctime) changed**: choose **Verify the files and start a new review** (**Ověřit soubory a začít nové posouzení**). Review checks that the Tdarr job is still the same, that FFprobe reports the same technical data, and that neither file changes while it runs. This does not prove equal content, so earlier confirmations and decisions never carry over: after success the review starts again from the first step. If anything differs, the film stays blocked with the reason.
+- **Only the device changed** (a remount): **Recheck files** compares the remaining file details.
+- **Anything else** (size, content time, inode): it cannot be verified in Review. Both files are kept; inspect them by hand.
+
+Each successful verification is written to the event log as `item.reverified` with the previous snapshot and what changed.
+
 After a completed approval/rejection, Review removes its matching receipt and empty directories. It does not recursively delete unrelated contents or follow symlinks.
 
 ## Ask Radarr for a replacement

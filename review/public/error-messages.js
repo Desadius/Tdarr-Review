@@ -62,6 +62,8 @@ export const ERROR_MESSAGES=Object.freeze({
  settings_changing:Object.freeze({cs:"Probíhá změna nastavení.",en:"Settings are being changed."}),
  settings_changed:Object.freeze({cs:"Nastavení se mezitím změnilo. Otevři ho znovu.",en:"Settings have changed. Open them again."}),
  item_changed:Object.freeze({cs:"Položka se změnila. Obnov přehled.",en:"The item has changed. Refresh the overview."}),
+ item_needs_verification:Object.freeze({cs:"Soubory se od zařazení změnily. Posouzení není k dispozici, dokud je neověříš v detailu filmu.",en:"The files changed since the film was queued. No review is available until you verify them in the film's detail."}),
+ recheck_failed:Object.freeze({cs:"Ověření se nezdařilo; film zůstává zablokovaný. Důvod je v detailu filmu.",en:"Verification failed; the film stays blocked. The reason is in the film's detail."}),
  files_changed:Object.freeze({cs:"Obnov přehled, soubory se změnily.",en:"Refresh the overview; the files have changed."}),
  recheck_unsafe:Object.freeze({cs:"Tuto změnu nelze bezpečně znovu ověřit. Obnov přehled.",en:"This change cannot be safely rechecked. Refresh the overview."}),
  item_unmapped:Object.freeze({cs:"Soubor nelze bezpečně přiřadit k originálu.",en:"The file cannot be safely matched to the original."}),
