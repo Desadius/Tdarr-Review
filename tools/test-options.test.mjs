@@ -9,7 +9,7 @@ import {testRunnerFlags} from './test-options.mjs';
 test('coverage enables Node collection without filtering tests or changing concurrency',()=>{
   const ordinary=testRunnerFlags([]),coverage=testRunnerFlags(['--coverage']);
   assert.deepEqual(ordinary.slice(0,2),['--test','--test-concurrency=1']);
-  assert.ok(!ordinary.some(flag=>/only|name-pattern|skip-pattern|shard/.test(flag)));
+  assert.ok(!ordinary.some(flag=>/^--test-(?:only|name-pattern|skip-pattern|shard)(?:=|$)/.test(flag)));
   assert.deepEqual(coverage,[...ordinary,'--experimental-test-coverage']);
 });
 
