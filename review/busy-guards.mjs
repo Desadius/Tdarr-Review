@@ -21,10 +21,13 @@ export const BUSY_POLICIES=Object.freeze({
  previewSettings:Object.freeze([...foreground,...scan]),
  // On-demand previews only read media; unresolved recovery/pause is allowed.
  // A currently running resume is still excluded, like other foreground work.
- preview:Object.freeze([...foreground,...scan]),
+ // A running replacement or batch does not exclude previews of other films; the routes
+ // refuse the film that is being replaced or waits in the batch (item_in_operation).
+ preview:Object.freeze([...foreground.filter(flag=>!['active','batchRunning'].includes(flag)),...scan]),
  // Review writes serialize and compare revisions in their own CAS queue. Do
  // not exclude that queue from itself; all other mutations exclude it.
- reviewSession:Object.freeze([...foreground.filter(flag=>flag!=='reviewSessions'),...scan,...settled]),
+ // Reviews of other films stay possible while a replacement or batch runs (same per-film rule).
+ reviewSession:Object.freeze([...foreground.filter(flag=>!['reviewSessions','active','batchRunning'].includes(flag)),...scan,...settled]),
  // Discovery persists item metadata, so readers use the last cache while a
  // mutation owns the state. An owning preflight may scan; scans coalesce.
  scan:Object.freeze([...foreground]),

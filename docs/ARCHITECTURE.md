@@ -70,8 +70,8 @@ Every module and stylesheet URL is written as `?v=__APP_VERSION__`; the static r
 | Quarantine restore, recheck | Scan, unresolved recovery and owned pauses | None. These change media bindings and must start from idle state. |
 | Main settings save/test | Scan, statistics calculation, unresolved recovery and owned pauses | None. These may change the media/API configuration used by those operations. |
 | Radarr settings save/test, preview cache settings | Scan | Remain available during unresolved recovery/owned pauses because they cannot replace media or resume Tdarr dispatch. |
-| Interactive preview | Scan | May read media during unresolved recovery/owned pauses, with existing file identity validation. |
-| Saved review write | Scan, unresolved recovery and owned pauses | Writes retain their revision-aware CAS queue; the queue does not exclude itself. |
+| Interactive preview | Scan | May read media during unresolved recovery/owned pauses, with existing file identity validation. Not excluded by a running replacement or batch, except for the film being replaced or waiting in the batch (`item_in_operation`). |
+| Saved review write, approval only | Scan, unresolved recovery and pauses left after an operation | Writes retain their revision-aware CAS queue; the queue does not exclude itself. A running replacement or batch excludes only the film it is replacing or still has to replace (`item_in_operation`); node pauses held by that operation do not count as unresolved. |
 
 Foreground work includes active transactions, batches, node-resume requests, previews, settings and review writes. A running node resume blocks settings and interactive previews even when unresolved pauses themselves are allowed. Discovery scans persist item metadata: during foreground mutations, read requests use the previous cache (or an empty list before the first scan), and approval/rejection/replacement preflight scans use their own reservation. Scans coalesce rather than starting competing scans. Background preparation/cleanup also waits for foreground work, scans, recovery and owned pauses.
 
