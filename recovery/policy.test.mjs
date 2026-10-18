@@ -16,3 +16,38 @@ test('paths cannot escape library',()=>{assert.equal(relative('/media/movies/A/A
 const movie={id:1,monitored:true,movieFileId:3,movieFile:{id:3,path:'/media/A/A.mkv',size:42,sceneName:'release'}};
 const history=[{id:5,eventType:'downloadFolderImported',downloadId:'abc',data:{fileId:'3',importedPath:'/media/A/A.mkv',size:'42'}},{id:4,eventType:'grabbed',movieId:1,downloadId:'abc',sourceTitle:'release',data:{publishedDate:'2026-01-01',indexer:'Indexer',size:'50',protocol:'1'}}];
 test('bind only current import to its exact grabbed release',()=>{const b=bindHistory(movie,history,'/media/A/A.mkv',42);assert.equal(b.historyId,4);assert.equal(blocked([{sourceTitle:'release',indexer:'Indexer',protocol:'usenet'}],b),true);assert.equal(blocked([{sourceTitle:'release',indexer:'Indexer',protocol:'torrent'}],b),false);assert.equal(blocked([{sourceTitle:'other',indexer:'Indexer',protocol:'usenet'}],b),false);for(const hs of [[],history.slice(1),[...history,history[1]]])assert.throws(()=>bindHistory(movie,hs,'/media/A/A.mkv',42));assert.throws(()=>bindHistory(movie,history,'/media/A/A.mkv',43));assert.throws(()=>bindHistory({...movie,monitored:false},history,'/media/A/A.mkv',42));});
+const dca=message=>({code:183,stderr:`[dca @ 0x5581a2c0] ${message}\nError submitting packet to decoder: Invalid data found when processing input`});
+const matroska={code:0,stderr:'[matroska,webm @ 0x55d1f00] Element at 0x1a2b3c ending at 0x1a2c00 exceeds containing master element ending at 0x1a2bf0'};
+test('specific DTS core and Matroska structure errors are recognized with signatures free of process addresses',()=>{
+ for(const message of ['Residual encoded channels are present without core','Invalid isolated sample location','Invalid bit allocation index','Failed to decode block code(s)']){
+  const a=dca(message),b={...a,stderr:a.stderr.replace('0x5581a2c0','0x7ffd0010')};
+  assert.equal(classify(a).kind,'corrupt',message);assert.equal(classify(a).signature,'[dca] '+message);
+  assert.deepEqual(classify({code:0,stderr:classify(a).signature}),classify(a),'a stored signature classifies to itself');
+  assert.equal(confirmed(a,b),true,message);
+ }
+ const moved={...matroska,stderr:matroska.stderr.replace('0x55d1f00','0x60aa000')};
+ assert.equal(classify(matroska).kind,'corrupt','structural error stderr with exit 0 is not healthy');
+ assert.equal(classify(matroska).signature,'[matroska,webm] Element at 0x1a2b3c ending at 0x1a2c00 exceeds containing master element ending at 0x1a2bf0');
+ assert.deepEqual(classify({code:0,stderr:classify(matroska).signature}),classify(matroska));
+ assert.equal(confirmed(matroska,moved),true);
+});
+test('the new DTS and Matroska signatures never authorize repair on their own or across differing evidence',()=>{
+ const residual=dca('Residual encoded channels are present without core');
+ assert.equal(confirmed(residual,dca('Invalid bit allocation index')),false,'differing signatures');
+ assert.equal(confirmed(residual,matroska),false);
+ assert.equal(confirmed(residual,{code:0,stderr:''}),false);
+ for(const x of [{timeout:true},{signal:'SIGKILL'},{error:'spawn ENOENT'},{stderr:residual.stderr+'\nInput/output error'},{stderr:matroska.stderr+'\nPermission denied'}]){
+  assert.equal(confirmed(residual,{...residual,...x}),false,JSON.stringify(x));assert.equal(classify({...matroska,...x}).kind,'operational');
+ }
+});
+test('timestamp-only DTS warnings, other decoders and generic invalid data stay unconfirmed',()=>{
+ for(const stderr of [
+  '[matroska @ 0x1] Non-monotonous DTS in output stream 0:1; previous: 1001, current: 1000; changing to 1002. This may result in incorrect timestamps in the output file.',
+  '[mpegts @ 0x1] Packet corrupt (stream = 1, dts = 900000).',
+  'Application provided invalid, non monotonically increasing dts to muxer in stream 1: 5 >= 5',
+  '[aac @ 0x1] Failed to decode block code(s)',
+  'Residual encoded channels are present without core',
+  '[dca @ 0x1] Invalid data found when processing input',
+  '[matroska,webm @ 0x1] Element at 0x10 ending at 0x20 exceeds containing master',
+ ])assert.equal(classify({code:1,stderr}).kind,'unconfirmed',stderr);
+});
