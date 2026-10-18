@@ -306,6 +306,16 @@ if(typeof vm.SourceTextModule!=='function'){
   assert.deepEqual(writes.map(c=>[c.route,c.body]),[['/api/items/'+reviewItem.id+'/approval',{snapshot:reviewItem.snapshot,reviewRevision:3}]]);
   assert.equal(dom.getElementById('filmDetail').open,false,'approve only returns to the overview');
  });
+ test('while a replacement runs, another film keeps its review controls and the film in the operation is locked',async()=>{
+  const second={...reviewItem,id:'c'.repeat(24),snapshot:'d'.repeat(64),title:'Second film'};
+  const blank=item=>({version:1,snapshot:item.snapshot,revision:1,requirements:{hdr:false},complete:false,observations:{},session:{method:'review',device:'',step:0,scope:{originalIndex:1,reviewIndex:2,seconds:10},checks:Object.fromEntries(['preparation','image','audio','syncStart','syncMiddle','syncEnd'].map(key=>[key,false])),note:'',deferred:false}});
+  const routes={};for(const item of [reviewItem,second]){routes['/api/items/'+item.id+'/review-session']={data:blank(item)};routes['/api/items/'+item.id+'/audio-compare']={data:{original:[],review:[]}}}
+  const f=await appFixture('cs',{itemsData:{items:[reviewItem,second],active:{id:reviewItem.id,title:reviewItem.title,action:'approve',stage:'Kopíruji',started:Date.now()},restorePending:1,reviewSessions:{[reviewItem.id]:blank(reviewItem),[second.id]:blank(second)}},routes}),dom=f.document,settle=async()=>{for(let i=0;i<6;i++)await flush()};
+  const open=async title=>{if(dom.getElementById('filmDetail').open)await dom.getElementById('filmDetail').close();await dom.querySelectorAll('button').find(n=>n.getAttribute('aria-label')==='Posoudit '+title).emit('click');await settle();return dom.getElementById('detailBody').querySelector('[data-check="preparation"]')};
+  assert.equal((await open('Second film')).disabled,false,'another film stays reviewable');
+  assert.equal(await open('Fixture film'),null,'the film being replaced shows no checklist');assert.match(dom.getElementById('detailBody').textContent,/Tento film se právě nahrazuje nebo čeká v dávce/);
+  assert.equal(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,0);
+ });
  for(const language of ['cs','en'])test('real Review app shows API runtime and interruption changes in '+language,async()=>{
   const fixture=await appFixture(language),dom=fixture.document,runtime=dom.getElementById('recoveryRuntime'),warning=dom.getElementById('recoveryRestartWarning');
   assert.equal(dom.documentElement.lang,language);assert.equal(dom.getElementById('error').hidden,true,dom.getElementById('error').textContent);

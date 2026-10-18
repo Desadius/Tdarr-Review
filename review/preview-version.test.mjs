@@ -24,3 +24,11 @@ test('renderer identity reads real renderer sources and fails closed if diagnost
   return 'synthetic renderer source';
  }),/diagnostic source unavailable/);
 });
+
+test('MPEG-2 initialization policy changes invalidate prepared comparisons',async()=>{
+ const sources=new Map(),read=file=>{if(!sources.has(file))sources.set(file,'synthetic source: '+file);return sources.get(file)};
+ const initial=await previewCodeVersion(read);
+ for(const name of ['mpeg2-initialization.mjs','preview-validation.mjs']){
+  const before=await previewCodeVersion(read);sources.set(name,'changed acceptance policy');assert.notEqual(await previewCodeVersion(read),before);
+ }
+});

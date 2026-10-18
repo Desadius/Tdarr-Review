@@ -29,6 +29,8 @@ export async function previewRoutes(ctx,req,res,url,request){
  if((audio||frames)&&req.method==='POST'){
   const sampleRequest=await body(req),id=(audio||frames)[1],item=ctx.state.items[id];
   if(!item||item.snapshot!==sampleRequest.snapshot)return reply(res,409,apiError('files_changed'));
+  // On-demand previews never read a film while it is being replaced.
+  if(ctx.itemInOperation(id))return reply(res,409,apiError('item_in_operation'));
   if(sampleRequest.cachedOnly!==undefined&&typeof sampleRequest.cachedOnly!=='boolean')return reply(res,400,apiError('sample_cache_request_invalid'));
   const readonly=sampleRequest.cachedOnly===true||audio&&sampleRequest.mode==='tracks';
   if(!readonly){
