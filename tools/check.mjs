@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
-import {versionMismatches} from './version-consistency.mjs';
+import {versionMismatches,moduleVersionLiterals} from './version-consistency.mjs';
 import {sourceTextViolations} from './source-text-tests.mjs';
 async function walk(root){
   for(const entry of await fs.readdir(root,{withFileTypes:true})){
@@ -15,7 +15,7 @@ async function walk(root){
 }
 for(const directory of ['review','recovery','tools'])await walk(directory);
 console.log('JavaScript syntax checked.');
-const mismatches=await versionMismatches();
+const mismatches=[...await versionMismatches(),...await moduleVersionLiterals()];
 if(mismatches.length){for(const line of mismatches)console.error('Version mismatch: '+line);process.exit(1);}
 console.log('Versions agree with package.json.');
 const sourceText=await sourceTextViolations();

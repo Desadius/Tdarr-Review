@@ -1,8 +1,8 @@
 // Frame and audio/AV comparison dialogs. The app context supplies api() and the latest item list.
-import {mountAVComparison} from '/av-player.js?v=20261012-wipe1';
-import {preparationSummary,previewJobMatches,createCachedPreviewLoader} from '/review-workflow.js?v=20261013-prepared2';
-import {tr,translateAudioTrackLabel as audioTrackLabel} from '/i18n.js?v=20261013-retention1';
-import {el,button,elapsedText} from '/ui-kit.js?v=20261013-split1';
+import {mountAVComparison} from '/av-player.js?v=__APP_VERSION__';
+import {preparationSummary,previewJobMatches,createCachedPreviewLoader} from '/review-workflow.js?v=__APP_VERSION__';
+import {tr,translateAudioTrackLabel as audioTrackLabel} from '/i18n.js?v=__APP_VERSION__';
+import {el,button,elapsedText} from '/ui-kit.js?v=__APP_VERSION__';
 
 let app=null;
 const api=(route,body)=>app.api(route,body);

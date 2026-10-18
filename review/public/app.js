@@ -1,13 +1,13 @@
-import {mountReviewWorkflow,classifyPreparation,preparationSummary} from '/review-workflow.js?v=20261013-prepared2';
-import {capabilities, classifyRecovery, recoveryProgress, downloadProgress, liveRecoveryRecord, projectRequests, historyWarnings, historyFollowup, recoveryFollowup, fullHashProgress} from '/review-model.js?v=20261015-outside1';
-import {$,el,fmt,date,elapsedText,etaText,poster,button,badge,keyed,makeTabs,detailsFacts} from '/ui-kit.js?v=20261017-settings1';
-import {decodeProgressView,downloadProgressView,fullHashProgressView,recoveryDetails,recoveryRuntimeView,recoveryRestartWarningView,recoveryConfigNoticeView} from '/recovery-view.js?v=20261015-outside1';
-import {installComparisons,openComparison,openAudioComparison} from '/comparison.js?v=20261013-split1';
-import {installSettingsDialogs} from '/settings-dialogs.js?v=20261017-settings1';
-import {installQuarantine,openQuarantine} from '/quarantine.js?v=20261013-split1';
-import {installStatistics,loadStatistics,statisticsLoadedAt} from '/statistics.js?v=20261013-split1';
-import {tr,locale,language,initializeLocale} from '/i18n.js?v=20261017-settings1';
-import {errorText} from '/error-messages.js?v=20261017-settings1';
+import {mountReviewWorkflow,classifyPreparation,preparationSummary} from '/review-workflow.js?v=__APP_VERSION__';
+import {capabilities, classifyRecovery, recoveryProgress, downloadProgress, liveRecoveryRecord, projectRequests, historyWarnings, historyFollowup, recoveryFollowup, fullHashProgress} from '/review-model.js?v=__APP_VERSION__';
+import {$,el,fmt,date,elapsedText,etaText,poster,button,badge,keyed,makeTabs,detailsFacts} from '/ui-kit.js?v=__APP_VERSION__';
+import {decodeProgressView,downloadProgressView,fullHashProgressView,recoveryDetails,recoveryRuntimeView,recoveryRestartWarningView,recoveryConfigNoticeView} from '/recovery-view.js?v=__APP_VERSION__';
+import {installComparisons,openComparison,openAudioComparison} from '/comparison.js?v=__APP_VERSION__';
+import {installSettingsDialogs} from '/settings-dialogs.js?v=__APP_VERSION__';
+import {installQuarantine,openQuarantine} from '/quarantine.js?v=__APP_VERSION__';
+import {installStatistics,loadStatistics,statisticsLoadedAt} from '/statistics.js?v=__APP_VERSION__';
+import {tr,locale,language,initializeLocale} from '/i18n.js?v=__APP_VERSION__';
+import {errorText} from '/error-messages.js?v=__APP_VERSION__';
 initializeLocale();
 
 const busy=d=>!!d?.active||!!d?.batchRunning;

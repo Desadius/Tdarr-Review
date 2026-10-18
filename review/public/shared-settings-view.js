@@ -1,6 +1,6 @@
-import {tr,locale,language} from '/i18n.js?v=20261017-settings1';
-import {el,button,date} from '/ui-kit.js?v=20261017-settings1';
-import {errorText} from '/error-messages.js?v=20261017-settings1';
+import {tr,locale,language} from '/i18n.js?v=__APP_VERSION__';
+import {el,button,date} from '/ui-kit.js?v=__APP_VERSION__';
+import {errorText} from '/error-messages.js?v=__APP_VERSION__';
 
 const fields=[
  ['review','label','Název instalace','text',0],['review','publicOrigin','Veřejná adresa Review','url',0],['review','tdarrUrl','Společná adresa API Tdarr','url',0],['review','libraryId','ID knihovny Tdarr (Off dovoluje automatický výběr)','text',0],

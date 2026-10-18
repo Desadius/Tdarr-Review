@@ -1,7 +1,7 @@
-import {installSharedSettings} from '/shared-settings-view.js?v=20261017-settings1';
+import {installSharedSettings} from '/shared-settings-view.js?v=__APP_VERSION__';
 // Review, sample-preparation and Radarr settings dialogs.
-import {tr,locale} from '/i18n.js?v=20261017-settings1';
-import {$,el,button} from '/ui-kit.js?v=20261017-settings1';
+import {tr,locale} from '/i18n.js?v=__APP_VERSION__';
+import {$,el,button} from '/ui-kit.js?v=__APP_VERSION__';
 
 let app=null;
 const api=(route,body)=>app.api(route,body);
