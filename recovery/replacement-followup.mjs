@@ -1,4 +1,4 @@
-import {identity} from './policy.mjs';
+import {caseId} from './policy.mjs';
 import {compareIdentity} from './file-identity.mjs';
 
 // Display linkage only. It grants no authority and never changes either case.
@@ -11,7 +11,7 @@ function matchFingerprint(stored,current){
 export function replacementFollowup(parent,{cfg,state}){
  if(parent.status!=='replacement_imported'||parent.cleanup?.approvedAt||parent.cleanup?.complete||!parent.replacementSourceFP||!parent.replacementRelative||!Number.isInteger(parent.movieId)||parent.movieId<=0||!Number.isInteger(parent.replacement?.movieFileId)||parent.replacement.movieFileId<=0||!Number.isSafeInteger(parent.replacement?.size)||parent.replacement.size<=0)return null;
  const file=cfg.sourceRoot+'/'+parent.replacementRelative;
- const matches=Object.values(state.cases||{}).filter(c=>c.id!==parent.id&&typeof c.fp==='string'&&c.id===identity(file,c.fp)&&c.movieId===parent.movieId&&c.file===file&&c.relative===parent.replacementRelative&&matchFingerprint(parent.replacementSourceFP,c.fp)&&c.size===parent.replacement.size&&c.binding?.movieFileId===parent.replacement.movieFileId);
+ const matches=Object.values(state.cases||{}).filter(c=>c.id!==parent.id&&typeof c.fp==='string'&&c.id===caseId(file,c.fp)&&c.movieId===parent.movieId&&c.file===file&&c.relative===parent.replacementRelative&&matchFingerprint(parent.replacementSourceFP,c.fp)&&c.size===parent.replacement.size&&c.binding?.movieFileId===parent.replacement.movieFileId);
  return matches.length===1?{id:matches[0].id,binding:matchFingerprint(parent.replacementSourceFP,matches[0].fp)}:null;
 }
 export const replacementFollowupId=(parent,deps)=>replacementFollowup(parent,deps)?.id||null;
