@@ -73,6 +73,9 @@ export function capabilities(item, d, context = {}) {
     compareAudio: previewAllowed && hasDuration(item?.durationA),
     download: context.authenticated === true && itemId(item?.id),
     // Request identity/capability comes from the server, not its display title.
+    // Manual replacement of a confirmed faulty original without a Review result (#153): only the
+    // server's offer for this exact case and original identity enables it.
+    replaceSource: !writeBlocked && itemId(item?.id) && item?.source === 'recovery' && item?.phase === 'manual' && typeof item?.sourceReplacement?.snapshot === 'string' && context.requestsFresh !== false,
     restore: !writeBlocked && itemId(item?.id) && item?.canRestore === true && item?.source !== 'recovery' && restorePhase && !list(item?.queue).length && !item?.replacement && context.requestsFresh !== false,
     reviewComplete,
     writeBlocked,
@@ -192,7 +195,7 @@ export function classifyRecovery(record, now = Date.now()) {
   } else if (r.phase === 'manual' && r.source === 'recovery' && BINDING_FAILURES[r.bindingFailure]) {
     // Confirmed faulty original whose exact release Radarr's history cannot identify (#153).
     category = 'attention'; label = r.sourceConfirmed === true ? 'Vadný originál bez vazby na vydání' : 'Chybí vazba na vydání v Radarru';
-    nextStep = BINDING_FAILURES[r.bindingFailure] + (r.sourceConfirmed === true ? ' Vada originálu je potvrzená dvěma kontrolami; originál zůstává beze změny v knihovně.' : '');
+    nextStep = BINDING_FAILURES[r.bindingFailure] + (r.sourceConfirmed === true ? ' Vada originálu je potvrzená dvěma kontrolami; originál zůstává beze změny v knihovně.' + (r.sourceReplacement ? ' Jinou kopii můžeš výslovně vyžádat přes Radarr na kartě Obnova.' : '') : '');
   } else if (r.phase === 'manual') {
     category = 'attention'; label = 'Obnova vyžaduje kontrolu'; nextStep = 'Otevři detail a ověř zachované kopie před další akcí.';
   } else if (r.phase === 'deferred_limit') {

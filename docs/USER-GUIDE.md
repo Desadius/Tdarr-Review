@@ -134,6 +134,8 @@ After a completed approval/rejection, Review removes its matching receipt and em
 
 Configure Radarr first. In the film's recovery panel, enter the reason and confirm the request. Review preserves both the original and current result in quarantine, excludes the original release title and requests the same or higher permitted quality. This temporarily removes that copy from the library so Radarr can consider an equal-quality replacement.
 
+A confirmed faulty original that Recovery could not bind to its Radarr release (**Faulty original without a release binding**) has no Review result to reject. Its case offers **Request another copy through Radarr** on the Recovery tab instead: the same request, but only the original moves to quarantine. The offer disappears when the original changes or a request for the case is open; see [Operations](OPERATIONS.md#faulty-original-without-a-release-binding).
+
 The optional automatic Recovery worker is stricter: it must independently confirm a recognised decoding error in the **original** twice before requesting a replacement. Permissions, network, disk I/O, timeout and generic encoder errors are not sufficient. An unacceptable transcode or uncertain waveform correlation does not itself prove that the original is damaged.
 
 If automatic Recovery finds no suitable release, it can preserve a quarantined original link/copy back in the library, hold that edition out of Tdarr and search again after six hours. Review displays the exclusion, next search and a Radarr link for independent searching. The manual Review-request workflow does not currently perform that same automatic restore/search loop.

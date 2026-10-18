@@ -9,6 +9,7 @@ test('every mutating route has an explicit concurrency policy',()=>{
  const id='a'.repeat(24);
  const routes={settings:['/api/settings','/api/settings/test'],radarrSettings:['/api/radarr/settings','/api/radarr/settings/test'],previewSettings:['/api/preview-settings'],batch:['/api/approve-batch'],restore:[`/api/radarr/requests/${id}/restore`],reviewSession:[`/api/items/${id}/review-session`,`/api/items/${id}/approval`]};
  for(const action of ['approve','reject','replace','recheck'])routes[action]=[`/api/items/${id}/${action}`];
+ routes.replace.push(`/api/recovery/cases/${id}/replace-source`);
  for(const [kind,paths] of Object.entries(routes))for(const route of paths){assert.equal(mutationKind('POST',route),kind);assert.ok(BUSY_POLICIES[kind]);assert.equal(mutationKind('GET',route),null)}
  assert.equal(mutationKind('POST','/api/login'),null);
  assert.equal(mutationKind('POST',`/api/items/${id}/frames`),null,'preview mutability is decided from the parsed body');

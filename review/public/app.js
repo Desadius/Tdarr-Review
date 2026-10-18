@@ -86,12 +86,18 @@ function renderNodeRestores(nodes){
   // Older records have no film or time; show only what is known so no fallback text stays untranslated.
   row.append(el('span','',[n.name,n.title?tr('Pozastaveno pro '+n.title):'',n.pausedAt?date(n.pausedAt):''].filter(Boolean).join(' · '),true),b);return row});
 }
+function askSourceReplacement(record){
+ if(!caps(record).replaceSource){error(Error(caps(record).reason||'Náhrada není dostupná.'));return}
+ pending={record,action:'replaceSource'};
+ confirmSetup('NÁHRADA PŘES RADARR',record.title,'Vada originálu je potvrzená dvěma kontrolami Recovery, ale historii vydání v Radarru nelze spojit. Originál se zachová v karanténě a dočasně zmizí z knihovny; v Tdarru dostane Hold. Radarr dostane vlastní profil se stejnou nebo vyšší kvalitou a zákaz přesně tohoto vydání; jiné vydání se neblokuje a ID stažení se nedoplňuje. České + anglické audio se upřednostní, pokud jsou jazyky ve vydání správně označené. Novou kopii zpracuje Tdarr a před nahrazením ji musíš schválit v Review. Uveď vlastní důvod.','Vyžádat jinou kopii',true);
+ $('rejectReason').value='';$('confirm').showModal();
+}
 function askRestore(record){
  if(!caps(record).restore){error(Error(caps(record).reason||'Obnovení není dostupné.'));return}
  pending={record,action:'restore'};confirmSetup('OBNOVENÍ Z KARANTÉNY',record.title,'Vrátit originál i převod z karantény? Radarr nesmí mít aktivní stažení ani novou importovanou kopii. Server znovu ověří identitu souborů a stav Radarru.','Vrátit zachované kopie');$('confirm').showModal();
 }
 $('rejectReason').addEventListener('input',()=>{$('rejectReason').setCustomValidity(tr(''));if(pending?.item)drafts.set(pending.item.id+':'+pending.action,$('rejectReason').value)});
-$('commit').addEventListener('click',e=>{if(['reject','replace'].includes(pending?.action)&&!$('rejectReason').value.trim()){e.preventDefault();$('rejectReason').setCustomValidity(tr('Uveď důvod rozhodnutí.'));$('rejectReason').reportValidity();}});
+$('commit').addEventListener('click',e=>{if(['reject','replace','replaceSource'].includes(pending?.action)&&!$('rejectReason').value.trim()){e.preventDefault();$('rejectReason').setCustomValidity(tr('Uveď důvod rozhodnutí.'));$('rejectReason').reportValidity();}});
 $('confirm').addEventListener('cancel',()=>{$('confirm').returnValue='cancel'});
 $('confirm').addEventListener('close',async()=>{
  const request=pending,confirmed=$('confirm').returnValue==='confirm',reason=$('rejectReason').value.trim();pending=null;$('confirm').returnValue='';if(!confirmed||!request){if(confirmOrigin?.isConnected&&!confirmOrigin.disabled)confirmOrigin.focus({preventScroll:true});else if($('filmDetail').open)$('detailClose').focus();return;}
@@ -100,6 +106,7 @@ $('confirm').addEventListener('close',async()=>{
   if(request.action==='batch')for(const item of request.items)writeItem(item,'approveBatch');
   else if(request.action==='keepPaused'){if(!latest?.pendingRestores?.some(n=>n.name===request.node))throw Error('Tento node už Review neobnovuje. Obnov přehled.');}
   else if(request.action==='restore'){const current=requests.find(r=>r.id===request.record.id&&r.source===request.record.source);if(!current||!caps(current).restore)throw Error('Stav obnovy se změnil. Obnov údaje.');}
+  else if(request.action==='replaceSource'){const current=requests.find(r=>r.id===request.record.id&&r.source==='recovery');if(!current||!caps(current).replaceSource||current.sourceReplacement.snapshot!==request.record.sourceReplacement.snapshot)throw Error('Stav případu se změnil. Obnov údaje.');}
   else writeItem(request.item,request.action);
   if(request.action==='approve'&&latest?.reviewSessions?.[request.item.id]?.revision!==request.reviewRevision)throw Error('Posouzení se od otevření potvrzení změnilo. Znovu ověř uložené kontroly.');
   if(request.action==='batch'&&request.items.some(item=>latest?.reviewSessions?.[item.id]?.revision!==request.reviewRevisions[item.id]))throw Error('Posouzení vybraných filmů se změnilo. Znovu ověř uložené kontroly.');
@@ -107,6 +114,7 @@ $('confirm').addEventListener('close',async()=>{
   if(request.action==='batch'){await api('/api/approve-batch',{items:request.items.map(x=>({id:x.id,snapshot:x.snapshot,reviewRevision:request.reviewRevisions[x.id]}))});selected.clear()}
   else if(request.action==='keepPaused')await api('/api/node-restores/keep',{name:request.node,confirm:true});
   else if(request.action==='restore')await api('/api/radarr/requests/'+request.record.id+'/restore',{confirm:true});
+  else if(request.action==='replaceSource')await api('/api/recovery/cases/'+request.record.id+'/replace-source',{snapshot:request.record.sourceReplacement.snapshot,reason});
   else await api(`/api/items/${request.item.id}/${request.action}`,{snapshot:request.item.snapshot,reviewRevision:request.action==='approve'?request.reviewRevision:undefined,acceptDuration:request.acceptDuration===true,reason:['reject','replace'].includes(request.action)?reason:undefined});
   if(request.item)drafts.delete(request.item.id+':'+request.action);
   $('filmDetail').close();lastRender='';await load();await loadRequests(true);
@@ -274,6 +282,8 @@ function detailRequest(r,tab){
   const progress=recoveryProgress(r);if(progress)box.append(decodeProgressView(progress));
   const hashProgress=fullHashProgress(r);if(hashProgress)box.append(fullHashProgressView(hashProgress));
   if(r.canRestore)box.append(guardedButton(r,'restore','Vrátit originál i převod z karantény',()=>askRestore(r)));
+  if(r.sourceReplacement)box.append(guardedButton(r,'replaceSource','Vyžádat jinou kopii přes Radarr',()=>askSourceReplacement(r)));
+  else if(r.sourceReplacementBlocked)box.append(el('p','alert inline-warning',r.sourceReplacementBlocked));
   box.append(button('Prohlédnout karanténu případu',()=>openQuarantine(r.title,r.id)));
  }else{
   box.append(el('h3','','Technické údaje obnovy'),detailsFacts([['ID případu',r.id,true],['Zdroj',r.source||'Radarr',true],['Fáze',r.phase||tr('Neznámá'),true],['Tdarr',r.tdarrStatus||tr('Stav není doložen'),true],['Důvod',r.reason||tr('Nedoloženo'),true],['Vyřazené vydání',r.edition||tr('Neuvedeno'),true],['Nové vydání',r.replacementTitle||r.replacement?.title||tr('Nedoloženo'),true]]));if(r.error)box.append(el('p','failure',r.error));

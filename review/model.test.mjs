@@ -396,3 +396,11 @@ test('during a replacement other films stay reviewable while the film in the ope
   const leftover=capabilities(other,{...clear,restorePending:1},context);
   assert.equal(leftover.reviewWriteBlocked,true,'pauses left after the operation still block');
 });
+
+test('the manual replacement of a binding-failure case needs the server offer, a manual phase and fresh requests',()=>{
+ const record={id:'c'.repeat(24),source:'recovery',phase:'manual',bindingFailure:'grab-missing',sourceConfirmed:true,sourceReplacement:{snapshot:'s'.repeat(64)}};
+ assert.equal(capabilities(record,clear,context).replaceSource,true);
+ for(const [name,change,ctx] of [['no offer',{sourceReplacement:undefined}],['refused offer',{sourceReplacement:undefined,sourceReplacementBlocked:'changed'}],['not manual',{phase:'verifying'}],['not recovery',{source:'radarr'}],['stale requests',{},{requestsFresh:false}]])
+  assert.equal(capabilities({...record,...change},clear,{...context,...ctx}).replaceSource,false,name);
+ assert.equal(capabilities(record,{...clear,active:{id:'f'.repeat(24)}},context).replaceSource,false,'another action runs');
+});

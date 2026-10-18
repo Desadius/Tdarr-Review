@@ -20,6 +20,18 @@ export async function itemRoutes(ctx,req,res,url,request){
   if(ctx.busyFor('replace',request.mutation))return reply(res,409,apiError('busy'));
   void ctx.replacementAction(item,reason);return reply(res,202,{ok:true});
  }
+ // A confirmed faulty original whose Radarr release history cannot be bound: the same manual
+ // replacement without a Review result, offered only for that exact case and original (#153).
+ const sourceReplace=/^\/api\/recovery\/cases\/([a-f0-9]{24})\/replace-source$/.exec(url.pathname);
+ if(sourceReplace&&req.method==='POST'){
+  const b=await body(req);let reason;try{reason=rejectionReason(b.reason)}catch(e){return reply(res,400,{error:e.message})}
+  let item;try{item=await ctx.replacements.sourceCandidate(sourceReplace[1])}catch(e){return reply(res,409,{error:e.message})}
+  if(typeof b.snapshot!=='string'||item.snapshot!==b.snapshot)return reply(res,409,apiError('item_changed'));
+  // A Review result for the same original would be left without its original: use its own replacement.
+  if((await ctx.scan(true,null,request.mutation)).some(v=>v.relative===item.relative))return reply(res,409,apiError('item_has_review_result'));
+  if(ctx.busyFor('replace',request.mutation))return reply(res,409,apiError('busy'));
+  void ctx.replacementAction(item,reason);return reply(res,202,{ok:true});
+ }
  if(url.pathname==='/api/items'&&req.method==='GET'){
   const items=await ctx.scan();
   return reply(res,200,{version:ctx.APP_VERSION,label:ctx.config.label,serverTime:Date.now(),items,previews:Object.fromEntries(items.filter(item=>item.snapshot).map(item=>[item.id,ctx.previewPreparation(item.id,item.snapshot)])),reviewSessions:ctx.reviewSessions.list(items.filter(item=>!item.identityChanged)),approvals:publicApprovals(ctx.state,items.filter(item=>!item.identityChanged),ctx.reviewSessions.list(items.filter(item=>!item.identityChanged))),active:ctx.active,batch:ctx.state.batch||null,batchRunning:ctx.batchRunning,history:ctx.state.history,recovery:unresolvedTransactions(ctx.recovery,items,ctx.config.mediaRoot),restorePending:ctx.state.pauses.length,pendingRestores:ctx.pendingRestores()});
