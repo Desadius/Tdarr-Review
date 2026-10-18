@@ -8,7 +8,7 @@ function fail(code, message) {
   throw Object.assign(new Error(message), {code});
 }
 
-// This helper deliberately lives in Recovery: its image does not contain Review.
+// Shared by Recovery's worker and Review's manual Radarr replacement.
 // Persist intent before calling it. On an interrupted call, invoke it again with
 // the same verified file/library; the fresh read reconciles accepted mutations.
 export async function ensureHandoff({tdarr, file, libraryId, preserveHold = false}) {
