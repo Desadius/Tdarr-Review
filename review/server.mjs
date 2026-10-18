@@ -73,8 +73,13 @@ for(const h of state.history||[])if(h.status==='error'&&h.message?.includes('Une
 let previewBusy=false;
 let active=null,scanPromise=null,cache=null,cacheAt=0,batchRunning=false;
 let mutationOwner=null;
+// Node pauses taken by the running replacement or batch are owned by it, not unresolved: they do not
+// block reviews of other films. Once the operation ends, any pause left behind blocks as before.
+const operationPauses=()=>!!(active||batchRunning);
+// The film being replaced, or waiting in the running batch, accepts no review, approval or preview work.
+function itemInOperation(id){return active?.id===id||!!(batchRunning&&state.batch?.remaining?.some(x=>x.id===id))}
 function busyFor(kind,owner=null){
- return policyBusyFor(kind,{foreground:mutationOwner&&mutationOwner!==owner,active,batchRunning,resumeTask,previewBusy,settingsBusy,reviewSessions:reviewSessions.busy,scan:scanPromise,recovery:recovery.length,pauses:state.pauses.length,statistics:statsTask,previewHolds:previewMutationHolds});
+ return policyBusyFor(kind,{foreground:mutationOwner&&mutationOwner!==owner,active,batchRunning,resumeTask,previewBusy,settingsBusy,reviewSessions:reviewSessions.busy,scan:scanPromise,recovery:recovery.length,pauses:operationPauses()?0:state.pauses.length,statistics:statsTask,previewHolds:previewMutationHolds});
 }
 let saveChain=Promise.resolve();
 const save=()=>{const snapshot=structuredClone(state);saveChain=saveChain.catch(()=>{}).then(()=>atomicJSON(statefile,snapshot));return saveChain};
@@ -435,7 +440,7 @@ const ctx={
  get statsCache(){return statsCache},set statsCache(value){statsCache=value},
  get statsTask(){return statsTask},set statsTask(value){statsTask=value},
  get mutationOwner(){return mutationOwner},set mutationOwner(value){mutationOwner=value},
- applyConfig,save,busyFor,keepNodePaused,pendingRestores,scan,perform,performBatch,replacementAction,resume,readRows,dbRows,verifyReviewItem,reviewMutationBlocked,
+ applyConfig,save,busyFor,itemInOperation,keepNodePaused,pendingRestores,scan,perform,performBatch,replacementAction,resume,readRows,dbRows,verifyReviewItem,reviewMutationBlocked,
  previewIdentity,previewPair,previewVersion,previewPreparation,planPreviewItem,preparePreviews,forgetPreviews,
 };
 const activateSettings=value=>{activeSettings=value;config=value.review;applyConfig();statsCache=null;state.items={};state.reviewSessions={};state.approvals={};cache=null;cacheAt=0;previewPairs.clear();previewPlans.clear();previewAttempts.clear();};

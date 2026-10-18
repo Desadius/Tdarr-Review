@@ -19,11 +19,14 @@ for(const different of [false,true])test(`HTTP simultaneous approvals (${differe
  }finally{await f.close()}
 });
 
-test('HTTP every mutating route is excluded during an approval; read-only previews preserve confirmations',linux,async()=>{
+test('HTTP every media and settings mutation is excluded during an approval; read-only previews preserve confirmations',linux,async()=>{
  const f=await fixture();try{
   const list=(await f.items()).items,a=list.find(item=>item.title==='A'),b=list.find(item=>item.title==='B');await f.confirm(a);const session=await f.confirm(b);
   const gate=f.hold('/api/v2/update-node',body=>body.data.nodeUpdates.nodePaused);assert.equal((await f.approve(a)).status,202);await deadline(gate.entered,'approval dispatch pause');
-  for(const [route,body] of f.allMutations(b,session)){const result=await f.post(route,body);assert.equal(result.status,409,route+' '+await result.clone().text())}
+  // Reviewing and comparing another film stays possible during a replacement (#155, review/concurrent-review-http.test.mjs);
+  // every media, settings and restore mutation is still excluded.
+  const reviewWork=new Set(['review-session','frames','audio-compare','approval'].map(action=>`/api/items/${b.id}/${action}`));
+  for(const [route,body] of f.allMutations(b,session)){if(reviewWork.has(route))continue;const result=await f.post(route,body);assert.equal(result.status,409,route+' '+await result.clone().text())}
   const readonly=await f.post(`/api/items/${b.id}/frames`,{snapshot:b.snapshot,seconds:0,cachedOnly:true});assert.equal(readonly.status,202);
   const tracks=await f.post(`/api/items/${b.id}/audio-compare`,{snapshot:b.snapshot,mode:'tracks'});assert.equal(tracks.status,200);
   const saved=await f.get(`/api/items/${b.id}/review-session?snapshot=${b.snapshot}`);assert.deepEqual(saved,session,'preview loading cannot record a user confirmation');

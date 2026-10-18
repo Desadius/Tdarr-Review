@@ -62,6 +62,7 @@ export const ERROR_MESSAGES=Object.freeze({
  settings_changing:Object.freeze({cs:"Probíhá změna nastavení.",en:"Settings are being changed."}),
  settings_changed:Object.freeze({cs:"Nastavení se mezitím změnilo. Otevři ho znovu.",en:"Settings have changed. Open them again."}),
  item_changed:Object.freeze({cs:"Položka se změnila. Obnov přehled.",en:"The item has changed. Refresh the overview."}),
+ item_in_operation:Object.freeze({cs:"Tento film se právě nahrazuje nebo čeká v dávce. Posoudit ho půjde až po dokončení.",en:"This film is being replaced or waits in the batch. It can be reviewed once that finishes."}),
  batch_item_not_approved:Object.freeze({cs:"Nahradit lze jen filmy výslovně schválené pro aktuální posouzení. Otevři film a zvol Schválit.",en:"Only films explicitly approved for their current review can be replaced. Open the film and choose Approve."}),
  approval_individual_only:Object.freeze({cs:"Tento film lze schválit jen jednotlivě spolu s nahrazením.",en:"This film can only be approved individually together with its replacement."}),
  item_needs_verification:Object.freeze({cs:"Soubory se od zařazení změnily. Posouzení není k dispozici, dokud je neověříš v detailu filmu.",en:"The files changed since the film was queued. No review is available until you verify them in the film's detail."}),

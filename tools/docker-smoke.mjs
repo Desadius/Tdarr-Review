@@ -205,9 +205,11 @@ async function host(){
     await run('docker',['run','-d','--name',names.review,...common,'--mount',`type=volume,source=${volumes[0]},target=/data`,...reviewEnv,image],{quiet:true});
     await copyScript(names.review);
     await inside(names.review,'inside-review');
-    for(const fixture of ['test-av-fixture.mjs','test-av-http.mjs','test-preview-cache-http.mjs']){
+    const mpegFixture=(await fs.readFile(new URL('mpeg2-fixture.mjs',import.meta.url),'utf8')).replaceAll("'../review/","'/review-app/");
+    await run('docker',['exec','-i',names.review,'/usr/bin/node','-e',"require('node:fs').writeFileSync('/tmp/mpeg2-fixture.mjs', require('node:fs').readFileSync(0))"],{input:mpegFixture,quiet:true});
+    for(const fixture of ['test-recovery-preflight.mjs','test-mpeg2-initialization.mjs','test-av-fixture.mjs','test-av-http.mjs','test-preview-cache-http.mjs']){
       // Exercise modules from this exact image; copy only the disposable test driver into tmpfs.
-      const contents=(await fs.readFile(new URL(fixture,import.meta.url),'utf8')).replaceAll("'../review/","'/review-app/");
+      const contents=(await fs.readFile(new URL(fixture,import.meta.url),'utf8')).replaceAll("'../review/","'/review-app/").replaceAll("'../recovery/","'/recovery/");
       await run('docker',['exec','-i',names.review,'/usr/bin/node','-e',"require('node:fs').writeFileSync('/tmp/av-smoke.mjs', require('node:fs').readFileSync(0))"],{input:contents,quiet:true});
       await run('docker',['exec','-e','FFMPEG='+decoder+'ffmpeg','-e','FFPROBE='+decoder+'ffprobe',names.review,'/usr/bin/node','/tmp/av-smoke.mjs'],{timeout:fixture==='test-preview-cache-http.mjs'?240000:180000});
     }

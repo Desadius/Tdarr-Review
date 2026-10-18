@@ -90,6 +90,19 @@ codex execpolicy check --pretty --rules .codex/rules/tdarr-review.rules -- ssh t
 
 A user-visible change adds `changelog.d/<issue>-<topic>.md` with one list item instead of editing `CHANGELOG.md` ([format](../changelog.d/README.md)). Pull requests that each add their own fragment merge in any order without a conflict. `npm run check` refuses a misnamed fragment, more than one list item, a merge-conflict marker or a relative link that does not exist (links are written relative to the repository root, as in `CHANGELOG.md`). `npm run changelog` prints the assembled Unreleased section; the release step is in [RELEASES.md](RELEASES.md).
 
+## Local UI demo
+
+`npm run demo:ui` serves the real browser UI from `review/public/` on `http://127.0.0.1:18399/` (choose another port with `-- --port <n>`), with synthetic films, review progress, an approval and generated test frames. It needs no FFmpeg, Tdarr, Radarr, settings or media, listens on loopback only and writes nothing. Only the API calls the overview and the review workflow make are emulated; settings, approvals and replacements are not.
+
+Open a film directly with `/?lang=cs#attention?film=010101010101010101010101`. Query switches before the `#` drive the page for screenshots: `layout=gallery`, `mode=frames` (loads the still-frame comparison), `panel=closed`, `focus=on`. For example, a headless Chrome screenshot of the Kino layout:
+
+```bash
+chrome --headless=new --window-size=1920,1080 --virtual-time-budget=9000 --screenshot=kino.png \
+  "http://127.0.0.1:18399/?lang=cs&mode=frames#attention?film=010101010101010101010101"
+```
+
+Use it to check layouts at the widths, zoom levels and languages a change affects; keep behaviour checks in the test suites.
+
 ## Type checking
 
 `npm run typecheck` checks JSDoc types with TypeScript, without emitting code. It currently covers `review/core.mjs` (transaction journal, file identity, command and exchange options) and `recovery/policy.mjs` (decode results and their classification). A file joins the check by starting with `// @ts-check` and being listed in `tsconfig.typecheck.json`; `strict` is off until more modules are annotated.

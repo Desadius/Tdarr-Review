@@ -32,12 +32,21 @@ export function capabilities(item, d, context = {}) {
   if (context.authenticated !== true) reasons.push('Přihlas se pro provedení akce.');
   if (context.fresh !== true) reasons.push('Obnov aktuální stav před další akcí.');
   if (!d || !Array.isArray(d.recovery)) reasons.push('Stav výměn nelze ověřit.');
-  if (d?.active || d?.batchRunning || d?.batch?.status === 'running') reasons.push('Jiná akce nebo dávka právě probíhá.');
-  if (list(d?.recovery).length) reasons.push('Nedokončená výměna vyžaduje kontrolu.');
-  if (d?.restorePending) reasons.push('Nejprve je nutné obnovit původní stav nodů.');
-  if (context.previewBusy || context.settingsBusy || context.resumePending || context.mutationPending || context.scanBusy) reasons.push('Nejprve dokonči probíhající akci.');
-  if (context.expectedSnapshot !== undefined && context.expectedSnapshot !== item?.snapshot) reasons.push('Soubory se změnily. Obnov přehled.');
+  const operation = !!(d?.active || d?.batchRunning || d?.batch?.status === 'running');
+  const inOperation = d?.active?.id === item?.id || (d?.batch?.status === 'running' && list(d?.batch?.remaining).some(x => x?.id === item?.id));
+  // Reviews and comparisons of other films continue while a replacement runs; media actions wait.
+  const reviewReasons = [...reasons];
+  if (operation) reasons.push('Jiná akce nebo dávka právě probíhá.');
+  if (inOperation) reviewReasons.push('Film se právě nahrazuje nebo čeká v dávce.');
+  for (const target of [reasons, reviewReasons]) if (list(d?.recovery).length) target.push('Nedokončená výměna vyžaduje kontrolu.');
+  // Node pauses held by the running operation are not unresolved restores.
+  if (d?.restorePending) { reasons.push('Nejprve je nutné obnovit původní stav nodů.'); if (!operation) reviewReasons.push('Nejprve je nutné obnovit původní stav nodů.'); }
+  for (const target of [reasons, reviewReasons]) {
+    if (context.previewBusy || context.settingsBusy || context.resumePending || context.mutationPending || context.scanBusy) target.push('Nejprve dokonči probíhající akci.');
+    if (context.expectedSnapshot !== undefined && context.expectedSnapshot !== item?.snapshot) target.push('Soubory se změnily. Obnov přehled.');
+  }
   const writeBlocked = reasons.length > 0;
+  const reviewWriteBlocked = reviewReasons.length > 0;
   const validItem = itemId(item?.id) && snapshot(item?.snapshot);
   const normalApproval = item?.status === 'ready' && item?.canApproveDuration !== true;
   const durationApproval = item?.canApproveDuration === true && hasDuration(item?.durationA) && hasDuration(item?.durationB);
@@ -48,14 +57,14 @@ export function capabilities(item, d, context = {}) {
   const allowed = !writeBlocked && validItem;
   // Comparison uses POST and audio comparison stores evidence. Apply write
   // guards conservatively to previews as well as explicit file operations.
-  const previewAllowed = !writeBlocked && validItem;
+  const previewAllowed = !reviewWriteBlocked && validItem;
   const restorePhase = ['waiting', 'manual'].includes(item?.phase);
   return {
     approve: allowed && reviewComplete && (normalApproval || durationApproval),
     // Batch replacement takes only films explicitly approved ("Schválit") for their current review.
     approveBatch: allowed && reviewComplete && normalApproval && approved,
     select: allowed && reviewComplete && normalApproval && approved,
-    approveOnly: allowed && reviewComplete && normalApproval && !approved,
+    approveOnly: !reviewWriteBlocked && validItem && reviewComplete && normalApproval && !approved,
     approved,
     reject: allowed,
     replace: allowed && context.requestsFresh !== false && !requestConflict,
@@ -67,6 +76,9 @@ export function capabilities(item, d, context = {}) {
     restore: !writeBlocked && itemId(item?.id) && item?.canRestore === true && item?.source !== 'recovery' && restorePhase && !list(item?.queue).length && !item?.replacement && context.requestsFresh !== false,
     reviewComplete,
     writeBlocked,
+    reviewWriteBlocked,
+    inOperation,
+    reviewReason: reviewReasons[0] || '',
     reason: reasons[0] || (!validItem ? 'Položka nemá ověřený aktuální otisk souborů.' : ''),
     reasons,
     selectReason: allowed && reviewComplete && normalApproval && approved ? '' : reasons[0] || (!validItem ? 'Položka nemá ověřený aktuální otisk souborů.' : reviewState(item, d).reason),

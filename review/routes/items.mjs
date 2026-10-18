@@ -32,6 +32,7 @@ export async function itemRoutes(ctx,req,res,url,request){
   return reply(res,200,ctx.reviewSessions.get(id,snapshot,verified.requirements));
  }
  if(reviewSession&&req.method==='POST'){
+  if(ctx.itemInOperation(reviewSession[1]))return reply(res,409,apiError('item_in_operation'));
   if(ctx.reviewMutationBlocked())return reply(res,409,apiError('finish_action_or_recovery'));
   const sessionRequest=await body(req);
   if(ctx.reviewMutationBlocked())return reply(res,409,apiError('finish_action_or_recovery'));
@@ -62,6 +63,7 @@ export async function itemRoutes(ctx,req,res,url,request){
  const approval=/^\/api\/items\/([a-f0-9]{24})\/approval$/.exec(url.pathname);
  if(approval&&req.method==='POST'){
   // Records the decision only: no file is moved, copied or deleted and no replacement is scheduled.
+  if(ctx.itemInOperation(approval[1]))return reply(res,409,apiError('item_in_operation'));
   if(ctx.reviewMutationBlocked())return reply(res,409,apiError('finish_action_or_recovery'));
   const b=await body(req),list=await ctx.scan(true,null,request.mutation),item=list.find(x=>x.id===approval[1]);
   if(!item||!item.snapshot||item.snapshot!==b.snapshot)return reply(res,409,apiError(item?.identityChanged?'item_needs_verification':'item_changed'));

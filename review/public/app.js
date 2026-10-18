@@ -170,7 +170,7 @@ function renderAttention(){
  $('events').hidden=!warnings.length&&!attention.length;
  const events=[];if(warnings.length)events.push({kind:'history',count:warnings.length});if(attention.length)events.push({kind:'recovery',count:attention.length});
  keyed($('events'),events,x=>x.kind,x=>{const row=el('div'),b=button(x.kind==='history'?'Historie':'Obnovy',()=>navigate(x.kind,{filter:x.kind==='history'?'warning':'attention'}));b.dataset.focus='event:'+x.kind;row.append(el('span','',x.kind==='history'?`${x.count} upozornění v historii`:`${x.count} obnov k ověření`),b);return row});
- renderTransactions();updateSelection();
+ renderTransactions();updateSelection();if(ui.detail)renderFilmStrip();
 }
 function recoveryRow(projected){
  const r=projected.record||projected.raw||projected,cl=projected.classification||classifyRecovery(r,Date.now()),row=el('article','recovery-row'),info=el('div','row-info');
@@ -220,9 +220,11 @@ function detailReview(item,tab){
  const box=$('detailBody');
  if(tab==='review'){
   if(item.identityChanged){box.replaceChildren(changedFilesView(item));return}
+  // The film being replaced (or waiting in the running batch) offers no review until its operation ends.
+  if(caps(item).inOperation){reviewWorkspace?.destroy();reviewWorkspace=null;const busy=el('div','changed-files');busy.append(el('h3','','Film se právě nahrazuje'),el('p','alert inline-warning','Tento film se právě nahrazuje nebo čeká v dávce. Posoudit ho půjde až po dokončení.'),el('p','details','Průběh je vidět v přehledu. Mezitím můžeš posuzovat jiné filmy.'));box.replaceChildren(busy);return}
   if(reviewWorkspace)return;
   reviewWorkspace=mountReviewWorkflow(box,item,{api,tr,formatBytes:fmt,openComparison,openAudioComparison,preparation:latest?.previews?.[item.id],
-   canWrite:()=>{const current=latest?.items.find(x=>x.id===item.id);return !!current&&current.snapshot===item.snapshot&&!caps(current).writeBlocked},
+   canWrite:()=>{const current=latest?.items.find(x=>x.id===item.id);return !!current&&current.snapshot===item.snapshot&&!caps(current).reviewWriteBlocked},
    canApprove:()=>{const current=latest?.items.find(x=>x.id===item.id);return !!current&&current.snapshot===item.snapshot&&caps(current).approve},
    canApproveOnly:()=>{const current=latest?.items.find(x=>x.id===item.id);return !!current&&current.snapshot===item.snapshot&&caps(current).approveOnly},
    isApproved:()=>!!latest?.approvals?.[item.id],
@@ -278,6 +280,21 @@ function detailRequest(r,tab){
  }
 }
 function changeDetailTab(tab){ui.tab=tab;const params={tab};params[ui.detail.kind==='review'?'film':'case']=ui.detail.id;navigate(ui.view,params);renderDetailTab();$('detailTabs-'+tab)?.focus({preventScroll:true})}
+// Kino film strip: switch films without closing the detail. openDetail() destroys the current
+// workspace, which caches its draft per film and snapshot; nothing is saved, confirmed or carried over.
+const draftKey=item=>'tdarr-review-draft:'+item.id+':'+item.snapshot;
+function hasDraft(item){try{return !!sessionStorage.getItem(draftKey(item))}catch{return false}}
+function renderFilmStrip(){
+ const strip=$('filmStrip'),reviewing=ui.detail?.kind==='review'&&$('filmDetail').open;strip.hidden=!reviewing;if(!reviewing){strip.replaceChildren();return}
+ const items=filteredItems();strip.replaceChildren(...items.map(item=>{
+  const state=reviewState(item,latest),b=button('',()=>openDetail('review',item.id),'film-strip-item');b.dataset.film=item.id;b.dataset.state=state.kind;
+  const icon=el('span','state-icon',STATE_ICONS[state.kind],true);icon.setAttribute('aria-hidden','true');b.append(icon,el('span','film-strip-title',item.title,true),el('span','film-strip-state',state.label));
+  if(hasDraft(item)&&item.id!==ui.detail.id)b.append(el('span','film-strip-draft','Rozpracované změny'));
+  if(item.id===ui.detail.id)b.setAttribute('aria-current','true');
+  b.onkeydown=e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const all=[...strip.querySelectorAll('.film-strip-item')],i=all.indexOf(b),next=e.key==='Home'?0:e.key==='End'?all.length-1:Math.min(all.length-1,Math.max(0,i+(e.key==='ArrowRight'?1:-1)));all[next]?.focus()};
+  return b}));
+ strip.querySelector('[aria-current=true]')?.scrollIntoView?.({block:'nearest',inline:'nearest'});
+}
 function renderDetailTab(){if(!ui.detail)return;const reviewing=ui.detail.kind==='review';if(!reviewing||ui.tab!=='review'){reviewWorkspace?.destroy();reviewWorkspace=null}const tabs=reviewing?[['review','Posouzení'],['overview','Podklady a metadata'],['recovery','Obnova'],['technical','Technické údaje']]:[['overview','Přehled'],['comparison','Porovnání'],['recovery','Obnova'],['technical','Technické údaje']];makeTabs($('detailTabs'),tabs,ui.tab,changeDetailTab);$('filmDetail').classList.toggle('reviewing',reviewing&&ui.tab==='review');$('detailBody').setAttribute('aria-labelledby','detailTabs-'+ui.tab);reviewing?detailReview(ui.detail.record,ui.tab):detailRequest(ui.detail.record,ui.tab);updateGuards()}
 function openDetail(kind,id,fromHash=false){
  const projected=kind==='request'?projectRequests(requests,latest?.items||[],Date.now()).find(p=>p.key===id):null;
@@ -288,7 +305,7 @@ function openDetail(kind,id,fromHash=false){
  $('filmDetail').querySelector('.dialog-error')?.remove();ui.detail={kind,id,record};$('detailTitle').textContent=record.title;$('detailLabel').textContent=tr(kind==='review'?'POSOUZENÍ VÝSLEDKU':'OBNOVA FILMU');$('detailSubtitle').textContent=tr(kind==='review'?(record.status==='ready'?'K posouzení':'Zvláštní kontrola'):classifyRecovery(record,Date.now()).label);
  $('detailPoster').replaceChildren(poster(kind,record.id,record.title));$('detailActions').replaceChildren();
  if(kind==='review')$('detailActions').append(guardedButton(record,'reject','Zamítnout',()=>ask(record,'reject'),'reject'));
- renderDetailTab();if(!$('filmDetail').open)$('filmDetail').showModal();else $('detailTabs-'+ui.tab)?.focus({preventScroll:true});if(!fromHash)navigate(ui.view,{[kind==='review'?'film':'case']:id,tab:ui.tab});
+ renderDetailTab();if(!$('filmDetail').open)$('filmDetail').showModal();else $('detailTabs-'+ui.tab)?.focus({preventScroll:true});renderFilmStrip();if(!fromHash)navigate(ui.view,{[kind==='review'?'film':'case']:id,tab:ui.tab});
 }
 $('detailClose').onclick=()=>$('filmDetail').close();
 $('filmDetail').addEventListener('close',()=>{reviewWorkspace?.destroy();reviewWorkspace=null;ui.detail=null;ui.tab='review';const parsed=parseHash();if(parsed.params.has('film')||parsed.params.has('case'))navigate(ui.view,ui.view==='recovery'?{filter:ui.filter}:{})});

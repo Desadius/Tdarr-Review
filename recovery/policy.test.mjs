@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {classify,confirmed,relative,bindHistory,bindingDiagnosis,blocked,within} from './policy.mjs';
+import {classify,confirmed,originalFailureReport,fatalMpeg2Input,relative,bindHistory,bindingDiagnosis,blocked,within} from './policy.mjs';
 const corrupt={code:183,stderr:'[hevc @ 0x123] Invalid NAL unit size (-12 > 42).\nError submitting packet to decoder: Invalid data found when processing input'};
 test('DTS XLL requires matching original decoder evidence and rejects operational failures',()=>{
  const a={code:183,stderr:'[dca @ 0x123] Read past end of XLL band data\nError submitting packet to decoder: Invalid data found when processing input'};
@@ -68,4 +68,19 @@ test('a refused release binding is explained by what Radarr history lacks, never
   assert.equal(bindingDiagnosis(movie,events,'/media/A/A.mkv',42),code,code);
   if(code)assert.throws(()=>bindHistory(movie,events,'/media/A/A.mkv',42),code);else assert.ok(bindHistory(movie,events,'/media/A/A.mkv',42));
  }
+});
+
+test('premature Matroska EOF needs finite container evidence in both naturally completed checks',()=>{
+ const a={code:0,stderr:'[matroska,webm @ 0x123] File ended prematurely',finiteContainerTruncation:true,decodedFrames:0};
+ assert.equal(classify(a).kind,'corrupt');assert.equal(confirmed(a,{...a}),true);
+ for(const change of [{finiteContainerTruncation:false},{finiteContainerTruncation:undefined},{timeout:true},{signal:'SIGKILL'},{error:'ENOENT'},{stderr:a.stderr+'\nInput/output error'},{code:null}])assert.equal(confirmed(a,{...a,...change}),false);
+ assert.equal(classify({code:0,stderr:'',decodedFrames:0}).kind,'unconfirmed','exit zero without decoded frames is not a healthy full check');
+});
+
+test('preflight discovery and MPEG-2 compatibility are non-authorizing and preserve operational precedence',()=>{
+ const parser='[mpeg2video @ 0x123] ignoring pic cod ext after 0',fatal=parser+'\nError submitting packet to decoder: Invalid data found when processing input';
+ assert.equal(originalFailureReport('Starting preflight\nError: Bitrate sampling failed: '+parser+'\nEncoding never started'),'mpeg2_preflight');
+ assert.equal(originalFailureReport('Bitrate sampling failed: '+parser+'\nPermission denied'),null);
+ const a={code:1,stderr:fatal,decodedFrames:0};assert.equal(fatalMpeg2Input(a),true);assert.equal(classify(a).kind,'unconfirmed');assert.equal(confirmed(a,a),false);
+ for(const change of [{timeout:true},{signal:'SIGKILL'},{decodedFrames:1},{code:0},{stderr:parser},{stderr:fatal+'\nInput/output error'},{stderr:'Invalid data found when processing input'}])assert.equal(fatalMpeg2Input({...a,...change}),false);
 });

@@ -19,20 +19,23 @@ const damage = [
   /\[dca(?: @ [^\]\r\n]*)?\] (?:Residual encoded channels are present without core|Invalid isolated sample location|Invalid bit allocation index|Failed to decode block code\(s\))/,
   /\[matroska,webm(?: @ [^\]\r\n]*)?\] Element at 0x[0-9a-f]+ ending at 0x[0-9a-f]+ exceeds containing master element ending at 0x[0-9a-f]+/i,
 ];
+export const PREMATURE_EOF='[matroska,webm] File ended prematurely';
+const prematureEOF=/\[matroska,webm(?: @ [^\]\r\n]*)?\] File ended prematurely\s*(?:$|\r?\n)/i;
 const operational = /Permission denied|Operation not permitted|Input\/output error|I\/O error|Stale file handle|No such file or directory|No space left|Connection (?:reset|refused|timed out)|Network is unreachable|Cannot allocate memory|Out of memory|Resource temporarily unavailable|Decoder .* not found|Unknown decoder|Unsupported codec/i;
 /**
  * Result of one original decode (runOriginalDecode).
- * @typedef {{code:number|null,stderr:string,timeout?:boolean,signal?:string|null,error?:unknown}} DecodeResult
+ * @typedef {{code:number|null,stderr:string,timeout?:boolean,signal?:string|null,error?:unknown,decodedFrames?:number,finiteContainerTruncation?:boolean,diagnosticsTruncated?:boolean}} DecodeResult
  */
 /**
  * @param {DecodeResult} result
  * @returns {{kind:'healthy'|'corrupt'|'unconfirmed'|'operational',signature?:string}}
  */
 export function classify(result) {
-  if (result.timeout || result.signal || result.error || operational.test(result.stderr || '')) return {kind:'operational'};
+  if (result.diagnosticsTruncated || result.timeout || result.signal || result.error || operational.test(result.stderr || '')) return {kind:'operational'};
   const signature = damage.map(r => (result.stderr || '').match(r)?.[0]?.replace(/ @ [^\]\r\n]*\]/, ']')).filter(Boolean).join('\n');
+  if(prematureEOF.test(result.stderr||''))return {kind:'corrupt',signature:PREMATURE_EOF};
   if(signature)return {kind:'corrupt',signature};
-  return result.code===0&&!String(result.stderr||'').trim()?{kind:'healthy'}:{kind:'unconfirmed'};
+  return result.code===0&&result.decodedFrames!==0&&!String(result.stderr||'').trim()?{kind:'healthy'}:{kind:'unconfirmed'};
 }
 /**
  * Two independent decodes confirm the same recognized corruption.
@@ -41,6 +44,7 @@ export function classify(result) {
  */
 export function confirmed(a,b) {
   const first=classify(a),second=classify(b);
+  if(first.signature===PREMATURE_EOF&&![a,b].every(r=>r.finiteContainerTruncation===true&&Number.isInteger(r.code)&&r.code>=0))return false;
   return first.kind==='corrupt' && second.kind==='corrupt' && first.signature===second.signature;
 }
 export function relative(source,root) {
@@ -97,3 +101,13 @@ export function bindApprovedImport(movie,history,radarrPath,size,approval){
 }
 export const caseId=(file,fp)=>crypto.createHash('sha256').update(file+'\n'+fp).digest('hex').slice(0,24);
 export function within(root,rel){const p=path.resolve(root,rel);if(!p.startsWith(path.resolve(root)+path.sep))throw Error('Path escapes root');return p;}
+
+// Discovery is not damage confirmation or replacement authority.
+export function originalFailureReport(report){
+ const result=classify({code:1,stderr:report});if(result.kind==='operational')return null;
+ if(result.kind==='corrupt')return result.signature===PREMATURE_EOF?'matroska_preflight':'structural';
+ return /Bitrate sampling failed:/i.test(report)&&/\[mpeg2video(?: @ [^\]\r\n]*)?\] ignoring pic cod ext after 0/.test(report)?'mpeg2_preflight':null;
+}
+export function fatalMpeg2Input(result){
+ return classify(result).kind==='unconfirmed'&&Number.isInteger(result.code)&&result.code>0&&result.decodedFrames===0&&/\[mpeg2video(?: @ [^\]\r\n]*)?\]/.test(result.stderr||'')&&/Error submitting packet to decoder: Invalid data found when processing input/.test(result.stderr||'');
+}

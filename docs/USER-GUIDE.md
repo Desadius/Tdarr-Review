@@ -24,6 +24,7 @@ In **Attention** (**Pozornost**), choose **Review** (**Posoudit**). The **Review
 
 On a window at least 1200 CSS px wide the workspace uses the Kino layout: it fills the window, the five steps form a bar at the top and the comparison takes most of the height, with its time controls directly below. On a narrower window or at high browser zoom the compact layout with the step list is used. Switching between them only changes the layout; drafts, checks and the saved review are kept.
 
+In the Kino layout a film strip at the bottom of the review lists the films of the overview (with the current search) and their states. Choose a film there, or move along the strip with the arrow keys, Home and End, to switch without closing the review. Unsaved changes of the film you leave stay as its draft in this browser tab and come back when you return to it (the strip marks it **Unsaved changes**); nothing is saved or confirmed by switching, and checks never carry over to another film. If the saved review changed meanwhile in another session, the older draft is not restored.
 In the Kino layout the checks, the note and the decision buttons are in a panel beside the comparison. **Checks and decision** (**Kontroly a rozhodnutí**) opens or closes it, and **Focus on the picture** (**Soustředit se na obraz**) hides the panel and helper texts so the comparison gets more height. Both only change the layout and stay as you left them when you open another film; nothing is saved or confirmed by them. On narrower windows the panel stays below the comparison as before.
 
 Ready status means the implemented matching and metadata checks permit a decision; approval also requires a completed saved manual review. It does not automatically state that compression looks good. Tdarr should already have completed the appropriate health check. Review does not perform another full decode during approval.
@@ -93,6 +94,8 @@ Review only offers approval for a result produced by one of the supported transc
 If a film is blocked by one of these rules, check the Tdarr flow and plugin settings for that film rather than the review itself. Reject the result if it cannot be fixed; the original remains in the library.
 
 ## Approve
+
+While a film is being replaced (alone or in a batch), you can keep reviewing other films: open them, compare picture and sound and save your checks, notes and approvals. The film being replaced, and films still waiting in the batch, show that they are locked until their replacement finishes. Further replacements, rejections and batches still wait until the running one ends.
 
 Decision offers two separate actions:
 

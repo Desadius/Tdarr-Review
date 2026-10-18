@@ -14,10 +14,10 @@ import {createSharedSettingsStore} from '../review/shared-settings.mjs';
 
 // Exercise the actual journal/worker wiring, using only disposable files,
 // loopback APIs and a synthetic decoder. No production media or API contacts.
-async function fixture({terminalHeader=false,mode='repair',largeSource=false}={}){
+async function fixture({terminalHeader=false,mode='repair',largeSource=false,sourceBytesOverride=null}={}){
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'recovery-worker-')),data=root+'/data',media=root+'/media/movies',relative='Fixture/new.mkv',source=media+'/'+relative,file='/media/movies/'+relative;
  for(const dir of [data,path.dirname(source),root+'/review',root+'/quarantine',root+'/reports/fixture',root+'/decoder'])await fs.mkdir(dir,{recursive:true});
- const sourceBytes=largeSource?Buffer.alloc(5*1024*1024,7):(terminalHeader?'\x1b[0m':'')+'DISPOSABLE SOURCE BYTES';await fs.writeFile(source,sourceBytes);const before=await fs.stat(source),sourceFP=identityOf(before),size=before.size;
+ const sourceBytes=sourceBytesOverride??(largeSource?Buffer.alloc(5*1024*1024,7):(terminalHeader?'\x1b[0m':'')+'DISPOSABLE SOURCE BYTES');await fs.writeFile(source,sourceBytes);const before=await fs.stat(source),sourceFP=identityOf(before),size=before.size;
  const cfg={libraryId:'fixture-library',sourceRoot:'/media/movies',mediaRoot:media,radarrRoot:'/radarr/movies',reviewRoot:root+'/review',reviewPrefixes:[],quarantineRoot:root+'/quarantine',database:root+'/db.sqlite',reports:root+'/reports',ffmpeg:root+'/decoder/ffmpeg',stableMinutes:0,decodeTimeoutHours:1,confirmDelaySeconds:0,maxRepairsPerDay:3,movieCooldownDays:30,pollSeconds:300,detectTerminalHeaders:false,since:0,approvedImportRepairs:{}};
  const movie={id:1,monitored:true,movieFileId:11,movieFile:{id:11,path:cfg.radarrRoot+'/'+relative,size,sceneName:'Fixture.New.Release'}};
  const history=[{id:21,eventType:'downloadFolderImported',movieId:1,downloadId:'fixture-download',sourceTitle:movie.movieFile.sceneName,data:{fileId:'11',importedPath:movie.movieFile.path,size:String(size)}},{id:22,eventType:'grabbed',movieId:1,downloadId:'fixture-download',sourceTitle:movie.movieFile.sceneName,data:{publishedDate:'2026-10-11T00:00:00Z',indexer:'Fixture',size:String(size),protocol:'1'}}];
@@ -63,7 +63,7 @@ async function fixture({terminalHeader=false,mode='repair',largeSource=false}={}
  // Long-running worker as in the container: no --once, stopped only by a signal.
  function daemon(){const child=spawn(process.execPath,['--require',preload,new URL('./worker.mjs',import.meta.url).pathname],{env:{...process.env,DATA_ROOT:data,RECOVERY_MODE:mode},stdio:['ignore','pipe','pipe']});let output='';const timer=setTimeout(()=>child.kill('SIGKILL'),20000);child.stdout.on('data',b=>output+=b);child.stderr.on('data',b=>output+=b);const closed=new Promise((resolve,reject)=>{child.on('error',reject);child.on('close',(code,signal)=>{clearTimeout(timer);resolve({code,signal,output})});});return {child,closed};}
  async function result(){assert.equal((await fs.stat(root+'/media/.tdarr-recovery-status.json')).mode&0o777,0o644);assert.equal((await fs.stat(data+'/state.json')).mode&0o777,0o600);return {state:JSON.parse(await fs.readFile(data+'/state.json')),public:JSON.parse(await fs.readFile(root+'/media/.tdarr-recovery-status.json'))};}
- async function unchanged(){assert.equal(identityOf(await fs.stat(source)),sourceFP);assert.equal(await fs.readFile(source,'utf8'),sourceBytes);assert.equal(await fs.readFile(parent.quarantine,'utf8'),'PRESERVED PARENT');assert.equal(forbidden,false,'worker attempted an unexpected download or API mutation');}
+ async function unchanged(){assert.equal(identityOf(await fs.stat(source)),sourceFP);assert.deepEqual(await fs.readFile(source),Buffer.from(sourceBytes));assert.equal(await fs.readFile(parent.quarantine,'utf8'),'PRESERVED PARENT');assert.equal(forbidden,false,'worker attempted an unexpected download or API mutation');}
  async function cleanup(){db.close();await new Promise(r=>server.close(r));assert(root.startsWith(path.resolve(os.tmpdir())+path.sep)&&path.basename(root).startsWith('recovery-worker-'));await fs.rm(root,{recursive:true,force:true});}
  return {root,cfg,state,parent,movie,row,requests,file,relative,source,sourceFP,size,sourceBytes,data,write,run,daemon,result,unchanged,cleanup,id:caseId(file,sourceFP),binding:bindHistory(movie,history,movie.movieFile.path,size),allowRepair:()=>{allowRepair=true;},onHold:callback=>{beforeHold=callback;},setDecoder:script=>fs.writeFile(cfg.ffmpeg,script,{mode:0o755})};
 }
@@ -92,7 +92,7 @@ test('actual worker retries an old unrecognized XLL report, links its exact pare
 
 test('XLL in a job report cannot authorize repairs when the unchanged original decodes cleanly',{skip:process.platform!=='linux'},async()=>{
  const f=await fixture();try{
-  f.state.jobs['fixture-job']='not_confirmed_decode_error_v2';await fs.writeFile(path.join(f.data,'../reports/fixture/report'),'Read past end of XLL band data');await f.setDecoder('console.log("out_time_us=100000000\\nprogress=end");process.exit(0);');
+  f.state.jobs['fixture-job']='not_confirmed_decode_error_v2';await fs.writeFile(path.join(f.data,'../reports/fixture/report'),'Read past end of XLL band data');await f.setDecoder('console.log("frame=2500\\nout_time_us=100000000\\nprogress=end");process.exit(0);');
   await f.write();await f.run();const result=await f.result();assert.equal(result.state.cases[f.id].status,'no_action');assert.equal(result.state.cases[f.id].originalCheckKind,'healthy');assert.equal(f.requests.filter(r=>r.method!=='GET').length,0);await f.unchanged();
  }finally{await f.cleanup();}
 });
@@ -109,7 +109,7 @@ test('a changed historical ctime affects display linkage only; fresh original ev
 test('unrecognized old reports are reconsidered once, without reopening manual cursors',{skip:process.platform!=='linux'},async()=>{
  for(const cursor of ['not_confirmed_decode_error_v2','manual: operator review']){
   const f=await fixture();try{
-   f.state.jobs['fixture-job']=cursor;await fs.writeFile(path.join(f.data,'../reports/fixture/report'),'Conversion failed!');await f.write();await f.run();let result=await f.result();assert.equal(result.state.jobs['fixture-job'],cursor.startsWith('manual:')?cursor:'not_confirmed_decode_error_v4');
+   f.state.jobs['fixture-job']=cursor;await fs.writeFile(path.join(f.data,'../reports/fixture/report'),'Conversion failed!');await f.write();await f.run();let result=await f.result();assert.equal(result.state.jobs['fixture-job'],cursor.startsWith('manual:')?cursor:'not_confirmed_decode_error_v5');
    await fs.writeFile(path.join(f.data,'../reports/fixture/report'),'Read past end of XLL band data');await f.run();result=await f.result();assert.equal(result.state.cases[f.id],undefined);await assert.rejects(fs.stat(f.data+'/decode-calls'),{code:'ENOENT'});await f.unchanged();
   }finally{await f.cleanup();}
  }
@@ -157,7 +157,7 @@ test('an older handoff cannot release a newer confirmed faulty-source Hold',{ski
 test('a clean decode is a diagnostic completion only for the unchanged source',{skip:process.platform!=='linux'},async()=>{
  for(const changed of [false,true]){
   const f=await fixture();try{
-   await f.setDecoder('const fs=require("node:fs"),a=process.argv.slice(2);'+(changed?'fs.writeFileSync(a[a.indexOf("-i")+1],"CHANGED DURING DECODE");':'')+'console.log("out_time_us=100000000\\nprogress=end");process.exit(0);');
+   await f.setDecoder('const fs=require("node:fs"),a=process.argv.slice(2);'+(changed?'fs.writeFileSync(a[a.indexOf("-i")+1],"CHANGED DURING DECODE");':'')+'console.log("frame=2500\\nout_time_us=100000000\\nprogress=end");process.exit(0);');
    await f.write();await f.run();const result=await f.result(),c=result.state.cases[f.id];
    assert.equal(result.state.lastError,null);assert.equal(c.status,changed?'manual':'no_action');assert.equal(c.originalCheckKind,changed?undefined:'healthy');if(changed)assert.match(c.message,/Source changed/);else await f.unchanged();
    assert.equal(await fs.readFile(f.parent.quarantine,'utf8'),'PRESERVED PARENT');assert.equal(f.requests.filter(r=>r.method!=='GET').length,0,'clean or changed source must not trigger replacement mutations');
@@ -438,12 +438,12 @@ test('actual worker treats a Matroska structure error with exit 0 as a failure, 
  }finally{await f.cleanup();}
 });
 
-test('actual worker records a still-unrecognized v3 report as v4 and never reconsiders v4 again',{skip:process.platform!=='linux'},async()=>{
+test('actual worker records a still-unrecognized v3 report as v5 and never reconsiders v5 again',{skip:process.platform!=='linux'},async()=>{
  const f=await fixture();try{
   await skippedV3(f,'[matroska @ 0x1] Non-monotonous DTS in output stream 0:1; previous: 5, current: 4; changing to 6.',decoder(RESIDUAL,183));
-  await f.run();assert.equal((await f.result()).state.jobs['fixture-job'],'not_confirmed_decode_error_v4');
+  await f.run();assert.equal((await f.result()).state.jobs['fixture-job'],'not_confirmed_decode_error_v5');
   await fs.writeFile(path.join(f.data,'../reports/fixture/report'),RESIDUAL);await f.run();const result=await f.result();
-  assert.equal(result.state.jobs['fixture-job'],'not_confirmed_decode_error_v4');assert.equal(result.state.cases[f.id],undefined);assert.equal(await decodeCalls(f),0);
+  assert.equal(result.state.jobs['fixture-job'],'not_confirmed_decode_error_v5');assert.equal(result.state.cases[f.id],undefined);assert.equal(await decodeCalls(f),0);
   assert.equal(f.requests.filter(r=>r.method!=='GET').length,0);await f.unchanged();
  }finally{await f.cleanup();}
 });
@@ -481,5 +481,67 @@ test('a binding failure with a cleanly decoding original records no damage and n
   await skippedV3(f,RESIDUAL,'#!/usr/bin/env node\nrequire("node:fs").appendFileSync(process.env.DATA_ROOT+"/decode-calls","1\\n");console.log("out_time_us=100000000\\nprogress=end");process.exit(0);\n');await f.run();
   const c=(await f.result()).state.cases[f.id];assert.equal(c.status,'no_action');assert.equal(c.evidence,undefined);assert.equal(c.bindingFailure,undefined);
   assert.equal(f.requests.filter(r=>r.method!=='GET').length,0);await f.unchanged();
+ }finally{await f.cleanup();}
+});
+
+test('bitrate-preflight EOF and MPEG-2 reports become actionable once from v3/v4 cursors',{skip:process.platform!=='linux'},async()=>{
+ for(const cursor of ['not_confirmed_decode_error_v3','not_confirmed_decode_error_v4'])for(const diagnostic of ['[matroska,webm @ 0x123] File ended prematurely','[mpeg2video @ 0x123] ignoring pic cod ext after 0']){
+  const f=await fixture();try{
+   f.state.jobs['fixture-job']=cursor;
+   f.movie.movieFile.sceneName='Unmatched synthetic release';
+   await fs.writeFile(path.join(f.data,'../reports/fixture/report'),'Starting bitrate preflight\nError: Bitrate sampling failed: '+diagnostic+'\nPipeline stopped before encoding.');
+   await f.write();await f.run();let result=await f.result(),c=result.state.cases[f.id];assert.ok(c,'preflight case must be visible');assert.equal(c.status,'manual');assert.match(c.message,/history|grabbed release/);
+   const recorded=structuredClone(c);await f.run();result=await f.result();assert.deepEqual(result.state.cases[f.id],recorded,'manual decision is never reopened');assert.equal(f.requests.filter(r=>r.method!=='GET').length,0);await f.unchanged();
+  }finally{await f.cleanup();}
+ }
+});
+
+const PREMATURE='[matroska,webm @ 0x123] File ended prematurely';
+const MPEG_FATAL='[mpeg2video @ 0x123] ignoring pic cod ext after 0\nError submitting packet to decoder: Invalid data found when processing input';
+test('finite premature EOF is independently confirmed twice; unknown Segment stays preserved without Hold',{skip:process.platform!=='linux'},async()=>{
+ for(const finite of [true,false]){
+  const bytes=Buffer.concat([Buffer.from(finite?'1a45dfa380185380674100':'1a45dfa38018538067ff','hex'),Buffer.alloc(64)]);
+  const f=await fixture({sourceBytesOverride:bytes});try{
+   await skippedV3(f,'Error: Bitrate sampling failed: '+PREMATURE,decoder(PREMATURE,0));await f.run();let result=await f.result(),c=result.state.cases[f.id];
+   assert.equal(c.status,finite?'deferred_cooldown':'manual');assert.equal(await decodeCalls(f),2);
+   assert.equal(f.row.TranscodeDecisionMaker,finite?'Hold':'Transcode error');
+   if(finite){assert.equal(c.evidence.checks.length,2);assert.ok(c.evidence.checks.every(c=>c.finiteContainerTruncation===true));}
+   await f.run();assert.equal(await decodeCalls(f),2,'no repeated decoding after restart');await f.unchanged();
+  }finally{await f.cleanup();}
+ }
+});
+test('repeat fatal MPEG-2 decoding from time zero is compatibility attention without destructive authority',{skip:process.platform!=='linux'},async()=>{
+ for(const diagnostic of [MPEG_FATAL,'[mpeg2video @ 0x123] ignoring pic cod ext after 0']){
+  const f=await fixture();try{
+   await skippedV3(f,'Error: Bitrate sampling failed: [mpeg2video @ 0x123] ignoring pic cod ext after 0',decoder(diagnostic,1));await f.run();const c=(await f.result()).state.cases[f.id];
+   assert.equal(c.status,diagnostic===MPEG_FATAL?'manual':'no_action');assert.equal(c.originalCheckKind,diagnostic===MPEG_FATAL?'compatibility':'unconfirmed');
+   assert.equal(await decodeCalls(f),diagnostic===MPEG_FATAL?2:1);assert.equal(c.evidence,undefined);assert.equal(f.requests.filter(r=>r.method!=='GET').length,0);await f.unchanged();
+  }finally{await f.cleanup();}
+ }
+});
+
+test('v5 migration inspects at most one hundred legacy reports per pass and preserves superseded cursors',{skip:process.platform!=='linux'},async()=>{
+ const f=await fixture();try{
+  const db=new DatabaseSync(f.cfg.database);const job=JSON.parse(db.prepare('SELECT json_data FROM jobsjsondb').get().json_data);db.exec('DELETE FROM jobsjsondb');
+  for(let i=0;i<101;i++){const id='legacy-'+i;db.prepare('INSERT INTO jobsjsondb VALUES (?)').run(JSON.stringify({...job,_id:id}));f.state.jobs[id]='not_confirmed_decode_error_v4';}db.close();
+  f.state.jobs.superseded='superseded';await fs.writeFile(path.join(f.data,'../reports/fixture/report'),'Conversion failed without recognized source evidence');await f.write();
+  await f.run();let state=(await f.result()).state;assert.equal(Object.values(state.jobs).filter(v=>v==='not_confirmed_decode_error_v5').length,100);assert.equal(state.jobs.superseded,'superseded');
+  await f.run();state=(await f.result()).state;assert.equal(Object.values(state.jobs).filter(v=>v==='not_confirmed_decode_error_v5').length,101);assert.equal(await decodeCalls(f),0);await f.unchanged();
+ }finally{await f.cleanup();}
+});
+test('a growing finite-EOF source stays manual without a Hold or a replacement',{skip:process.platform!=='linux'},async()=>{
+ const f=await fixture({sourceBytesOverride:Buffer.concat([Buffer.from('1a45dfa380185380674100','hex'),Buffer.alloc(64)])});try{
+  await skippedV3(f,'Error: Bitrate sampling failed: '+PREMATURE,decoder(PREMATURE,0,'fs.appendFileSync(a[a.indexOf("-i")+1],"X");'));
+  await f.run();assert.equal((await f.result()).state.cases[f.id].status,'manual');assert.equal(f.requests.filter(r=>r.method!=='GET').length,0);assert.equal(f.row.TranscodeDecisionMaker,'Transcode error');
+ }finally{await f.cleanup();}
+});
+
+test('a hundred missing recent reports cannot starve an older preflight case after restart',{skip:process.platform!=='linux'},async()=>{
+ const f=await fixture();try{
+  const db=new DatabaseSync(f.cfg.database),job=JSON.parse(db.prepare('SELECT json_data FROM jobsjsondb').get().json_data);db.exec('DELETE FROM jobsjsondb');
+  for(let i=0;i<100;i++){const id='missing-'+i;db.prepare('INSERT INTO jobsjsondb VALUES (?)').run(JSON.stringify({...job,_id:id,file:f.file+'.missing-'+i,end:job.end+1,job:{...job.job,fileId:'absent-'+i}}));f.state.jobs[id]='not_confirmed_decode_error_v4';}
+  db.prepare('INSERT INTO jobsjsondb VALUES (?)').run(JSON.stringify(job));db.close();f.state.jobs[job._id]='not_confirmed_decode_error_v4';f.movie.movieFile.sceneName='Unmatched release';
+  await fs.writeFile(path.join(f.data,'../reports/fixture/report'),'Bitrate preflight started\nError: Bitrate sampling failed: '+PREMATURE+'\nStopped before encoding.');await f.write();
+  await f.run();assert.equal((await f.result()).state.cases[f.id],undefined);await f.run();assert.equal((await f.result()).state.cases[f.id]?.status,'manual','readable older candidate must be reached after restarting');await f.unchanged();
  }finally{await f.cleanup();}
 });
