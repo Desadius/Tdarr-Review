@@ -19,6 +19,7 @@ import {safeFile,hash,atomicJSON,command,probe,inspect,replaceChecked,recoverTra
 import {measure} from './progress.mjs';
 import {appVersion} from './app-version.mjs';
 import {logEvent} from './log.mjs';
+import {forgetApproval} from './approvals.mjs';
 import {recordDecision} from './decision-audit.mjs';
 import {isLoopback,recoveryStatusHealth,healthSummary} from './health-status.mjs';
 import {readRecoveryRuntime} from './recovery-runtime.mjs';
@@ -389,7 +390,7 @@ async function perform(action,item,acceptDuration=false,reason){
     progress('Uklízím prázdné složky review',6,'cleanup');
     try{await cleanupReviewed(REVIEW,item.reviewRelative,receipt,config.reviewPrefixes)}catch(e){warning=[warning,'Film je vyřízený, ale úklid review selhal: '+e.message].filter(Boolean).join(' ')}
     outcome={id:item.id,title:item.title,action,rejectionReason:action==='reject'?reason:undefined,jobId:item.jobId||previous?.jobId,reviewSession:reviewEvidence,acceptedDurationDifference:acceptDuration?item.durationA-item.durationB:undefined,status:'success',warning,time:new Date().toISOString(),elapsedSeconds:Math.round((Date.now()-active.started)/1000),savedBytes:action==='approve'?item.originalBytes-item.reviewBytes:0};state.history.unshift(outcome);
-    delete state.items[item.id];delete state.reviewSessions[item.id];statsCache=null;
+    delete state.items[item.id];delete state.reviewSessions[item.id];forgetApproval(state,item.id);statsCache=null;
   }catch(e){
     outcome={id:item.id,title:item.title,action,rejectionReason:action==='reject'?reason:undefined,jobId:item.jobId||previous?.jobId,reviewSession:reviewEvidence,status:'error',message:e.message,time:new Date().toISOString()};state.history.unshift(outcome);
     if(journal){const t=JSON.parse(await fs.readFile(journal,'utf8').catch(()=>'{"phase":"unknown"}'));if(!['aborted','complete'].includes(t.phase)){recovery.push({...t,id:t.id||'unknown',journal});logEvent('transaction.unresolved',{transaction:t.id||'unknown',phase:t.phase,id:item.id,title:item.title})}}
@@ -437,7 +438,7 @@ const ctx={
  applyConfig,save,busyFor,keepNodePaused,pendingRestores,scan,perform,performBatch,replacementAction,resume,readRows,dbRows,verifyReviewItem,reviewMutationBlocked,
  previewIdentity,previewPair,previewVersion,previewPreparation,planPreviewItem,preparePreviews,forgetPreviews,
 };
-const activateSettings=value=>{activeSettings=value;config=value.review;applyConfig();statsCache=null;state.items={};state.reviewSessions={};cache=null;cacheAt=0;previewPairs.clear();previewPlans.clear();previewAttempts.clear();};
+const activateSettings=value=>{activeSettings=value;config=value.review;applyConfig();statsCache=null;state.items={};state.reviewSessions={};state.approvals={};cache=null;cacheAt=0;previewPairs.clear();previewPlans.clear();previewAttempts.clear();};
 activateSettings.flush=async()=>{await previews.invalidate({all:true});await save();};
 const localOff={requestDrain:async()=>({state:'off'}),status:async()=>({state:'off'}),cancel:async()=>({state:'off'}),stopAfterDrain:async()=>({state:'stopped'}),restart:async()=>({state:'off'}),wait:async()=>({state:'off'})};
 ctx.settingsApply=await createSettingsApply({data:DATA,store:sharedSettings,mode:process.env.RECOVERY_MODE||'off',control:!process.connected&&(!process.env.RECOVERY_MODE||process.env.RECOVERY_MODE==='off')?localOff:createRecoveryControlClient(),safe:()=>!busyFor('settings')&&!replacementTask&&!previewPlanning,barrier:value=>{settingsBusy=value;},activate:activateSettings,readRows});

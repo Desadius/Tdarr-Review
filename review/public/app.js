@@ -54,6 +54,12 @@ function confirmSetup(label,title,text,commit,reason=false){
 const drafts=new Map();
 try{const saved=JSON.parse(sessionStorage.getItem('tdarr-review-language-drafts')||'[]');if(Array.isArray(saved))for(const [key,value]of saved)if(typeof key==='string'&&/^[a-f0-9]{24}:(reject|replace)$/.test(key)&&typeof value==='string'&&value.length<=1000)drafts.set(key,value);sessionStorage.removeItem('tdarr-review-language-drafts')}catch{}
 document.addEventListener('review-language-change',()=>{try{sessionStorage.setItem('tdarr-review-language-drafts',JSON.stringify([...drafts]))}catch{}});
+// Records the decision only; the film then waits for an explicitly confirmed (batch) replacement.
+async function approveOnly(item,revision){
+ if(actionInFlight||!caps(item).approveOnly||latest?.reviewSessions?.[item.id]?.revision!==revision)return;
+ try{actionInFlight=true;updateGuards();await api(`/api/items/${item.id}/approval`,{snapshot:item.snapshot,reviewRevision:revision});$('filmDetail').close();lastRender='';await load()}
+ catch(e){error(e)}finally{actionInFlight=false;updateGuards()}
+}
 function ask(item,action){
  try{writeItem(item,action)}catch(e){error(e);return}
  const approve=action==='approve';
@@ -111,12 +117,12 @@ function filteredItems(){const query=$('reviewSearch').value.trim().toLocaleLowe
 function updateSelection(){
  const eligible=filteredItems().filter(x=>caps(x).select),all=eligible.length>0&&eligible.every(x=>selected.has(x.id));
  $('selectAll').disabled=!eligible.length;$('selectAll').checked=all;$('selectAll').indeterminate=!all&&eligible.some(x=>selected.has(x.id));
- $('approveSelected').textContent=tr(`Schválit vybrané (${selected.size})`);
+ $('approveSelected').textContent=tr(`Nahradit vybrané schválené filmy (${selected.size})`);
  $('approveSelected').disabled=!selected.size||[...selected].some(id=>!caps(latest?.items.find(x=>x.id===id)||{}).approveBatch);
  $('selectedSaving').textContent=tr(selected.size?`Možná úspora ${fmt((latest?.items||[]).filter(x=>selected.has(x.id)).reduce((s,x)=>s+x.originalBytes-x.reviewBytes,0))}`:'');
  $('bulk').hidden=!ui.selection;
  $('selectionToggle').setAttribute('aria-expanded',String(ui.selection));$('selectionToggle').setAttribute('aria-label',tr(ui.selection?'Ukončit výběr filmů':'Vybrat více filmů'));$('selectionToggle').textContent=tr(ui.selection?'Výběr zapnutý':'Vybrat více');
- $('selectionHint').textContent=tr(`Výběr slouží k hromadnému schválení dokončených posouzení. Lze vybrat: ${eligible.length} z ${filteredItems().length}.`);
+ $('selectionHint').textContent=tr(`Výběr slouží k hromadnému nahrazení schválených filmů. Lze vybrat: ${eligible.length} z ${filteredItems().length}.`);
  for(const row of $('list').children){const checkbox=row.querySelector('input[type=checkbox]');if(checkbox){const c=caps(latest.items.find(x=>x.id===row.dataset.key)||{}),why=row.querySelector('details.selection-why');checkbox.checked=selected.has(row.dataset.key);checkbox.disabled=!c.select;checkbox.closest('label').hidden=!ui.selection;
   // A disabled checkbox cannot be the click target, so the reason is a separate disclosure.
   if(why){why.hidden=!ui.selection||c.select;why.querySelector('p').textContent=tr(c.selectReason);why.querySelector('button').hidden=c.selectAction!=='review';}}}
@@ -126,7 +132,7 @@ $('selectionCancel').onclick=()=>{ui.selection=false;selected.clear();updateSele
 $('selectAll').onchange=e=>{for(const item of filteredItems().filter(x=>caps(x).select)){e.target.checked?selected.add(item.id):selected.delete(item.id)}updateSelection()};
 $('approveSelected').onclick=()=>{
  const items=(latest?.items||[]).filter(x=>selected.has(x.id));if(!items.length||items.some(x=>!caps(x).approveBatch))return;
- pending={action:'batch',items,reviewRevisions:Object.fromEntries(items.map(item=>[item.id,latest?.reviewSessions?.[item.id]?.revision]))};confirmSetup('HROMADNÉ SCHVÁLENÍ',`Schválit ${items.length} filmů?`,`Vybrané filmy: ${items.map(x=>x.title).join('; ')}. Postupně se ověří identita souborů a kontrolní součet kopie, pak se nahradí originály. Původní verze budou odstraněny. Health check z Tdarru se neopakuje. Možná úspora ${fmt(items.reduce((s,x)=>s+x.originalBytes-x.reviewBytes,0))}. Dávka běží na serveru i po zavření stránky. Při chybě jednoho filmu zachová jeho soubory a pokračuje dalším.`,`Schválit ${items.length} filmů`);$('confirm').showModal();
+ pending={action:'batch',items,reviewRevisions:Object.fromEntries(items.map(item=>[item.id,latest?.reviewSessions?.[item.id]?.revision]))};confirmSetup('HROMADNÉ NAHRAZENÍ',`Nahradit ${items.length} schválených filmů?`,`Vybrané filmy: ${items.map(x=>x.title).join('; ')}. Postupně se ověří identita souborů a kontrolní součet kopie, pak se nahradí originály. Původní verze budou odstraněny. Health check z Tdarru se neopakuje. Možná úspora ${fmt(items.reduce((s,x)=>s+x.originalBytes-x.reviewBytes,0))}. Dávka běží na serveru i po zavření stránky. Při chybě jednoho filmu zachová jeho soubory a pokračuje dalším.`,`Nahradit ${items.length} filmů`);$('confirm').showModal();
 };
 
 function previewPreparationBadge(item){
@@ -218,9 +224,11 @@ function detailReview(item,tab){
   reviewWorkspace=mountReviewWorkflow(box,item,{api,tr,formatBytes:fmt,openComparison,openAudioComparison,preparation:latest?.previews?.[item.id],
    canWrite:()=>{const current=latest?.items.find(x=>x.id===item.id);return !!current&&current.snapshot===item.snapshot&&!caps(current).writeBlocked},
    canApprove:()=>{const current=latest?.items.find(x=>x.id===item.id);return !!current&&current.snapshot===item.snapshot&&caps(current).approve},
+   canApproveOnly:()=>{const current=latest?.items.find(x=>x.id===item.id);return !!current&&current.snapshot===item.snapshot&&caps(current).approveOnly},
+   isApproved:()=>!!latest?.approvals?.[item.id],
    onSession:record=>{if(!latest)return;latest.reviewSessions||={};latest.reviewSessions[item.id]=record;updateGuards()},
    onPreparation:record=>{if(!latest||record?.snapshot!==item.snapshot)return;latest.previews||={};latest.previews[item.id]=record;renderAttention()},
-   onApprove:()=>ask(item,'approve'),onReject:()=>ask(item,'reject'),onDeferred:()=>{$('filmDetail').close();renderAttention()}});return;
+   onApprove:()=>ask(item,'approve'),onApproveOnly:revision=>approveOnly(item,revision),onReject:()=>ask(item,'reject'),onDeferred:()=>{$('filmDetail').close();renderAttention()}});return;
  }
  box.replaceChildren();
  if(tab==='overview'){
