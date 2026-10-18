@@ -348,3 +348,45 @@ test('restore returns a quarantined original only for its recorded identity',asy
   }finally{await f.cleanup()}
  }
 });
+
+// Recovery may hold the exact imported source after confirming its own decoding error; the manual
+// replacement's handoff must not release that Hold or rescan the protected entry (#136).
+async function protectedHandoff(recovery){
+ const f=await fixture(),c=await f.service.run(f.item,'reason'),file=path.join(f.media,'Film/new.mkv');
+ await fs.writeFile(file,'REPLACEMENT');const old=new Date(Date.now()-700000);await fs.utimes(file,old,old);
+ f.movie.movieFileId=8;f.movie.movieFile={id:8,path:'/rad/movies/Film/new.mkv',size:11,sceneName:'Film.2026.1080p.REMUX-OTHER',quality:{quality:{name:'Bluray-1080p'}},languages:[{name:'English'}]};
+ const fp=statIdentity(await fs.stat(file)),tdarrFile='/media/movies/Film/new.mkv';
+ if(recovery!==undefined){await fs.mkdir(path.join(f.data,'recovery'),{recursive:true});await fs.writeFile(path.join(f.data,'recovery','state.json'),typeof recovery==='function'?JSON.stringify(recovery({fp,file:tdarrFile})):recovery);}
+ const before=f.tdcalls.length;
+ return {...f,c,fp,tdarrFile,writes:()=>f.tdcalls.slice(before).filter(call=>call.p!=='/api/v2/cruddb').map(call=>call.p)};
+}
+test('a Hold that Recovery keeps for the exact imported source is never released by a manual replacement',async()=>{
+ for(const protect of [({fp,file})=>({version:1,jobs:{},cases:{newer:{id:'newer',file,skipCurrentEdition:true,preservedSourceFP:fp}}}),({fp,file})=>({version:1,jobs:{},cases:{newer:{id:'newer',file,deferredCooldown:{file,sourceFP:fp,libraryId:'library'}}}}),({fp,file})=>({version:1,jobs:{},cases:{newer:{id:'newer',file,deferredLimit:{file,sourceFP:fp,libraryId:'library'}}}})]){
+  const f=await protectedHandoff(protect);try{
+   f.setTdrow({_id:f.tdarrFile,DB:'library',TranscodeDecisionMaker:'Hold'});await f.service.observe();
+   const c=(await f.service.list())[0];assert.equal(c.phase,'imported');assert.equal(c.tdarrStatus,'Hold');assert.deepEqual(f.writes(),[],'no queue write, no rescan');
+  }finally{await f.cleanup()}
+ }
+});
+test('a missing protected Tdarr entry is not rescanned; the handoff stays pending',async()=>{
+ const f=await protectedHandoff(({fp,file})=>({version:1,jobs:{},cases:{newer:{id:'newer',file,skipCurrentEdition:true,preservedSourceFP:fp}}}));try{
+  await f.service.observe();const c=(await f.service.list())[0];
+  assert.equal(c.phase,'queue_intent');assert.match(c.error,/Protected source entry is missing/);assert.deepEqual(f.writes(),[]);
+ }finally{await f.cleanup()}
+});
+test('protection is bound to the source identity and library; another import is handed off normally',async()=>{
+ for(const protect of [({file})=>({version:1,jobs:{},cases:{older:{id:'older',file,skipCurrentEdition:true,preservedSourceFP:'1:2:3:4:5'}}}),({fp,file})=>({version:1,jobs:{},cases:{other:{id:'other',file,deferredLimit:{file,sourceFP:fp,libraryId:'other-library'}}}}),({fp})=>({version:1,jobs:{},cases:{other:{id:'other',file:'/media/movies/Other/x.mkv',skipCurrentEdition:true,preservedSourceFP:fp}}})]){
+  const f=await protectedHandoff(protect);try{
+   f.setTdrow({_id:f.tdarrFile,DB:'library',TranscodeDecisionMaker:'Hold'});await f.service.observe();
+   assert.deepEqual(f.writes(),['/api/v2/bulk-update-files']);
+  }finally{await f.cleanup()}
+ }
+});
+test('an unreadable Recovery state fails closed: no Tdarr write and a visible reason',async()=>{
+ for(const state of ['{"cases":','[]','{"version":1,"cases":[]}']){
+  const f=await protectedHandoff(state);try{
+   f.setTdrow({_id:f.tdarrFile,DB:'library',TranscodeDecisionMaker:'Hold'});await f.service.observe();
+   const c=(await f.service.list())[0];assert.equal(c.phase,'queue_intent',state);assert.match(c.error,/Stav Recovery nelze ověřit/,state);assert.deepEqual(f.writes(),[],state);
+  }finally{await f.cleanup()}
+ }
+});
