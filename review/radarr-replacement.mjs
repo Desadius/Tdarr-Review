@@ -1,6 +1,6 @@
 import {downloadQueue} from '../recovery/download-queue.mjs';
 import {readRecoveryRuntime} from './recovery-runtime.mjs';
-import {ensureHandoff} from '../recovery/replacement-handoff.mjs';
+import {ensureHandoff,preservesHold} from '../recovery/replacement-handoff.mjs';
 import {retainCase,quarantineRetention} from '../recovery/quarantine-retention.mjs';
 import {identityOf,compareIdentity} from '../recovery/file-identity.mjs';
 import fs from 'node:fs/promises';
@@ -58,8 +58,18 @@ export function replacementProfile(profile,current,badId,dualId){
  return p;
 }
 export function canResume(c){return ['waiting','imported','restored','manual'].includes(c.phase)||(c.phase==='queue_intent'&&!!c.replacementRelative&&!!c.replacementSourceFP);}
+// Recovery's cases, read-only. No state file means Recovery never ran here and protects nothing;
+// a state that cannot be read or validated must never release a Hold, so it fails the handoff.
+async function readRecoveryCases(file){
+ let s;try{s=await fs.lstat(file)}catch(e){if(e.code==='ENOENT')return {};throw e}
+ const invalid=()=>Error('Stav Recovery nelze ověřit; předání Tdarru čeká a Hold zůstává.');
+ if(!s.isFile()||s.isSymbolicLink()||s.size>64*1024*1024)throw invalid();
+ let state;try{state=JSON.parse(await fs.readFile(file,'utf8'))}catch{throw invalid()}
+ if(!state||typeof state!=='object'||Array.isArray(state)||!state.cases||typeof state.cases!=='object'||Array.isArray(state.cases))throw invalid();
+ return state.cases;
+}
 export function createReplacement({data,getConfig,getConnection,safeFile,hash,atomicJSON,tdarr,pauseDispatch,verifyPaused=async()=>{},isWorkerBusy=async()=>false,resume,onProgress}){
- const connectionFile=path.join(data,'radarr.json'),directory=path.join(data,'radarr-replacements');let observing=false,mutating=false;
+ const connectionFile=path.join(data,'radarr.json'),directory=path.join(data,'radarr-replacements'),recoveryCases=()=>readRecoveryCases(path.join(data,'recovery','state.json'));let observing=false,mutating=false;
  async function connection(){const value=getConnection?await getConnection():JSON.parse(await fs.readFile(connectionFile,'utf8'));if(!value?.url)throw Object.assign(Error('Vyplň adresu Radarru, API klíč a cestu knihovny v Radarru.'),{code:'ENOENT'});return validateConnection(value);}
  async function api(c,route,method='GET',body){
   let r;try{r=await fetch(c.url+'/api/v3'+route,{method,redirect:'error',headers:{'X-Api-Key':c.apiKey,'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(30000)})}catch{throw Error('Radarr neodpovídá. Stav operace ověř před opakováním.');}
@@ -173,7 +183,8 @@ export function createReplacement({data,getConfig,getConnection,safeFile,hash,at
      if(!cfg.libraryId)throw Error('Pro automatické předání vyplň ID knihovny Tdarr.');
      if(await isWorkerBusy({relative,reviewRelative:'',outputRelative:relative})){await observeImported(c,cfg);await persist(c,'imported','Novou kopii už zpracovává Tdarr. Karanténa je zachovaná.');continue;}
      await persist(c,'queue_intent','Předávám novou kopii Tdarru.');const file=cfg.sourceRoots[0]+'/'+relative;
-     c.handoffStatus=await ensureHandoff({tdarr,file,libraryId:cfg.libraryId});
+     const preserveHold=preservesHold(await recoveryCases(),{file,sourceFP:c.replacementSourceFP,libraryId:cfg.libraryId});
+     c.handoffStatus=await ensureHandoff({tdarr,file,libraryId:cfg.libraryId,preserveHold});
      c.tdarrStatus=c.handoffStatus;observed(c);
      await persist(c,'imported','Náhrada je předaná Tdarru. Obě původní kopie zůstávají v karanténě; kvalitu náhrady ještě ověř.');
     }else{c.message=queue.length?'Radarr stahuje náhradu podle profilu.':['failed','aborted','cancelled'].includes(c.search?.status)?'Hledání v Radarru selhalo nebo bylo zrušené. Obě kopie jsou zachované v karanténě.':c.search?.status==='completed'?'Hledání dokončeno; ve frontě není náhrada. Žádné vhodné vydání nemusí být dostupné.':'Radarr hledá náhradu.';observed(c);await persist(c);}

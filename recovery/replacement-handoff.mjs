@@ -57,3 +57,14 @@ export async function ensureHandoff({tdarr, file, libraryId, preserveHold = fals
   }
   return row.TranscodeDecisionMaker;
 }
+
+// A newer case may hold this exact imported source after confirming its own decoding error: it kept the
+// current edition, or froze a cooldown/daily-limit deferral for it. An older or manual handoff of the
+// same file must then preserve that Hold. Bound to the source identity, so a different import is free.
+export function preservesHold(cases, {id = null, file, sourceFP, libraryId}) {
+  return Object.values(cases && typeof cases === 'object' ? cases : {}).some(other =>
+    other && other.id !== id && other.file === file &&
+    ((other.skipCurrentEdition === true && other.preservedSourceFP === sourceFP) ||
+      [other.deferredCooldown, other.deferredLimit].some(journal =>
+        journal?.file === file && journal.sourceFP === sourceFP && journal.libraryId === libraryId)));
+}

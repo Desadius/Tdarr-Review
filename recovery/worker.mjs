@@ -4,7 +4,7 @@ import {refreshOriginalLanguages} from './original-language-cache.mjs';
 import {retainCase} from './quarantine-retention.mjs';
 import {createLiveStatusPublisher,createDecodeProgressParser} from './live-status.mjs';
 import {probeDuration,runOriginalDecode} from './original-decode.mjs';
-import {ensureHandoff} from './replacement-handoff.mjs';
+import {ensureHandoff,preservesHold} from './replacement-handoff.mjs';
 import {cooldownFor,deferConfirmedReplacement,inspectDeferredReplacement,reconcileDeferredIntent} from './replacement-gate.mjs';
 import {quotaFor,deferConfirmedLimit,inspectDeferredLimit,reconcileDeferredLimitIntent} from './deferred-limit.mjs';
 import {loadApprovalRegistry,registryHasApproval} from './approval-registry.mjs';
@@ -188,7 +188,7 @@ async function observe(){
    await phase(c,'replacement_queue_intent','Replacement imported; refreshing Tdarr entry');
    // A newer case may already have held this exact imported source after its
    // own confirmed failure. An older handoff must not release that protection.
-   const preserveHold=Object.values(state.cases).some(other=>other.id!==c.id&&other.file===file&&((other.skipCurrentEdition===true&&other.preservedSourceFP===s.fp)||[other.deferredCooldown,other.deferredLimit].some(journal=>journal?.file===file&&journal.sourceFP===s.fp&&journal.libraryId===cfg.libraryId)));
+   const preserveHold=preservesHold(state.cases,{id:c.id,file,sourceFP:s.fp,libraryId:cfg.libraryId});
    c.handoffStatus=await ensureHandoff({tdarr:td,file,libraryId:cfg.libraryId,preserveHold});
    await phase(c,'replacement_imported','Replacement submitted to Tdarr; quarantine retained until quality is verified');
   }
