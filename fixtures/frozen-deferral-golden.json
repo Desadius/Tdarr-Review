@@ -1,0 +1,2489 @@
+{
+ "cooldown | defer: success": {
+  "result": true,
+  "error": null,
+  "events": [
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row",
+   "phase:defer_cooldown_intent",
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row",
+   "write:{\"fileIds\":[\"/media/movies/Movie/file.mkv\"],\"updatedObj\":{\"TranscodeDecisionMaker\":\"Hold\",\"holdUntil\":253402300799000}}",
+   "read-row",
+   "source",
+   "binding",
+   "sample",
+   "phase:deferred_cooldown"
+  ],
+  "case": {
+   "status": "deferred_cooldown",
+   "message": "Confirmed decoding error in replacement; film remains in the library while recovery waits for movie cooldown",
+   "nextRetryAt": "2026-11-11T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "signature": "quant_step_size larger than huff_lsbs",
+    "retryAt": "2026-11-11T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "parentCaseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "cooldown | defer: no gate": {
+  "result": false,
+  "error": null,
+  "events": [],
+  "case": {
+   "status": "confirmed",
+   "message": null,
+   "nextRetryAt": null,
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": null
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "cooldown | defer: Verify (enabled false)": {
+  "result": false,
+  "error": null,
+  "events": [],
+  "case": {
+   "status": "confirmed",
+   "message": null,
+   "nextRetryAt": null,
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": null
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "cooldown | defer: evidence from another source": {
+  "result": null,
+  "error": "Missing confirmed unchanged-source evidence",
+  "events": [],
+  "case": {
+   "status": "confirmed",
+   "message": null,
+   "nextRetryAt": null,
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": null
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "cooldown | defer: single decode": {
+  "result": null,
+  "error": "Missing confirmed unchanged-source evidence",
+  "events": [],
+  "case": {
+   "status": "confirmed",
+   "message": null,
+   "nextRetryAt": null,
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": null
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "cooldown | defer: source identity changed": {
+  "result": null,
+  "error": "Confirmed replacement source changed",
+  "events": [
+   "idle",
+   "source"
+  ],
+  "case": {
+   "status": "confirmed",
+   "message": null,
+   "nextRetryAt": null,
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": null
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "cooldown | defer: Radarr binding changed": {
+  "result": null,
+  "error": "Confirmed replacement Radarr binding changed",
+  "events": [
+   "idle",
+   "source",
+   "binding"
+  ],
+  "case": {
+   "status": "confirmed",
+   "message": null,
+   "nextRetryAt": null,
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": null
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "cooldown | defer: sample changed": {
+  "result": null,
+  "error": "Confirmed replacement reads changed",
+  "events": [
+   "idle",
+   "source",
+   "binding",
+   "sample"
+  ],
+  "case": {
+   "status": "confirmed",
+   "message": null,
+   "nextRetryAt": null,
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": null
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "cooldown | defer: Tdarr state not eligible": {
+  "result": null,
+  "error": "Replacement Tdarr state is not eligible for deferral",
+  "events": [
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row"
+  ],
+  "case": {
+   "status": "confirmed",
+   "message": null,
+   "nextRetryAt": null,
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": null
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcoding"
+  }
+ },
+ "cooldown | defer: Tdarr row missing": {
+  "result": null,
+  "error": "Replacement Tdarr entry does not match configured library",
+  "events": [
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row"
+  ],
+  "case": {
+   "status": "confirmed",
+   "message": null,
+   "nextRetryAt": null,
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": null
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "cooldown | defer: Tdarr row of another library": {
+  "result": null,
+  "error": "Replacement Tdarr entry does not match configured library",
+  "events": [
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row"
+  ],
+  "case": {
+   "status": "confirmed",
+   "message": null,
+   "nextRetryAt": null,
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": null
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "other",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "cooldown | defer: worker appears after intent": {
+  "result": null,
+  "error": "Tdarr is still processing source",
+  "events": [
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row",
+   "phase:defer_cooldown_intent",
+   "idle"
+  ],
+  "case": {
+   "status": "defer_cooldown_intent",
+   "message": "Confirmed bad replacement; preserving source and preventing another transcode during movie cooldown",
+   "nextRetryAt": "2026-11-11T11:00:00.000Z",
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "signature": "quant_step_size larger than huff_lsbs",
+    "retryAt": "2026-11-11T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "parentCaseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "cooldown | defer: Hold not acknowledged": {
+  "result": null,
+  "error": "Replacement Hold result uncertain; inspect before retry",
+  "events": [
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row",
+   "phase:defer_cooldown_intent",
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row",
+   "write:{\"fileIds\":[\"/media/movies/Movie/file.mkv\"],\"updatedObj\":{\"TranscodeDecisionMaker\":\"Hold\",\"holdUntil\":253402300799000}}",
+   "read-row"
+  ],
+  "case": {
+   "status": "defer_cooldown_intent",
+   "message": "Confirmed bad replacement; preserving source and preventing another transcode during movie cooldown",
+   "nextRetryAt": "2026-11-11T11:00:00.000Z",
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "signature": "quant_step_size larger than huff_lsbs",
+    "retryAt": "2026-11-11T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "parentCaseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "cooldown | defer: Hold transport error": {
+  "result": null,
+  "error": "API /api/v2/bulk-update-files HTTP 502",
+  "events": [
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row",
+   "phase:defer_cooldown_intent",
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row",
+   "write:{\"fileIds\":[\"/media/movies/Movie/file.mkv\"],\"updatedObj\":{\"TranscodeDecisionMaker\":\"Hold\",\"holdUntil\":253402300799000}}"
+  ],
+  "case": {
+   "status": "defer_cooldown_intent",
+   "message": "Confirmed bad replacement; preserving source and preventing another transcode during movie cooldown",
+   "nextRetryAt": "2026-11-11T11:00:00.000Z",
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "signature": "quant_step_size larger than huff_lsbs",
+    "retryAt": "2026-11-11T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "parentCaseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "cooldown | defer: already held": {
+  "result": true,
+  "error": null,
+  "events": [
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row",
+   "phase:defer_cooldown_intent",
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row",
+   "write:{\"fileIds\":[\"/media/movies/Movie/file.mkv\"],\"updatedObj\":{\"TranscodeDecisionMaker\":\"Hold\",\"holdUntil\":253402300799000}}",
+   "read-row",
+   "source",
+   "binding",
+   "sample",
+   "phase:deferred_cooldown"
+  ],
+  "case": {
+   "status": "deferred_cooldown",
+   "message": "Confirmed decoding error in replacement; film remains in the library while recovery waits for movie cooldown",
+   "nextRetryAt": "2026-11-11T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "signature": "quant_step_size larger than huff_lsbs",
+    "retryAt": "2026-11-11T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "parentCaseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "cooldown | defer: already quarantined": {
+  "result": null,
+  "error": "Replacement source is not eligible for deferral",
+  "events": [],
+  "case": {
+   "status": "confirmed",
+   "message": null,
+   "nextRetryAt": null,
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": null
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "cooldown | defer: cooldown parent is the same edition": {
+  "result": null,
+  "error": "Cooldown source is not a distinct replacement edition",
+  "events": [],
+  "case": {
+   "status": "confirmed",
+   "message": null,
+   "nextRetryAt": null,
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": null
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "cooldown | inspect: waiting": {
+  "result": {
+   "status": "waiting_cooldown",
+   "retryAt": "2026-11-11T11:00:00.000Z",
+   "caseIds": [
+    "aaaaaaaaaaaaaaaaaaaaaaaa"
+   ],
+   "parentCaseIds": [
+    "aaaaaaaaaaaaaaaaaaaaaaaa"
+   ]
+  },
+  "error": null,
+  "events": [
+   "source",
+   "binding",
+   "sample",
+   "read-row"
+  ],
+  "case": {
+   "status": "deferred_cooldown",
+   "message": "Confirmed decoding error in replacement; film remains in the library while recovery waits for movie cooldown",
+   "nextRetryAt": "2026-11-11T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "signature": "quant_step_size larger than huff_lsbs",
+    "retryAt": "2026-11-11T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "parentCaseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "cooldown | inspect: ready": {
+  "result": {
+   "status": "ready"
+  },
+  "error": null,
+  "events": [
+   "source",
+   "binding",
+   "sample",
+   "read-row"
+  ],
+  "case": {
+   "status": "deferred_cooldown",
+   "message": "Confirmed decoding error in replacement; film remains in the library while recovery waits for movie cooldown",
+   "nextRetryAt": "2026-11-11T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "signature": "quant_step_size larger than huff_lsbs",
+    "retryAt": "2026-11-11T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "parentCaseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "cooldown | inspect: cooldown over, quota full": {
+  "result": {
+   "status": "waiting_limit",
+   "retryAt": "2026-11-13T11:59:57.000Z"
+  },
+  "error": null,
+  "events": [
+   "source",
+   "binding",
+   "sample",
+   "read-row"
+  ],
+  "case": {
+   "status": "deferred_cooldown",
+   "message": "Confirmed decoding error in replacement; film remains in the library while recovery waits for movie cooldown",
+   "nextRetryAt": "2026-11-11T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "signature": "quant_step_size larger than huff_lsbs",
+    "retryAt": "2026-11-11T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "parentCaseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "cooldown | inspect: Verify (enabled false)": {
+  "result": {
+   "status": "disabled"
+  },
+  "error": null,
+  "events": [
+   "source",
+   "binding",
+   "sample",
+   "read-row"
+  ],
+  "case": {
+   "status": "deferred_cooldown",
+   "message": "Confirmed decoding error in replacement; film remains in the library while recovery waits for movie cooldown",
+   "nextRetryAt": "2026-11-11T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "signature": "quant_step_size larger than huff_lsbs",
+    "retryAt": "2026-11-11T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "parentCaseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "cooldown | inspect: Hold released": {
+  "result": null,
+  "error": "Deferred replacement is no longer held",
+  "events": [
+   "source",
+   "binding",
+   "sample",
+   "read-row"
+  ],
+  "case": {
+   "status": "deferred_cooldown",
+   "message": "Confirmed decoding error in replacement; film remains in the library while recovery waits for movie cooldown",
+   "nextRetryAt": "2026-11-11T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "signature": "quant_step_size larger than huff_lsbs",
+    "retryAt": "2026-11-11T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "parentCaseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Queued",
+   "holdUntil": 253402300799000
+  }
+ },
+ "cooldown | inspect: journal file drifted": {
+  "result": null,
+  "error": "Invalid deferred replacement journal",
+  "events": [],
+  "case": {
+   "status": "deferred_cooldown",
+   "message": "Confirmed decoding error in replacement; film remains in the library while recovery waits for movie cooldown",
+   "nextRetryAt": "2026-11-11T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Other/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "signature": "quant_step_size larger than huff_lsbs",
+    "retryAt": "2026-11-11T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "parentCaseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "cooldown | inspect: library changed": {
+  "result": null,
+  "error": "Invalid deferred replacement journal",
+  "events": [],
+  "case": {
+   "status": "deferred_cooldown",
+   "message": "Confirmed decoding error in replacement; film remains in the library while recovery waits for movie cooldown",
+   "nextRetryAt": "2026-11-11T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "signature": "quant_step_size larger than huff_lsbs",
+    "retryAt": "2026-11-11T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "parentCaseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "other",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "cooldown | inspect: source changed": {
+  "result": null,
+  "error": "Confirmed replacement source changed",
+  "events": [
+   "source"
+  ],
+  "case": {
+   "status": "deferred_cooldown",
+   "message": "Confirmed decoding error in replacement; film remains in the library while recovery waits for movie cooldown",
+   "nextRetryAt": "2026-11-11T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "signature": "quant_step_size larger than huff_lsbs",
+    "retryAt": "2026-11-11T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "parentCaseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "cooldown | inspect: wrong phase": {
+  "result": null,
+  "error": "Invalid deferred replacement journal",
+  "events": [],
+  "case": {
+   "status": "defer_cooldown_intent",
+   "message": "Confirmed decoding error in replacement; film remains in the library while recovery waits for movie cooldown",
+   "nextRetryAt": "2026-11-11T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "signature": "quant_step_size larger than huff_lsbs",
+    "retryAt": "2026-11-11T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "parentCaseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "cooldown | reconcile: acknowledged Hold": {
+  "result": true,
+  "error": null,
+  "events": [
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row",
+   "phase:deferred_cooldown"
+  ],
+  "case": {
+   "status": "deferred_cooldown",
+   "message": "Confirmed decoding error in replacement; acknowledged Hold reconciled without replaying the write",
+   "nextRetryAt": "2026-11-11T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "signature": "quant_step_size larger than huff_lsbs",
+    "retryAt": "2026-11-11T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "parentCaseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "cooldown | reconcile: Hold missing": {
+  "result": null,
+  "error": "Deferred Hold was not acknowledged; manual inspection required",
+  "events": [
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row"
+  ],
+  "case": {
+   "status": "defer_cooldown_intent",
+   "message": "Confirmed decoding error in replacement; film remains in the library while recovery waits for movie cooldown",
+   "nextRetryAt": "2026-11-11T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "signature": "quant_step_size larger than huff_lsbs",
+    "retryAt": "2026-11-11T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "parentCaseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "cooldown | reconcile: wrong phase": {
+  "result": null,
+  "error": "Invalid deferred replacement journal",
+  "events": [],
+  "case": {
+   "status": "deferred_cooldown",
+   "message": "Confirmed decoding error in replacement; film remains in the library while recovery waits for movie cooldown",
+   "nextRetryAt": "2026-11-11T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "signature": "quant_step_size larger than huff_lsbs",
+    "retryAt": "2026-11-11T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "parentCaseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "cooldown | reconcile: worker active": {
+  "result": null,
+  "error": "Tdarr is still processing source",
+  "events": [
+   "idle"
+  ],
+  "case": {
+   "status": "defer_cooldown_intent",
+   "message": "Confirmed decoding error in replacement; film remains in the library while recovery waits for movie cooldown",
+   "nextRetryAt": "2026-11-11T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "signature": "quant_step_size larger than huff_lsbs",
+    "retryAt": "2026-11-11T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "parentCaseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "cooldown | gate": {
+  "value": {
+   "retryAt": "2026-11-11T11:00:00.000Z",
+   "caseIds": [
+    "aaaaaaaaaaaaaaaaaaaaaaaa"
+   ],
+   "parentCaseIds": [
+    "aaaaaaaaaaaaaaaaaaaaaaaa"
+   ]
+  },
+  "later": null
+ },
+ "limit | defer: success": {
+  "result": true,
+  "error": null,
+  "events": [
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row",
+   "phase:defer_limit_intent",
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row",
+   "write:{\"fileIds\":[\"/media/movies/Movie/file.mkv\"],\"updatedObj\":{\"TranscodeDecisionMaker\":\"Hold\",\"holdUntil\":253402300799000}}",
+   "read-row",
+   "source",
+   "binding",
+   "sample",
+   "phase:deferred_limit"
+  ],
+  "case": {
+   "status": "deferred_limit",
+   "message": "Confirmed decoding error; film remains in the library until daily recovery capacity is available",
+   "nextRetryAt": "2026-10-13T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "signature": "quant_step_size larger than huff_lsbs",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "mediaRoot": "/storage/movies",
+    "radarrRoot": "/radarr/movies",
+    "quarantineRoot": "/storage/.tdarr-corrupt",
+    "retryAt": "2026-10-13T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa",
+     "bbbbbbbbbbbbbbbbbbbbbbbb"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "limit | defer: no gate": {
+  "result": false,
+  "error": null,
+  "events": [],
+  "case": {
+   "status": "confirmed",
+   "message": null,
+   "nextRetryAt": null,
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": null
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "limit | defer: Verify (enabled false)": {
+  "result": false,
+  "error": null,
+  "events": [],
+  "case": {
+   "status": "confirmed",
+   "message": null,
+   "nextRetryAt": null,
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": null
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "limit | defer: evidence from another source": {
+  "result": null,
+  "error": "Missing actual repeated unchanged-source evidence",
+  "events": [],
+  "case": {
+   "status": "confirmed",
+   "message": null,
+   "nextRetryAt": null,
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": null
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "limit | defer: single decode": {
+  "result": null,
+  "error": "Missing actual repeated unchanged-source evidence",
+  "events": [],
+  "case": {
+   "status": "confirmed",
+   "message": null,
+   "nextRetryAt": null,
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": null
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "limit | defer: source identity changed": {
+  "result": null,
+  "error": "Confirmed source changed during daily-limit wait",
+  "events": [
+   "idle",
+   "source"
+  ],
+  "case": {
+   "status": "confirmed",
+   "message": null,
+   "nextRetryAt": null,
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": null
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "limit | defer: Radarr binding changed": {
+  "result": null,
+  "error": "Confirmed Radarr binding changed during daily-limit wait",
+  "events": [
+   "idle",
+   "source",
+   "binding"
+  ],
+  "case": {
+   "status": "confirmed",
+   "message": null,
+   "nextRetryAt": null,
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": null
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "limit | defer: sample changed": {
+  "result": null,
+  "error": "Confirmed source reads changed during daily-limit wait",
+  "events": [
+   "idle",
+   "source",
+   "binding",
+   "sample"
+  ],
+  "case": {
+   "status": "confirmed",
+   "message": null,
+   "nextRetryAt": null,
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": null
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "limit | defer: Tdarr state not eligible": {
+  "result": null,
+  "error": "Confirmed Tdarr source is not eligible for quota deferral",
+  "events": [
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row"
+  ],
+  "case": {
+   "status": "confirmed",
+   "message": null,
+   "nextRetryAt": null,
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": null
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcoding"
+  }
+ },
+ "limit | defer: Tdarr row missing": {
+  "result": null,
+  "error": "Deferred Tdarr entry does not match configured source and library",
+  "events": [
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row"
+  ],
+  "case": {
+   "status": "confirmed",
+   "message": null,
+   "nextRetryAt": null,
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": null
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "limit | defer: Tdarr row of another library": {
+  "result": null,
+  "error": "Deferred Tdarr entry does not match configured source and library",
+  "events": [
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row"
+  ],
+  "case": {
+   "status": "confirmed",
+   "message": null,
+   "nextRetryAt": null,
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": null
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "other",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "limit | defer: worker appears after intent": {
+  "result": null,
+  "error": "Tdarr is still processing source",
+  "events": [
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row",
+   "phase:defer_limit_intent",
+   "idle"
+  ],
+  "case": {
+   "status": "defer_limit_intent",
+   "message": "Confirmed source error; preserving the film and preventing another transcode while the daily recovery quota is full",
+   "nextRetryAt": "2026-10-13T11:00:00.000Z",
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "signature": "quant_step_size larger than huff_lsbs",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "mediaRoot": "/storage/movies",
+    "radarrRoot": "/radarr/movies",
+    "quarantineRoot": "/storage/.tdarr-corrupt",
+    "retryAt": "2026-10-13T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa",
+     "bbbbbbbbbbbbbbbbbbbbbbbb"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "limit | defer: Hold not acknowledged": {
+  "result": null,
+  "error": "Daily-limit Hold result uncertain; inspect before retry",
+  "events": [
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row",
+   "phase:defer_limit_intent",
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row",
+   "write:{\"fileIds\":[\"/media/movies/Movie/file.mkv\"],\"updatedObj\":{\"TranscodeDecisionMaker\":\"Hold\",\"holdUntil\":253402300799000}}",
+   "read-row"
+  ],
+  "case": {
+   "status": "defer_limit_intent",
+   "message": "Confirmed source error; preserving the film and preventing another transcode while the daily recovery quota is full",
+   "nextRetryAt": "2026-10-13T11:00:00.000Z",
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "signature": "quant_step_size larger than huff_lsbs",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "mediaRoot": "/storage/movies",
+    "radarrRoot": "/radarr/movies",
+    "quarantineRoot": "/storage/.tdarr-corrupt",
+    "retryAt": "2026-10-13T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa",
+     "bbbbbbbbbbbbbbbbbbbbbbbb"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "limit | defer: Hold transport error": {
+  "result": null,
+  "error": "API /api/v2/bulk-update-files HTTP 502",
+  "events": [
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row",
+   "phase:defer_limit_intent",
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row",
+   "write:{\"fileIds\":[\"/media/movies/Movie/file.mkv\"],\"updatedObj\":{\"TranscodeDecisionMaker\":\"Hold\",\"holdUntil\":253402300799000}}"
+  ],
+  "case": {
+   "status": "defer_limit_intent",
+   "message": "Confirmed source error; preserving the film and preventing another transcode while the daily recovery quota is full",
+   "nextRetryAt": "2026-10-13T11:00:00.000Z",
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "signature": "quant_step_size larger than huff_lsbs",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "mediaRoot": "/storage/movies",
+    "radarrRoot": "/radarr/movies",
+    "quarantineRoot": "/storage/.tdarr-corrupt",
+    "retryAt": "2026-10-13T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa",
+     "bbbbbbbbbbbbbbbbbbbbbbbb"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "limit | defer: already held": {
+  "result": true,
+  "error": null,
+  "events": [
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row",
+   "phase:defer_limit_intent",
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row",
+   "read-row",
+   "source",
+   "binding",
+   "sample",
+   "phase:deferred_limit"
+  ],
+  "case": {
+   "status": "deferred_limit",
+   "message": "Confirmed decoding error; film remains in the library until daily recovery capacity is available",
+   "nextRetryAt": "2026-10-13T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "signature": "quant_step_size larger than huff_lsbs",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "mediaRoot": "/storage/movies",
+    "radarrRoot": "/radarr/movies",
+    "quarantineRoot": "/storage/.tdarr-corrupt",
+    "retryAt": "2026-10-13T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa",
+     "bbbbbbbbbbbbbbbbbbbbbbbb"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "limit | defer: already quarantined": {
+  "result": null,
+  "error": "Confirmed source is not eligible for quota deferral",
+  "events": [],
+  "case": {
+   "status": "confirmed",
+   "message": null,
+   "nextRetryAt": null,
+   "skipCurrentEdition": null,
+   "preservedSourceFP": null,
+   "journal": null
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "limit | defer: cooldown parent is the same edition": {
+  "result": true,
+  "error": null,
+  "events": [
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row",
+   "phase:defer_limit_intent",
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row",
+   "write:{\"fileIds\":[\"/media/movies/Movie/file.mkv\"],\"updatedObj\":{\"TranscodeDecisionMaker\":\"Hold\",\"holdUntil\":253402300799000}}",
+   "read-row",
+   "source",
+   "binding",
+   "sample",
+   "phase:deferred_limit"
+  ],
+  "case": {
+   "status": "deferred_limit",
+   "message": "Confirmed decoding error; film remains in the library until daily recovery capacity is available",
+   "nextRetryAt": "2026-10-13T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "signature": "quant_step_size larger than huff_lsbs",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "mediaRoot": "/storage/movies",
+    "radarrRoot": "/radarr/movies",
+    "quarantineRoot": "/storage/.tdarr-corrupt",
+    "retryAt": "2026-10-13T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa",
+     "bbbbbbbbbbbbbbbbbbbbbbbb"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "limit | inspect: waiting": {
+  "result": {
+   "status": "waiting_limit",
+   "retryAt": "2026-10-13T11:00:00.000Z",
+   "caseIds": [
+    "aaaaaaaaaaaaaaaaaaaaaaaa",
+    "bbbbbbbbbbbbbbbbbbbbbbbb"
+   ]
+  },
+  "error": null,
+  "events": [
+   "source",
+   "binding",
+   "sample",
+   "read-row"
+  ],
+  "case": {
+   "status": "deferred_limit",
+   "message": "Confirmed decoding error; film remains in the library until daily recovery capacity is available",
+   "nextRetryAt": "2026-10-13T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "signature": "quant_step_size larger than huff_lsbs",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "mediaRoot": "/storage/movies",
+    "radarrRoot": "/radarr/movies",
+    "quarantineRoot": "/storage/.tdarr-corrupt",
+    "retryAt": "2026-10-13T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa",
+     "bbbbbbbbbbbbbbbbbbbbbbbb"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "limit | inspect: ready": {
+  "result": {
+   "status": "ready"
+  },
+  "error": null,
+  "events": [
+   "source",
+   "binding",
+   "sample",
+   "read-row"
+  ],
+  "case": {
+   "status": "deferred_limit",
+   "message": "Confirmed decoding error; film remains in the library until daily recovery capacity is available",
+   "nextRetryAt": "2026-10-13T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "signature": "quant_step_size larger than huff_lsbs",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "mediaRoot": "/storage/movies",
+    "radarrRoot": "/radarr/movies",
+    "quarantineRoot": "/storage/.tdarr-corrupt",
+    "retryAt": "2026-10-13T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa",
+     "bbbbbbbbbbbbbbbbbbbbbbbb"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "limit | inspect: cooldown over, quota full": {
+  "result": {
+   "status": "waiting_limit",
+   "retryAt": "2026-11-13T11:59:58.000Z",
+   "caseIds": [
+    "q0",
+    "q1",
+    "q2"
+   ]
+  },
+  "error": null,
+  "events": [
+   "source",
+   "binding",
+   "sample",
+   "read-row"
+  ],
+  "case": {
+   "status": "deferred_limit",
+   "message": "Confirmed decoding error; film remains in the library until daily recovery capacity is available",
+   "nextRetryAt": "2026-10-13T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "signature": "quant_step_size larger than huff_lsbs",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "mediaRoot": "/storage/movies",
+    "radarrRoot": "/radarr/movies",
+    "quarantineRoot": "/storage/.tdarr-corrupt",
+    "retryAt": "2026-10-13T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa",
+     "bbbbbbbbbbbbbbbbbbbbbbbb"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "limit | inspect: Verify (enabled false)": {
+  "result": {
+   "status": "disabled"
+  },
+  "error": null,
+  "events": [
+   "source",
+   "binding",
+   "sample",
+   "read-row"
+  ],
+  "case": {
+   "status": "deferred_limit",
+   "message": "Confirmed decoding error; film remains in the library until daily recovery capacity is available",
+   "nextRetryAt": "2026-10-13T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "signature": "quant_step_size larger than huff_lsbs",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "mediaRoot": "/storage/movies",
+    "radarrRoot": "/radarr/movies",
+    "quarantineRoot": "/storage/.tdarr-corrupt",
+    "retryAt": "2026-10-13T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa",
+     "bbbbbbbbbbbbbbbbbbbbbbbb"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "limit | inspect: Hold released": {
+  "result": null,
+  "error": "Deferred daily-limit source is no longer held",
+  "events": [
+   "source",
+   "binding",
+   "sample",
+   "read-row"
+  ],
+  "case": {
+   "status": "deferred_limit",
+   "message": "Confirmed decoding error; film remains in the library until daily recovery capacity is available",
+   "nextRetryAt": "2026-10-13T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "signature": "quant_step_size larger than huff_lsbs",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "mediaRoot": "/storage/movies",
+    "radarrRoot": "/radarr/movies",
+    "quarantineRoot": "/storage/.tdarr-corrupt",
+    "retryAt": "2026-10-13T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa",
+     "bbbbbbbbbbbbbbbbbbbbbbbb"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Queued",
+   "holdUntil": 253402300799000
+  }
+ },
+ "limit | inspect: journal file drifted": {
+  "result": null,
+  "error": "Invalid deferred daily-limit journal",
+  "events": [],
+  "case": {
+   "status": "deferred_limit",
+   "message": "Confirmed decoding error; film remains in the library until daily recovery capacity is available",
+   "nextRetryAt": "2026-10-13T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Other/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "signature": "quant_step_size larger than huff_lsbs",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "mediaRoot": "/storage/movies",
+    "radarrRoot": "/radarr/movies",
+    "quarantineRoot": "/storage/.tdarr-corrupt",
+    "retryAt": "2026-10-13T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa",
+     "bbbbbbbbbbbbbbbbbbbbbbbb"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "limit | inspect: library changed": {
+  "result": null,
+  "error": "Invalid deferred daily-limit journal",
+  "events": [],
+  "case": {
+   "status": "deferred_limit",
+   "message": "Confirmed decoding error; film remains in the library until daily recovery capacity is available",
+   "nextRetryAt": "2026-10-13T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "signature": "quant_step_size larger than huff_lsbs",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "mediaRoot": "/storage/movies",
+    "radarrRoot": "/radarr/movies",
+    "quarantineRoot": "/storage/.tdarr-corrupt",
+    "retryAt": "2026-10-13T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa",
+     "bbbbbbbbbbbbbbbbbbbbbbbb"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "other",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "limit | inspect: source changed": {
+  "result": null,
+  "error": "Confirmed source changed during daily-limit wait",
+  "events": [
+   "source"
+  ],
+  "case": {
+   "status": "deferred_limit",
+   "message": "Confirmed decoding error; film remains in the library until daily recovery capacity is available",
+   "nextRetryAt": "2026-10-13T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "signature": "quant_step_size larger than huff_lsbs",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "mediaRoot": "/storage/movies",
+    "radarrRoot": "/radarr/movies",
+    "quarantineRoot": "/storage/.tdarr-corrupt",
+    "retryAt": "2026-10-13T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa",
+     "bbbbbbbbbbbbbbbbbbbbbbbb"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "limit | inspect: wrong phase": {
+  "result": null,
+  "error": "Invalid deferred daily-limit journal",
+  "events": [],
+  "case": {
+   "status": "defer_limit_intent",
+   "message": "Confirmed decoding error; film remains in the library until daily recovery capacity is available",
+   "nextRetryAt": "2026-10-13T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "signature": "quant_step_size larger than huff_lsbs",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "mediaRoot": "/storage/movies",
+    "radarrRoot": "/radarr/movies",
+    "quarantineRoot": "/storage/.tdarr-corrupt",
+    "retryAt": "2026-10-13T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa",
+     "bbbbbbbbbbbbbbbbbbbbbbbb"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "limit | reconcile: acknowledged Hold": {
+  "result": true,
+  "error": null,
+  "events": [
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row",
+   "phase:deferred_limit"
+  ],
+  "case": {
+   "status": "deferred_limit",
+   "message": "Confirmed source error; acknowledged daily-limit Hold reconciled without replaying the write",
+   "nextRetryAt": "2026-10-13T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "signature": "quant_step_size larger than huff_lsbs",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "mediaRoot": "/storage/movies",
+    "radarrRoot": "/radarr/movies",
+    "quarantineRoot": "/storage/.tdarr-corrupt",
+    "retryAt": "2026-10-13T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa",
+     "bbbbbbbbbbbbbbbbbbbbbbbb"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "limit | reconcile: Hold missing": {
+  "result": null,
+  "error": "Daily-limit Hold was not acknowledged; manual inspection required",
+  "events": [
+   "idle",
+   "source",
+   "binding",
+   "sample",
+   "read-row"
+  ],
+  "case": {
+   "status": "defer_limit_intent",
+   "message": "Confirmed decoding error; film remains in the library until daily recovery capacity is available",
+   "nextRetryAt": "2026-10-13T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "signature": "quant_step_size larger than huff_lsbs",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "mediaRoot": "/storage/movies",
+    "radarrRoot": "/radarr/movies",
+    "quarantineRoot": "/storage/.tdarr-corrupt",
+    "retryAt": "2026-10-13T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa",
+     "bbbbbbbbbbbbbbbbbbbbbbbb"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Transcode error"
+  }
+ },
+ "limit | reconcile: wrong phase": {
+  "result": null,
+  "error": "Invalid deferred daily-limit journal",
+  "events": [],
+  "case": {
+   "status": "deferred_limit",
+   "message": "Confirmed decoding error; film remains in the library until daily recovery capacity is available",
+   "nextRetryAt": "2026-10-13T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "signature": "quant_step_size larger than huff_lsbs",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "mediaRoot": "/storage/movies",
+    "radarrRoot": "/radarr/movies",
+    "quarantineRoot": "/storage/.tdarr-corrupt",
+    "retryAt": "2026-10-13T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa",
+     "bbbbbbbbbbbbbbbbbbbbbbbb"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "limit | reconcile: worker active": {
+  "result": null,
+  "error": "Tdarr is still processing source",
+  "events": [
+   "idle"
+  ],
+  "case": {
+   "status": "defer_limit_intent",
+   "message": "Confirmed decoding error; film remains in the library until daily recovery capacity is available",
+   "nextRetryAt": "2026-10-13T11:00:00.000Z",
+   "skipCurrentEdition": true,
+   "preservedSourceFP": "1:2:42:10:10",
+   "journal": {
+    "version": 1,
+    "file": "/media/movies/Movie/file.mkv",
+    "source": "/storage/movies/Movie/file.mkv",
+    "size": 42,
+    "sourceFP": "1:2:42:10:10",
+    "sampleSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "signature": "quant_step_size larger than huff_lsbs",
+    "binding": {
+     "movieFileId": 11,
+     "historyId": 21,
+     "downloadId": "download",
+     "sourceTitle": "Movie.New.Release",
+     "size": 42,
+     "protocol": 1,
+     "indexer": "Indexer",
+     "publishedDate": "2026-10-10"
+    },
+    "libraryId": "library",
+    "sourceRoot": "/media/movies",
+    "mediaRoot": "/storage/movies",
+    "radarrRoot": "/radarr/movies",
+    "quarantineRoot": "/storage/.tdarr-corrupt",
+    "retryAt": "2026-10-13T11:00:00.000Z",
+    "caseIds": [
+     "aaaaaaaaaaaaaaaaaaaaaaaa",
+     "bbbbbbbbbbbbbbbbbbbbbbbb"
+    ]
+   }
+  },
+  "row": {
+   "_id": "/media/movies/Movie/file.mkv",
+   "DB": "library",
+   "TranscodeDecisionMaker": "Hold",
+   "holdUntil": 253402300799000
+  }
+ },
+ "limit | gate": {
+  "value": {
+   "retryAt": "2026-10-13T11:00:00.000Z",
+   "caseIds": [
+    "aaaaaaaaaaaaaaaaaaaaaaaa",
+    "bbbbbbbbbbbbbbbbbbbbbbbb"
+   ]
+  },
+  "later": null
+ }
+}

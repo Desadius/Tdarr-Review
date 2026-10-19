@@ -1,0 +1,251 @@
+{
+ "input": {
+  "version": 1,
+  "jobs": {
+   "fixture-job": "{{ID}}"
+  },
+  "cases": {
+   "aaaaaaaaaaaaaaaaaaaaaaaa": {
+    "id": "aaaaaaaaaaaaaaaaaaaaaaaa",
+    "status": "manual",
+    "movieId": 2,
+    "mutationStarted": "{{STARTED}}",
+    "binding": {
+     "movieFileId": 10,
+     "sourceTitle": "Fixture.Old.Release"
+    },
+    "replacement": {
+     "movieFileId": 11
+    },
+    "replacementRelative": "Fixture/new.mkv",
+    "replacementSourceFP": "{{FP}}",
+    "quarantine": "{{ROOT}}/quarantine/old.mkv",
+    "message": "Preserved historical quarantine"
+   },
+   "{{ID}}": {
+    "id": "{{ID}}",
+    "discoveryKind": "structural",
+    "jobId": "fixture-job",
+    "file": "/media/movies/Fixture/new.mkv",
+    "relative": "Fixture/new.mkv",
+    "source": "{{ROOT}}/media/movies/Fixture/new.mkv",
+    "size": 23,
+    "fp": "{{FP}}",
+    "created": "{{TIME}}",
+    "status": "deferred_limit",
+    "message": "Confirmed decoding error; film remains in the library until daily recovery capacity is available",
+    "updated": "{{TIME}}",
+    "movieId": 1,
+    "binding": {
+     "historyId": 22,
+     "sourceTitle": "Fixture.New.Release",
+     "downloadId": "fixture-download",
+     "indexer": "Fixture",
+     "size": 23,
+     "protocol": 1,
+     "publishedDate": "2026-10-11T00:00:00Z",
+     "movieFileId": 11
+    },
+    "evidence": {
+     "signature": "quant_step_size larger than huff_lsbs",
+     "sourceFP": "{{FP}}",
+     "checks": [
+      {
+       "code": 1,
+       "signal": null,
+       "error": null,
+       "timeout": false,
+       "stderr": "quant_step_size larger than huff_lsbs\n",
+       "decodedFrames": 0,
+       "diagnosticsTruncated": false
+      },
+      {
+       "code": 1,
+       "signal": null,
+       "error": null,
+       "timeout": false,
+       "stderr": "quant_step_size larger than huff_lsbs\n",
+       "decodedFrames": 0,
+       "diagnosticsTruncated": false
+      }
+     ],
+     "sampleSHA256": "bb51ce8069e85b5fa0d36ce05410d829dfa32ca25e6d7b479a614574ef14580b",
+     "confirmed": "{{TIME}}"
+    },
+    "deferredLimit": {
+     "version": 1,
+     "file": "/media/movies/Fixture/new.mkv",
+     "source": "{{ROOT}}/media/movies/Fixture/new.mkv",
+     "size": 23,
+     "sourceFP": "{{FP}}",
+     "sampleSHA256": "bb51ce8069e85b5fa0d36ce05410d829dfa32ca25e6d7b479a614574ef14580b",
+     "signature": "quant_step_size larger than huff_lsbs",
+     "binding": {
+      "historyId": 22,
+      "sourceTitle": "Fixture.New.Release",
+      "downloadId": "fixture-download",
+      "indexer": "Fixture",
+      "size": 23,
+      "protocol": 1,
+      "publishedDate": "2026-10-11T00:00:00Z",
+      "movieFileId": 11
+     },
+     "libraryId": "fixture-library",
+     "sourceRoot": "/media/movies",
+     "mediaRoot": "{{ROOT}}/media/movies",
+     "radarrRoot": "/radarr/movies",
+     "quarantineRoot": "{{ROOT}}/quarantine",
+     "retryAt": "{{LIMIT_UNTIL}}",
+     "caseIds": [
+      "aaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    "nextRetryAt": "{{LIMIT_UNTIL}}",
+    "skipCurrentEdition": true,
+    "preservedSourceFP": "{{FP}}"
+   }
+  },
+  "reportScanCursor": "fixture-job",
+  "updated": "{{TIME}}",
+  "lastError": null
+ },
+ "row": {
+  "_id": "/media/movies/Fixture/new.mkv",
+  "DB": "fixture-library",
+  "TranscodeDecisionMaker": "Hold",
+  "holdUntil": 253402300799000
+ },
+ "requests": [
+  {
+   "method": "GET",
+   "url": "/api/v3/movie"
+  },
+  {
+   "method": "GET",
+   "url": "/api/v3/movie"
+  },
+  {
+   "method": "GET",
+   "url": "/api/v3/history/movie?movieId=1"
+  },
+  {
+   "method": "POST",
+   "url": "/api/v2/cruddb",
+   "body": {
+    "collection": "FileJSONDB",
+    "mode": "getById",
+    "docID": "/media/movies/Fixture/new.mkv"
+   }
+  }
+ ],
+ "after": {
+  "version": 1,
+  "jobs": {
+   "fixture-job": "{{ID}}"
+  },
+  "cases": {
+   "aaaaaaaaaaaaaaaaaaaaaaaa": {
+    "id": "aaaaaaaaaaaaaaaaaaaaaaaa",
+    "status": "manual",
+    "movieId": 2,
+    "mutationStarted": "{{STARTED}}",
+    "binding": {
+     "movieFileId": 10,
+     "sourceTitle": "Fixture.Old.Release"
+    },
+    "replacement": {
+     "movieFileId": 11
+    },
+    "replacementRelative": "Fixture/new.mkv",
+    "replacementSourceFP": "{{FP}}",
+    "quarantine": "{{ROOT}}/quarantine/old.mkv",
+    "message": "Preserved historical quarantine"
+   },
+   "{{ID}}": {
+    "id": "{{ID}}",
+    "discoveryKind": "structural",
+    "jobId": "fixture-job",
+    "file": "/media/movies/Fixture/new.mkv",
+    "relative": "Fixture/new.mkv",
+    "source": "{{ROOT}}/media/movies/Fixture/new.mkv",
+    "size": 23,
+    "fp": "{{FP}}",
+    "created": "{{TIME}}",
+    "status": "deferred_limit",
+    "message": "Confirmed decoding error; film remains in the library until daily recovery capacity is available",
+    "updated": "{{TIME}}",
+    "movieId": 1,
+    "binding": {
+     "historyId": 22,
+     "sourceTitle": "Fixture.New.Release",
+     "downloadId": "fixture-download",
+     "indexer": "Fixture",
+     "size": 23,
+     "protocol": 1,
+     "publishedDate": "2026-10-11T00:00:00Z",
+     "movieFileId": 11
+    },
+    "evidence": {
+     "signature": "quant_step_size larger than huff_lsbs",
+     "sourceFP": "{{FP}}",
+     "checks": [
+      {
+       "code": 1,
+       "signal": null,
+       "error": null,
+       "timeout": false,
+       "stderr": "quant_step_size larger than huff_lsbs\n",
+       "decodedFrames": 0,
+       "diagnosticsTruncated": false
+      },
+      {
+       "code": 1,
+       "signal": null,
+       "error": null,
+       "timeout": false,
+       "stderr": "quant_step_size larger than huff_lsbs\n",
+       "decodedFrames": 0,
+       "diagnosticsTruncated": false
+      }
+     ],
+     "sampleSHA256": "bb51ce8069e85b5fa0d36ce05410d829dfa32ca25e6d7b479a614574ef14580b",
+     "confirmed": "{{TIME}}"
+    },
+    "deferredLimit": {
+     "version": 1,
+     "file": "/media/movies/Fixture/new.mkv",
+     "source": "{{ROOT}}/media/movies/Fixture/new.mkv",
+     "size": 23,
+     "sourceFP": "{{FP}}",
+     "sampleSHA256": "bb51ce8069e85b5fa0d36ce05410d829dfa32ca25e6d7b479a614574ef14580b",
+     "signature": "quant_step_size larger than huff_lsbs",
+     "binding": {
+      "historyId": 22,
+      "sourceTitle": "Fixture.New.Release",
+      "downloadId": "fixture-download",
+      "indexer": "Fixture",
+      "size": 23,
+      "protocol": 1,
+      "publishedDate": "2026-10-11T00:00:00Z",
+      "movieFileId": 11
+     },
+     "libraryId": "fixture-library",
+     "sourceRoot": "/media/movies",
+     "mediaRoot": "{{ROOT}}/media/movies",
+     "radarrRoot": "/radarr/movies",
+     "quarantineRoot": "{{ROOT}}/quarantine",
+     "retryAt": "{{LIMIT_UNTIL}}",
+     "caseIds": [
+      "aaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    "nextRetryAt": "{{LIMIT_UNTIL}}",
+    "skipCurrentEdition": true,
+    "preservedSourceFP": "{{FP}}"
+   }
+  },
+  "reportScanCursor": "fixture-job",
+  "updated": "{{TIME}}",
+  "lastError": null
+ }
+}

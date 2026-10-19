@@ -557,3 +557,35 @@ test('actual worker leaves the source in place when Tdarr does not confirm the H
   const write=f.requests.findIndex(r=>r.url==='/api/v2/bulk-update-files');assert.equal(f.requests[write+1]?.url,'/api/v2/cruddb','the Hold is read back right after the write');
  }finally{await f.cleanup();}
 });
+
+// A state.json written by the 2.1.0 worker for each frozen-deferral kind, and the state after the
+// next poll of that worker, are fixtures. A later worker must load that file and continue identically.
+// Values that differ per run (temporary root, file identity, case ID, times) are placeholders.
+// UPDATE_GOLDEN=1 regenerates both files from the current worker.
+function stateCodec(f){
+ const started=f.parent.mutationStarted,iso=ms=>new Date(ms).toISOString();
+ const swaps=[[f.root,'{{ROOT}}'],[f.sourceFP,'{{FP}}'],[f.id,'{{ID}}'],[iso(started+30*86400000),'{{COOLDOWN_UNTIL}}'],[iso(started+86400000),'{{LIMIT_UNTIL}}']];
+ const encode=value=>{let text=JSON.stringify(value);for(const [from,to] of swaps)text=text.split(from).join(to);
+  return JSON.parse(text,(key,v)=>key==='mutationStarted'&&v===started?'{{STARTED}}':['updated','created','confirmed','queued','time'].includes(key)&&typeof v==='string'?'{{TIME}}':v);};
+ const decode=value=>{let text=JSON.stringify(value);for(const [from,to] of swaps)text=text.split(to).join(from);
+  return JSON.parse(text,(key,v)=>v==='{{STARTED}}'?started:v==='{{TIME}}'?new Date(Date.now()-500).toISOString():v);};
+ return {encode,decode};
+}
+for(const kind of ['cooldown','limit']){
+ test('a '+kind+' deferral state.json written by the 2.1.0 worker continues identically',{skip:process.platform!=='linux'},async()=>{
+  const fixtureFile=new URL('../fixtures/recovery-state-2.1-deferred-'+kind+'.json',import.meta.url);
+  const prepare=async()=>{const f=await fixture();if(kind==='limit'){f.parent.movieId=2;f.cfg.maxRepairsPerDay=1;}return f;};
+  if(process.env.UPDATE_GOLDEN==='1'){
+   const f=await prepare();try{const codec=stateCodec(f);await f.write();await f.run();
+    await fs.writeFile(fixtureFile,JSON.stringify({input:codec.encode((await f.result()).state),row:codec.encode({...f.row})},null,1)+'\n');}finally{await f.cleanup();}
+  }
+  const f=await prepare();try{
+   const codec=stateCodec(f),golden=JSON.parse(await fs.readFile(fixtureFile,'utf8'));
+   Object.assign(f.row,codec.decode(golden.row));await f.write();await fs.writeFile(f.data+'/state.json',JSON.stringify(codec.decode(golden.input)));
+   await f.run();const after=codec.encode((await f.result()).state),requests=codec.encode(f.requests);
+   if(process.env.UPDATE_GOLDEN==='1'){await fs.writeFile(fixtureFile,JSON.stringify({...golden,requests,after},null,1)+'\n');return;}
+   assert.deepEqual(after,golden.after);assert.deepEqual(requests,golden.requests);
+   await assert.rejects(fs.stat(f.data+'/decode-calls'),{code:'ENOENT'});await f.unchanged();
+  }finally{await f.cleanup();}
+ });
+}
