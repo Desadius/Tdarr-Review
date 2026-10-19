@@ -10,6 +10,7 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {checkManualQuarantine} from './quarantine-path.mjs';
 import {BINDING_FAILURES} from '../recovery/policy.mjs';
+import {createTdarrFileState} from '../recovery/tdarr-file-state.mjs';
 const runProbe=promisify(execFile);
 export const hasNorwegianAudio=streams=>streams.some(s=>s.codec_type==='audio'&&['nor','no','nob','nb','nno','nn'].includes(String(s.tags?.language||'').toLowerCase())&&!/commentary|komentar|commentaire/i.test(s.tags?.title||''));
 
@@ -164,7 +165,8 @@ export function createReplacement({data,getConfig,getConnection,safeFile,hash,at
    const oq=con.quarantineRoot||path.join(path.dirname(await fs.realpath(cfg.mediaRoot)),'.tdarr-review-quarantine'),rq=path.join(await fs.realpath(cfg.reviewRoot),'.radarr-quarantine');
    for(const root of b?[oq,rq]:[oq]){await fs.mkdir(root,{recursive:true,mode:0o770});if((await fs.lstat(root)).isSymbolicLink()||await fs.realpath(root)!==root)throw Error('Karanténa nesmí být symlink.');await fs.mkdir(path.join(root,c.id),{mode:0o770});}
    c.originalQuarantine=path.join(oq,c.id,path.basename(a.path));if(b)c.reviewQuarantine=path.join(rq,c.id,path.basename(b.path));await persist(c,'quarantine_intent',b?'Zachovávám originál i převod v karanténě.':'Zachovávám originál v karanténě.');
-   await tdarr('/api/v2/bulk-update-files',{fileIds:[c.tdarrSource],updatedObj:{TranscodeDecisionMaker:'Hold',holdUntil:Date.now()+30*86400000}});
+   // A confirmed Hold before either file moves; an unacknowledged write keeps both in place.
+   await createTdarrFileState(tdarr,cfg.libraryId?{libraryId:cfg.libraryId}:{}).hold(c.tdarrSource,Date.now()+30*86400000,'Hold v Tdarru nebyl potvrzen; soubory zůstaly na místě.');
    await verifyPaused(item);
    if(b){await fs.rename(b.path,c.reviewQuarantine);await persist(c,'review_quarantined','Výsledek je zachovaný v karanténě.');}
    await fs.rename(a.path,c.originalQuarantine);c.originalQuarantineRetained=true;await persist(c,'quarantined',b?'Originál i výsledek jsou zachované v karanténě.':'Originál je zachovaný v karanténě.');

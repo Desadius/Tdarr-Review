@@ -20,6 +20,7 @@ import {readHeader} from './container-header.mjs';
 import {lowPriorityHash} from './full-hash.mjs';
 import {createWorkerControl} from './control.mjs';
 import {readRuntimeRecoveryConfig} from './managed-config.mjs';
+import {createTdarrFileState} from './tdarr-file-state.mjs';
 
 const DATA=process.env.DATA_ROOT||'/data';
 // The container runs the worker as PID 1, which ignores signals without a handler.
@@ -164,7 +165,8 @@ async function repair(c,{reuseConfirmedEvidence=false}={}){
   await idle(c);
   if(isApprovedCase(c))await ensureApprovedFloor(c,movie);
   c.skipCurrentEdition=false;delete c.nextRetryAt;c.mutationStarted=Date.now();await phase(c,'holding','Preventing another Tdarr dispatch');
-  await td('/api/v2/bulk-update-files',{fileIds:[c.file],updatedObj:{TranscodeDecisionMaker:'Hold',holdUntil:Date.now()+30*86400000}});
+  // A confirmed Hold before quarantine; an unacknowledged write leaves the source in place.
+  await createTdarrFileState(td,{libraryId:cfg.libraryId}).hold(c.file,Date.now()+30*86400000,'Tdarr Hold was not confirmed; source not quarantined');
   await delay(3000);await idle(c);
   if((await safeSource(c.relative)).fp!==c.fp||await sample(c.source)!==hash)throw Error('Source changed before quarantine');
   // Same-mounted-volume rename only. No copy/delete fallback and no overwrites.

@@ -1,8 +1,7 @@
 import path from 'node:path';
+import {createTdarrFileState, QUEUE_ACCEPTED} from './tdarr-file-state.mjs';
 
-const acceptedStates = new Set([
-  'Queued', 'Transcoding', 'Transcode success', 'Transcode error', 'Not required',
-]);
+const acceptedStates = new Set(QUEUE_ACCEPTED);
 
 function fail(code, message) {
   throw Object.assign(new Error(message), {code});
@@ -18,17 +17,12 @@ export async function ensureHandoff({tdarr, file, libraryId, preserveHold = fals
     fail('TDARR_HANDOFF_BINDING', 'Invalid Tdarr handoff target');
   }
 
-  const read = async () => {
-    const row = await tdarr('/api/v2/cruddb', {
-      collection: 'FileJSONDB', mode: 'getById', docID: file,
-    });
-    if (row === '' || row === null) return null;
-    if (!row || typeof row !== 'object' || Array.isArray(row) ||
-        row._id !== file || row.DB !== libraryId) {
-      fail('TDARR_HANDOFF_BINDING', 'Invalid Tdarr file binding');
-    }
-    return row;
+  const files = createTdarrFileState(tdarr, {libraryId});
+  const binding = error => {
+    if (error?.code === 'TDARR_FILE_BINDING') fail('TDARR_HANDOFF_BINDING', 'Invalid Tdarr file binding');
+    throw error;
   };
+  const read = () => files.read(file).catch(binding);
 
   let row = await read();
   if (!row) {
@@ -48,10 +42,7 @@ export async function ensureHandoff({tdarr, file, libraryId, preserveHold = fals
   }
   if (preserveHold) return 'Hold';
 
-  await tdarr('/api/v2/bulk-update-files', {
-    fileIds: [file], updatedObj: {TranscodeDecisionMaker: 'Queued', holdUntil: 0},
-  });
-  row = await read();
+  row = await files.queue(file).catch(binding);
   if (!row || !acceptedStates.has(row.TranscodeDecisionMaker)) {
     fail('TDARR_HANDOFF_PENDING', 'Queue acknowledgement pending; handoff will be checked again.');
   }

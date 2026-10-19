@@ -65,9 +65,11 @@ async function fixture(){
  });await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const url='http://127.0.0.1:'+server.address().port;await atomicJSON(path.join(data,'radarr.json'),{url,apiKey:'secret',mediaRoot:'/rad/movies',preferCzechEnglish:true});
  const cfg={mediaRoot:media,reviewRoot:review,libraryId:'library',sourceRoots:['/media/movies']},tdcalls=[];
- let tdrow=null,tdfailure=null;const service=createReplacement({data,getConfig:()=>cfg,safeFile,hash,atomicJSON,tdarr:async(p,b)=>{tdcalls.push({p,b});if(p==='/api/v2/cruddb'){if(tdfailure)throw tdfailure;return tdrow;}if(p==='/api/v2/rescan-file')tdrow={_id:b._id,DB:b.DB,TranscodeDecisionMaker:'Queued'};return 'OK'},pauseDispatch:async()=>{if(pauseFail)throw Error('worker busy')},resume:async()=>{resumes++},onProgress:()=>{}});
+ // The original's Tdarr row keeps the state written to it (unless writes are ignored); other files use tdrow.
+ const sourceRow={_id:'/media/movies/Film/a.mkv',DB:'library',TranscodeDecisionMaker:'Transcode success'};let ignoreSourceWrites=false;
+ let tdrow=null,tdfailure=null;const service=createReplacement({data,getConfig:()=>cfg,safeFile,hash,atomicJSON,tdarr:async(p,b)=>{tdcalls.push({p,b});if(p==='/api/v2/cruddb'&&b.docID===sourceRow._id)return structuredClone(sourceRow);if(p==='/api/v2/bulk-update-files'&&b.fileIds.includes(sourceRow._id)){if(!ignoreSourceWrites)Object.assign(sourceRow,b.updatedObj);return 'OK'}if(p==='/api/v2/cruddb'){if(tdfailure)throw tdfailure;return tdrow;}if(p==='/api/v2/rescan-file')tdrow={_id:b._id,DB:b.DB,TranscodeDecisionMaker:'Queued'};return 'OK'},pauseDispatch:async()=>{if(pauseFail)throw Error('worker busy')},resume:async()=>{resumes++},onProgress:()=>{}});
  const a=await safeFile(media,'Film/a.mkv'),b=await safeFile(review,'PROD/Film/a.mkv');const item={id:'a'.repeat(24),title:'Film',relative:'Film/a.mkv',reviewRelative:'PROD/Film/a.mkv',snapshot:hash(a.fp+'|'+b.fp)};
- return {service,item,source,output,data,media,review,movie,cfg,calls,tdcalls,formats,profiles,atomicJSON,setTdrow:row=>tdrow=row,setTdfailure:error=>tdfailure=error,setQueue:q=>queue=q,setFailSearch:()=>failSearch=true,setPauseFail:()=>pauseFail=true,resumes:()=>resumes,cleanup:async()=>{server.closeAllConnections();await new Promise(r=>server.close(r));await fs.rm(root,{recursive:true,force:true})}};
+ return {service,item,source,output,data,media,review,movie,cfg,calls,tdcalls,formats,profiles,atomicJSON,sourceRow,ignoreSourceWrites:()=>ignoreSourceWrites=true,setTdrow:row=>tdrow=row,setTdfailure:error=>tdfailure=error,setQueue:q=>queue=q,setFailSearch:()=>failSearch=true,setPauseFail:()=>pauseFail=true,resumes:()=>resumes,cleanup:async()=>{server.closeAllConnections();await new Promise(r=>server.close(r));await fs.rm(root,{recursive:true,force:true})}};
 }
 async function importedFixture(){
  const f=await fixture(),c=await f.service.run(f.item,'reason'),file=path.join(f.media,'Film/new.mkv');
@@ -187,7 +189,8 @@ test('a waiting request shows Radarr download progress and a blocked import',asy
 });
 test('a handoff target that is not a normalized absolute path never reaches Tdarr',async()=>{
  const f=await fixture();try{
-  f.cfg.sourceRoots=['/media//movies'];await f.service.run(f.item,'reason');
+  // Tdarr knows the source under the same unnormalized root, so the Hold is confirmed and the handoff check is reached.
+  f.cfg.sourceRoots=['/media//movies'];f.sourceRow._id='/media//movies/Film/a.mkv';await f.service.run(f.item,'reason');
   const file=path.join(f.media,'Film/new.mkv');await fs.writeFile(file,'REPLACEMENT');const old=new Date(Date.now()-700000);await fs.utimes(file,old,old);
   f.movie.movieFileId=8;f.movie.movieFile={id:8,path:'/rad/movies/Film/new.mkv',size:11,sceneName:'Film.2026.1080p.REMUX-OTHER',quality:{quality:{name:'Bluray-1080p'}},languages:[{name:'English'}]};
   const before=f.tdcalls.length;await f.service.observe();
@@ -428,4 +431,20 @@ test('the source-only replacement is refused for unconfirmed, other or changed c
   assert.match(await fs.readFile(f.source,'utf8'),/^ORIGINAL/,name);
   if(name==='changedSource')assert.match((await f.service.list()).find(r=>r.id===caseId).sourceReplacementBlocked,/změnil/);
  }finally{await f.cleanup()}}
+});
+
+test('an unconfirmed Tdarr Hold stops the manual replacement before either file moves (#196)',async()=>{
+ const f=await fixture();try{
+  f.ignoreSourceWrites();await assert.rejects(()=>f.service.run(f.item,'reason'),/Hold v Tdarru nebyl potvrzen/);
+  assert.equal(await fs.readFile(f.source,'utf8'),'ORIGINAL');assert.equal(await fs.readFile(f.output,'utf8'),'TRANSCODE');
+  const c=(await f.service.list())[0];assert.equal(c.phase,'manual');assert.equal(c.originalQuarantineRetained,undefined);
+  assert(!f.calls.some(v=>v.method==='POST'&&v.path==='/api/v3/command'&&v.body?.name==='RescanMovie'),'Radarr is not asked to rescan');
+  assert.equal(f.sourceRow.TranscodeDecisionMaker,'Transcode success');
+ }finally{await f.cleanup()}
+});
+test('a confirmed Hold of the original is read back before quarantine',async()=>{
+ const f=await fixture();try{
+  await f.service.run(f.item,'reason');assert.equal(f.sourceRow.TranscodeDecisionMaker,'Hold');
+  const write=f.tdcalls.findIndex(v=>v.p==='/api/v2/bulk-update-files');assert.deepEqual(f.tdcalls[write+1],{p:'/api/v2/cruddb',b:{collection:'FileJSONDB',mode:'getById',docID:'/media/movies/Film/a.mkv'}});
+ }finally{await f.cleanup()}
 });

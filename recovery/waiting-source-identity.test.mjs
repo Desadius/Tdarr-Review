@@ -29,7 +29,10 @@ async function fixture({status,kept=false,movie}){
   if(p.startsWith('/qualityprofile'))return {items:[{allowed:true,quality:{id:30}}]};if(p.startsWith('/blocklist'))return [];if(p.startsWith('/release'))return [good];
  };
  const command=async()=>{current=await fs.stat(source).catch(()=>null)?{movieFileId:11,movieFile:{path:'/media/Movie/file.mkv',size}}:{movieFileId:0};};
- const deps={cfg,state:{cases:{case:c}},rad,td:async()=>{},phase:async(c,status,message)=>Object.assign(c,{status,message}),save:async()=>{},command,idle:async()=>{},
+ // A Tdarr row for the case file that keeps every acknowledged write, read back after a Hold.
+ const tdRow={_id:c.file,DB:cfg.libraryId,TranscodeDecisionMaker:'Transcode error'};
+ const td=async(route,body)=>{if(route==='/api/v2/cruddb')return structuredClone(tdRow);if(route==='/api/v2/bulk-update-files')Object.assign(tdRow,body.updatedObj);return 'OK'};
+ const deps={cfg,state:{cases:{case:c}},rad,td,phase:async(c,status,message)=>Object.assign(c,{status,message}),save:async()=>{},command,idle:async()=>{},
   safeSource:async rel=>{const st=await fs.stat(path.join(cfg.mediaRoot,rel));return {fp:identityOf(st),size:st.size};},sample:async p=>fs.readFile(p,'utf8')};
  const exists=async p=>!!await fs.lstat(p).catch(()=>null);
  return {c,cfg,deps,source,quarantine,downloads,exists,cleanup:()=>fs.rm(root,{recursive:true,force:true})};

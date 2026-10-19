@@ -1,9 +1,9 @@
 import {isDeepStrictEqual} from 'node:util';
 import {classify,confirmed} from './policy.mjs';
+import {createTdarrFileState,HOLD_FOREVER,isHeld} from './tdarr-file-state.mjs';
 
 // A confirmed bad replacement may be diagnosed during a movie cooldown, but
 // that must never authorize another download or consume an older quarantine.
-export const DEFERRED_HOLD_UNTIL=253402300799000;
 const day=86400000;
 const phases=new Set(['Transcode error','Queued','Not required','Hold']);
 const timestamp=value=>Number.isFinite(Date.parse(value));
@@ -25,7 +25,7 @@ export function cooldownFor({cfg,state,c,now=Date.now()}){
  const blockers=Object.values(state.cases||{}).filter(x=>x.id!==c.id&&x.movieId===c.movieId&&Number.isFinite(x.mutationStarted)&&x.mutationStarted>0&&x.mutationStarted+cfg.movieCooldownDays*day>now);
  if(!blockers.length)return null;
  const until=Math.max(...blockers.map(x=>x.mutationStarted+cfg.movieCooldownDays*day));
- if(!Number.isFinite(until)||until>DEFERRED_HOLD_UNTIL)throw Error('Invalid movie cooldown deadline');
+ if(!Number.isFinite(until)||until>HOLD_FOREVER)throw Error('Invalid movie cooldown deadline');
  return {retryAt:new Date(until).toISOString(),caseIds:blockers.map(x=>x.id).sort(),
   parentCaseIds:blockers.filter(x=>x.replacement?.movieFileId===c.binding?.movieFileId&&x.replacementRelative===c.relative&&x.replacementSourceFP===c.fp).map(x=>x.id).sort()};
 }
@@ -39,9 +39,16 @@ async function unchanged(c,{safeSource,sample,readBinding}){
 }
 
 async function rowFor(cfg,c,td){
- const row=await td('/api/v2/cruddb',{collection:'FileJSONDB',mode:'getById',docID:c.file});
- if(!row||Array.isArray(row)||row._id!==c.file||row.DB!==cfg.libraryId)throw Error('Replacement Tdarr entry does not match configured library');
+ const mismatch=()=>Error('Replacement Tdarr entry does not match configured library');
+ const row=await createTdarrFileState(td,{libraryId:cfg.libraryId}).read(c.file).catch(error=>{throw error?.code==='TDARR_FILE_BINDING'?mismatch():error});
+ if(!row)throw mismatch();
  return row;
+}
+
+// The write and its read-back share rowFor's binding check; an unconfirmed Hold keeps its own message.
+async function holdFor(cfg,c,td,message){
+ try{return await createTdarrFileState(td,{libraryId:cfg.libraryId}).hold(c.file,HOLD_FOREVER,message)}
+ catch(error){throw error?.code==='TDARR_FILE_BINDING'?Error('Replacement Tdarr entry does not match configured library'):error}
 }
 
 export async function deferConfirmedReplacement({cfg,state,c,td,phase,idle,safeSource,sample,readBinding,now=Date.now()}){
@@ -60,9 +67,7 @@ export async function deferConfirmedReplacement({cfg,state,c,td,phase,idle,safeS
  await idle(c);
  await unchanged(c,{safeSource,sample,readBinding});
  if(!phases.has((await rowFor(cfg,c,td)).TranscodeDecisionMaker))throw Error('Replacement Tdarr state changed before Hold');
- await td('/api/v2/bulk-update-files',{fileIds:[c.file],updatedObj:{TranscodeDecisionMaker:'Hold',holdUntil:DEFERRED_HOLD_UNTIL}});
- const row=await rowFor(cfg,c,td);
- if(row.TranscodeDecisionMaker!=='Hold'||Number(row.holdUntil)!==DEFERRED_HOLD_UNTIL)throw Error('Replacement Hold result uncertain; inspect before retry');
+ await holdFor(cfg,c,td,'Replacement Hold result uncertain; inspect before retry');
  await unchanged(c,{safeSource,sample,readBinding});
  c.skipCurrentEdition=true;c.preservedSourceFP=c.fp;
  await phase(c,'deferred_cooldown','Confirmed decoding error in replacement; film remains in the library while recovery waits for movie cooldown');
@@ -78,7 +83,7 @@ export async function inspectDeferredReplacement({cfg,state,c,td,safeSource,samp
  if(c.status!=='deferred_cooldown'||d?.version!==1||d.file!==c.file||d.source!==c.source||d.size!==c.size||d.libraryId!==cfg.libraryId||d.sourceRoot!==cfg.sourceRoot||d.sourceFP!==c.fp||d.sampleSHA256!==c.evidence.sampleSHA256||d.signature!==c.evidence.signature||!isDeepStrictEqual(d.binding,c.binding)||!timestamp(d.retryAt))throw Error('Invalid deferred replacement journal');
  await unchanged(c,{safeSource,sample,readBinding});
  const row=await rowFor(cfg,c,td);
- if(row.TranscodeDecisionMaker!=='Hold'||Number(row.holdUntil)!==DEFERRED_HOLD_UNTIL)throw Error('Deferred replacement is no longer held');
+ if(!isHeld(row,HOLD_FOREVER))throw Error('Deferred replacement is no longer held');
  if(!cfg.enabled)return {status:'disabled'};
  const cooldown=cooldownFor({cfg,state,c,now});
  if(cooldown)return {status:'waiting_cooldown',...cooldown};
@@ -96,7 +101,7 @@ export async function reconcileDeferredIntent({cfg,c,td,phase,idle,safeSource,sa
  if(c.status!=='defer_cooldown_intent'||d?.version!==1||d.file!==c.file||d.source!==c.source||d.size!==c.size||d.libraryId!==cfg.libraryId||d.sourceRoot!==cfg.sourceRoot||d.sourceFP!==c.fp||d.sampleSHA256!==c.evidence.sampleSHA256||d.signature!==c.evidence.signature||!isDeepStrictEqual(d.binding,c.binding)||!timestamp(d.retryAt))throw Error('Invalid deferred replacement journal');
  await idle(c);await unchanged(c,{safeSource,sample,readBinding});
  const row=await rowFor(cfg,c,td);
- if(row.TranscodeDecisionMaker!=='Hold'||Number(row.holdUntil)!==DEFERRED_HOLD_UNTIL)throw Error('Deferred Hold was not acknowledged; manual inspection required');
+ if(!isHeld(row,HOLD_FOREVER))throw Error('Deferred Hold was not acknowledged; manual inspection required');
  c.skipCurrentEdition=true;c.preservedSourceFP=c.fp;c.nextRetryAt=d.retryAt;
  await phase(c,'deferred_cooldown','Confirmed decoding error in replacement; acknowledged Hold reconciled without replaying the write');
  return true;
