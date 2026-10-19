@@ -4,15 +4,17 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-export const FRAGMENT=/^(\d+)-[a-z0-9]+(?:-[a-z0-9]+)*\.md$/;
-const NAME_RULE='name must be <issue>-<topic>.md, for example 174-changelog-fragments.md';
+// <issue>-<topic>.md is a change; <issue>-<topic>.upgrade.md is a note for administrators of an
+// existing installation, assembled under "Before updating" ahead of the changes.
+export const FRAGMENT=/^(\d+)-[a-z0-9]+(?:-[a-z0-9]+)*(\.upgrade)?\.md$/;
+const NAME_RULE='name must be <issue>-<topic>.md or <issue>-<topic>.upgrade.md, for example 174-changelog-fragments.md';
 const UNRELEASED='## Unreleased\n';
 
 /** Fragments in issue order, then by name. A missing directory has none. */
 export async function readFragments(root='.'){
  let names;try{names=await fs.readdir(path.join(root,'changelog.d'))}catch(e){if(e.code==='ENOENT')return [];throw e}
  const fragments=[];
- for(const name of names){const m=FRAGMENT.exec(name);if(m)fragments.push({name,issue:Number(m[1]),text:await fs.readFile(path.join(root,'changelog.d',name),'utf8')})}
+ for(const name of names){const m=FRAGMENT.exec(name);if(m)fragments.push({name,issue:Number(m[1]),upgrade:!!m[2],text:await fs.readFile(path.join(root,'changelog.d',name),'utf8')})}
  return fragments.sort((a,b)=>a.issue-b.issue||(a.name<b.name?-1:a.name>b.name?1:0));
 }
 
@@ -44,11 +46,20 @@ function unreleasedBounds(changelog){
  return {start,body:start+UNRELEASED.length,end:next<0?changelog.length:next+1};
 }
 
-/** Entries already written under Unreleased, then the fragments. */
+/** Entries already written under Unreleased, then the change fragments. */
 export function unreleasedEntries(changelog,fragments){
  const {body,end}=unreleasedBounds(changelog);
  const existing=changelog.slice(body,end).split(/\n(?=- )/).map(text=>text.trim()).filter(text=>text.startsWith('- '));
- return [...existing,...fragments.map(fragment=>fragment.text.trim())];
+ return [...existing,...fragments.filter(fragment=>!fragment.upgrade).map(fragment=>fragment.text.trim())];
+}
+
+/** The upgrade-note fragments, in issue order. */
+export function upgradeNotes(fragments){return fragments.filter(fragment=>fragment.upgrade).map(fragment=>fragment.text.trim())}
+
+/** Body of a release section: with upgrade notes, "Before updating" comes first and the entries follow under "Changes". */
+export function sectionBody(entries,notes){
+ if(!notes.length)return entries.join('\n\n');
+ return '### Before updating\n\n'+notes.join('\n\n')+(entries.length?'\n\n### Changes\n\n'+entries.join('\n\n'):'');
 }
 
 /** Release step: entries go under "## <version> — <date>", the fragments are deleted. */
@@ -58,10 +69,10 @@ export async function release(root,{version,date}){
  const problems=await changelogProblems(root);if(problems.length)throw Error(problems.join('\n'));
  const file=path.join(root,'CHANGELOG.md'),changelog=await fs.readFile(file,'utf8');
  if(changelog.includes('\n## '+version+' '))throw Error('Version '+version+' is already in CHANGELOG.md');
- const fragments=await readFragments(root),entries=unreleasedEntries(changelog,fragments);
- if(!entries.length)throw Error('There is nothing to release');
+ const fragments=await readFragments(root),entries=unreleasedEntries(changelog,fragments),notes=upgradeNotes(fragments);
+ if(!entries.length&&!notes.length)throw Error('There is nothing to release');
  const {body,end}=unreleasedBounds(changelog);
- await fs.writeFile(file,changelog.slice(0,body)+'\n## '+version+' — '+date+'\n\n'+entries.join('\n\n')+'\n\n'+changelog.slice(end));
+ await fs.writeFile(file,changelog.slice(0,body)+'\n## '+version+' — '+date+'\n\n'+sectionBody(entries,notes)+'\n\n'+changelog.slice(end));
  for(const fragment of fragments)await fs.unlink(path.join(root,'changelog.d',fragment.name));
 }
 
@@ -70,6 +81,7 @@ if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.ur
  if(args[0]==='--release'){await release(root,{version:args[1],date:args[2]});console.log('CHANGELOG.md updated; fragments removed.');}
  else{
   const problems=await changelogProblems(root);if(problems.length){for(const line of problems)console.error(line);process.exit(1)}
-  console.log(UNRELEASED+'\n'+unreleasedEntries(await fs.readFile(path.join(root,'CHANGELOG.md'),'utf8'),await readFragments(root)).join('\n\n'));
+  const fragments=await readFragments(root);
+  console.log(UNRELEASED+'\n'+sectionBody(unreleasedEntries(await fs.readFile(path.join(root,'CHANGELOG.md'),'utf8'),fragments),upgradeNotes(fragments)));
  }
 }
