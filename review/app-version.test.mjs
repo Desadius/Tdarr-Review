@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {appVersion} from './app-version.mjs';
-import {versionMismatches,moduleVersionLiterals} from '../tools/version-consistency.mjs';
+import {versionMismatches,moduleVersionLiterals,docVersionMismatches} from '../tools/version-consistency.mjs';
 
 const repo=new URL('..',import.meta.url);
 
@@ -31,6 +31,20 @@ test('package.json, Dockerfile defaults and .env.example agree; a mismatch is re
   await fs.writeFile(path.join(root,'Dockerfile'),'FROM x\nARG APP_VERSION=1.9.0\n');
   await fs.writeFile(path.join(root,'.env.example'),'PUID=99\n');
   assert.deepEqual(await versionMismatches(root),['Dockerfile APP_VERSION is 1.9.0, package.json is 2.0.0','.env.example REVIEW_IMAGE_TAG is missing, package.json is 2.0.0']);
+ }finally{await fs.rm(root,{recursive:true,force:true})}
+});
+
+test('the README and the installation guide name the package.json version; an older one is reported by line',async()=>{
+ assert.deepEqual(await docVersionMismatches(fileURLToPath(repo)),[]);
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'doc-version-'));
+ try{
+  await fs.mkdir(path.join(root,'docs'));
+  await fs.writeFile(path.join(root,'package.json'),JSON.stringify({version:'2.1.0'}));
+  await fs.writeFile(path.join(root,'README.md'),'Release version: **[2.1.0](https://example.invalid/releases/tag/v2.0.0)**.\n# Set REVIEW_IMAGE_TAG=2.1.0 for this release.\nThe image is `ghcr.io/desadius/tdarr-review:2.0.0`.\n');
+  await fs.writeFile(path.join(root,'docs','INSTALL-UNRAID.md'),'Pin `REVIEW_IMAGE_TAG=2.1.0` or `ghcr.io/desadius/tdarr-review:2.1.0`; the 1.11.0 guide stays at its tag.\n');
+  assert.deepEqual(await docVersionMismatches(root),['README.md:1 names 2.0.0, package.json is 2.1.0','README.md:3 names 2.0.0, package.json is 2.1.0']);
+  await fs.rm(path.join(root,'docs','INSTALL-UNRAID.md'));
+  assert.deepEqual((await docVersionMismatches(root)).at(-1),'docs/INSTALL-UNRAID.md is missing');
  }finally{await fs.rm(root,{recursive:true,force:true})}
 });
 

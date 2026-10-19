@@ -12,6 +12,19 @@ export async function versionMismatches(root='.'){
  return found.filter(([,value])=>value!==version).map(([where,value])=>where+' is '+(value??'missing')+', package.json is '+version);
 }
 
+// The release line, image tags and REVIEW_IMAGE_TAG in the README and the installation guide name
+// the current release. Other documents keep the versions they describe (for example the 2.0 migration).
+const VERSION_DOCS=['README.md','docs/INSTALL-UNRAID.md'];
+const DOC_VERSION=/Release version: \*\*\[(\d+\.\d+\.\d+[^\]]*)\]\([^)]*\/v(\d+\.\d+\.\d+[^)]*)\)|tdarr-review:(\d+\.\d+\.\d+[^\s`'")]*)|REVIEW_IMAGE_TAG=(\d+\.\d+\.\d+[^\s`'")]*)/g;
+export async function docVersionMismatches(root='.'){
+ const {version}=JSON.parse(await fs.readFile(path.join(root,'package.json'),'utf8')),found=[];
+ for(const file of VERSION_DOCS){
+  let text;try{text=await fs.readFile(path.join(root,file),'utf8')}catch(e){if(e.code==='ENOENT'){found.push(file+' is missing');continue}throw e}
+  text.split('\n').forEach((line,i)=>{for(const match of line.matchAll(DOC_VERSION))for(const value of match.slice(1).filter(Boolean))if(value!==version)found.push(file+':'+(i+1)+' names '+value+', package.json is '+version)});
+ }
+ return found;
+}
+
 // Browser module URLs carry the app version only through the placeholder the static route fills in.
 export async function moduleVersionLiterals(root='.'){
  const dir=path.join(root,'review','public'),found=[];
