@@ -26,3 +26,15 @@ export async function validateRecoveredPreview(exe,base64,options){
  for(let p=0;p<audio.length;p+=4)if(!Number.isFinite(audio.readFloatLE(p)))throw Error('Neplatné zvukové vzorky.');
  return base64;
 }
+// The first video and audio packets of a recovered sample must both start at the requested target:
+// the same container origin for both streams, so an earlier seek cannot shift either one (#183).
+export async function validateAlignedStart(exe,base64,options){
+ const listing=(await decode(exe,Buffer.from(base64,'base64'),['-map','0:v:0','-map','0:a:0','-c','copy','-f','framecrc','pipe:1'],options,4*1024*1024)).toString();
+ const base={},first={};
+ for(const line of listing.split(/\r?\n/)){
+  const tb=/^#tb (\d+): (\d+)\/(\d+)$/.exec(line);if(tb){base[tb[1]]=Number(tb[2])/Number(tb[3]);continue}
+  const packet=/^\s*(\d+),\s*-?\d+,\s*(-?\d+),/.exec(line);if(packet&&!Object.hasOwn(first,packet[1]))first[packet[1]]=Number(packet[2])*base[packet[1]];
+ }
+ if(!['0','1'].every(stream=>Number.isFinite(first[stream])&&Math.abs(first[stream])<=.05))throw Error('Obnovený náhled nezačíná u požadovaného času.');
+ return base64;
+}

@@ -57,6 +57,11 @@ export function openAudioComparison(item,options={}){
  for(const [title,input]of [['Stopa originálu',a],['Stopa převodu',b],['Začátek úseku (sekundy)',time]]){const label=el('label','',title);label.append(input);form.append(label)}
  const go=button('Porovnat 12 sekund',()=>prepare('wave')),avButton=button('Porovnat video a zvuk',()=>prepare('av'),'primary'),listen=button('Přehrát A/B do sluchátek',()=>prepare('listen'),'primary'),stop=button('Zastavit',()=>{generation++;cachedLoader?.stop();abPlayer?.stop();setWorking(false);status.textContent=tr('Poslech zastaven.')}),repeat=button('Opakovat A/B',()=>play().catch(e=>status.textContent=tr(e.message))),volume=el('input');
  const status=el('p','comparison-status','Načítám seznam zvukových stop…');status.setAttribute('role','status');const plot=el('div'),avHost=el('div','av-host');
+ // A failed video+audio sample offers the existing external-player review; switching resets the checks
+ // by the workflow's own rules. Producing or failing a sample never confirms anything (#183).
+ const fallback=el('div','comparison-controls');fallback.hidden=true;
+ const offerExternal=()=>{if(!options.onExternalReview||!fallback.hidden)return;fallback.replaceChildren(el('p','details','Ukázku videa se zvukem nyní nejde připravit. Film můžeš posoudit ve vlastním přehrávači; potvrzené kontroly se tím zruší a poznámka zůstane.'),button('Posoudit ve vlastním přehrávači',()=>{if(canInteract())options.onExternalReview()}));fallback.hidden=false};
+ const withdrawExternal=()=>{fallback.hidden=true;fallback.replaceChildren()};
  const audioControls=el('div','comparison-controls'),volumeLabel=el('label','','Společná hlasitost');volume.type='range';volume.min='0';volume.max='1';volume.step='.05';volume.value='.5';volume.setAttribute('aria-label',tr('Společná hlasitost obou ukázek'));volumeLabel.append(volume);audioControls.append(listen,repeat,stop,volumeLabel);
  volume.oninput=()=>{if(abPlayer)abPlayer.gain.gain.value=Number(volume.value)};
  const selectedScope=()=>({...options.scope,seconds:Number(time.value),originalIndex:a.value===''?null:Number(a.value),reviewIndex:b.value===''?null:Number(b.value)});
@@ -92,16 +97,16 @@ export function openAudioComparison(item,options={}){
  async function prepare(mode){
   if(working||!trackReady||!canInteract()||!validTime())return;
   if(mode==='listen'&&prepared&&preparedIdentity===scopeIdentity()){try{await play()}catch(e){if(current())status.textContent=tr(e.message)}return}
-  const attempt=++generation;cachedLoader?.stop();lastScope=previewIdentity();options.onScopeValidityChange?.(true);options.onScopeChange?.(selectedScope());setWorking(true);abPlayer?.stop();avCleanup?.();avCleanup=null;plot.replaceChildren();avHost.replaceChildren();
+  const attempt=++generation;cachedLoader?.stop();withdrawExternal();lastScope=previewIdentity();options.onScopeValidityChange?.(true);options.onScopeChange?.(selectedScope());setWorking(true);abPlayer?.stop();avCleanup?.();avCleanup=null;plot.replaceChildren();avHost.replaceChildren();
   try{if(mode==='listen')await ensurePlayer();status.textContent=tr(mode==='av'?'Připravuji dvě videa a zvukové průběhy. Příprava může trvat až čtyři minuty.':mode==='listen'?'Připravuji dvě 12sekundové ukázky; nejvýše dvě minuty.':'Připravuji zvukové průběhy… Nejvýše dvě minuty.');
    await options.beforePreview?.();if(!current()||attempt!==generation)return;const capture={snapshot:item.snapshot,...selectedScope()},d=await api('/api/items/'+item.id+'/audio-compare',{...capture,...(mode==='wave'?{}:{mode}),...(mode==='av'?{previewProfile:profile.value}:{})});if(!current()||attempt!==generation)return;
    if(d.pending){observePreparation(d.preparation);status.textContent=pendingPreviewMessage(d.preparation,{...capture,mode,previewProfile:profile.value});return}
    renderPayload(mode,d);if(mode==='listen')await play();
-  }catch(e){if(current()&&attempt===generation)status.textContent=tr(e.message)}finally{if(current()&&attempt===generation)setWorking(false)}
+  }catch(e){if(current()&&attempt===generation){status.textContent=tr(e.message);if(mode==='av')offerExternal()}}finally{if(current()&&attempt===generation)setWorking(false)}
  }
  form.onsubmit=e=>{e.preventDefault();prepare(options.mode==='av'?'av':'wave')};
  const showAV=options.mode!=='audio',showAudio=options.mode!=='av';if(showAV){const label=el('label','','Kvalita videonáhledu');label.append(profile);form.append(label,avButton)}if(showAudio)form.append(go);
- host.append(...(options.host?[]:[head]),note,form,presets,status);if(showAudio)host.append(el('p','details','Sluchátka: nejprve originál vlevo, potom stejný úsek převodu vpravo. Obě stopy se převedou na mono 48 kHz. Bez samostatné normalizace hlasitosti a bez automatického posunu; použij odpovídající dialogové stopy.'),audioControls);host.append(avHost,plot);
+ host.append(...(options.host?[]:[head]),note,form,presets,status,fallback);if(showAudio)host.append(el('p','details','Sluchátka: nejprve originál vlevo, potom stejný úsek převodu vpravo. Obě stopy se převedou na mono 48 kHz. Bez samostatné normalizace hlasitosti a bez automatického posunu; použij odpovídající dialogové stopy.'),audioControls);host.append(avHost,plot);
  if(!options.host){audioDialog.setAttribute('aria-label',tr('Porovnání zvuku · '+item.title));audioDialog.showModal()}setWorking(false);
  (async()=>{try{await Promise.resolve();const data=options.tracks||await api('/api/items/'+item.id+'/audio-compare',{snapshot:item.snapshot,mode:'tracks'});if(!current())return;observePreparation(data.preparation);
   for(const [select,tracks,key]of [[a,data.original,'originalIndex'],[b,data.review,'reviewIndex']]){select.append(new Option(tr('Vyber zvukovou stopu'),''));for(const track of tracks){const option=el('option','',audioTrackLabel(track.label),true);option.value=String(track.index);select.append(option)}select.value=options.scope?.[key]===null||options.scope?.[key]===undefined?'':String(options.scope[key])}

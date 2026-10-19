@@ -1,9 +1,11 @@
-import {extractPreview,PREVIEW_PROFILES} from './av-preview.mjs';
+import {extractPreview,PREVIEW_PROFILES,PAIR_MS} from './av-preview.mjs';
+// An exhausted audio recovery names its side and points to the external-player review (#183).
+const side=(label,run)=>run().catch(error=>{if(error?.previewFallback)error.message=label+': '+error.message+' Posuď film ve vlastním přehrávači.';throw error});
 import {extractAudio,alignment} from './audio-compare.mjs';
 import {extractListeningAudio} from './audio-listen.mjs';
 import {extractFrame} from './frames.mjs';
 
-export function createPreviewRenderer({getPair,getConfig}){
+export function createPreviewRenderer({getPair,getConfig,pairMs=PAIR_MS}){
  return async(request,{signal,priority='interactive'}={})=>{
   const check=()=>signal?.throwIfAborted();
   check();const pair=await getPair(request,{background:priority==='background'});check();
@@ -34,8 +36,10 @@ export function createPreviewRenderer({getPair,getConfig}){
   if(request.mode==='av'){
    if(!va||!vb||va.color_transfer!==vb.color_transfer)throw Error('Obrazové profily náhledu se neshodují.');
    const profile=PREVIEW_PROFILES[request.profile];if(!profile)throw Error('Neplatný profil videonáhledu.');
-   const original=await extractPreview(exe,a.path,request.originalIndex,seconds,startA,va,request.profile,options);check();
-   const review=await extractPreview(exe,b.path,request.reviewIndex,seconds,startB,vb,request.profile,options);check();
+   // One deadline for both sides, including validation of a recovered sample.
+   const pair={...options,deadline:Date.now()+pairMs};
+   const original=await side('Originál',()=>extractPreview(exe,a.path,request.originalIndex,seconds,startA,va,request.profile,pair));check();
+   const review=await side('Výsledek Review',()=>extractPreview(exe,b.path,request.reviewIndex,seconds,startB,vb,request.profile,pair));check();
    const rates=[va,vb].map(v=>{const [n,d]=String(v.avg_frame_rate||'0/1').split('/').map(Number);const rate=n/d;return Number.isFinite(rate)&&rate>0?rate:null});
    clips={duration:12,original,review,frameRates:rates,hdr:va.color_transfer==='smpte2084',previewProfile:request.profile,previewMaxWidth:profile.width,previewMaxHeight:profile.height};
   }else if(request.mode!=='wave')throw Error('Neplatný typ ukázky.');
