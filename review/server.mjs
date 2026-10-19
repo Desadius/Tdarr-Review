@@ -19,7 +19,7 @@ import {safeFile,hash,atomicJSON,command,probe,inspect,replaceChecked,recoverTra
 import {measure} from './progress.mjs';
 import {appVersion} from './app-version.mjs';
 import {logEvent} from './log.mjs';
-import {forgetApproval} from './approvals.mjs';
+import {createApprovalTransaction,outcomeLog,auditFailed} from './approval-transaction.mjs';
 import {recordDecision} from './decision-audit.mjs';
 import {isLoopback,recoveryStatusHealth,healthSummary} from './health-status.mjs';
 import {readRecoveryRuntime} from './recovery-runtime.mjs';
@@ -274,9 +274,6 @@ async function verifyPaused(item){const nodes=await tdarr('/api/v2/get-nodes');i
 const replacements=createReplacement({data:DATA,getConfig:()=>config,getConnection:activeConnection,safeFile,hash,atomicJSON,tdarr,pauseDispatch,verifyPaused,isWorkerBusy:async item=>workerBusy(await tdarr('/api/v2/get-nodes'),item),resume,onProgress:stage=>progress(stage)});
 const artwork=createArtwork({data:DATA,getConnection:activeConnection});
 await replacements.recover();
-// Operator log of a finished approval, rejection or replacement request (never review evidence).
-const outcomeLog=o=>({id:o.id,title:o.title,action:o.action,outcome:o.status,message:o.message,warning:o.warning,requestId:o.requestId,jobId:o.jobId,reason:o.rejectionReason,elapsedSeconds:o.elapsedSeconds,savedBytes:o.savedBytes});
-const auditFailed=(outcome,error)=>{outcome.warning=[outcome.warning,'Uložení záznamu do auditu rozhodnutí selhalo: '+error.message].filter(Boolean).join(' ')};
 async function replacementAction(item,reason){
  logEvent('action.started',{action:'replace',id:item.id,title:item.title});
  active={id:item.id,title:item.title,action:'replace',stage:'Připravuji žádost Radarru',started:Date.now()};
@@ -390,53 +387,16 @@ function measured(p){
   if(!active||p.phase&&p.phase!==active.phase)return;
   Object.assign(active,measure(p.done,p.total,active.phaseStarted,Date.now(),p.speed),{unit:p.unit,updatedAt:Date.now(),speed:p.speed??null,fps:p.fps??null});
 }
-async function perform(action,item,acceptDuration=false,reason){
-  if(action==='reject')reason=rejectionReason(reason);
-  const previous=state.items[item.id];
-  active={id:item.id,title:item.title,action,stage:'Ověřuji soubory',started:Date.now()};
-  logEvent('action.started',{action,id:item.id,title:item.title,acceptDuration:acceptDuration||undefined});
-  await forgetPreviews(item.id);
-  progress('Ověřuji soubory, délku a zachované stopy');
-  let journal,warning,outcome,reviewEvidence;
-  try {
-    if(action==='approve')reviewEvidence=reviewSessions.approval(item.id,item.snapshot,item.reviewRevision);
-    if(recovery.length)throw new Error('Je nutné dokončit obnovu předchozí výměny.');
-    const a=await safeFile(MEDIA,item.relative),b=await safeFile(REVIEW,item.reviewRelative);
-    if(hash(a.fp+'|'+b.fp)!==item.snapshot)throw new Error('Soubory se změnily. Obnov přehled.');
-    const nodes=await tdarr('/api/v2/get-nodes');if(workerBusy(nodes,item))throw new Error('Tento film právě zpracovává Tdarr. Zkus akci po dokončení.');
-    const receipt=await captureReceipt(REVIEW,item.reviewRelative,item.relative,b.stat);
-    if(action==='reject'){
-      progress('Odstraňuji pouze review kopii');
-      if((await safeFile(REVIEW,item.reviewRelative)).fp!==b.fp)throw new Error('Review soubor se změnil.');
-      await recordRejection(DATA,{event:'requested',id:item.id,title:item.title,action,reason,jobId:item.jobId||previous?.jobId,relative:item.relative,reviewRelative:item.reviewRelative,snapshot:item.snapshot,originalBytes:item.originalBytes,reviewBytes:item.reviewBytes,assessment:item.assessment});
-      await fs.unlink(b.path);
-    } else {
-      // Tdarr performs the full health check; Review only verifies metadata and safe replacement.
-      const info=inspect(await probe(FFPROBE,a.path),await probe(FFPROBE,b.path));
-      if(info.durationMismatch&&!(acceptDuration&&item.canApproveDuration&&durationException(info)))throw new Error('Rozdílnou délku nelze schválit bez zvláštní kontroly.');
-      progress('Pozastavuji přijímání nových úloh v Tdarru',2,'pause');
-      await pauseDispatch(item);
-      journal=path.join(DATA,'transactions',crypto.randomUUID()+'.json');
-      const labels={'preparing':['Kopíruji výsledek do složky filmu',3],'syncing-copy':['Čekám na dokončení zápisu na disk',3],'verifying-copy':['Porovnávám kontrolní součty obou kopií',4],'ready':['Připravuji výměnu',5],'original-backed-up':['Nahrazuji originál',5],'installed':['Dokončuji výměnu',5],'original-removed':['Odstraňuji hotovou review kopii',5],'complete':['Soubor je nahrazený',5]};
-      await replaceChecked({original:a.path,review:b.path,destination:item.outputRelative&&item.outputRelative!==item.relative?path.join(path.dirname(a.path),path.basename(item.outputRelative)):a.path,originalFP:previous.originalFP,reviewFP:previous.reviewFP,journal,onStage:s=>progress(labels[s][0],labels[s][1],s),onProgress:measured,beforeCommit:()=>verifyPaused(item)});
-      try{await publishApproval({mediaRoot:MEDIA,relative:item.relative,sourceFP:previous.originalFP,installedRelative:item.outputRelative||item.relative,atomic:atomicJSON})}catch(e){warning='Film je schválený, ale důkaz pro úklid karantény se neuložil: '+e.message}
-      progress('Obnovuji údaje filmu v Tdarru',6,'rescan');
-      try {
-        const lib=(await dbRows('librarysettingsjsondb')).find(l=>config.libraryId?l._id===config.libraryId:config.sourceRoots.includes(String(l.folder).replace(/\/$/,'')));
-        if(lib)await tdarr('/api/v2/rescan-file',{_id:String(lib.folder).replace(/\/$/,'')+'/'+(item.outputRelative||item.relative),DB:lib._id});
-      }catch(e){warning='Film je nahrazený, ale aktualizace údajů v Tdarru selhala: '+e.message}
-    }
-    progress('Uklízím prázdné složky review',6,'cleanup');
-    try{await cleanupReviewed(REVIEW,item.reviewRelative,receipt,config.reviewPrefixes)}catch(e){warning=[warning,'Film je vyřízený, ale úklid review selhal: '+e.message].filter(Boolean).join(' ')}
-    outcome={id:item.id,title:item.title,action,rejectionReason:action==='reject'?reason:undefined,jobId:item.jobId||previous?.jobId,reviewSession:reviewEvidence,acceptedDurationDifference:acceptDuration?item.durationA-item.durationB:undefined,status:'success',warning,time:new Date().toISOString(),elapsedSeconds:Math.round((Date.now()-active.started)/1000),savedBytes:action==='approve'?item.originalBytes-item.reviewBytes:0};state.history.unshift(outcome);
-    delete state.items[item.id];delete state.reviewSessions[item.id];forgetApproval(state,item.id);statsCache=null;
-  }catch(e){
-    outcome={id:item.id,title:item.title,action,rejectionReason:action==='reject'?reason:undefined,jobId:item.jobId||previous?.jobId,reviewSession:reviewEvidence,status:'error',message:e.message,time:new Date().toISOString()};state.history.unshift(outcome);
-    if(journal){const t=JSON.parse(await fs.readFile(journal,'utf8').catch(()=>'{"phase":"unknown"}'));if(!['aborted','complete'].includes(t.phase)){recovery.push({...t,id:t.id||'unknown',journal});logEvent('transaction.unresolved',{transaction:t.id||'unknown',phase:t.phase,id:item.id,title:item.title})}}
-  }finally{if(action==='reject'){try{await recordRejection(DATA,{event:'completed',...outcome})}catch(e){outcome.warning=[outcome.warning,'Uložení výsledku do archivu zamítnutí selhalo: '+e.message].filter(Boolean).join(' ');}}
-    if(action==='approve'){try{await recordDecision(DATA,{event:'approval',id:item.id,title:item.title,relative:item.relative,outputRelative:item.outputRelative,reviewRelative:item.reviewRelative,snapshot:item.snapshot,jobId:outcome.jobId,originalBytes:item.originalBytes,reviewBytes:item.reviewBytes,reviewSession:reviewEvidence,acceptedDurationDifference:outcome.acceptedDurationDifference,transaction:journal?path.basename(journal,'.json'):null,outcome:outcome.status,message:outcome.message,warning:outcome.warning,savedBytes:outcome.savedBytes,elapsedSeconds:outcome.elapsedSeconds})}catch(e){auditFailed(outcome,e)}}if(!recovery.length){progress('Obnovuji původní stav nodů',6,'resume');await resume()}state.history=state.history.slice(0,150);await save();active=null;cache=null;logEvent('action.finished',outcomeLog(outcome));void drainQueue().catch(e=>console.error('Replacement queue: '+e.message))}
-  return outcome;
-}
+const perform=createApprovalTransaction({
+ getState:()=>state,getConfig:()=>config,recovery,reviewSessions,
+ files:{media:()=>MEDIA,review:()=>REVIEW,safeFile,hash,captureReceipt,cleanupReviewed,unlink:file=>fs.unlink(file),probe:file=>probe(FFPROBE,file),inspect,replaceChecked,
+  newJournal:()=>path.join(DATA,'transactions',crypto.randomUUID()+'.json'),readJournal:async journal=>JSON.parse(await fs.readFile(journal,'utf8').catch(()=>'{"phase":"unknown"}'))},
+ tdarr:{nodes:()=>tdarr('/api/v2/get-nodes'),workerBusy,pauseDispatch,verifyPaused,resume,libraries:()=>dbRows('librarysettingsjsondb'),rescan:body=>tdarr('/api/v2/rescan-file',body)},
+ records:{publishApproval:entry=>publishApproval({...entry,atomic:atomicJSON}),recordRejection:entry=>recordRejection(DATA,entry),recordDecision:entry=>recordDecision(DATA,entry)},
+ activity:{start:entry=>{active=entry},progress,measured,finish:()=>{active=null;cache=null}},
+ log:logEvent,forgetPreviews,invalidateStats:()=>{statsCache=null},save,
+ next:()=>void drainQueue().catch(e=>console.error('Replacement queue: '+e.message)),
+});
 async function performBatch(items){
   batchRunning=true;
   state.batch={id:crypto.randomUUID(),status:'running',total:items.length,finished:0,failed:0,started:new Date().toISOString(),results:[],remaining:items.map(x=>({id:x.id,title:x.title}))};
