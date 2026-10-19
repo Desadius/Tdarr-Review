@@ -1,1 +1,0 @@
-- While a film is being replaced, other films can be opened, compared, reviewed and approved; their saved reviews survive the replacement and a restart. The film being replaced and films still waiting in a running batch stay locked (`item_in_operation`) and explain why. Further replacements still wait for the running one. English and Czech.

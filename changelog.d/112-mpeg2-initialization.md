@@ -1,1 +1,0 @@
-- Recover prepared MPEG-2 comparisons for a narrowly recognized Matroska initialization-header condition, preserving source bytes, strict decoding errors, shared timing and bounded processing.

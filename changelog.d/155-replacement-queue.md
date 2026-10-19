@@ -1,1 +1,0 @@
-- A replacement confirmed while another replacement or batch runs is queued instead of refused: replacements run one at a time, a repeated confirmation adds nothing, the queued film is locked, and its files and review are checked again before its turn. After a restart queued replacements never start by themselves; Attention lists them as interrupted. English and Czech.

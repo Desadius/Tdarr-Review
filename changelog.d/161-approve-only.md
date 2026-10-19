@@ -1,1 +1,0 @@
-- The Decision step offers **Approve** (records a durable decision bound to the snapshot and saved review revision, touches no file and schedules no replacement; the film shows "Approved · waiting for replacement") separately from **Approve and replace**. Batch replacement ("Replace selected approved films") now takes only explicitly approved films. English and Czech.

@@ -1,4 +1,12 @@
-# Repository verification — 2026-10-15
+# Repository verification — 2026-10-19
+
+## 2.1.0 — shared settings with Apply, approval without replacement and replacement queue
+
+Source `9039c4c` (`main` with every change merged since 2.0.0, PRs #114–#199) passed CI on Linux with Node 24 ([run 39260654665](https://github.com/Desadius/Tdarr-Review/actions/runs/39260654665)): `npm run check` including the version-consistency, changelog-fragment and source-text-test checks, the pinned type check, and all 937 regression tests without failures or skips. Line coverage was 95.07 %, branches 83.58 %, functions 82.76 %. In the network-less Docker suite (read-only repository, disposable `/tmp`) 936 tests passed; the one skip is the loopback `/health` test, which needs a non-loopback interface the suite deliberately lacks. The single Review image was built and passed the Docker smoke checks with fresh volumes, synthetic fixtures and container loopback only.
+
+The release commit changes only version numbers, the changelog and documentation. On WSL2 (Linux, Node 24) it passed `npm run check`, the type check and all 937 tests without skips, and its image, built locally, reported `APP_VERSION=2.1.0` and passed the Docker smoke checks. The documented [read-only `config.json` check](CONFIGURATION.md#check-a-configjson-before-an-update) was run in its source-checkout form against this source: the shipped example passes in both modes, and a copy with `"stableMinutes": "10 min"` is refused with `invalid-config` naming `stableMinutes` and its rule, without the value.
+
+Not run for this release: `npm run test:integration` (needs FFmpeg), an update of a real 2.0.0 installation, and any test against a real installation. Publishing the image and updating the running installation are separate, approved steps.
 
 ## 2.0.0 — one container with Recovery under a supervisor
 
