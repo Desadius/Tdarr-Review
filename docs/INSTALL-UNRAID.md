@@ -1,6 +1,10 @@
 # Install on Unraid
 
-This guide describes **2.0.0**, targeting the versioned Linux amd64 image `ghcr.io/desadius/tdarr-review:2.0.0`. You can also build the source locally. The previous release 1.11.0 has [its own guide](https://github.com/Desadius/Tdarr-Review/blob/v1.11.0/docs/INSTALL-UNRAID.md). The [Community Applications entry](https://ca.unraid.net/apps/tdarr-review-1qs5sdc0gn7hmk) uses the supplied [`templates/tdarr-review.xml`](../templates/tdarr-review.xml) with `latest`. Registry availability and catalog visibility are separate; see [publication status](COMMUNITY-APPS.md). Cloning this repository does not update an existing container.
+This guide describes **2.1.0**, targeting the versioned Linux amd64 image `ghcr.io/desadius/tdarr-review:2.1.0`. You can also build the source locally. The previous release 1.11.0 has [its own guide](https://github.com/Desadius/Tdarr-Review/blob/v1.11.0/docs/INSTALL-UNRAID.md). The [Community Applications entry](https://ca.unraid.net/apps/tdarr-review-1qs5sdc0gn7hmk) uses the supplied [`templates/tdarr-review.xml`](../templates/tdarr-review.xml) with `latest`. Registry availability and catalog visibility are separate; see [publication status](COMMUNITY-APPS.md). Cloning this repository does not update an existing container.
+
+## Updating to 2.1.0
+
+2.1.0 keeps the single container, its mappings, variables and resource limits. Before updating, complete [Before updating](../CHANGELOG.md#before-updating) in the changelog: check Recovery's `config.json` against the stricter rules with the new image, and note that new settings take effect only with **Apply changes**, whose first use cannot be undone by returning to 2.0.0. An installation that still runs 1.11.0 first follows the 2.0.0 steps below.
 
 ## Updating to 2.0.0
 
@@ -9,7 +13,7 @@ This guide describes **2.0.0**, targeting the versioned Linux amd64 image `ghcr.
 - **You ran only Review:** back up `/data`, update only while no approval, batch, node restore or transaction recovery is running, and keep the existing mappings, access key and settings. Raise the limits in Extra Parameters as in [step 3](#3-unraid-docker-template). Nothing else changes; Recovery stays Off.
 - **You also ran the Recovery container:** follow [the 2.0 migration guide](MIGRATE-TO-2.0.md). It copies the old Recovery data, keeps frozen approval paths through an extra `/storage` mapping and removes the old container, so two Recovery instances never act on one library.
 
-Select `2.0.0` explicitly; updating source or publishing images does not deploy an existing installation.
+Select the version (`2.1.0`) explicitly; updating source or publishing images does not deploy an existing installation.
 
 The five-step assessment and current `reviewRevision` required since 1.10.2 remain mandatory for approval. The optional Recovery routing function is a separate Tdarr flow change; follow [the integration guide](TDARR-INTEGRATION.md#require-review-for-recovery-replacements).
 
@@ -38,11 +42,11 @@ cd Tdarr-Review
 cp .env.example .env
 ```
 
-Edit `.env` in a text editor. Set `REVIEW_IMAGE_TAG=2.0.0` for this source release, your real paths and API address. Set `REVIEW_BIND_IP` to the server's LAN IP if you want LAN access. Set `PUBLIC_ORIGIN` to exactly the browser origin, for example `http://YOUR_UNRAID_IP:8270` (with your actual IP).
+Edit `.env` in a text editor. Set `REVIEW_IMAGE_TAG=2.1.0` for this source release, your real paths and API address. Set `REVIEW_BIND_IP` to the server's LAN IP if you want LAN access. Set `PUBLIC_ORIGIN` to exactly the browser origin, for example `http://YOUR_UNRAID_IP:8270` (with your actual IP).
 
 `TDARR_DB_HOST` must be the **directory** containing `SQL/database.db`, not just the database file. Its WAL/SHM sidecars must be available through the same read-only mapping. Locate this directory in your Tdarr server appdata before starting.
 
-After the `2.0.0` image has been published, if Docker Compose is available on your Unraid installation:
+After the `2.1.0` image has been published, if Docker Compose is available on your Unraid installation:
 
 ```bash
 docker compose pull review
@@ -75,7 +79,7 @@ In **Docker → Add Container**, configure:
 | Field | Value |
 | --- | --- |
 | Name | `tdarr-review` |
-| Repository | `ghcr.io/desadius/tdarr-review:2.0.0` after publication, or `tdarr-review:local` |
+| Repository | `ghcr.io/desadius/tdarr-review:2.1.0` after publication, or `tdarr-review:local` |
 | Network | `bridge` |
 | WebUI | `http://[IP]:[PORT:8270]` |
 | Port | Host `8270` → container `8270/TCP` |
@@ -158,6 +162,6 @@ A fresh installation needs no frozen pending approvals. The empty `examples/reco
 
 Keep the existing state, media, Review output and read-only Tdarr database mappings. Back up the mapped `/data` directory privately before the update; it contains access settings, history, journals and now server-saved review progress. Do not replace it with a fresh example directory. Run only one Review writer against those mappings.
 
-After registry publication, pin `REVIEW_IMAGE_TAG=2.0.0` in the existing `.env`, or the explicit `ghcr.io/desadius/tdarr-review:2.0.0` Repository value in Unraid, then pull/recreate that same Review service. A source build can be installed independently. Recovery is part of the same image and updates with it; an installation that still runs the separate Recovery container follows [the 2.0 migration guide](MIGRATE-TO-2.0.md).
+After registry publication, pin `REVIEW_IMAGE_TAG=2.1.0` in the existing `.env`, or the explicit `ghcr.io/desadius/tdarr-review:2.1.0` Repository value in Unraid, then pull/recreate that same Review service. A source build can be installed independently. Recovery is part of the same image and updates with it; an installation that still runs the separate Recovery container follows [the 2.0 migration guide](MIGRATE-TO-2.0.md).
 
 Existing pending films start with an unfinished manual review when no matching version-1 session is saved. Past successful transcodes, technical scores and historical approvals do not fabricate new checklist confirmations. Verify container health, login, the five-step workspace and reopening saved/deferred progress before approving a real film. Updating the source or image does not update your own installation automatically.

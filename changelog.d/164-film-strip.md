@@ -1,1 +1,0 @@
-- Kino layout: a film strip at the bottom of the review switches to another film without closing the detail. The film you leave keeps its unsaved changes as a draft (marked in the strip) and gets them back when you return; switching saves nothing and never carries checks over. Arrow keys, Home and End move along the strip. English and Czech.

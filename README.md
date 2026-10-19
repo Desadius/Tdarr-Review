@@ -4,7 +4,7 @@ Review and approve Tdarr transcodes before replacing the files in your media lib
 
 Choose **English** or **Čeština** in the interface; Czech is the initial default. This is a community project, independent of Tdarr, Radarr and Plex.
 
-Release version: **[2.0.0](https://github.com/Desadius/Tdarr-Review/releases/tag/v2.0.0)**. Use the explicit Linux amd64 `2.0.0` image tag for this source release. Moving `latest` is a separate publication choice. Source publication, image publication and updating a running installation remain separate operations. Personal configuration, credentials, journals, film files and one-off repair approvals are excluded from the repository and images.
+Release version: **[2.1.0](https://github.com/Desadius/Tdarr-Review/releases/tag/v2.1.0)**. Use the explicit Linux amd64 `2.1.0` image tag for this source release. Moving `latest` is a separate publication choice. Source publication, image publication and updating a running installation remain separate operations. Personal configuration, credentials, journals, film files and one-off repair approvals are excluded from the repository and images.
 
 ## What is included
 
@@ -50,14 +50,14 @@ git clone https://github.com/Desadius/Tdarr-Review.git
 cd Tdarr-Review
 cp .env.example .env
 # Edit .env, create its host directories and set write permissions first.
-# Set REVIEW_IMAGE_TAG=2.0.0 for this release.
+# Set REVIEW_IMAGE_TAG=2.1.0 for this release.
 docker compose pull review
 docker compose up -d --no-build review
 ```
 
-Follow [the installation guide](docs/INSTALL-UNRAID.md) before enabling file replacement. The Linux amd64 image is `ghcr.io/desadius/tdarr-review:2.0.0`. It contains optional Recovery, Off by default and controlled by `RECOVERY_MODE` (`off`, `verify`, `repair`); the separate Recovery image and the Compose `recovery` service are discontinued. Installations that run the separate Recovery container of 1.11.0 move with [the 2.0 migration guide](docs/MIGRATE-TO-2.0.md). To build locally instead, use `docker compose build review` and `docker compose up -d review`. The default bind address is localhost. Set it to your server's LAN address and set `PUBLIC_ORIGIN` to the exact address used in your browser.
+Follow [the installation guide](docs/INSTALL-UNRAID.md) before enabling file replacement. The Linux amd64 image is `ghcr.io/desadius/tdarr-review:2.1.0`. It contains optional Recovery, Off by default and controlled by `RECOVERY_MODE` (`off`, `verify`, `repair`); the separate Recovery image and the Compose `recovery` service are discontinued. Installations that run the separate Recovery container of 1.11.0 move with [the 2.0 migration guide](docs/MIGRATE-TO-2.0.md). To build locally instead, use `docker compose build review` and `docker compose up -d review`. The default bind address is localhost. Set it to your server's LAN address and set `PUBLIC_ORIGIN` to the exact address used in your browser.
 
-The 2.0.0 changes run Review and Recovery in one container under a supervisor, take the Recovery mode only from `RECOVERY_MODE` and refuse a conflicting or missing configuration before any API contact, show Recovery's runtime state and attention in Review, pause non-protective steps of in-flight repairs in Verify, accept Verify against an approval registry frozen for Repair, and raise the shared resource limits. Manual assessment and approval protections remain unchanged. Regression tests and isolated image checks are recorded in [verification](docs/VERIFICATION.md). These checks do not themselves publish an image or update another installation.
+The 2.1.0 changes add shared Review and Recovery settings activated only by an explicit Apply, approval without immediate replacement, a queue for replacements, the Kino review layout with a film strip, stricter checks of Recovery's `config.json`, unreadable file identities that never count as a match, and more recognized decoder errors. Manual assessment and approval protections remain unchanged. Before updating an existing installation, read [Before updating](CHANGELOG.md#before-updating) in the changelog: it checks the Recovery configuration first and explains the one-way first Apply. Regression tests and isolated image checks are recorded in [verification](docs/VERIFICATION.md). These checks do not themselves publish an image or update another installation.
 
 ## Project layout
 

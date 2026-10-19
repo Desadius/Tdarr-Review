@@ -1,1 +1,0 @@
-- Every Tdarr Hold that Recovery or Review writes is now read back before the action it protects. If Tdarr does not confirm it (or does not know the file), the quarantine, the return or removal of a kept source, and the manual Radarr replacement stop with the files in place, instead of continuing on an unverified Hold.
