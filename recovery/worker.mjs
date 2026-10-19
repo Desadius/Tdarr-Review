@@ -1,9 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {loadApprovalRegistry} from './approval-registry.mjs';
 import {RecoveryRefusal,exitRefused} from './recovery-mode.mjs';
 import {createWorkerControl} from './control.mjs';
-import {readRuntimeRecoveryConfig} from './managed-config.mjs';
+import {readRecoveryConfiguration,authorizeRecoveryApprovals} from './recovery-authority.mjs';
 import {createWorker} from './create-worker.mjs';
 
 const DATA=process.env.DATA_ROOT||'/data';
@@ -14,10 +13,10 @@ const control=createWorkerControl({wake:()=>wake()});
 const canStart=()=>!stopping&&control.canStart();
 for(const signal of ['SIGTERM','SIGINT'])process.on(signal,()=>{if(stopping)return;stopping=true;console.log('Recovery: '+signal+' received; stopping after the current step');wake();});
 // Refuse (exit 78) before any state, registry or API access when the mode or config.json is unusable.
-const {mode,cfg,text:configText,managed}=await readRuntimeRecoveryConfig({data:DATA,mode:process.env.RECOVERY_MODE}).catch(e=>{if(e instanceof RecoveryRefusal)return exitRefused(e);throw e;});
+const {mode,cfg,text:configText,managed}=await readRecoveryConfiguration({data:DATA,mode:process.env.RECOVERY_MODE}).catch(e=>{if(e instanceof RecoveryRefusal)return exitRefused(e);throw e;});
 const state=JSON.parse(await fs.readFile(path.join(DATA,'state.json'),'utf8').catch(e=>{if(e.code!=='ENOENT')throw e;return '{"version":1,"jobs":{},"cases":{}}'}));
 // Validate persistent authorization before DB reads, APIs or restart recovery.
-const pendingApprovals=await loadApprovalRegistry({data:DATA,cfg,state}).catch(e=>{if(e?.code==='RECOVERY_APPROVAL_REGISTRY')return exitRefused(new RecoveryRefusal('registry-refused',e.message));throw e;});
+const pendingApprovals=await authorizeRecoveryApprovals({data:DATA,cfg,state}).catch(e=>{if(e instanceof RecoveryRefusal)return exitRefused(e);throw e;});
 const worker=createWorker({data:DATA,mode,cfg,configText,managed,state,pendingApprovals,canStart});
 await worker.markInterrupted();
 console.log('Tdarr recovery started; mode='+mode);

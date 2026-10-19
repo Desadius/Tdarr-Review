@@ -3,8 +3,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {defaults,validate as validateReview} from './config.mjs';
 import {configValueProblem} from '../recovery/config-values.mjs';
-import {frozenConfigDifference,sameValue} from '../recovery/frozen-config.mjs';
-import {loadApprovalRegistry} from '../recovery/approval-registry.mjs';
+import {sameValue} from '../recovery/frozen-config.mjs';
+import {recoveryApprovalProblem} from '../recovery/recovery-authority.mjs';
 
 const FILE='shared-settings.json',MAX_BYTES=4*1024*1024,AUDIT_LIMIT=200;
 const recoveryKeys=['sourceRoot','quarantineRoot','reports','stableMinutes','decodeTimeoutHours','fullSourceHash','confirmDelaySeconds','maxRepairsPerDay','movieCooldownDays','pollSeconds','detectTerminalHeaders','since'];
@@ -151,8 +151,9 @@ export function createSharedSettingsStore({data,env=process.env,now=Date.now}){
   }finally{await handle?.close();await fs.rm(candidate,{force:true});await fs.rm(prepared,{force:true});}
  }
  async function guards(s,resolved,{pending=false}={}){
-  if(s.registry){if(s.registry.version!==1||!object(s.registry.config)||!Array.isArray(s.registry.cases))fail('settings_registry_invalid');const field=frozenConfigDifference(s.registry.config,resolved.recovery);if(field)fail('settings_frozen',field);
-   try{await loadApprovalRegistry({data:recoveryData,cfg:resolved.recovery,state:(await read(path.join(recoveryData,'state.json'))).value||{cases:{}}});}catch{fail('settings_registry_invalid');}}
+  // Recovery's own authority judges the candidate against its approval registry and state.
+  const approvals=await recoveryApprovalProblem({data:recoveryData,cfg:resolved.recovery,registry:s.registry,state:(await read(path.join(recoveryData,'state.json'))).value});
+  if(approvals?.code==='frozen')fail('settings_frozen',approvals.field);if(approvals)fail('settings_registry_invalid');
   if(!pending)return;
   const old=s.doc.active?.recovery||s.legacy.recovery.value||resolveSharedSettings(initial(s.legacy,env,now()).draft).recovery;
   const recoveryChanged=mappingKeys.some(k=>!sameValue(old[k],resolved.recovery[k]));

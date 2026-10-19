@@ -141,7 +141,7 @@ docker run --rm --network none --read-only --cap-drop ALL \
   --mount type=bind,source=/mnt/cache/appdata/tdarr-review/data/recovery/config.json,target=/check/config.json,readonly \
   --entrypoint /usr/bin/node ghcr.io/desadius/tdarr-review:NEW_VERSION --input-type=module -e '
 import fs from "node:fs";
-const {resolveRecoveryConfig}=await import("/recovery/recovery-mode.mjs");
+const {resolveRecoveryConfig}=await import("/recovery/recovery-authority.mjs");
 let text;
 try{text=fs.readFileSync(process.argv[1],"utf8");}catch(e){console.log("config.json: cannot be read ("+(e.code||"error")+")");process.exit(1);}
 let failed=false;

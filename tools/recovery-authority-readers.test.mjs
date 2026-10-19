@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {resolveRecoveryConfig} from '../recovery/recovery-mode.mjs';
+import {resolveRecoveryConfig} from '../recovery/recovery-authority.mjs';
 import {startupValidator} from '../recovery/config-watch.mjs';
 import {createWorker} from '../recovery/create-worker.mjs';
 import {main as migrateRegistry} from './migrate-recovery-registry.mjs';
@@ -21,6 +21,7 @@ const root=fileURLToPath(new URL('../',import.meta.url));
 const {enabled:_,...base}=JSON.parse(await fs.readFile(path.join(root,'fixtures/recovery-config-1.11.json'),'utf8'));
 Object.assign(base,{tdarrUrl:'http://127.0.0.1:9',radarrUrl:'http://127.0.0.1:9',radarrApiKey:'synthetic-reader-key',libraryId:'reader-library'});
 const frozen=config=>({version:1,config,cases:[]});
+const STATE_CASE='d'.repeat(24);
 
 const cases=[
  {name:'legacy, Verify',mode:'verify',legacy:base,config:'ok',authority:'ok'},
@@ -37,8 +38,12 @@ const cases=[
  {name:'legacy, registry frozen for Verify, Repair',mode:'repair',legacy:base,registry:frozen({enabled:false}),config:'ok',authority:'registry-refused'},
  {name:'legacy, registry frozen for Repair, Verify',mode:'verify',legacy:base,registry:frozen({enabled:true}),config:'ok',authority:'ok'},
  {name:'legacy, registry frozen to another media root',mode:'verify',legacy:base,registry:frozen({mediaRoot:'/elsewhere'}),config:'ok',authority:'registry-refused'},
+ {name:'legacy, historical approval in state without a registry',mode:'verify',legacy:base,stateApproval:true,config:'ok',authority:'registry-refused'},
  {name:'managed, Verify',mode:'verify',managed:true,config:'ok',authority:'ok'},
  {name:'managed, Repair',mode:'repair',managed:true,config:'ok',authority:'ok'},
+ // After Apply the generation is the authority: an edit of config.json outside the private exceptions changes nothing.
+ // Review's Apply is not asked: it first wants the outside edit resolved explicitly (legacyFiles), whatever its content.
+ {name:'managed, config.json edited after Apply',mode:'verify',managed:true,legacyEdit:{stableMinutes:'10 min'},except:['Review settings Apply'],config:'ok',authority:'ok'},
  {name:'managed, corrupt authority',mode:'verify',managed:true,corrupt:true,config:'invalid-config',authority:'invalid-config'},
  {name:'managed, stale private exception',mode:'verify',managed:true,staleException:true,config:'invalid-config',authority:'invalid-config'},
  {name:'managed, registry frozen to another media root',mode:'verify',managed:true,registryAfterApply:frozen({mediaRoot:'/elsewhere'}),config:'ok',authority:'registry-refused'},
@@ -53,12 +58,13 @@ async function setup(c){
  const config={...base,mediaRoot:path.join(dir,'media/movies'),reviewRoot:path.join(dir,'review'),quarantineRoot:path.join(dir,'media/.tdarr-corrupt'),database:path.join(dir,'missing.db'),reports:path.join(dir,'reports')};
  const legacy=c.managed?config:c.legacy&&typeof c.legacy==='object'?{...c.legacy,...Object.fromEntries(['mediaRoot','reviewRoot','quarantineRoot','database','reports'].map(k=>[k,config[k]]))}:c.legacy;
  if(legacy!==null)await fs.writeFile(path.join(data,'config.json'),typeof legacy==='string'?legacy:JSON.stringify(legacy),{mode:0o600});
- await fs.writeFile(path.join(data,'state.json'),'{"version":1,"jobs":{},"cases":{}}',{mode:0o600});
+ await fs.writeFile(path.join(data,'state.json'),JSON.stringify({version:1,jobs:{},cases:c.stateApproval?{[STATE_CASE]:{id:STATE_CASE,status:'manual',approval:{id:STATE_CASE}}}:{}}),{mode:0o600});
  const registry=c.registry&&{...c.registry,config:remap(c.registry.config,config)};
  if(registry)await fs.writeFile(path.join(data,'pending-approvals.json'),JSON.stringify(registry),{mode:0o600});
  if(c.managed){
   const store=createSharedSettingsStore({data:dir,env:{RECOVERY_MODE:c.mode}}),current=await store.current();await store.applyGeneration({revision:current.revision});
   if(c.corrupt)await fs.writeFile(path.join(dir,'shared-settings.json'),'{"version":1,',{mode:0o600});
+  if(c.legacyEdit)await fs.writeFile(path.join(data,'config.json'),JSON.stringify({...legacy,...c.legacyEdit}),{mode:0o600});
   if(c.staleException)await fs.writeFile(path.join(data,'config.json'),JSON.stringify({...legacy,approvedCaseIds:['revoked-after-apply']}),{mode:0o600});
   if(c.interrupted)await writeSettingsActivation(dir,{id:'00000000-0000-4000-8000-000000000000',state:'interrupted',stage:'interrupted',blocking:true,generation:1,updated:new Date().toISOString()});
   if(c.registryAfterApply)await fs.writeFile(path.join(data,'pending-approvals.json'),JSON.stringify({...c.registryAfterApply,config:remap(c.registryAfterApply.config,config)}),{mode:0o600});
@@ -94,7 +100,8 @@ const readers={
  // The running worker's check of a later config.json edit (legacy configuration, valid JSON object).
  'config.json edit check':{scope:'authority',applies:c=>!c.managed&&c.legacy&&typeof c.legacy==='object',run:async(f,c)=>{
   const value=JSON.parse(await fs.readFile(path.join(f.data,'config.json'),'utf8'));
-  const error=await startupValidator({data:f.data,mode:c.mode,getState:()=>({version:1,jobs:{},cases:{}})})(value);
+  const state=JSON.parse(await fs.readFile(path.join(f.data,'state.json'),'utf8'));
+  const error=await startupValidator({data:f.data,mode:c.mode,getState:()=>state})(value);
   return error===null?'ok':reasonOf(error);
  }},
  // The running worker's check of a changed managed generation (it reports valid or not, without a reason).
@@ -124,7 +131,7 @@ for(const [readerName,reader] of Object.entries(readers)){
  test('the '+readerName+' gives every applicable case the shared verdict',{skip:process.platform==='win32'&&'POSIX roots'},async()=>{
   let applicable=0;
   for(const c of cases){
-   if(c.only&&!c.only.includes(readerName)||reader.applies&&!reader.applies(c))continue;
+   if(c.only&&!c.only.includes(readerName)||c.except?.includes(readerName)||reader.applies&&!reader.applies(c))continue;
    applicable++;
    const f=await setup(c);
    try{

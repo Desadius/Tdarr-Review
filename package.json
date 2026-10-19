@@ -16,5 +16,8 @@
     "typecheck": "node tools/typecheck.mjs",
     "changelog": "node tools/changelog.mjs",
     "demo:ui": "node tools/demo-ui.mjs"
+  },
+  "imports": {
+    "#review/*": "./review/*"
   }
 }

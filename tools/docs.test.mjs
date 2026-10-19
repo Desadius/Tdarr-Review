@@ -107,8 +107,8 @@ test('the config.json check before an update runs the start-up rules and prints 
  const {pathToFileURL}=await import('node:url');
  const block=/--entrypoint \/usr\/bin\/node \S+ --input-type=module -e '([^']+)' \/check\/config\.json/.exec(await read('docs/CONFIGURATION.md'))?.[1];
  assert.ok(block,'check command');
- const image='"/recovery/recovery-mode.mjs"';assert.equal(block.split(image).length,2,'the script imports the image\'s parser once');
- const script=block.replace(image,JSON.stringify(pathToFileURL(new URL('recovery/recovery-mode.mjs',root).pathname).href));
+ const image='"/recovery/recovery-authority.mjs"';assert.equal(block.split(image).length,2,'the script imports the image\'s Recovery authority once');
+ const script=block.replace(image,JSON.stringify(pathToFileURL(new URL('recovery/recovery-authority.mjs',root).pathname).href));
  const run=file=>new Promise(resolve=>execFile(process.execPath,['--input-type=module','-e',script,file],(error,stdout)=>resolve({code:error?error.code:0,stdout})));
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'config-check-'));
  t.after(()=>fs.rm(dir,{recursive:true,force:true}));

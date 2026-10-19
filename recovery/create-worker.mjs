@@ -6,7 +6,7 @@ import {createLiveStatusPublisher,createDecodeProgressParser} from './live-statu
 import {probeDuration,runOriginalDecode} from './original-decode.mjs';
 import {ensureHandoff,preservesHold} from './replacement-handoff.mjs';
 import {COOLDOWN,DAILY_LIMIT,cooldownFor,quotaFor,deferConfirmed,inspectDeferred,reconcileDeferredIntent} from './frozen-deferral.mjs';
-import {loadApprovalRegistry,registryHasApproval} from './approval-registry.mjs';
+import {registryHasApproval} from './approval-registry.mjs';
 import {registryAllowedModes} from './frozen-config.mjs';
 import {configDigest,detectConfigChange,startupValidator} from './config-watch.mjs';
 import fs from 'node:fs/promises';
@@ -17,7 +17,7 @@ import {readHeader} from './container-header.mjs';
 import {lowPriorityHash} from './full-hash.mjs';
 import {createTdarrFileState} from './tdarr-file-state.mjs';
 import {DatabaseSync} from 'node:sqlite';
-import {readRuntimeRecoveryConfig} from './managed-config.mjs';
+import {readRecoveryConfiguration,readRecoveryApprovals} from './recovery-authority.mjs';
 import {atomicJson as atomic} from './atomic-json.mjs';
 import {hasFiniteTruncation} from './matroska-bounds.mjs';
 import {identityOf} from './file-identity.mjs';
@@ -315,7 +315,7 @@ export function createWorker({data,mode,cfg,configText,managed,state,pendingAppr
  async function noteConfigChange(){
    if(managed){
     let change=null;
-    try{const current=await readRuntimeRecoveryConfig({data,mode,checkActivation:false});if(configDigest(current.text)!==loadedConfigDigest){await loadApprovalRegistry({data,cfg:current.cfg,state:structuredClone(state)});change={detectedAt:state.configChange?.detectedAt||new Date().toISOString(),restartRequired:true,valid:true,error:null};}}
+    try{const current=await readRecoveryConfiguration({data,mode,checkActivation:false});if(configDigest(current.text)!==loadedConfigDigest){await readRecoveryApprovals({data,cfg:current.cfg,state:structuredClone(state)});change={detectedAt:state.configChange?.detectedAt||new Date().toISOString(),restartRequired:true,valid:true,error:null};}}
     catch{change={detectedAt:state.configChange?.detectedAt||new Date().toISOString(),restartRequired:true,valid:false,error:'Managed settings would not pass startup checks'};}
     if(change)state.configChange=change;else delete state.configChange;return;
    }
