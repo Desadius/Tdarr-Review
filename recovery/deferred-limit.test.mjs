@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {quotaFor,validateDeferredLimit,deferConfirmedLimit,inspectDeferredLimit,reconcileDeferredLimitIntent,LIMIT_HOLD_UNTIL} from './deferred-limit.mjs';
+import {quotaFor,validateDeferredLimit,deferConfirmedLimit,inspectDeferredLimit,reconcileDeferredLimitIntent} from './deferred-limit.mjs';
+import {HOLD_FOREVER as LIMIT_HOLD_UNTIL} from './tdarr-file-state.mjs';
 
 const day=86400000,now=Date.UTC(2026,9,12,12),signature='quant_step_size larger than huff_lsbs';
 function fixture(){

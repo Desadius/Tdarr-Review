@@ -1,17 +1,17 @@
 import path from 'node:path';
 import {isDeepStrictEqual} from 'node:util';
 import {classify,confirmed} from './policy.mjs';
+import {createTdarrFileState,HOLD_FOREVER,isHeld} from './tdarr-file-state.mjs';
 
 // Keep a confirmed faulty edition in the library while the daily mutation
 // quota is full. The decoder evidence authorizes no mutation by itself.
-export const LIMIT_HOLD_UNTIL=253402300799000;
 const day=86400000;
 const eligibleStates=new Set(['Queued','Not required','Transcode error','Hold']);
 const mappingKeys=['libraryId','sourceRoot','mediaRoot','radarrRoot','quarantineRoot'];
 const timestamp=value=>typeof value==='string'&&Number.isFinite(Date.parse(value));
 
 function configuration(cfg,now){
- if(!Number.isFinite(now)||now<=0||now>LIMIT_HOLD_UNTIL||typeof cfg.enabled!=='boolean'||!Number.isInteger(cfg.maxRepairsPerDay)||cfg.maxRepairsPerDay<=0)throw Error('Invalid daily recovery limit configuration');
+ if(!Number.isFinite(now)||now<=0||now>HOLD_FOREVER||typeof cfg.enabled!=='boolean'||!Number.isInteger(cfg.maxRepairsPerDay)||cfg.maxRepairsPerDay<=0)throw Error('Invalid daily recovery limit configuration');
  if(typeof cfg.libraryId!=='string'||!cfg.libraryId)throw Error('Invalid deferred source library');
  for(const key of mappingKeys.slice(1)){
   const root=cfg[key];
@@ -38,7 +38,7 @@ export function quotaFor({cfg,state,now=Date.now()}){
  for(const [key,c] of Object.entries(state.cases||{})){
   const started=c.mutationStarted;
   if(started==null||started===0)continue;
-  if(!Number.isFinite(started)||started<=0||!Number.isFinite(started+day)||started+day>LIMIT_HOLD_UNTIL)throw Error('Invalid recovery mutation timestamp');
+  if(!Number.isFinite(started)||started<=0||!Number.isFinite(started+day)||started+day>HOLD_FOREVER)throw Error('Invalid recovery mutation timestamp');
   if(started+day>now)active.push({id:c.id||key,expires:started+day});
  }
  if(active.length<cfg.maxRepairsPerDay)return null;
@@ -49,7 +49,7 @@ export function quotaFor({cfg,state,now=Date.now()}){
 export function validateDeferredLimit({cfg,c,now=Date.now(),statuses=['deferred_limit','defer_limit_intent']}){
  context(cfg,c,now);
  const d=c.deferredLimit;
- if(!statuses.includes(c.status)||d?.version!==1||d.file!==c.file||d.source!==c.source||d.size!==c.size||d.sourceFP!==c.fp||d.sampleSHA256!==c.evidence.sampleSHA256||d.signature!==c.evidence.signature||!isDeepStrictEqual(d.binding,c.binding)||!timestamp(d.retryAt)||Date.parse(d.retryAt)>LIMIT_HOLD_UNTIL||!Array.isArray(d.caseIds)||!d.caseIds.length||d.caseIds.some(id=>typeof id!=='string'||!id)||new Set(d.caseIds).size!==d.caseIds.length||mappingKeys.some(key=>d[key]!==cfg[key]))throw Error('Invalid deferred daily-limit journal');
+ if(!statuses.includes(c.status)||d?.version!==1||d.file!==c.file||d.source!==c.source||d.size!==c.size||d.sourceFP!==c.fp||d.sampleSHA256!==c.evidence.sampleSHA256||d.signature!==c.evidence.signature||!isDeepStrictEqual(d.binding,c.binding)||!timestamp(d.retryAt)||Date.parse(d.retryAt)>HOLD_FOREVER||!Array.isArray(d.caseIds)||!d.caseIds.length||d.caseIds.some(id=>typeof id!=='string'||!id)||new Set(d.caseIds).size!==d.caseIds.length||mappingKeys.some(key=>d[key]!==cfg[key]))throw Error('Invalid deferred daily-limit journal');
  return d;
 }
 
@@ -61,8 +61,9 @@ async function unchanged(c,{safeSource,sample,readBinding}){
 }
 
 async function rowFor(cfg,c,td){
- const row=await td('/api/v2/cruddb',{collection:'FileJSONDB',mode:'getById',docID:c.file});
- if(!row||Array.isArray(row)||row._id!==c.file||row.DB!==cfg.libraryId)throw Error('Deferred Tdarr entry does not match configured source and library');
+ const mismatch=()=>Error('Deferred Tdarr entry does not match configured source and library');
+ const row=await createTdarrFileState(td,{libraryId:cfg.libraryId}).read(c.file).catch(error=>{throw error?.code==='TDARR_FILE_BINDING'?mismatch():error});
+ if(!row)throw mismatch();
  return row;
 }
 
@@ -79,9 +80,11 @@ export async function deferConfirmedLimit({cfg,state,c,phase,idle,safeSource,sam
  await idle(c);await unchanged(c,{safeSource,sample,readBinding});
  const before=await rowFor(cfg,c,td);
  if(!eligibleStates.has(before.TranscodeDecisionMaker))throw Error('Confirmed Tdarr source changed before quota Hold');
- if(before.TranscodeDecisionMaker!=='Hold'||Number(before.holdUntil)!==LIMIT_HOLD_UNTIL)await td('/api/v2/bulk-update-files',{fileIds:[c.file],updatedObj:{TranscodeDecisionMaker:'Hold',holdUntil:LIMIT_HOLD_UNTIL}});
- const row=await rowFor(cfg,c,td);
- if(row.TranscodeDecisionMaker!=='Hold'||Number(row.holdUntil)!==LIMIT_HOLD_UNTIL)throw Error('Daily-limit Hold result uncertain; inspect before retry');
+ // An acknowledged earlier write is not repeated; either way the Hold is read back.
+ if(!isHeld(before,HOLD_FOREVER)){
+  try{await createTdarrFileState(td,{libraryId:cfg.libraryId}).hold(c.file,HOLD_FOREVER,'Daily-limit Hold result uncertain; inspect before retry')}
+  catch(error){throw error?.code==='TDARR_FILE_BINDING'?Error('Deferred Tdarr entry does not match configured source and library'):error}
+ }else if(!isHeld(await rowFor(cfg,c,td),HOLD_FOREVER))throw Error('Daily-limit Hold result uncertain; inspect before retry');
  validateDeferredLimit({cfg,c,now,statuses:['defer_limit_intent']});
  await unchanged(c,{safeSource,sample,readBinding});
  c.skipCurrentEdition=true;c.preservedSourceFP=c.fp;
@@ -94,7 +97,7 @@ export async function inspectDeferredLimit({cfg,state,c,safeSource,sample,readBi
  validateDeferredLimit({cfg,c,now,statuses:['deferred_limit']});
  await unchanged(c,{safeSource,sample,readBinding});
  const row=await rowFor(cfg,c,td);
- if(row.TranscodeDecisionMaker!=='Hold'||Number(row.holdUntil)!==LIMIT_HOLD_UNTIL)throw Error('Deferred daily-limit source is no longer held');
+ if(!isHeld(row,HOLD_FOREVER))throw Error('Deferred daily-limit source is no longer held');
  if(!cfg.enabled)return {status:'disabled'};
  const quota=quotaFor({cfg,state,now});
  return quota?{status:'waiting_limit',...quota}:{status:'ready'};
@@ -106,7 +109,7 @@ export async function reconcileDeferredLimitIntent({cfg,c,phase,idle,safeSource,
  const d=validateDeferredLimit({cfg,c,now,statuses:['defer_limit_intent']});
  await idle(c);await unchanged(c,{safeSource,sample,readBinding});
  const row=await rowFor(cfg,c,td);
- if(row.TranscodeDecisionMaker!=='Hold'||Number(row.holdUntil)!==LIMIT_HOLD_UNTIL)throw Error('Daily-limit Hold was not acknowledged; manual inspection required');
+ if(!isHeld(row,HOLD_FOREVER))throw Error('Daily-limit Hold was not acknowledged; manual inspection required');
  c.skipCurrentEdition=true;c.preservedSourceFP=c.fp;c.nextRetryAt=d.retryAt;
  await phase(c,'deferred_limit','Confirmed source error; acknowledged daily-limit Hold reconciled without replaying the write');
  return true;

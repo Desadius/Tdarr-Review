@@ -5,7 +5,7 @@ import {replacementFollowup} from './replacement-followup.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {identityOf,compareIdentity} from './file-identity.mjs';
-const FOREVER=253402300799000;
+import {createTdarrFileState,HOLD_FOREVER} from './tdarr-file-state.mjs';
 // Quarantine moves and library links change the preserved original's ctime. An unreadable
 // recorded identity is refused with its own reason instead of looking like a change.
 function samePreserved(current,stored){
@@ -34,7 +34,8 @@ export async function maintainWaitingSources({cfg,state,rad,td,phase,save,comman
     const q=await fs.lstat(c.quarantine);if(!q.isFile()||q.isSymbolicLink()||!samePreserved(identityOf(q),c.fp)||q.nlink!==1||await fs.realpath(c.quarantine)!==c.quarantine)throw Error('Quarantine identity changed; cannot restore source');
     if(await fs.realpath(path.dirname(c.source))!==path.dirname(c.source))throw Error('Unsafe source parent');
     try{await fs.lstat(c.source);throw Error('Source already exists')}catch(e){if(e.code!=='ENOENT')throw e;}
-    await td('/api/v2/bulk-update-files',{fileIds:[c.file],updatedObj:{TranscodeDecisionMaker:'Hold',holdUntil:FOREVER}});
+    // Confirmed Hold first: an unacknowledged write stops before the source is linked back.
+    await createTdarrFileState(td,{libraryId:cfg.libraryId}).hold(c.file,HOLD_FOREVER,'Tdarr Hold of the kept source was not confirmed; source not restored');
     await phase(c,'restore_source_intent','Náhrada nenalezena; vracím vydání do knihovny a ponechávám zálohu v karanténě.');
     try{await fs.link(c.quarantine,c.source);c.keptLink=true;}catch(e){if(!['EXDEV','ENOTSUP','EOPNOTSUPP'].includes(e.code))throw e;await fs.copyFile(c.quarantine,c.source,fs.constants.COPYFILE_EXCL|fs.constants.COPYFILE_FICLONE);c.keptLink=false;}
     c.originalRestoredAt=new Date().toISOString();delete c.originalOutsideSince;
@@ -68,7 +69,7 @@ export async function maintainWaitingSources({cfg,state,rad,td,phase,save,comman
    if(!release){c.message='Vydání vyřazeno z převodů — náhrada zatím nenalezena. Film zůstává v knihovně; další automatické hledání za 6 hodin.';await save();continue;}
    await idle(c);const q=await fs.lstat(c.quarantine);if(!samePreserved(identityOf(q),c.fp)||source.fp!==(await safeSource(c.relative)).fp)throw Error('Original changed before replacement request');
    if(c.keptLink){const kept=await fs.lstat(c.source);if(kept.ino!==q.ino||kept.dev!==q.dev||q.nlink!==2)throw Error('Preserved source link changed');}else if(await sample(c.source)!==await sample(c.quarantine))throw Error('Restored copy does not match quarantine');
-   await td('/api/v2/bulk-update-files',{fileIds:[c.file],updatedObj:{TranscodeDecisionMaker:'Hold',holdUntil:FOREVER}});
+   await createTdarrFileState(td,{libraryId:cfg.libraryId}).hold(c.file,HOLD_FOREVER,'Tdarr Hold of the kept source was not confirmed; source kept in the library');
    await phase(c,'remove_kept_source_intent','Nalezena vhodná náhrada; originál zůstává v karanténě.');await fs.unlink(c.source);c.originalOutsideSince=new Date().toISOString();await save();
    await command({name:'RescanMovie',movieId:c.movieId});if((await rad('/movie/'+c.movieId)).movieFileId)throw Error('Radarr still sees kept source');
    await phase(c,'replacement_download_intent','Předávám vhodnou náhradu ke stažení.');await rad('/release',{guid:release.guid,indexerId:release.indexerId,movieId:c.movieId});c.skipCurrentEdition=false;c.selectedRelease=release.title;

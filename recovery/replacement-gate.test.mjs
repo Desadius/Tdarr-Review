@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {cooldownFor,deferConfirmedReplacement,inspectDeferredReplacement,reconcileDeferredIntent,DEFERRED_HOLD_UNTIL} from './replacement-gate.mjs';
+import {cooldownFor,deferConfirmedReplacement,inspectDeferredReplacement,reconcileDeferredIntent} from './replacement-gate.mjs';
+import {HOLD_FOREVER as DEFERRED_HOLD_UNTIL} from './tdarr-file-state.mjs';
 
 const day=86400000,now=Date.UTC(2026,9,11,12),signature='quant_step_size larger than huff_lsbs';
 function fixture(){

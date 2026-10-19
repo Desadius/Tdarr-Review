@@ -29,6 +29,7 @@ async function fixture(t,status){
  const row={_id:'/media/Film/new.mkv',DB:'lib',TranscodeDecisionMaker:'Hold'},queue=[];
  const control={searchStatus:'completed'};
  const db=new DatabaseSync(cfg.database);db.exec('CREATE TABLE jobsjsondb (json_data TEXT); CREATE TABLE filejsondb (json_data TEXT)');
+ const others=new Map();
  const syncRow=()=>{db.exec('DELETE FROM filejsondb');db.prepare('INSERT INTO filejsondb VALUES (?)').run(JSON.stringify(row));};syncRow();
  const server=http.createServer(async(req,res)=>{
   try{
@@ -46,8 +47,9 @@ async function fixture(t,status){
     if(req.url==='/api/v3/release?movieId=1')return reply([{downloadAllowed:true,title:'New.Release',guid:'fixture',indexerId:1,quality:{quality:{id:1,resolution:1080}},rejections:[]}]);
     if(req.url==='/api/v2/get-nodes')return reply({});
    }
-   if(req.url==='/api/v2/cruddb')return reply(row);
-   if(req.url==='/api/v2/bulk-update-files'){Object.assign(row,body.updatedObj);syncRow();return reply('OK');}
+   // The replacement row is the database row; the original source has its own row, read back after a Hold.
+   if(req.url==='/api/v2/cruddb')return reply(body?.mode==='getById'&&body.docID!==row._id?others.get(body.docID)??null:row);
+   if(req.url==='/api/v2/bulk-update-files'){for(const id of body.fileIds){if(id===row._id){Object.assign(row,body.updatedObj);syncRow()}else others.set(id,{...(others.get(id)||{_id:id,DB:'lib'}),...body.updatedObj})}return reply('OK');}
    if(req.url==='/api/v2/rescan-file')return reply('OK');
    if(req.url==='/api/v3/command'&&body.name==='RescanMovie'){
     try{const s=await fs.stat(source);movie.movieFileId=10;movie.movieFile={...oldFile,size:s.size};}catch(e){if(e.code!=='ENOENT')throw e;movie.movieFileId=0;delete movie.movieFile;}
@@ -71,7 +73,8 @@ async function fixture(t,status){
  }
  return {root,data,media,source,quarantine,replacement,state,c,cfg,movie,newFile,row,queue,control,requests,run};
 }
-const nonProtective=requests=>requests.filter(r=>r.method!=='GET'||r.url.startsWith('/api/v3/release?'));
+// Tdarr row reads (the Hold read-back included) are POSTs but change nothing.
+const nonProtective=requests=>requests.filter(r=>(r.method!=='GET'&&!(r.url==='/api/v2/cruddb'&&r.body?.mode==='getById'))||r.url.startsWith('/api/v3/release?'));
 
 test('Verify pauses kept-source removal and replacement requests in the actual worker',linux,async t=>{
  const f=await fixture(t,'waiting_source_kept');const result=await f.run();
