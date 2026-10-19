@@ -1,0 +1,6 @@
+{
+  "private": true,
+  "imports": {
+    "#review/*": "./review-app/*"
+  }
+}

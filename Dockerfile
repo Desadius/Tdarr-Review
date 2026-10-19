@@ -19,6 +19,8 @@ WORKDIR /review-app
 COPY review/ /review-app/
 # The supervisor starts the Recovery worker as ../recovery/worker.mjs from /review-app/server.mjs.
 COPY recovery/ /recovery/
+# Maps Recovery's "#review/*" imports to /review-app/, as the repository's package.json maps them to review/.
+COPY tools/image-package.json /package.json
 COPY tools/migrate-recovery-registry.mjs /tools/
 COPY LICENSE NOTICE /review-app/
 ENV PORT=8270 DATA_ROOT=/data APP_VERSION=${APP_VERSION}

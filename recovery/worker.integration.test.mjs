@@ -12,7 +12,7 @@ import {identityOf} from './file-identity.mjs';
 import {HOLD_FOREVER as DEFERRED_HOLD_UNTIL} from './tdarr-file-state.mjs';
 import {createSharedSettingsStore} from '../review/shared-settings.mjs';
 import {createWorker} from './create-worker.mjs';
-import {readRuntimeRecoveryConfig} from './managed-config.mjs';
+import {readRecoveryConfiguration} from './recovery-authority.mjs';
 import {loadApprovalRegistry} from './approval-registry.mjs';
 
 // Exercise the actual journal/worker wiring, using only disposable files,
@@ -600,7 +600,7 @@ for(const kind of ['cooldown','limit']){
   const f=await fixture();try{
    if(kind==='limit'){f.parent.movieId=2;f.cfg.maxRepairsPerDay=1;}
    const codec=stateCodec(f);Object.assign(f.row,codec.decode(golden.row));await f.write();
-   const state=codec.decode(golden.input),{mode,cfg,text:configText,managed}=await readRuntimeRecoveryConfig({data:f.data,mode:'repair'});
+   const state=codec.decode(golden.input),{mode,cfg,text:configText,managed}=await readRecoveryConfiguration({data:f.data,mode:'repair'});
    const pendingApprovals=await loadApprovalRegistry({data:f.data,cfg,state});
    const worker=createWorker({data:f.data,mode,cfg,configText,managed,state,pendingApprovals,canStart:()=>true});
    await worker.markInterrupted();await worker.noteConfigChange();await worker.tick();state.lastError=null;await worker.refresh();await worker.save();await worker.close();
