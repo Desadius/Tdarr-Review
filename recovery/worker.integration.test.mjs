@@ -11,6 +11,9 @@ import {caseId,bindHistory} from './policy.mjs';
 import {identityOf} from './file-identity.mjs';
 import {HOLD_FOREVER as DEFERRED_HOLD_UNTIL} from './tdarr-file-state.mjs';
 import {createSharedSettingsStore} from '../review/shared-settings.mjs';
+import {createWorker} from './create-worker.mjs';
+import {readRuntimeRecoveryConfig} from './managed-config.mjs';
+import {loadApprovalRegistry} from './approval-registry.mjs';
 
 // Exercise the actual journal/worker wiring, using only disposable files,
 // loopback APIs and a synthetic decoder. No production media or API contacts.
@@ -585,6 +588,23 @@ for(const kind of ['cooldown','limit']){
    await f.run();const after=codec.encode((await f.result()).state),requests=codec.encode(f.requests);
    if(process.env.UPDATE_GOLDEN==='1'){await fs.writeFile(fixtureFile,JSON.stringify({...golden,requests,after},null,1)+'\n');return;}
    assert.deepEqual(after,golden.after);assert.deepEqual(requests,golden.requests);
+   await assert.rejects(fs.stat(f.data+'/decode-calls'),{code:'ENOENT'});await f.unchanged();
+  }finally{await f.cleanup();}
+ });
+}
+
+// The same poll, driven in-process through createWorker instead of a worker process.
+for(const kind of ['cooldown','limit']){
+ test('createWorker runs one poll of a 2.1.0 '+kind+' deferral in-process with the same result as the worker process',async()=>{
+  const golden=JSON.parse(await fs.readFile(new URL('../fixtures/recovery-state-2.1-deferred-'+kind+'.json',import.meta.url),'utf8'));
+  const f=await fixture();try{
+   if(kind==='limit'){f.parent.movieId=2;f.cfg.maxRepairsPerDay=1;}
+   const codec=stateCodec(f);Object.assign(f.row,codec.decode(golden.row));await f.write();
+   const state=codec.decode(golden.input),{mode,cfg,text:configText,managed}=await readRuntimeRecoveryConfig({data:f.data,mode:'repair'});
+   const pendingApprovals=await loadApprovalRegistry({data:f.data,cfg,state});
+   const worker=createWorker({data:f.data,mode,cfg,configText,managed,state,pendingApprovals,canStart:()=>true});
+   await worker.markInterrupted();await worker.noteConfigChange();await worker.tick();state.lastError=null;await worker.refresh();await worker.save();await worker.close();
+   assert.deepEqual(codec.encode((await f.result()).state),golden.after);assert.deepEqual(codec.encode(f.requests),golden.requests);
    await assert.rejects(fs.stat(f.data+'/decode-calls'),{code:'ENOENT'});await f.unchanged();
   }finally{await f.cleanup();}
  });

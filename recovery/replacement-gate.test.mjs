@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {cooldownFor,deferConfirmedReplacement,inspectDeferredReplacement,reconcileDeferredIntent} from './replacement-gate.mjs';
+import {cooldownFor,COOLDOWN,deferConfirmed,inspectDeferred,reconcileDeferredIntent as reconcile} from './frozen-deferral.mjs';
+
+const deferConfirmedReplacement=deps=>deferConfirmed(COOLDOWN,deps),inspectDeferredReplacement=deps=>inspectDeferred(COOLDOWN,deps),reconcileDeferredIntent=deps=>reconcile(COOLDOWN,deps);
 import {HOLD_FOREVER as DEFERRED_HOLD_UNTIL} from './tdarr-file-state.mjs';
 
 const day=86400000,now=Date.UTC(2026,9,11,12),signature='quant_step_size larger than huff_lsbs';

@@ -1,15 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import {cooldownFor,deferConfirmedReplacement,inspectDeferredReplacement,reconcileDeferredIntent} from './replacement-gate.mjs';
-import {quotaFor,deferConfirmedLimit,inspectDeferredLimit,reconcileDeferredLimitIntent} from './deferred-limit.mjs';
+import {cooldownFor,quotaFor,COOLDOWN,DAILY_LIMIT,deferConfirmed,inspectDeferred,reconcileDeferredIntent} from './frozen-deferral.mjs';
+
+const byKind=kind=>({defer:deps=>deferConfirmed(kind,deps),inspect:deps=>inspectDeferred(kind,deps),reconcile:deps=>reconcileDeferredIntent(kind,deps)});
 
 // Golden master of both frozen-deferral kinds (movie cooldown, daily limit): for every scenario the
 // return value or error, the order of adapter calls, the case afterwards and the Tdarr row are
 // pinned in fixtures/frozen-deferral-golden.json. UPDATE_GOLDEN=1 rewrites it from the current code.
 const kinds={
- cooldown:{gate:cooldownFor,defer:deferConfirmedReplacement,inspect:inspectDeferredReplacement,reconcile:reconcileDeferredIntent,intent:'defer_cooldown_intent',journal:'deferredCooldown'},
- limit:{gate:quotaFor,defer:deferConfirmedLimit,inspect:inspectDeferredLimit,reconcile:reconcileDeferredLimitIntent,intent:'defer_limit_intent',journal:'deferredLimit'},
+ cooldown:{gate:cooldownFor,...byKind(COOLDOWN),intent:'defer_cooldown_intent',journal:'deferredCooldown'},
+ limit:{gate:quotaFor,...byKind(DAILY_LIMIT),intent:'defer_limit_intent',journal:'deferredLimit'},
 };
 const golden=new URL('../fixtures/frozen-deferral-golden.json',import.meta.url);
 const day=86400000,now=Date.UTC(2026,9,12,12),signature='quant_step_size larger than huff_lsbs';

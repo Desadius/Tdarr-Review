@@ -1,5 +1,5 @@
 import {downloadQueue} from './download-queue.mjs';
-import {quotaFor} from './deferred-limit.mjs';
+import {quotaFor} from './frozen-deferral.mjs';
 import {relative as safeRelative} from './policy.mjs';
 import {replacementFollowup} from './replacement-followup.mjs';
 import fs from 'node:fs/promises';

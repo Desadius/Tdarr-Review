@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {quotaFor,validateDeferredLimit,deferConfirmedLimit,inspectDeferredLimit,reconcileDeferredLimitIntent} from './deferred-limit.mjs';
+import {quotaFor,validateDeferredLimit,DAILY_LIMIT,deferConfirmed,inspectDeferred,reconcileDeferredIntent} from './frozen-deferral.mjs';
+
+const deferConfirmedLimit=deps=>deferConfirmed(DAILY_LIMIT,deps),inspectDeferredLimit=deps=>inspectDeferred(DAILY_LIMIT,deps),reconcileDeferredLimitIntent=deps=>reconcileDeferredIntent(DAILY_LIMIT,deps);
 import {HOLD_FOREVER as LIMIT_HOLD_UNTIL} from './tdarr-file-state.mjs';
 
 const day=86400000,now=Date.UTC(2026,9,12,12),signature='quant_step_size larger than huff_lsbs';
