@@ -1,4 +1,12 @@
-# Repository verification — 2026-10-19
+# Repository verification — 2026-10-20
+
+## 2.2.0 — Apply clears only what a change requires; one verdict per Recovery reader
+
+Source `a3131b1` (`main` with every change merged since 2.1.0, PRs #205–#207, #217, #218, #221, #222) passed CI on Linux with Node 24 ([run 39477013490](https://github.com/Desadius/Tdarr-Review/actions/runs/39477013490)): `npm run check`, the pinned type check, and all 992 regression tests without failures or skips. Line coverage was 95.26 %, branches 84.59 %, functions 83.86 %. In the network-less Docker suite 991 tests passed; the one skip is the loopback `/health` test, which needs a non-loopback interface the suite deliberately lacks. The single Review image was built and passed the Docker smoke checks with fresh volumes, synthetic fixtures and container loopback only.
+
+The release commit changes only version numbers, the changelog and documentation. On WSL2 (Linux, Node 24) it passed `npm run check`, the type check and all 992 tests without skips, the network-less Docker suite (991 passed, the same expected skip), and its image, built locally, reported `APP_VERSION=2.2.0` and passed the Docker smoke checks.
+
+Not run for this release: `npm run test:integration` against this exact source (it last ran for #201 in a container built from that branch's `Dockerfile`), an update of a real 2.1.0 installation, and any test against a real installation. Publishing the image and updating the running installation are separate, approved steps.
 
 ## 2.1.0 — shared settings with Apply, approval without replacement and replacement queue
 

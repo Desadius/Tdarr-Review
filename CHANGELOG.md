@@ -6,6 +6,22 @@ Changes merged since the last release are listed under Unreleased below and as f
 
 ## Unreleased
 
+## 2.2.0 — 2026-10-20
+
+Settings Apply clears only what a change requires and needs a Test first, every reader of Recovery's configuration and of its files in Review gives one verdict, and several internal modules were split out without a change in behaviour (the approval transaction, an importable Recovery worker with one frozen-deferral module, the Recovery authority, the review rules shared by server and browser). Read the section below before updating an existing installation.
+
+### Before updating
+
+- **Apply no longer always clears saved reviews.** After this update, applying settings keeps saved reviews and **Approve** decisions unless the review binding changes, and **Apply changes** first needs **Test saved draft**, which shows what applying would clear. A script or tool that calls `POST /api/shared-settings/apply` must send the `invalidation` reported by `POST /api/shared-settings/test`.
+
+### Changes
+
+- Settings **Apply** now refuses (`settings_registry_invalid`) a configuration that Recovery would refuse at start-up because its state holds a historical approval with no approval registry behind it. Previously Apply committed such a generation and the restarted Recovery then refused with `registry-refused`. Every reader of Recovery's configuration and approval registry now asks one module, so they accept and refuse the same files.
+
+- Settings **Apply** clears only what the change requires: nothing for the installation name, public address, Radarr or Recovery-only settings; only prepared samples for the FFmpeg path; saved reviews, **Approve** decisions and samples only when the review binding changes (paths, library, Tdarr address or database, FFprobe). **Test saved draft** shows this with the number of films affected, **Apply changes** needs that Test and stops if applying would clear more than it showed, and the settings history records what was shown and what was cleared. English and Czech ([user guide](docs/USER-GUIDE.md#configure-review-and-recovery)).
+
+- Review reads Recovery's status file, runtime state and case state through one module, so health and the Recovery list judge the same file the same way. A status file with another version or without its case list now raises `recovery-status-stale` in health (before only the Recovery list rejected it), and one without an update time is now an error in the Recovery list too (before only health flagged it).
+
 ## 2.1.0 — 2026-10-19
 
 Shared Review and Recovery settings with an explicit Apply, approval without immediate replacement, a replacement queue, the Kino review layout with a film strip, stricter Recovery configuration checks, unreadable file identities that never match, and more recognized decoder errors. There are no breaking changes for a correct configuration; read the section below before updating an existing installation.
