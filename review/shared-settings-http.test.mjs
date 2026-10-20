@@ -6,11 +6,15 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 
+// Apply carries what its Test showed (#204). These tests are about other parts of Apply, so they send the
+// broadest level, which a recomputed level can never exceed.
+const SHOWN={level:'all',reviews:0,approvals:0};
+
 test('HTTP Off mode rejects an unavailable manual quarantine before Test or Apply changes any generation',linuxServer,async t=>{
  const f=await reviewFixture();t.after(()=>f.close());const current=await f.get('/api/shared-settings'),target=path.join(f.root,'missing-parent','manual-quarantine');
  const save=await f.post('/api/shared-settings/draft',{revision:current.revision,patch:{radarr:{url:f.mockBase,apiKey:'synthetic-manual-key',mediaRoot:'/fixture-library',quarantineRoot:target}}});assert.equal(save.status,200);const revision=(await save.json()).revision;
  const checked=await f.post('/api/shared-settings/test',{revision});assert.equal(checked.status,409,await checked.clone().text());assert.equal((await checked.json()).code,'settings_manual_quarantine_unavailable');
- const apply=await f.post('/api/shared-settings/apply',{revision});assert.equal(apply.status,202);const failed=await settled(f,(await apply.json()).id);assert.equal(failed.state,'failed');assert.equal(failed.error.code,'settings_manual_quarantine_unavailable');assert.equal((await f.get('/api/shared-settings')).generation,0);
+ const apply=await f.post('/api/shared-settings/apply',{invalidation:SHOWN,revision});assert.equal(apply.status,202);const failed=await settled(f,(await apply.json()).id);assert.equal(failed.state,'failed');assert.equal(failed.error.code,'settings_manual_quarantine_unavailable');assert.equal((await f.get('/api/shared-settings')).generation,0);
  await assert.rejects(fs.stat(path.dirname(target)),{code:'ENOENT'});assert.deepEqual(await f.journals(),[]);await f.preserved();
 });
 
@@ -34,7 +38,7 @@ for(const kind of ['parent','target'])test(`HTTP manual quarantine diagnostics r
 test('HTTP manual quarantine diagnostics permit a missing target without creating it in Test or Off Apply',linuxServer,async t=>{
  const f=await reviewFixture();t.after(()=>f.close());const target=path.join(f.root,'manual-later'),current=await f.get('/api/shared-settings');const save=await f.post('/api/shared-settings/draft',{revision:current.revision,patch:{radarr:{url:f.mockBase,apiKey:'synthetic-read-only-key',mediaRoot:'/fixture-library',quarantineRoot:target}}});assert.equal(save.status,200);const revision=(await save.json()).revision;
  assert.equal((await f.post('/api/shared-settings/test',{revision})).status,200);await assert.rejects(fs.stat(target),{code:'ENOENT'});
- const response=await f.post('/api/shared-settings/apply',{revision});assert.equal(response.status,202);assert.equal((await settled(f,(await response.json()).id)).state,'succeeded');await assert.rejects(fs.stat(target),{code:'ENOENT'});await f.preserved();
+ const response=await f.post('/api/shared-settings/apply',{invalidation:SHOWN,revision});assert.equal(response.status,202);assert.equal((await settled(f,(await response.json()).id)).state,'succeeded');await assert.rejects(fs.stat(target),{code:'ENOENT'});await f.preserved();
 });
 
 test('HTTP shared drafts save offline, reject stale writers and keep active settings and secrets private',linuxServer,async t=>{
@@ -77,7 +81,7 @@ test('HTTP explicit Apply commits one generation and changes the running Review 
  const f=await reviewFixture();t.after(()=>f.close());const current=await f.get('/api/shared-settings');
  const saved=await f.post('/api/shared-settings/draft',{revision:current.revision,patch:{review:{label:'Applied live'}}});assert.equal(saved.status,200,await saved.clone().text());
  const draft=await saved.json();
- const result=await f.post('/api/shared-settings/apply',{revision:draft.revision});assert.equal(result.status,202,await result.clone().text());
+ const result=await f.post('/api/shared-settings/apply',{invalidation:SHOWN,revision:draft.revision});assert.equal(result.status,202,await result.clone().text());
  const finished=await settled(f,(await result.json()).id);assert.equal(finished.state,'succeeded',JSON.stringify(finished));
  assert.equal((await f.get('/api/settings')).config.label,'Applied live');
  const shared=await f.get('/api/shared-settings');assert.equal(shared.generation,1);assert.equal(shared.active.review.label,'Applied live');assert.equal(shared.active.radarr.hasApiKey,false);
@@ -87,7 +91,7 @@ test('HTTP explicit Apply commits one generation and changes the running Review 
 
 test('HTTP a waiting Apply stays cancellable without activating its draft',linuxServer,async t=>{
  const f=await reviewFixture({pauses:true});t.after(()=>f.close());const current=await f.get('/api/shared-settings');
- const response=await f.post('/api/shared-settings/apply',{revision:current.revision});assert.equal(response.status,202);const {id}=await response.json();
+ const response=await f.post('/api/shared-settings/apply',{invalidation:SHOWN,revision:current.revision});assert.equal(response.status,202);const {id}=await response.json();
  const deadline=Date.now()+10000;while(Date.now()<deadline){const value=await f.get('/api/shared-settings/status');if(value.state==='waiting'&&value.updated!==current.updated)break;await new Promise(r=>setTimeout(r,20));}
  assert.equal((await f.post('/api/shared-settings/cancel',{id})).status,200);assert.equal((await settled(f,id)).state,'cancelled');assert.equal((await f.get('/api/shared-settings')).generation,0);
 });
@@ -101,7 +105,7 @@ test('HTTP supervised Apply drains the actual worker, starts the committed gener
  const current=await f.get('/api/shared-settings');assert.deepEqual(current.conflicts,[]);
  const save=await f.post('/api/shared-settings/draft',{revision:current.revision,patch:{review:{label:'Supervisor generation'},radarr:{apiKey:'synthetic-new-shared-key'}}});assert.equal(save.status,200,await save.clone().text());
  const revision=(await save.json()).revision;assert.equal((await f.post('/api/shared-settings/test',{revision})).status,200);await assert.rejects(fs.stat(path.join(f.root,'quarantine')),{code:'ENOENT'});
- const result=await f.post('/api/shared-settings/apply',{revision});assert.equal(result.status,202);const finished=await settled(f,(await result.json()).id);assert.equal(finished.state,'succeeded',JSON.stringify(finished));
+ const result=await f.post('/api/shared-settings/apply',{invalidation:SHOWN,revision});assert.equal(result.status,202);const finished=await settled(f,(await result.json()).id);assert.equal(finished.state,'succeeded',JSON.stringify(finished));
  assert.equal((await fs.lstat(path.join(f.root,'quarantine'))).isDirectory(),true);
  assert.equal((await f.get('/api/settings')).config.label,'Supervisor generation');assert.equal((await f.get('/api/recovery/runtime')).state,'running');assert.equal((await f.get('/api/shared-settings')).generation,1);
  const deadline=Date.now()+5000;while(!f.calls.some(c=>c.route==='/api/v3/movie'&&c.apiKey==='synthetic-new-shared-key')){assert.ok(Date.now()<deadline,'new worker did not use committed connection');await new Promise(r=>setTimeout(r,20));}
@@ -113,7 +117,7 @@ test('HTTP frozen settings and unfinished-case mappings reject all shared editor
  const f=await reviewFixture({beforeStart:async({data})=>{await fs.mkdir(path.join(data,'recovery'));await fs.writeFile(path.join(data,'recovery/pending-approvals.json'),JSON.stringify({version:1,config:{maxRepairsPerDay:3},cases:[]}));await fs.writeFile(path.join(data,'recovery/state.json'),JSON.stringify({version:1,cases:{unfinished:{status:'manual'}}}));}});t.after(()=>f.close());
  const current=await f.get('/api/shared-settings');const frozen=await f.post('/api/shared-settings/draft',{revision:current.revision,patch:{recovery:{maxRepairsPerDay:4}}});assert.equal(frozen.status,409);assert.equal((await frozen.json()).code,'settings_frozen');
  const refreshed=await f.get('/api/shared-settings');const staged=await f.post('/api/shared-settings/draft',{revision:refreshed.revision,patch:{review:{sourceRoots:['/fixture-library','/alternate']},recovery:{sourceRoot:'/alternate'}}});assert.equal(staged.status,200,await staged.clone().text());
- const draft=await staged.json();const apply=await f.post('/api/shared-settings/apply',{revision:draft.revision});assert.equal(apply.status,202);const failed=await settled(f,(await apply.json()).id);assert.equal(failed.state,'failed');assert.equal(failed.error.code,'settings_pending_cases');assert.equal((await f.get('/api/shared-settings')).generation,0);
+ const draft=await staged.json();const apply=await f.post('/api/shared-settings/apply',{invalidation:SHOWN,revision:draft.revision});assert.equal(apply.status,202);const failed=await settled(f,(await apply.json()).id);assert.equal(failed.state,'failed');assert.equal(failed.error.code,'settings_pending_cases');assert.equal((await f.get('/api/shared-settings')).generation,0);
 });
 
 test('HTTP interrupted activation remains visible and never replays an old request',linuxServer,async t=>{
@@ -132,7 +136,7 @@ test('HTTP ambiguous directory sync after commit adopts the complete generation 
  const f=await reviewFixture({beforeStart:async({data,root})=>{
   await fs.appendFile(path.join(root,'preload.cjs'),`\nconst fsp=require('node:fs/promises'),fs=require('node:fs'),open=fsp.open;fsp.open=async function(file,...args){const h=await open(file,...args);if(file===${JSON.stringify(data)}){const sync=h.sync.bind(h);h.sync=async()=>{if(fs.existsSync(${JSON.stringify(path.join(root,'fail-generation-sync'))})&&fs.existsSync(${JSON.stringify(path.join(data,'shared-settings.json'))})&&JSON.parse(fs.readFileSync(${JSON.stringify(path.join(data,'shared-settings.json'))},'utf8')).active){fs.unlinkSync(${JSON.stringify(path.join(root,'fail-generation-sync'))});throw Error('synthetic directory sync failure');}return sync();};}return h;};require('node:module').syncBuiltinESMExports();\n`);
  }});t.after(()=>f.close());const current=await f.get('/api/shared-settings'),saved=await f.post('/api/shared-settings/draft',{revision:current.revision,patch:{review:{label:'Complete ambiguous generation'}}});assert.equal(saved.status,200);await fs.writeFile(path.join(f.root,'fail-generation-sync'),'1');
- const result=await f.post('/api/shared-settings/apply',{revision:(await saved.json()).revision});assert.equal(result.status,202);const failed=await settled(f,(await result.json()).id);assert.equal(failed.state,'failed');assert.equal(failed.error.code,'settings_commit_ambiguous');assert.equal(failed.blocking,true);
+ const result=await f.post('/api/shared-settings/apply',{invalidation:SHOWN,revision:(await saved.json()).revision});assert.equal(result.status,202);const failed=await settled(f,(await result.json()).id);assert.equal(failed.state,'failed');assert.equal(failed.error.code,'settings_commit_ambiguous');assert.equal(failed.blocking,true);
  assert.equal((await f.get('/api/settings')).config.label,'Complete ambiguous generation');assert.equal((await f.get('/api/shared-settings')).generation,1);
  await f.restart();assert.equal((await f.get('/api/settings')).config.label,'Complete ambiguous generation');assert.equal((await f.get('/api/shared-settings/status')).blocking,true);
 });
@@ -147,11 +151,11 @@ test('HTTP failed new worker startup keeps the committed generation, stops Recov
   await fs.appendFile(path.join(root,'preload.cjs'),`\nconst fsp=require('node:fs/promises'),fs=require('node:fs'),rename=fsp.rename;fsp.rename=async function(from,to){const result=await rename(from,to);if(to===${JSON.stringify(path.join(data,'shared-settings.json'))}&&fs.existsSync(${JSON.stringify(path.join(root,'revoke-at-commit'))})&&JSON.parse(fs.readFileSync(to,'utf8')).active){fs.unlinkSync(${JSON.stringify(path.join(root,'revoke-at-commit'))});const p=${JSON.stringify(path.join(data,'recovery/config.json'))},v=JSON.parse(fs.readFileSync(p,'utf8'));v.approvedCaseIds=['revoked-private-authority'];fs.writeFileSync(p,JSON.stringify(v));}return result;};require('node:module').syncBuiltinESMExports();\n`);
  }});t.after(()=>f.close());
  const current=await f.get('/api/shared-settings');const save=await f.post('/api/shared-settings/draft',{revision:current.revision,patch:{review:{label:'Committed despite refusal'}}});assert.equal(save.status,200);await fs.writeFile(path.join(f.root,'revoke-at-commit'),'1');
- const response=await f.post('/api/shared-settings/apply',{revision:(await save.json()).revision});assert.equal(response.status,202);const failed=await settled(f,(await response.json()).id);assert.equal(failed.state,'failed');assert.equal(failed.blocking,true);assert.equal(failed.error.code,'settings_start_failed');
+ const response=await f.post('/api/shared-settings/apply',{invalidation:SHOWN,revision:(await save.json()).revision});assert.equal(response.status,202);const failed=await settled(f,(await response.json()).id);assert.equal(failed.state,'failed');assert.equal(failed.blocking,true);assert.equal(failed.error.code,'settings_start_failed');
  const shared=await f.get('/api/shared-settings');assert.equal(shared.generation,1);assert.equal(shared.active.review.label,'Committed despite refusal');assert.equal((await f.get('/api/settings')).config.label,'Committed despite refusal');assert.equal((await f.get('/api/recovery/runtime')).state,'refused');
  assert.equal(JSON.stringify(shared).includes('revoked-private-authority'),false);
  const resolved=await f.post('/api/shared-settings/draft',{revision:shared.revision,patch:{},resolutions:['legacyFiles']});assert.equal(resolved.status,200,await resolved.clone().text());
- const retry=await f.post('/api/shared-settings/apply',{revision:(await resolved.json()).revision});assert.equal(retry.status,202);assert.equal((await settled(f,(await retry.json()).id)).state,'succeeded');assert.equal((await f.get('/api/recovery/runtime')).state,'running');
+ const retry=await f.post('/api/shared-settings/apply',{invalidation:SHOWN,revision:(await resolved.json()).revision});assert.equal(retry.status,202);assert.equal((await settled(f,(await retry.json()).id)).state,'succeeded');assert.equal((await f.get('/api/recovery/runtime')).state,'running');
 });
 
 test('HTTP failed legacy Review and Radarr saves are audited and return the correction revision; failed tests are not saves',linuxServer,async t=>{
@@ -182,5 +186,5 @@ test('HTTP quarantine setup failure keeps the committed generation and Recovery 
   const config={...review,sourceRoot:'/fixture-library',radarrRoot:'/fixture-library',radarrUrl:review.tdarrUrl,radarrApiKey:'synthetic-quarantine-key',quarantineRoot:path.join(root,'quarantine'),reports:path.join(root,'reports'),stableMinutes:0,decodeTimeoutHours:1,confirmDelaySeconds:0,maxRepairsPerDay:3,movieCooldownDays:30,pollSeconds:300,detectTerminalHeaders:false,since:0};await fs.writeFile(path.join(data,'recovery/config.json'),JSON.stringify(config));
   await fs.appendFile(path.join(root,'preload.cjs'),`\nconst fsp=require('node:fs/promises'),mkdir=fsp.mkdir;fsp.mkdir=async function(target,...args){if(target===${JSON.stringify(path.join(root,'quarantine'))})throw Object.assign(Error('synthetic creation denied'),{code:'EACCES'});return mkdir(target,...args);};require('node:module').syncBuiltinESMExports();\n`);
  }});t.after(()=>f.close());const current=await f.get('/api/shared-settings'),save=await f.post('/api/shared-settings/draft',{revision:current.revision,patch:{review:{label:'Quarantine setup failed'}}});assert.equal(save.status,200);
- const response=await f.post('/api/shared-settings/apply',{revision:(await save.json()).revision});assert.equal(response.status,202);const failed=await settled(f,(await response.json()).id);assert.equal(failed.state,'failed');assert.equal(failed.error.code,'settings_quarantine_setup_failed');assert.equal(failed.blocking,true);assert.equal((await f.get('/api/settings')).config.label,'Quarantine setup failed');assert.equal((await f.get('/api/recovery/runtime')).state,'stopped');
+ const response=await f.post('/api/shared-settings/apply',{invalidation:SHOWN,revision:(await save.json()).revision});assert.equal(response.status,202);const failed=await settled(f,(await response.json()).id);assert.equal(failed.state,'failed');assert.equal(failed.error.code,'settings_quarantine_setup_failed');assert.equal(failed.blocking,true);assert.equal((await f.get('/api/settings')).config.label,'Quarantine setup failed');assert.equal((await f.get('/api/recovery/runtime')).state,'stopped');
 });

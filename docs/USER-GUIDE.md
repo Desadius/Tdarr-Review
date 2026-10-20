@@ -10,6 +10,16 @@ Open **Settings** and choose either **Configure Review** or **Configure Radarr**
 2. Choose **Test saved draft**. The read-only checks inspect connections, library bindings, paths and permissions. Save local edits before testing. Diagnostics never approve a repair, move media, request downloads or reconfigure Tdarr/Radarr.
 3. Choose **Apply changes** explicitly. New Recovery operations stop being admitted; the current operation finishes and acknowledges the drain. Apply waits for Review's settings-safe state, revalidates, commits one complete configuration and restarts only Recovery. **Cancel pending apply** is available while waiting, draining or validating; there is no timeout force-kill. Closing the dialog does not cancel an accepted apply.
 
+**What Apply clears.** Test also reports what applying the tested draft would clear, compared with the configuration Review runs with now. **Apply changes** is available only after a Test of the current saved draft, and sends that report with the request.
+
+| Changed Review settings | Apply clears |
+| --- | --- |
+| Only the installation name, the public Review address, Radarr settings or Recovery-only settings (or nothing) | Nothing |
+| The FFmpeg program | Only the prepared samples; saved reviews and **Approve** decisions stay |
+| Anything else: paths and source paths, review subfolders, the Tdarr address, database or library, the FFprobe program | Saved reviews, **Approve** decisions, the film list and prepared samples (the number of films is shown) |
+
+When Apply starts, Review compares again. If applying would now clear more than the Test showed, Apply stops before changing anything and asks for a new Test. Films reviewed between Test and Apply are cleared as well, and the history records both the counts Test showed and the counts Apply cleared.
+
 The dialog distinguishes **Saved draft**, **Active configuration** generation, actual Recovery mode/runtime and the apply stage. RECOVERY_MODE is informational here and remains an environment variable: Off never starts Recovery as a side effect of setup. A Review-only installation can leave optional Radarr/Recovery unconfigured in Off. Verify/Repair require their complete configuration. Review stays available if the new worker refuses startup; correct the draft and apply again. The active generation is not automatically rolled back to old paths or endpoints. Interrupted requests never resume automatically after a container restart; committed generations remain authoritative, and ambiguous activation keeps Recovery stopped until resolved.
 
 Tdarr's remote source root, Review's local media root and Radarr's remote film root can differ. Recovery selects one of Review's source aliases. Manual Review replacement quarantine and automatic Recovery quarantine are independent. Imported duplicate connections/mappings require explicit choices; selecting a historical key happens on the server. Out-of-band file edits require reload and acknowledgement. A concurrent-edit conflict preserves your visible form but requires explicit reload/reconciliation; do not blindly overwrite another browser's draft.

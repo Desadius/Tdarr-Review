@@ -6,6 +6,7 @@ import {readActiveSettings} from './shared-settings.mjs';
 import {readSettingsActivation,writeSettingsActivation,settingsPublicOrigin} from './settings-activation.mjs';
 import {settingsError} from './settings-errors.mjs';
 import {checkManualQuarantine} from './quarantine-path.mjs';
+import {LEVELS,stricter} from './settings-invalidation.mjs';
 
 const error=code=>Object.assign(Error(code),{code,status:409});
 const pause=()=>new Promise(resolve=>setTimeout(resolve,25));
@@ -43,7 +44,11 @@ export async function diagnoseSettings(candidate,{readRows,mode}){
  return {ok:true};
 }
 
-export async function createSettingsApply({data,store,control,mode='off',safe,barrier,activate,readRows}){
+// Apply carries what its Test showed: the invalidation level and the counts of films whose saved reviews
+// and Approve decisions it clears. Without them Apply is refused; a stricter level at Apply is refused.
+const count=value=>Number.isSafeInteger(value)&&value>=0;
+const shown=input=>{const v=input?.invalidation;return v&&typeof v==='object'&&LEVELS.includes(v.level)&&count(v.reviews)&&count(v.approvals)?{level:v.level,reviews:v.reviews,approvals:v.approvals}:null;};
+export async function createSettingsApply({data,store,control,mode='off',safe,barrier,activate,readRows,assess}){
  let state=await readSettingsActivation(data),cancelled=false,running=false;
  if(state&&['waiting','draining','validating','stopping','committing','starting'].includes(state.state)){
   state={...state,state:'interrupted',stage:'interrupted',error:{code:'settings_apply_interrupted'},updated:new Date().toISOString()};await writeSettingsActivation(data,state);
@@ -52,21 +57,25 @@ export async function createSettingsApply({data,store,control,mode='off',safe,ba
  const status=()=>state?{...state,...(running&&['succeeded','failed','cancelled'].includes(state.state)?{state:'finalizing',stage:'finalizing'}:{})}:{state:'idle'};
  const set=async(stage,extra={})=>{state={...state,...extra,state:stage,stage,updated:new Date().toISOString()};await writeSettingsActivation(data,state);};
  const assertLive=()=>{if(cancelled)throw error('settings_apply_cancelled');};
- async function test(input){if(typeof input.revision!=='string')throw error('settings_conflict');const candidate=await store.validate({...input,forApply:true});return diagnoseSettings(candidate,{readRows,mode});}
+ async function test(input){if(typeof input.revision!=='string')throw error('settings_conflict');const candidate=await store.validate({...input,forApply:true});await diagnoseSettings(candidate,{readRows,mode});return {ok:true,invalidation:assess(candidate)};}
+ // The level at this moment, refused when it is stricter than the one the administrator saw.
+ function reassess(candidate,expected){const now=assess(candidate);if(stricter(now.level,expected.level))throw error('settings_invalidation_changed');return now;}
  async function execute(input){
   let stopped=false,committed=false,held=false,drained=false,workerStarted=false;
+  const expected=shown(input);
   try{
-   let candidate=await store.validate({...input,forApply:true});await diagnoseSettings(candidate,{readRows,mode});assertLive();
+   let candidate=await store.validate({...input,forApply:true});await diagnoseSettings(candidate,{readRows,mode});reassess(candidate,expected);assertLive();
    await set('draining');const drain=await control.requestDrain(state.id);drained=true;
    if(!['ready','off','draining'].includes(drain.state))throw error('settings_drain_failed');
    while(true){assertLive();const value=await control.status(state.id);if(['ready','off'].includes(value.state))break;if(value.state!=='draining')throw error('settings_drain_failed');await pause();}
    await set('waiting');while(!safe()){assertLive();await pause();}
    barrier(true);held=true;await set('validating');
-   candidate=await store.validate({...input,forApply:true});await diagnoseSettings(candidate,{readRows,mode});assertLive();
+   candidate=await store.validate({...input,forApply:true});await diagnoseSettings(candidate,{readRows,mode});const assessed=reassess(candidate,expected);assertLive();
+   const invalidation={level:assessed.level,fields:assessed.fields,shown:{reviews:expected.reviews,approvals:expected.approvals},cleared:{reviews:assessed.reviews,approvals:assessed.approvals}};
    // Fence is durable before stopping. A process crash from this point cannot restart Recovery implicitly.
    await set('stopping',{blocking:true});await control.stopAfterDrain(state.id);stopped=true;
-   await set('committing');const saved=await store.applyGeneration(input);committed=true;
-   activate(saved.active);await set('committing',{generation:saved.generation,publicOrigin:saved.active.review.publicOrigin});
+   await set('committing');const saved=await store.applyGeneration({...input,invalidation});committed=true;
+   activate(saved.active,{...invalidation,generation:saved.generation});await set('committing',{generation:saved.generation,publicOrigin:saved.active.review.publicOrigin});
    await activate.flush();
    if(['verify','repair'].includes(mode)){try{await quarantineDirectory(saved.active,{create:true});}catch{throw error('settings_quarantine_setup_failed');}}
    await set('starting');await control.restart(state.id);
@@ -93,6 +102,7 @@ export async function createSettingsApply({data,store,control,mode='off',safe,ba
  }
  async function start(input){
   if(running)throw error('settings_apply_pending');
+  if(!shown(input))throw error('settings_test_required');
   running=true;cancelled=false;
   let value;try{value=await store.current();if(input.revision!==value.revision)throw error('settings_conflict');}catch(e){running=false;throw e;}
   state={version:1,id:randomUUID(),state:'validating',stage:'validating',blocking:!!state?.blocking,generation:value.generation,publicOrigin:settingsPublicOrigin(value.draft.review.publicOrigin),updated:new Date().toISOString()};

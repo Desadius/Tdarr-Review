@@ -44,6 +44,7 @@ import {nodeRoutes} from './routes/nodes.mjs';
 import {previewCodeVersion as readPreviewCodeVersion} from './preview-version.mjs';
 import {createSharedSettingsStore,readActiveSettings} from './shared-settings.mjs';
 import {createSettingsApply} from './settings-apply.mjs';
+import {invalidationLevel} from './settings-invalidation.mjs';
 import {createRecoveryControlClient} from './recovery-control.mjs';
 import {sharedSettingsRoutes} from './routes/shared-settings.mjs';
 
@@ -437,10 +438,24 @@ const ctx={
  applyConfig,save,busyFor,itemInOperation,enqueueReplacement,keepNodePaused,pendingRestores,scan,perform,performBatch,replacementAction,resume,readRows,dbRows,verifyReviewItem,reviewMutationBlocked,
  previewIdentity,previewPair,previewVersion,previewPreparation,planPreviewItem,preparePreviews,forgetPreviews,
 };
-const activateSettings=value=>{activeSettings=value;config=value.review;applyConfig();statsCache=null;state.items={};state.reviewSessions={};state.approvals={};cache=null;cacheAt=0;previewPairs.clear();previewPlans.clear();previewAttempts.clear();};
-activateSettings.flush=async()=>{await previews.invalidate({all:true});await save();};
+// How much saved review work a candidate configuration would invalidate, against the configuration
+// this server runs with, and how many films' saved reviews and Approve decisions that clears.
+function assessInvalidation(candidate){
+ const {level,fields}=invalidationLevel(config,candidate.review);
+ return {level,fields,reviews:level==='all'?Object.keys(state.reviewSessions||{}).length:0,approvals:level==='all'?Object.keys(state.approvals||{}).length:0};
+}
+// A committed generation clears only what its invalidation level requires (settings-invalidation.mjs).
+// Without a level (an adopted ambiguous commit) everything is cleared, as before levels existed.
+let pendingInvalidation='all';
+const activateSettings=(value,invalidation={level:'all'})=>{
+ activeSettings=value;config=value.review;applyConfig();pendingInvalidation=invalidation.level;
+ if(invalidation.level==='all'){statsCache=null;state.items={};state.reviewSessions={};state.approvals={};cache=null;cacheAt=0;}
+ if(invalidation.level!=='none'){previewPairs.clear();previewPlans.clear();previewAttempts.clear();}
+ logEvent('settings.activated',{generation:invalidation.generation,invalidation:invalidation.level,fields:invalidation.fields,reviews:invalidation.cleared?.reviews,approvals:invalidation.cleared?.approvals});
+};
+activateSettings.flush=async()=>{if(pendingInvalidation!=='none')await previews.invalidate({all:true});await save();};
 const localOff={requestDrain:async()=>({state:'off'}),status:async()=>({state:'off'}),cancel:async()=>({state:'off'}),stopAfterDrain:async()=>({state:'stopped'}),restart:async()=>({state:'off'}),wait:async()=>({state:'off'})};
-ctx.settingsApply=await createSettingsApply({data:DATA,store:sharedSettings,mode:process.env.RECOVERY_MODE||'off',control:!process.connected&&(!process.env.RECOVERY_MODE||process.env.RECOVERY_MODE==='off')?localOff:createRecoveryControlClient(),safe:()=>!busyFor('settings')&&!replacementTask&&!previewPlanning,barrier:value=>{settingsBusy=value;},activate:activateSettings,readRows});
+ctx.settingsApply=await createSettingsApply({assess:assessInvalidation,data:DATA,store:sharedSettings,mode:process.env.RECOVERY_MODE||'off',control:!process.connected&&(!process.env.RECOVERY_MODE||process.env.RECOVERY_MODE==='off')?localOff:createRecoveryControlClient(),safe:()=>!busyFor('settings')&&!replacementTask&&!previewPlanning,barrier:value=>{settingsBusy=value;},activate:activateSettings,readRows});
 const routes=[sharedSettingsRoutes,libraryRoutes,itemRoutes,previewRoutes,settingsRoutes,nodeRoutes,staticRoutes];
 const server=http.createServer(async(req,res)=>{
   let releasePreviewBackground=false;const request={mutation:null};

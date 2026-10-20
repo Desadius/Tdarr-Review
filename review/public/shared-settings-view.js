@@ -20,7 +20,7 @@ const localDate=value=>{const d=new Date(value);return Number.isFinite(d.getTime
 export function installSharedSettings(app){
  const dialog=el('dialog','settings-dialog shared-settings-dialog');dialog.id='sharedSettings';document.body.append(dialog);
  const card=el('article');card.append(el('h2','','Recovery a společná konfigurace'),el('p','','Průvodce připojením, mapováním knihovny a limity obnov. Uložený návrh a bezpečné použití změn.'),button('Nastavit Recovery a společné připojení',()=>open()));document.getElementById('view-settings').querySelector('.settings-grid').append(card);
- let saved=null,runtime=null,inputs={},controls={},choices={},step=0,dirty=false,conflicted=false,busy=false,timer=null,operation={state:'idle'},status,summary,form,groups,advanced,history,ack,customSince,since,stepInfo;
+ let tested=null,saved=null,runtime=null,inputs={},controls={},choices={},step=0,dirty=false,conflicted=false,busy=false,timer=null,operation={state:'idle'},status,summary,form,groups,advanced,history,ack,customSince,since,stepInfo;
  const api=(route,body)=>app.api('/api/shared-settings'+route,body);
  const message=error=>{const code=error?.code||error?.data?.code;return (errorText(code,{},language)||tr('Nastavení se nepodařilo zpracovat.'))+(error?.field||error?.data?.field?' · '+tr(fieldLabel(error.field||error.data.field)):'');};
  function currentPatch(){
@@ -28,11 +28,19 @@ export function installSharedSettings(app){
   if(customSince.checked){const value=new Date(since.value).getTime();if(value!==saved.draft.recovery.since)(patch.recovery??={}).since=value;}
   return patch;
  }
+ // What applying the tested draft clears: nothing, only prepared samples, or saved reviews, Approve decisions and samples.
+ function invalidationText(value){
+  if(value.level==='none')return tr('Použití nic nesmaže.');
+  const causes=' '+tr('Změněná pole')+': '+value.fields.map(key=>tr(fieldLabel('review.'+key))).join(', ')+'.';
+  if(value.level==='samples')return tr('Použití smaže jen připravené vzorky.')+causes;
+  return tr('Použití smaže uložená posouzení, rozhodnutí Approve a připravené vzorky.')+' '+tr('Uložená posouzení')+': '+value.reviews+' · '+tr('Rozhodnutí Approve')+': '+value.approvals+'.'+causes;
+ }
  function changed(){dirty=Object.keys(currentPatch()).length>0||Object.values(choices).some(input=>!!input.value);update();}
  function update(){
   if(!saved)return;const pending=!terminal.has(operation.state);
   controls.save.disabled=busy||pending||conflicted;
-  controls.test.disabled=controls.apply.disabled=busy||pending||dirty||conflicted;
+  // Apply needs the Test result of this exact saved draft: it carries what applying clears.
+  controls.test.disabled=busy||pending||dirty||conflicted;controls.apply.disabled=controls.test.disabled||tested?.revision!==saved.revision;
   controls.cancel.disabled=busy||!cancellable.has(operation.state)||!!operation.cancelling;
   controls.reload.disabled=busy||pending;
   for(const input of Object.values(inputs))input.disabled=busy||pending;
@@ -44,6 +52,7 @@ export function installSharedSettings(app){
   const runtimeLabels={off:'Neběží',running:'Běží',restarting:'Restartuje se',refused:'Spuštění odmítnuto',stopped:'Zastaveno',unreadable:'Stav nelze přečíst',unknown:'Stav není známý'};
   summary.replaceChildren();const lines=[['Uložený návrh',saved.revision?.slice(0,12)],['Používaná konfigurace',saved.active?String(saved.generation):tr('Používá dosavadní souborové nastavení (bez spravované generace)')],['Skutečný stav Recovery',(runtime?.mode?runtime.mode[0].toUpperCase()+runtime.mode.slice(1):tr('Stav není známý'))+' · '+tr(runtimeLabels[runtime?.state]||'Stav není známý')]];
   for(const [label,value] of lines){const line=el('p');line.append(el('strong','',label),el('span','',' · '+value,true));summary.append(line);}
+  if(tested?.revision===saved.revision)summary.append(el('p',tested.invalidation.level==='none'?'details':'alert',invalidationText(tested.invalidation),true));else if(!dirty&&!conflicted)summary.append(el('p','details','Před použitím návrh otestuj. Test ukáže, co použití smaže.'));
   summary.append(el('p','details','Režim určuje RECOVERY_MODE. Tato stránka ho nemění.'),el('p','details',dirty?'Formulář má neuložené změny. Před testem nebo použitím ulož návrh.':'Zobrazený návrh je uložený na serveru a může se lišit od používané konfigurace.'));
   const state=el('p',operation.state==='idle'?'details':operation.state==='succeeded'?'success':'alert');state.setAttribute('role','status');state.append(el('strong','',stateNames[operation.state]||'Stav není známý'));if(operation.error)state.append(el('span','',' · '+message(operation.error),true));summary.append(state);if(operation.auditError)summary.append(el('p','alert failure',errorText(operation.auditError,{},language)||tr('Historii se nepodařilo zapsat.')));
   if(operation.state==='failed'||operation.state==='interrupted')summary.append(el('p','details','Zkontroluj návrh a stav Recovery. Nová konfigurace se automaticky nevrací zpět a přerušené použití se samo neopakuje.'));
@@ -62,8 +71,8 @@ export function installSharedSettings(app){
    if(kind==='save'){
     const resolutions=Object.entries(choices).filter(([,select])=>select.value).map(([field,select])=>field==='legacyFiles'?field:{field,source:select.value});
     const previousHistory=saved.history||[],result=await api('/draft',{...input,patch:currentPatch(),resolutions});saved=result;let auditRefreshFailed=false;try{saved.history=(await api('/audit')).history;}catch{saved.history=previousHistory;auditRefreshFailed=true;}dirty=false;conflicted=false;build();status.textContent=tr('Návrh uložen. Běžící služby používají dosavadní konfiguraci.');if(auditRefreshFailed)status.append(el('small','','Historii se nepodařilo obnovit. Načti aktuální návrh.'));
-   }else if(kind==='test'){await api('/test',input);status.textContent=tr('Uložený návrh prošel diagnostikou. Test neschvaluje žádnou opravu.');}
-   else{operation=await api('/apply',input);status.textContent=tr('Použití změn bylo vyžádáno. Čekání lze zrušit.');watch();}
+   }else if(kind==='test'){const result=await api('/test',input);tested={revision:saved.revision,invalidation:result.invalidation};status.textContent=tr('Uložený návrh prošel diagnostikou. Test neschvaluje žádnou opravu.')+' '+invalidationText(result.invalidation);}
+   else{const {level,reviews,approvals}=tested.invalidation;operation=await api('/apply',{...input,invalidation:{level,reviews,approvals}});status.textContent=tr('Použití změn bylo vyžádáno. Čekání lze zrušit.');watch();}
   }catch(error){
    const code=error.code||error.data?.code;if(kind==='save'&&code==='settings_conflict')conflicted=true;
    else if(kind==='save'&&safeRevisionErrors.has(code)&&typeof (error.revision||error.data?.revision)==='string')saved.revision=error.revision||error.data.revision;
