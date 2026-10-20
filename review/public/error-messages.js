@@ -23,6 +23,8 @@ export const ERROR_MESSAGES=Object.freeze({
  settings_recovery_paths_unavailable:{cs:'Cesty nebo oprávnění Recovery neprošly diagnostikou.',en:'Recovery paths or permissions failed diagnostics.'},
  settings_quarantine_setup_failed:{cs:'Karanténu nelze bezpečně připravit. Recovery zůstává zastavené.',en:'Quarantine could not be prepared safely. Recovery remains stopped.'},
  settings_apply_pending:{cs:'Jiné použití změn již probíhá.',en:'Another settings apply is already running.'},
+ settings_test_required:{cs:'Před použitím otestuj uložený návrh. Test ukáže, co použití smaže.',en:'Test the saved draft before applying it. The test shows what applying clears.'},
+ settings_invalidation_changed:{cs:'Použití by teď smazalo víc, než ukázal test. Nic se nezměnilo; otestuj návrh znovu.',en:'Applying would now clear more than the test showed. Nothing changed; test the draft again.'},
  settings_cancel_unavailable:{cs:'Tuto fázi použití již nelze zrušit.',en:'This apply stage can no longer be cancelled.'},
  settings_apply_cancelled:{cs:'Čekající použití změn bylo zrušeno.',en:'The pending settings apply was cancelled.'},
  settings_apply_interrupted:{cs:'Použití bylo přerušeno. Vyžaduje nové výslovné spuštění.',en:'Apply was interrupted. A new explicit request is required.'},

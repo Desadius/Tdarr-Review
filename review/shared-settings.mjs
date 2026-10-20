@@ -82,7 +82,10 @@ export function validateSharedSettings(draft,{complete=false,mode='off',fileOnly
 function publicEndpoint(value){try{const u=new URL(value);return ['http:','https:'].includes(u.protocol)&&!u.username&&!u.password&&!u.search&&!u.hash?value:'';}catch{return '';}}
 function visibleDraft(draft){const result={review:entries(draft.review,Object.keys(defaults({}))),radarr:entries(draft.radarr,radarrKeys),recovery:entries(draft.recovery,recoveryKeys)};delete result.radarr.apiKey;result.radarr.hasApiKey=!!draft.radarr.apiKey;for(const key of ['tdarrUrl','publicOrigin'])result.review[key]=publicEndpoint(result.review[key]);result.radarr.url=publicEndpoint(result.radarr.url);return result;}
 function changed(before,after){const fields=[];for(const section of ['review','radarr','recovery'])for(const key of new Set([...Object.keys(before?.[section]||{}),...Object.keys(after?.[section]||{})]))if(!sameValue(before?.[section]?.[key],after?.[section]?.[key]))fields.push(section+'.'+key);return fields;}
-function auditEntry(doc,{action,result,fields=[],now}){doc.audit.push({at:new Date(now).toISOString(),action,result,fields,generation:doc.generation,revision:hash(JSON.stringify(doc.draft))});doc.audit=doc.audit.slice(-AUDIT_LIMIT);}
+// An Apply also records what it invalidated: the level, the Review field names causing it, and the films whose
+// saved reviews and Approve decisions Test showed and Apply cleared (names and counts only, never values).
+const invalidationRecord=v=>({level:v.level,fields:[...v.fields],shown:{reviews:v.shown.reviews,approvals:v.shown.approvals},cleared:{reviews:v.cleared.reviews,approvals:v.cleared.approvals}});
+function auditEntry(doc,{action,result,fields=[],invalidation,now}){doc.audit.push({at:new Date(now).toISOString(),action,result,fields,generation:doc.generation,revision:hash(JSON.stringify(doc.draft)),...(invalidation?{invalidation:invalidationRecord(invalidation)}:{})});doc.audit=doc.audit.slice(-AUDIT_LIMIT);}
 
 const processNonce=crypto.randomUUID(),bootPattern=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;let bootId;
 async function lifetime(pid){
@@ -191,11 +194,11 @@ export function createSharedSettingsStore({data,env=process.env,now=Date.now}){
   s.doc.draft=draft;s.doc.conflicts=s.doc.conflicts.filter(k=>!resolvedFields.includes(k));if(resolvedFields.includes('legacyFiles'))s.doc.legacy=Object.fromEntries(Object.entries(s.legacy).map(([k,v])=>[k,v.digest]));
   auditEntry(s.doc,{action:'save',result:'success',fields:changed(before,draft),now:now()});if((await snapshot()).revision!==revision)fail('settings_conflict');await durable(file,s.doc);return current();
  });}
- async function applyGeneration({revision,acknowledgeHistory=false}){return lock(async()=>{
+ async function applyGeneration({revision,acknowledgeHistory=false,invalidation}){return lock(async()=>{
   const s=await snapshot();if(revision!==s.revision)fail('settings_conflict');await validate({revision,forApply:true,acknowledgeHistory});
   const draft=clone(s.doc.draft);if(!s.doc.historyExplicit)draft.recovery.since=now();
   const resolved=validateSharedSettings(draft,{complete:true,mode:env.RECOVERY_MODE,fileOnly:s.doc.fileOnly,requireRecovery:requireRecovery(s)});await guards(s,resolved,{pending:true});
-  s.doc.generation++;auditEntry(s.doc,{action:'apply',result:'success',fields:changed(s.doc.active,resolved),now:now()});s.doc.active=resolved;s.doc.draft=draft;s.doc.historyExplicit=true;s.doc.legacy=Object.fromEntries(Object.entries(s.legacy).map(([k,v])=>[k,v.digest]));if((await snapshot()).revision!==revision)fail('settings_conflict');await durable(file,s.doc);return current();
+  s.doc.generation++;auditEntry(s.doc,{action:'apply',result:'success',fields:changed(s.doc.active,resolved),invalidation,now:now()});s.doc.active=resolved;s.doc.draft=draft;s.doc.historyExplicit=true;s.doc.legacy=Object.fromEntries(Object.entries(s.legacy).map(([k,v])=>[k,v.digest]));if((await snapshot()).revision!==revision)fail('settings_conflict');await durable(file,s.doc);return current();
  });}
  async function audit(){return clone((await snapshot()).doc.audit);}
  async function recordOutcome({action,result}){if(!['apply','startup','cancel','save'].includes(action)||!['success','failure','interrupted','cancelled'].includes(result))fail('settings_invalid','audit');return lock(async()=>{const s=await snapshot();auditEntry(s.doc,{action,result,now:now()});await durable(file,s.doc);});}

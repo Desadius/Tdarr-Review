@@ -24,7 +24,7 @@ export async function sharedSettingsRoutes(ctx,req,res,url){
    if(ctx.settingsBusy)return reply(res,409,{error:'settings_busy',code:'settings_busy'});
    if(typeof input.revision!=='string')return reply(res,409,{error:'settings_conflict',code:'settings_conflict'});
    if(action==='apply')return reply(res,202,await ctx.settingsApply.start(input));
-   if(action==='test'){await ctx.settingsApply.test(input);return reply(res,200,{ok:true});}
+   if(action==='test')return reply(res,200,await ctx.settingsApply.test(input));
    await save(input);return reply(res,200,await ctx.sharedSettings.public());
   });
  }

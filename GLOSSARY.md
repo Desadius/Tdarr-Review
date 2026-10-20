@@ -28,6 +28,10 @@ _Avoid_: safe step
 Completing or rolling back an interrupted replacement after a restart, from its durable journal. A different concept from Recovery; never shorten it to "recovery".
 _Avoid_: recovery
 
+**Review binding**:
+The settings that decide which Tdarr library, files and technical data a saved review refers to: the media, review and source roots, review subfolders, Tdarr review root, Tdarr library, Tdarr address and database, and FFprobe. Changing any of them invalidates saved reviews and Approve decisions.
+_Avoid_: identity (that is file identity)
+
 **File identity**:
 The device, inode, size and modification times that show a file on disk is still the exact file that was checked, reviewed or recorded as evidence. A file whose identity no longer matches is never treated as the one that was checked; an unreadable recorded identity matches nothing.
 _Avoid_: fingerprint, stamp, Recovery case ID (a different value derived from the path and the file identity by `caseId()` in `recovery/policy.mjs`)

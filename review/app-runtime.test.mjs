@@ -98,7 +98,8 @@ if(typeof vm.SourceTextModule!=='function'){
   await dialog.close();await dom.getElementById('settingsRadarr').emit('click');assert.equal(dom.querySelectorAll('dialog').filter(n=>n.open).length,1);assert.equal(dom.querySelectorAll('dialog').find(n=>n.open),dialog);
  });
  const setting=(dom,key)=>dom.querySelector('[data-setting="'+key+'"]'),action=(dom,key)=>dom.querySelector('[data-settings-action="'+key+'"]');
- async function settingsFixture(language='cs',extra={}){const fixture=await appFixture(language,{routes:{'/api/shared-settings':{data:sharedFixture},'/api/recovery/runtime':{data:{mode:'off',state:'off'}},...extra}});await fixture.document.getElementById('settingsReview').emit('click');return fixture;}
+ const tested={ok:true,invalidation:{level:'none',fields:[],reviews:0,approvals:0}};
+ async function settingsFixture(language='cs',extra={}){const fixture=await appFixture(language,{routes:{'/api/shared-settings':{data:sharedFixture},'/api/shared-settings/test':{data:tested},'/api/recovery/runtime':{data:{mode:'off',state:'off'}},...extra}});await fixture.document.getElementById('settingsReview').emit('click');return fixture;}
  for(const language of ['cs','en'])test('guided shared settings exposes every option and keeps secrets absent in '+language,async()=>{
   const f=await settingsFixture(language),dom=f.document,dialog=dom.querySelector('dialog.shared-settings-dialog');
   assert.match(dialog.textContent,language==='en'?/Shared Review and Recovery settings/:/Společné nastavení Review a Recovery/);assert.match(dialog.textContent,/RECOVERY_MODE/);
@@ -136,13 +137,13 @@ if(typeof vm.SourceTextModule!=='function'){
  });
  test('Apply polling preserves active draft runtime and supports Cancel without replaying apply',async()=>{
   let state='draining';const f=await settingsFixture('en',{'/api/shared-settings/apply':{data:{id:'operation',state:'draining'}},'/api/shared-settings/status':()=>({data:{id:'operation',state}}),'/api/shared-settings/cancel':()=>{state='cancelled';return {data:{id:'operation',state:'draining',cancelling:true}};}}),dom=f.document;
-  await action(dom,'apply').emit('click');assert.equal(action(dom,'cancel').disabled,false);assert.equal(action(dom,'save').disabled,true);assert.match(dom.querySelector('.settings-summary').textContent,/Finishing the Recovery operation/);await action(dom,'cancel').emit('click');await f.tick();
+  await action(dom,'test').emit('click');await action(dom,'apply').emit('click');assert.equal(action(dom,'cancel').disabled,false);assert.equal(action(dom,'save').disabled,true);assert.match(dom.querySelector('.settings-summary').textContent,/Finishing the Recovery operation/);await action(dom,'cancel').emit('click');await f.tick();
   assert.equal(f.calls.filter(call=>call.route==='/api/shared-settings/apply'&&call.method==='POST').length,1);assert.equal(f.calls.filter(call=>call.route==='/api/shared-settings/cancel').length,1);assert(f.calls.filter(call=>call.method==='POST').every(call=>call.route.startsWith('/api/shared-settings/')));
   assert.doesNotMatch(dom.querySelector('.shared-settings-status').textContent,/You can cancel while waiting/);
  });
  test('finalizing disables Cancel and a fast Host switch offers a manual address link without automatic navigation',async()=>{
   const f=await settingsFixture('en',{'/api/shared-settings/apply':{data:{id:'fast',state:'validating',publicOrigin:'http://next-review:8270'}},'/api/shared-settings/status':{status:403,data:{code:'host_forbidden'}}}),dom=f.document;
-  await action(dom,'apply').emit('click');await f.tick();assert.equal(f.navigations.length,0);assert.match(dom.querySelector('.shared-settings-status').textContent,/address may have changed/);assert.equal(dom.querySelector('.shared-settings-status').querySelector('a').href,'http://next-review:8270/?lang=en#settings');assert.equal(f.calls.filter(call=>call.route.endsWith('/apply')).length,1);
+  await action(dom,'test').emit('click');await action(dom,'apply').emit('click');await f.tick();assert.equal(f.navigations.length,0);assert.match(dom.querySelector('.shared-settings-status').textContent,/address may have changed/);assert.equal(dom.querySelector('.shared-settings-status').querySelector('a').href,'http://next-review:8270/?lang=en#settings');assert.equal(f.calls.filter(call=>call.route.endsWith('/apply')).length,1);
   const final=await settingsFixture('cs',{'/api/shared-settings':{data:{...sharedFixture,apply:{id:'end',state:'finalizing'}}}});assert.equal(action(final.document,'cancel').disabled,true);assert.equal(action(final.document,'apply').disabled,true);
  });
  for(const language of ['cs','en'])test('failed or interrupted setup preserves distinct active values, draft and runtime in '+language,async()=>{
@@ -150,9 +151,18 @@ if(typeof vm.SourceTextModule!=='function'){
   const f=await settingsFixture(language,{'/api/shared-settings':{data:snapshot},'/api/recovery/runtime':{data:{mode:'verify',state:'refused'}}}),dom=f.document;
   assert.equal(setting(dom,'review.label').value,'Draft label');assert.match(dom.querySelector('.settings-active').textContent,/Active label/);assert.match(dom.querySelector('.settings-summary').textContent,language==='en'?/did not start/:/nenastartovalo/);assert.match(dom.querySelector('.settings-history').textContent,/2026/);assert.match(dom.querySelector('.settings-history').textContent,language==='en'?/Failure/:/Selhání/);assert(f.calls.every(c=>c.method==='GET'));
  });
+ for(const language of ['cs','en'])test('Apply waits for a Test of the saved draft, shows what it clears and sends that with Apply in '+language,async()=>{
+  let sent;const report={ok:true,invalidation:{level:'all',fields:['mediaRoot'],reviews:2,approvals:1}};
+  const f=await settingsFixture(language,{'/api/shared-settings/test':{data:report},'/api/shared-settings/apply':request=>{sent=request.body;return {data:{id:'shown',state:'validating'}};}}),dom=f.document;
+  assert.equal(action(dom,'apply').disabled,true,'no Test yet');assert.match(dom.querySelector('.settings-summary').textContent,language==='en'?/Test the draft before applying it/:/Před použitím návrh otestuj/);
+  await action(dom,'test').emit('click');assert.equal(action(dom,'apply').disabled,false);
+  const text=dom.querySelector('.settings-summary').textContent;
+  assert.match(text,language==='en'?/Applying clears saved reviews, Approve decisions and prepared samples\. Saved reviews: 2 · Approve decisions: 1\. Changed fields: [^.]+\./:/Použití smaže uložená posouzení, rozhodnutí Approve a připravené vzorky\. Uložená posouzení: 2 · Rozhodnutí Approve: 1\. Změněná pole: [^.]+\./);
+  await action(dom,'apply').emit('click');assert.deepEqual(sent.invalidation,{level:'all',reviews:2,approvals:1});assert.equal(sent.revision,sharedFixture.revision);
+ });
  test('only an observed committed origin can trigger automatic navigation',async()=>{
   const f=await settingsFixture('en',{'/api/shared-settings/apply':{data:{id:'done',state:'starting',publicOrigin:'http://next-review:8270'}},'/api/shared-settings/status':{data:{id:'done',state:'succeeded',publicOrigin:'http://next-review:8270'}}});
-  await action(f.document,'apply').emit('click');assert.equal(f.navigations.length,0);await f.tick();assert.deepEqual(f.navigations,['http://next-review:8270/?lang=en#settings']);assert.equal(f.calls.filter(c=>c.route.endsWith('/apply')).length,1);
+  await action(f.document,'test').emit('click');await action(f.document,'apply').emit('click');assert.equal(f.navigations.length,0);await f.tick();assert.deepEqual(f.navigations,['http://next-review:8270/?lang=en#settings']);assert.equal(f.calls.filter(c=>c.route.endsWith('/apply')).length,1);
  });
  for(const language of ['cs','en'])for(const cleanupEnabled of [false,true])test(`real dialogs render retention settings and cleanup state in ${language} (${cleanupEnabled})`,async()=>{
   const fixture=await appFixture(language,{routes:{'/api/quarantine':{data:{files:[],warnings:[],retentionDays:14,cleanupEnabled}},'/api/radarr/settings':{data:{url:'http://127.0.0.1',mediaRoot:'/fixture',quarantineRoot:'/quarantine',retentionDays:21}}}}),dom=fixture.document;
