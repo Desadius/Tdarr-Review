@@ -10,7 +10,7 @@ Both Docker images of that release (Review and the since discontinued separate R
 | --- | --- |
 | [`../templates/tdarr-review.xml`](../templates/tdarr-review.xml) | Main Review application template, marked beta |
 | [`../ca_profile.xml`](../ca_profile.xml) | Repository and maintainer profile |
-| [`../assets/icon.svg`](../assets/icon.svg) | Original project icon |
+| [`../assets/icon.png`](../assets/icon.png) | Mint film-frame and approval-check icon for the app and repository profile |
 | [`../LICENSE`](../LICENSE) | MIT license for the project's own code, templates and documentation |
 
 The template references the public `ghcr.io/desadius/tdarr-review:latest` image, for **Linux amd64**. It installs one Review container, which since 2.0.0 also contains optional Recovery. Recovery is Off by default and selected with the **Recovery mode** dropdown (`RECOVERY_MODE`: `off`, `verify`, `repair`); see [Installation on Unraid](INSTALL-UNRAID.md#6-optional-recovery). No separate Recovery image or catalog entry exists. First public image revision: `cab3774c4f42b200da294ee9adc5ec06a39a05fc`; see [verification](VERIFICATION.md) for digests and test scope.
@@ -18,6 +18,12 @@ The template references the public `ghcr.io/desadius/tdarr-review:latest` image,
 For an existing listed application, publish tested source and Docker images and update `latest` when releasing to template users. The 2.0.0 update keeps the same image name, ports and paths, adds the `RECOVERY_MODE` variable and raises the resource limits to two CPUs, 2 GiB and 256 processes. Unraid does not add new template variables or change Extra Parameters of an installed container by itself: existing users add **Recovery mode** and raise the limits when they edit the container, as described in [Installation on Unraid](INSTALL-UNRAID.md#updating-to-200), and users of the former Recovery container follow [the 2.0 migration guide](MIGRATE-TO-2.0.md). No new application submission is needed; the tested image must be published to `latest` for template users. The template/profile descriptions now mention guided assessment and Czech/English interfaces; they do not require a new application submission. Existing installations update their container image through Unraid. Updating a catalog description does not restart installed containers, and pushing Git source alone does not publish an image.
 
 The MIT license does not replace licenses belonging to the Tdarr runtime, Node.js, FFmpeg or other bundled third-party components.
+
+## Container icon
+
+The app template and repository profile use the same public PNG at `assets/icon.png`. It has a transparent surround, a dark rounded tile and a mint film-frame/checkmark symbol. The earlier SVG remains available for existing links. Updating these icon URLs does not require a Docker image build or an application version change.
+
+Community Applications reads the template from `main`, so a changed icon appears after the change is merged and the catalog refreshes. An installed Unraid container may retain its previous icon in Docker Manager's cache. Its saved user template also needs the new Icon URL for future container edits; changing the public template alone does not update an existing installation. Apply icon-only metadata/cache changes without restarting a busy Review container.
 
 ## Validate before submitting
 
