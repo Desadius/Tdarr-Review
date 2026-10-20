@@ -33,7 +33,8 @@ test('logging never throws into the action that logs',()=>{
 test('Review logs approvals, rejections, replacements, batches, settings, node pauses/resumes, transactions and request errors',async()=>{
  const read=file=>fs.readFile(new URL(file,import.meta.url),'utf8');
  const server=await read('./server.mjs'),routes=(await Promise.all(['./routes/settings.mjs','./routes/previews.mjs','./routes/library.mjs'].map(read))).join('\n');
- for(const event of ['action.started','action.finished','batch.started','batch.finished','batch.interrupted','node.paused','nodes.resume','transaction.unresolved','transactions.unresolved','request.error'])assert.ok(server.includes(`logEvent('${event}'`),event);
+ // transaction.unresolved moved with the approval transaction; approval-transaction.test.mjs observes it.
+ for(const event of ['action.started','action.finished','batch.started','batch.finished','batch.interrupted','node.paused','nodes.resume','transactions.unresolved','request.error'])assert.ok(server.includes(`logEvent('${event}'`),event);
  for(const event of ['settings.saved','preview-settings.saved','radarr-settings.saved','quarantine.restored'])assert.ok(routes.includes(`logEvent('${event}'`),event);
  assert.doesNotMatch(routes,/logEvent\('radarr-settings\.saved',\{[^}]*apiKey/,'the Radarr key is never passed to the log');
 });
