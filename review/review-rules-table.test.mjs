@@ -86,3 +86,8 @@ test('browser: the audio step cannot be left without a track pair',async t=>{
  const f=await workflowFixture(t,{step:2,pair:false,checks:{preparation:true,image:true}});
  await f.confirm('audio');await f.next().activate();assert.equal(f.writes.length,0);assert.equal(f.workflow.step,2);
 });
+
+test('browser: with HDR required a short device keeps the first step closed, also in the review tools',async t=>{
+ const f=await workflowFixture(t,{hdr:true,device:'X'});await f.confirm('preparation');
+ await f.next().activate();assert.equal(f.writes.length,0);assert.equal(f.workflow.step,0);
+});
