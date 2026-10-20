@@ -1,4 +1,4 @@
-import fs from 'node:fs/promises';
+import {readRecoveryStatus} from './recovery-snapshot.mjs';
 import {RECOVERY_STALE_MS,originalOutsideTooLong} from './public/review-model.js';
 
 // Loopback-only operational summary for the container health check. It reports
@@ -8,19 +8,13 @@ const LOOPBACK=new Set(['127.0.0.1','::1','::ffff:127.0.0.1']);
 export const isLoopback=address=>LOOPBACK.has(address);
 
 export async function recoveryStatusHealth(file,now=Date.now()){
- try{
-  const st=await fs.lstat(file);
-  if(!st.isFile()||st.isSymbolicLink()||st.size>2000000)return {present:true,stale:true,error:'invalid status file'};
-  const status=JSON.parse(await fs.readFile(file,'utf8')),updated=Date.parse(status?.updated);
-  if(!Number.isFinite(updated))return {present:true,stale:true,error:'missing update time'};
-  const stale=now-updated>RECOVERY_STALE_MS;
-  // Only a fresh status is evidence; a stale one is covered by recovery-status-stale. A count, never titles.
-  const originalsOutsideLibrary=stale||!Array.isArray(status.cases)?0:status.cases.filter(c=>originalOutsideTooLong(c,now)).length;
-  return {present:true,updated:new Date(updated).toISOString(),stale,originalsOutsideLibrary};
- }catch(e){
-  if(e.code==='ENOENT')return {present:false,stale:false};
-  return {present:true,stale:true,error:e instanceof SyntaxError?'unreadable status file':'status file '+(e.code||'error')};
- }
+ const read=await readRecoveryStatus(file);
+ if(!read.present)return {present:false,stale:false};
+ if(read.error)return {present:true,stale:true,error:read.error};
+ const status=read.status,updated=Date.parse(status.updated),stale=now-updated>RECOVERY_STALE_MS;
+ // Only a fresh status is evidence; a stale one is covered by recovery-status-stale. A count, never titles.
+ const originalsOutsideLibrary=stale?0:status.cases.filter(c=>originalOutsideTooLong(c,now)).length;
+ return {present:true,updated:new Date(updated).toISOString(),stale,originalsOutsideLibrary};
 }
 
 export function healthSummary({pendingTransactions,restorePending,recoveryStatus,recoveryRuntime}){

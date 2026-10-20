@@ -22,6 +22,6 @@
     "review/core.mjs",
     "recovery/policy.mjs",
     "review/supervisor.mjs",
-    "review/recovery-runtime.mjs"
+    "review/recovery-snapshot.mjs"
   ]
 }

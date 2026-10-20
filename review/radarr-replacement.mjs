@@ -1,5 +1,5 @@
 import {downloadQueue} from '../recovery/download-queue.mjs';
-import {readRecoveryRuntime} from './recovery-runtime.mjs';
+import {readRecoveryRuntime,readRecoveryStatus as readRecoveryStatusFile,readRecoveryCaseState,recoveryStatusFile} from './recovery-snapshot.mjs';
 import {ensureHandoff,preservesHold} from '../recovery/replacement-handoff.mjs';
 import {retainCase,quarantineRetention} from '../recovery/quarantine-retention.mjs';
 import {identityOf,compareIdentity} from '../recovery/file-identity.mjs';
@@ -63,12 +63,10 @@ export function canResume(c){return ['waiting','imported','restored','manual'].i
 // Recovery's cases, read-only. No state file means Recovery never ran here and protects nothing;
 // a state that cannot be read or validated must never release a Hold, so it fails the handoff.
 async function readRecoveryCases(file){
- let s;try{s=await fs.lstat(file)}catch(e){if(e.code==='ENOENT')return {};throw e}
- const invalid=()=>Error('Stav Recovery nelze ověřit; předání Tdarru čeká a Hold zůstává.');
- if(!s.isFile()||s.isSymbolicLink()||s.size>64*1024*1024)throw invalid();
- let state;try{state=JSON.parse(await fs.readFile(file,'utf8'))}catch{throw invalid()}
- if(!state||typeof state!=='object'||Array.isArray(state)||!state.cases||typeof state.cases!=='object'||Array.isArray(state.cases))throw invalid();
- return state.cases;
+ const read=await readRecoveryCaseState(file);
+ if(!read.present)return {};
+ if(read.error)throw Error('Stav Recovery nelze ověřit; předání Tdarru čeká a Hold zůstává.');
+ return read.cases;
 }
 export function createReplacement({data,getConfig,getConnection,safeFile,hash,atomicJSON,tdarr,pauseDispatch,verifyPaused=async()=>{},isWorkerBusy=async()=>false,resume,onProgress}){
  const connectionFile=path.join(data,'radarr.json'),directory=path.join(data,'radarr-replacements'),recoveryCases=()=>readRecoveryCases(path.join(data,'recovery','state.json'));let observing=false,mutating=false;
@@ -240,7 +238,8 @@ export function createReplacement({data,getConfig,getConnection,safeFile,hash,at
  async function cleanup(){await cleanupLanguageRepairs();const cfg=getConfig(),con=await connection();for(const c of (await list()).filter(c=>c.phase==='imported')){try{await retainCase(c,{mediaRoot:cfg.mediaRoot,reviewRoot:cfg.reviewRoot,quarantineRoot:con.quarantineRoot||path.join(path.dirname(cfg.mediaRoot),'.tdarr-review-quarantine'),reviewQuarantineRoot:path.join(cfg.reviewRoot,'.radarr-quarantine'),atomicCase:persist});if(c.retentionError){delete c.retentionError;await persist(c);}}catch(e){c.retentionError=e.message;await persist(c);}}}
  // The shared Recovery status file, or null when Recovery is not installed.
  async function readRecoveryStatus(){
-  try{const cfg=getConfig(),file=path.join(path.dirname(cfg.mediaRoot),'.tdarr-recovery-status.json'),s=await fs.lstat(file);if(!s.isFile()||s.isSymbolicLink()||s.size>2000000)throw Error('Invalid recovery status');const v=JSON.parse(await fs.readFile(file,'utf8'));if(v.version!==1||!Array.isArray(v.cases))throw Error('Invalid recovery schema');return v;}catch(e){if(e.code==='ENOENT')return null;throw e;}
+  const read=await readRecoveryStatusFile(recoveryStatusFile(getConfig().mediaRoot));
+  if(!read.present)return null;if(read.error)throw Error('Invalid recovery status');return read.status;
  }
  // Recovery's config.json edited after start-up (#22); only these fields leave the server.
  function configNotice(status){

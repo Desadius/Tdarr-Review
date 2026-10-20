@@ -5,7 +5,7 @@ import {statistics} from '../stats.mjs';
 import {quarantineRetention} from '../../recovery/quarantine-retention.mjs';
 import {body,reply,apiError} from './http.mjs';
 import {logEvent} from '../log.mjs';
-import {readRecoveryRuntime} from '../recovery-runtime.mjs';
+import {readRecoveryRuntime} from '../recovery-snapshot.mjs';
 import {settingsRequest} from './shared-settings.mjs';
 
 // Posters, statistics, quarantine listing and Radarr replacement requests/settings.

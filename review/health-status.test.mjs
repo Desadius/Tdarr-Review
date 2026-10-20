@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {isLoopback,recoveryStatusHealth,healthSummary} from './health-status.mjs';
 import {RECOVERY_STALE_MS} from './public/review-model.js';
-import {readRecoveryRuntime} from './recovery-runtime.mjs';
+import {readRecoveryRuntime} from './recovery-snapshot.mjs';
 
 const NOW=Date.parse('2026-10-13T12:00:00Z');
 const runtime={version:1,mode:'repair',state:'refused',restarts:0,lastExitCode:78,lastExitSignal:null,lastStartedAt:'2026-10-13T11:00:00.000Z',lastExitedAt:'2026-10-13T11:00:01.000Z',reason:'missing-config',updated:'2026-10-13T11:00:01.000Z'};
