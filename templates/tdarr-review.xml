@@ -14,7 +14,7 @@
   <Overview>Review Tdarr transcodes before replacing originals. A guided process combines picture, audio and synchronized video samples with saved manual checks. Approve completed assessments individually or in batches, record rejection reasons and track savings. Optional manual Radarr replacement requests preserve the original in quarantine. Czech and English interfaces. Linux amd64. Requires a separately installed Tdarr server, its DB2 directory and a separate folder containing completed results. Set PUBLIC_ORIGIN and TDARR_URL for your server before installing. Optional Recovery runs inside this container and is Off by default (RECOVERY_MODE). Approval writes to your media library.</Overview>
   <Category>Tools:Utilities MediaApp:Video</Category>
   <WebUI>http://[IP]:[PORT:8270]</WebUI>
-  <Icon>https://raw.githubusercontent.com/Desadius/Tdarr-Review/main/assets/icon.svg</Icon>
+  <Icon>https://raw.githubusercontent.com/Desadius/Tdarr-Review/main/assets/icon.png</Icon>
   <TemplateURL>https://raw.githubusercontent.com/Desadius/Tdarr-Review/main/templates/tdarr-review.xml</TemplateURL>
   <Beta>true</Beta>
   <Requires>Linux amd64; Tdarr server; readable DB2 directory; completed transcodes in a separate writable review directory. UID 99 / GID 100 must have access to the selected host mappings.</Requires>
