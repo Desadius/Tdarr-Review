@@ -44,7 +44,7 @@ Změna způsobu kontroly nebo názvu zařízení zruší všechna potvrzení a v
 
 ## Serverový záznam, CAS a schválení
 
-Implementaci tvoří [review-session.mjs](../review/review-session.mjs), [review-workflow.js](../review/public/review-workflow.js) a napojení v [server.mjs](../review/server.mjs), [app.js](../review/public/app.js) a [review-model.js](../review/public/review-model.js).
+Implementaci tvoří [review-session.mjs](../review/review-session.mjs), [review-workflow.js](../review/public/review-workflow.js) a napojení v [server.mjs](../review/server.mjs), [app.js](../review/public/app.js) a [review-model.js](../review/public/review-model.js). Pravidla, která používá server i prohlížeč, jsou jen jednou v [review-rules.js](../review/public/review-rules.js): seznam kontrol, kontroly jednotlivých kroků (HDR v kroku Obraz), dosažitelnost kroku (pár stop od Synchronizace), co ruší změna způsobu, zařízení nebo páru stop a požadavek na pojmenované zařízení. Server je jedinou autoritou pro uložení a dokončení posouzení. Prohlížeč je záměrně přísnější: zařízení a při HDR i jeho potvrzení vyžaduje už před přechodem do dalšího kroku, server až pro dokončení. [review-rules-table.test.mjs](../review/review-rules-table.test.mjs) obě strany ověřuje jednou tabulkou přechodů.
 
 Záznam ve `state.reviewSessions` má ID položky, snapshot dvojice souborů, verzi checklistu `version: 1`, rostoucí `revision`, serverové požadavky, průběh, rozsah, jednotlivá pozorování a serverový čas aktualizace. Server přijímá pouze explicitní booleany známých kontrol. Klientský příznak `complete`, diagnostický výstup ani podvržené časy pozorování dokončení neurčují. Ukládání neuvádí ověřenou osobní identitu; sdílený přístupový klíč takovou identitu nedokládá.
 

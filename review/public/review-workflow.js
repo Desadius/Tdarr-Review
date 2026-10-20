@@ -1,5 +1,5 @@
-const CHECKS=['preparation','image','audio','syncStart','syncMiddle','syncEnd','hdr'];
-const STEPS=[['Podklady',['preparation']],['Obraz',['image']],['Zvuk',['audio']],['Synchronizace',['syncStart','syncMiddle','syncEnd']],['Rozhodnutí',[]]];
+import {STEP_CHECKS,stepChecks as checksOfStep,hasPair,stepReachable,deviceSatisfied,identityChanged,pairChanged,clearForIdentity,clearForPair} from './review-rules.js?v=__APP_VERSION__';
+const STEPS=['Podklady','Obraz','Zvuk','Synchronizace','Rozhodnutí'].map((title,i)=>[title,STEP_CHECKS[i]]);
 const clone=value=>JSON.parse(JSON.stringify(value));
 
 export function classifyPreparation(preparation,snapshot){
@@ -75,10 +75,11 @@ export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openA
  const cache=()=>{if(!session||!loaded||dead)return;try{sessionStorage.setItem(cacheKey,JSON.stringify({revision,session}))}catch{}};
  const clearTools=()=>{scopeValid=true;for(const cleanup of toolCleanups.splice(0))cleanup?.()};
  const allowed=()=>loaded&&!dead&&!stale&&!conflict&&!saving&&canWrite();
- const validPair=()=>Number.isInteger(session?.scope.originalIndex)&&Number.isInteger(session?.scope.reviewIndex)&&(!tracks||tracks.original.some(x=>x.index===session.scope.originalIndex)&&tracks.review.some(x=>x.index===session.scope.reviewIndex));
- const validMethod=()=>session?.method!=='external'&&!hdrRequired||typeof session?.device==='string'&&session.device.trim().length>=2;
- const stepChecks=i=>i===1&&hdrRequired?['image','hdr']:STEPS[i][1];
- const beforeStep=step=>validMethod()&&STEPS.slice(0,step).every((_,i)=>stepChecks(i).every(key=>session.checks[key]))&&(step<3||validPair());
+ const validPair=()=>hasPair(session?.scope)&&(!tracks||tracks.original.some(x=>x.index===session.scope.originalIndex)&&tracks.review.some(x=>x.index===session.scope.reviewIndex));
+ // Stricter than the server on purpose (review-rules.js): the device and, with HDR, its confirmation gate each step.
+ const validMethod=()=>session?deviceSatisfied(session,{hdr:hdrRequired}):!hdrRequired;
+ const stepChecks=i=>checksOfStep(i,{hdr:hdrRequired});
+ const beforeStep=step=>validMethod()&&stepReachable(session,step,{hdr:hdrRequired})&&(step<3||validPair());
  const currentChecks=()=>scopeValid&&stepChecks(session.step).every(key=>session.checks[key]&&(session.step!==3||baseline.checks[key]));
  const labelState=()=>session?.deferred?'Posouzení odloženo':complete&&!sessionDirty()?'Posouzení uloženo a dokončeno':sessionDirty()?'Rozpracované změny':'Průběh posouzení je uložený';
  function observePreparation(value,{authoritative=false}={}){
@@ -129,7 +130,7 @@ export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openA
  }
  function setScope(next){
   if(!allowed()||next.seconds!==null&&(!Number.isFinite(next.seconds)||next.seconds<0))return;const changedPair=next.originalIndex!==session.scope.originalIndex||next.reviewIndex!==session.scope.reviewIndex;
-  const oldStep=session.step;Object.assign(session.scope,next);if(changedPair){for(const key of ['audio','syncStart','syncMiddle','syncEnd'])session.checks[key]=false;session.step=Math.min(session.step,2);complete=false;updateChecks();}
+  const oldStep=session.step;Object.assign(session.scope,next);if(changedPair){clearForPair(session);complete=false;updateChecks();}
   cache();if(session.step!==oldStep)renderStep();else updateSaveButton();refreshGuard();
  }
  const setScopeValidity=valid=>{scopeValid=valid===true;updateSaveButton()};
@@ -142,9 +143,9 @@ export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openA
  }
  // Persist a changed identity first. The server deliberately clears confirmations when method, device or pair changes.
  async function persistIdentity(){
-  const identityChanged=session.method!==baseline.method||session.device!==baseline.device,pairChanged=session.scope.originalIndex!==baseline.scope.originalIndex||session.scope.reviewIndex!==baseline.scope.reviewIndex;
-  if(!identityChanged&&!pairChanged)return;
-  const desired=clone(session),value=clone(session);if(identityChanged){for(const key of CHECKS)value.checks[key]=false;value.step=0}else{for(const key of ['audio','syncStart','syncMiddle','syncEnd'])value.checks[key]=false;value.step=Math.min(value.step,2)}
+  const identity=identityChanged(baseline,session),pair=pairChanged(baseline,session);
+  if(!identity&&!pair)return;
+  const desired=clone(session),value=clone(session);if(identity)clearForIdentity(value);else clearForPair(value);
   await postSession(value);if(dead)return;
   // Input handlers already removed checks for the previous identity. Keep subsequent manual changes as an unsaved draft.
   session={...desired,step:Math.min(desired.step,baseline.step),checks:{...baseline.checks,...desired.checks}};cache();
@@ -207,7 +208,7 @@ export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openA
  }
  function updateSaveButton(){const save=root.querySelector('[data-step-save]');if(save){save.dataset.invalid=String(!currentChecks()||!validMethod()||!validPair());refreshGuard()}const defer=root.querySelector('[data-defer]');if(defer){defer.dataset.invalid=String(!session.note.trim());refreshGuard()}refreshObservations()}
  // Changing the review method resets every check and returns to the first step; the note stays.
- function changeMethod(value){session.method=value;if(session.method==='external')session.scope.seconds=null;for(const key of CHECKS)session.checks[key]=false;session.step=0;complete=false;cache();renderStep()}
+ function changeMethod(value){session.method=value;if(session.method==='external')session.scope.seconds=null;clearForIdentity(session);complete=false;cache();renderStep()}
  function renderStep(){
   if(dead||!session)return;clearTools();steps.replaceChildren();main.replaceChildren(warning);root.dataset.step=String(session.step);
   for(const [i,[title]] of STEPS.entries()){const keys=stepChecks(i),b=button(title,()=>{if(!allowed()||i>baseline.step)return;session.step=i;cache();renderStep()});b.classList.add('workflow-step');b.setAttribute('aria-current',i===session.step?'step':'false');b.dataset.workflowWrite='';b.dataset.invalid=String(i>baseline.step);const number=make('span','workflow-number',keys.length&&keys.every(key=>session.checks[key])?'✓':String(i+1));b.prepend(number);steps.append(b)}
@@ -217,7 +218,7 @@ export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openA
    main.append(make('p','details','Vyber způsob posouzení a odpovídající zvukové stopy. Pokračuj po vlastní kontrole obou souborů.'));
    const method=make('select');method.append(new Option(tr('Nástroje v Review'),'review'),new Option(tr('Vlastní přehrávač / TV'),'external'));method.value=session.method;markWrite(method);method.onchange=()=>changeMethod(method.value);
    tools.append(field('Způsob posouzení',method));
-   if(session.method==='external'||hdrRequired){const device=make('input');device.maxLength=160;device.value=session.device;device.placeholder=tr('Například TV v obýváku · Plex');markWrite(device);device.oninput=()=>{session.device=device.value;for(const key of CHECKS)session.checks[key]=false;complete=false;cache();updateChecks();updateSaveButton()};tools.append(field('Přehrávač nebo zařízení',device));if(session.method==='external')tools.append(make('p','details','Obraz, zvuk a synchronizaci potvrď podle vlastního přehrávání. Review načte pouze seznam stop.'));if(hdrRequired)tools.append(make('p','details','HDR/Dolby Vision ověř na vhodném zařízení. Náhled v prohlížeči převádí HDR do SDR.'))}
+   if(session.method==='external'||hdrRequired){const device=make('input');device.maxLength=160;device.value=session.device;device.placeholder=tr('Například TV v obýváku · Plex');markWrite(device);device.oninput=()=>{session.device=device.value;clearForIdentity(session);complete=false;cache();updateChecks();updateSaveButton()};tools.append(field('Přehrávač nebo zařízení',device));if(session.method==='external')tools.append(make('p','details','Obraz, zvuk a synchronizaci potvrď podle vlastního přehrávání. Review načte pouze seznam stop.'));if(hdrRequired)tools.append(make('p','details','HDR/Dolby Vision ověř na vhodném zařízení. Náhled v prohlížeči převádí HDR do SDR.'))}
    tools.append(pairPicker());const facts=make('dl','facts');for(const [label,value] of [['Originál',formatBytes(item.originalBytes)],['Výsledek',formatBytes(item.reviewBytes)],['Délka originálu',Number.isFinite(item.durationA)?item.durationA.toFixed(3)+' s':tr('Nedoloženo')],['Délka výsledku',Number.isFinite(item.durationB)?item.durationB.toFixed(3)+' s':tr('Nedoloženo')]])facts.append(make('dt','',label),make('dd','',value));tools.append(facts);
    const download=make('a','secondary download','Stáhnout výsledek');download.href=`/api/items/${item.id}/video`;tools.append(download);
    checks.append(confirmation('preparation','Ověřil jsem, že porovnávám správný originál a tento převod.'));

@@ -1,5 +1,5 @@
 import {errorText} from './public/error-messages.js';
-const CHECKS=['preparation','image','audio','syncStart','syncMiddle','syncEnd','hdr'];
+import {CHECKS,completedStep,deviceSatisfied,identityChanged,pairChanged,clearForIdentity,clearForPair} from './public/review-rules.js';
 const ID=/^[a-f0-9]{24}$/;
 const SNAPSHOT=/^[a-f0-9]{64}$/;
 const OBSERVATIONS=['image','hdr','audio','syncStart','syncMiddle','syncEnd'];
@@ -55,15 +55,6 @@ export function sanitizeReviewSession(input){
  return session;
 }
 
-const selectedPair=session=>session.scope.originalIndex!==null&&session.scope.reviewIndex!==null;
-const completedStep=session=>{
- const c=session.checks;
- if(!c.preparation)return 0;
- if(!c.image)return 1;
- if(!c.audio||!selectedPair(session))return 2;
- if(!c.syncStart||!c.syncMiddle||!c.syncEnd)return 3;
- return 4;
-};
 const clearAfter=(session,step)=>{
  if(step<1)session.checks.image=false;
  if(step<2){session.checks.audio=false;session.checks.hdr=false}
@@ -71,8 +62,7 @@ const clearAfter=(session,step)=>{
 };
 
 export function reviewComplete(session,requirements={hdr:false}){
- const deviceNamed=session.device.trim().length>=2;
- return !session.deferred&&session.step===4&&completedStep(session)===4&&(session.method!=='external'||deviceNamed)&&(!requirements.hdr||(session.checks.hdr&&deviceNamed));
+ return !session.deferred&&session.step===4&&completedStep(session)===4&&deviceSatisfied(session,requirements)&&(!requirements.hdr||session.checks.hdr);
 }
 
 export function publicReviewSession(record,snapshot,requirements=record?.requirements||{hdr:false}){
@@ -99,13 +89,8 @@ export function updateReviewSession(previous,input,{duration,originalIndexes,rev
  for(const [name,indexes] of [['originalIndex',originalIndexes],['reviewIndex',reviewIndexes]])if(session.scope[name]!==null&&indexes!==undefined&&!indexes.includes(session.scope[name]))fail('sample_tracks_invalid');
  // A changed method/device or track pair must be saved before any fresh
  // confirmation. Checks carried in the same change cannot describe both scopes.
- if(session.method!==old.method||session.device!==old.device){
-  session.checks=emptyReviewSession().checks;session.step=0;
- }else if(session.scope.originalIndex!==old.scope.originalIndex||session.scope.reviewIndex!==old.scope.reviewIndex){
-  session.checks.audio=false;
-  for(const name of ['syncStart','syncMiddle','syncEnd'])session.checks[name]=false;
-  session.step=Math.min(session.step,2);
- }
+ if(identityChanged(old,session))clearForIdentity(session);
+ else if(pairChanged(old,session))clearForPair(session);
  const available=completedStep(session);
  if(session.step>available){
   if(session.step>old.step)fail('review_previous_checks_first');
