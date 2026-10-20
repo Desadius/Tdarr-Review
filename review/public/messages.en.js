@@ -3,6 +3,7 @@ import {ERROR_MESSAGES} from './error-messages.js?v=__APP_VERSION__';
 export default {
   "exact": {...Object.fromEntries(Object.values(ERROR_MESSAGES).map(message=>[message.cs,message.en])),...sharedSettingsMessages,
     "Nastavení právě používá jiná operace. Zkus to za chvíli.": "Another operation is using settings. Try again shortly.",
+    "Stav Recovery nelze ověřit; předání Tdarru čeká a Hold zůstává.": "Recovery's state cannot be verified; the Tdarr handoff waits and the Hold stays.",
     "Nastavení se změnilo. Načti aktuální návrh a zkus to znovu.": "Settings changed. Reload the current draft and try again.",
     "Relace řízení Recovery vypršela.": "Recovery control session expired.",
     "Správce Recovery se ukončuje.": "Recovery supervisor stopping.",

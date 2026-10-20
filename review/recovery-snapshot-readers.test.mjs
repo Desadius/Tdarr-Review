@@ -4,12 +4,13 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {recoveryStatusHealth} from './health-status.mjs';
-import {readRecoveryRuntime} from './recovery-runtime.mjs';
+import {readRecoveryRuntime,readRecoveryCaseState} from './recovery-snapshot.mjs';
 import {createReplacement} from './radarr-replacement.mjs';
 
 // Every reader in Review of a Recovery file must give the same verdict for the same file: "absent",
 // "valid" or "invalid". One table of file contents per Recovery file runs against each reader of it.
-// Expected verdicts that differ by reader are disagreements of the current code (#220).
+// Before #220 another version, a missing cases list and a missing update time divided health and the overview;
+// they are invalid to every reader now.
 const fresh=()=>new Date().toISOString(),stale=()=>new Date(Date.now()-3600000).toISOString();
 const json=value=>JSON.stringify(value);
 // One Recovery case, so a valid status file shows up as a Recovery request in the overview.
@@ -21,9 +22,9 @@ const statusCases=[
  {name:'larger than the limit',write:()=>json({version:1,updated:fresh(),cases:CASES,padding:'x'.repeat(2000001)}),verdict:'invalid'},
  {name:'not JSON',write:()=>'{"version":1,',verdict:'invalid'},
  {name:'JSON null',write:()=>'null',verdict:'invalid'},
- {name:'another version',write:()=>json({version:2,updated:fresh(),cases:CASES}),verdict:{health:'valid',overview:'invalid'}},
- {name:'without cases',write:()=>json({version:1,updated:fresh()}),verdict:{health:'valid',overview:'invalid'}},
- {name:'without an update time',write:()=>json({version:1,cases:CASES}),verdict:{health:'invalid',overview:'valid'}},
+ {name:'another version',write:()=>json({version:2,updated:fresh(),cases:CASES}),verdict:'invalid'},
+ {name:'without cases',write:()=>json({version:1,updated:fresh()}),verdict:'invalid'},
+ {name:'without an update time',write:()=>json({version:1,cases:CASES}),verdict:'invalid'},
  {name:'valid and fresh',write:()=>json({version:1,updated:fresh(),cases:CASES}),verdict:'valid'},
  {name:'valid and stale',write:()=>json({version:1,updated:stale(),cases:CASES}),verdict:'valid'},
 ];
@@ -74,3 +75,21 @@ for(const [file,cases] of [['status',statusCases],['runtime',runtimeCases]])for(
   }
  });
 }
+
+// Recovery's case state has one reader in Review, the manual replacement's Hold handoff, which takes its verdict
+// from the snapshot module: absent protects nothing, invalid blocks the handoff (radarr-replacement tests).
+const stateCases=[
+ {name:'missing',write:null,verdict:'absent'},
+ {name:'a directory',write:'directory',verdict:'invalid'},
+ {name:'not JSON',write:()=>'{"cases":',verdict:'invalid'},
+ {name:'without cases',write:()=>json({version:1,jobs:{}}),verdict:'invalid'},
+ {name:'cases as a list',write:()=>json({version:1,cases:[]}),verdict:'invalid'},
+ {name:'valid',write:()=>json({version:1,jobs:{},cases:{}}),verdict:'valid'},
+];
+test('the case state reader gives every case its verdict',async()=>{
+ for(const c of stateCases){
+  const i=await installation(),file=path.join(i.data,'recovery','state.json');
+  try{await place(file,c);const v=await readRecoveryCaseState(file);assert.equal(!v.present?'absent':v.error?'invalid':'valid',c.verdict,c.name);}
+  finally{await i.cleanup();}
+ }
+});

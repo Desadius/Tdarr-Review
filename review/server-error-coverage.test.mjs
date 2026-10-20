@@ -39,9 +39,10 @@ test('authored server error literals have an English translation',async()=>{
     'Unrecognized Tdarr state; handoff requires inspection.',
     'Queue acknowledgement pending; handoff will be checked again.',
     'Unknown busy policy: ',
-    // Health-log diagnostics for operators (review/health-status.mjs), not UI text.
+    // Health-log diagnostics for operators (review/recovery-snapshot.mjs), not UI text.
     'invalid status file',
-    'missing update time'
+    'missing update time',
+    'invalid ','unsupported status file','unsupported state file'
   ]);
   let count=0;
   // Route modules (review/routes/) hold most request errors once server.mjs is split.

@@ -178,6 +178,10 @@ The supervisor publishes `<DATA_ROOT>/recovery/runtime-state.json` (mode 0600) a
 | `reason` | `null`, or a reason code: `crash` (restarting after a crash), `crash-loop` (five or more consecutive crashes, reported while restarting and running until a run lasts 10 minutes), the refusal reason (for example `missing-config`, `mode-conflict`, `invalid-mode`, `registry-refused`, or `unknown-refusal`), `review-exited`, `shutdown`, `settings-apply` (orderly drained stop), or `apply-start-failed` (worker exited during drain/apply without a refusal). |
 | `updated` | ISO 8601 time of this write. |
 
+### Review's view of Recovery's files
+
+Review reads three Recovery files and never writes them: the runtime state above, the shared status file `.tdarr-recovery-status.json` beside the media root, and the case state `/data/recovery/state.json`. `review/recovery-snapshot.mjs` is the only reader of each and gives one verdict: absent, valid (with its content) or invalid (with a value-free reason). The status file is valid only as a regular file of at most 2 MB holding a JSON object with `version: 1`, a `cases` list and a readable `updated`; the case state only as a JSON object with a `cases` object. Health (`recoveryStatusHealth`), the replacement overview and restart notice, the manual replacement's Hold handoff and `/api/recovery/runtime` project from these verdicts: an invalid status file is `recovery-status-stale` attention in health and an error in the overview; an invalid case state blocks the handoff, an absent one protects nothing. `review/recovery-snapshot-readers.test.mjs` runs one table of file contents against every reader.
+
 ## Shared lifecycle
 
 Recovery atomically publishes a versioned, allowlisted status file. It includes deferred limits, verification, quarantine, release exclusion, search/download, import and the replacement's Tdarr database state. It does not publish keys or unrestricted quarantine paths.
