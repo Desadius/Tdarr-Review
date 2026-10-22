@@ -8,6 +8,8 @@ const unreadable=()=>Object.assign(Error('Recorded file identity is unreadable; 
 function under(root,rel){const p=path.resolve(root,rel);if(!rel||path.isAbsolute(rel)||p===root||!p.startsWith(root+path.sep))throw Error('Invalid retention path');return p;}
 async function regular(p){if(await fs.realpath(path.dirname(p))!==path.dirname(p))throw Error('Symlink parent');const s=await fs.lstat(p);if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1)throw Error('Unsafe retention file');return s;}
 function key(relative,sourceFP){return crypto.createHash('sha256').update(relative+'\0'+sourceFP).digest('hex')+'.json';}
+/** The approval evidence file for an imported replacement, beside the library root (shared with Review, #230). */
+export async function approvalEvidencePath(mediaRoot,relative,sourceFP){return path.join(path.dirname(await fs.realpath(mediaRoot)),'.tdarr-approvals',key(relative,sourceFP));}
 export async function publishApproval({mediaRoot,relative,sourceFP,installedRelative,atomic}){
  const parent=path.dirname(await fs.realpath(mediaRoot)),directory=path.join(parent,'.tdarr-approvals');await fs.mkdir(directory,{recursive:true,mode:0o770});if(await fs.realpath(directory)!==directory)throw Error('Approval directory symlink');
  const installed=under(mediaRoot,installedRelative),st=await regular(installed);
@@ -17,8 +19,7 @@ export async function publishApproval({mediaRoot,relative,sourceFP,installedRela
 }
 export async function retainCase(c,{mediaRoot,reviewRoot,quarantineRoot,reviewQuarantineRoot,atomicCase,now=Date.now()}){
  if(!quarantineRetention.cleanupEnabled||!c.replacementSourceFP||!c.replacementRelative||c.cleanup?.complete)return;
- const directory=path.join(path.dirname(await fs.realpath(mediaRoot)),'.tdarr-approvals');
- let a;try{const f=path.join(directory,key(c.replacementRelative,c.replacementSourceFP));await regular(f);a=JSON.parse(await fs.readFile(f,'utf8'));}catch(e){if(e.code==='ENOENT')return;throw e;}
+ let a;try{const f=await approvalEvidencePath(mediaRoot,c.replacementRelative,c.replacementSourceFP);await regular(f);a=JSON.parse(await fs.readFile(f,'utf8'));}catch(e){if(e.code==='ENOENT')return;throw e;}
  if(a.version!==1||a.relative!==c.replacementRelative||a.sourceFP!==c.replacementSourceFP||!Number.isFinite(Date.parse(a.approvedAt))||Date.parse(a.approvedAt)>now)throw Error('Invalid approval evidence');
  const installed=under(mediaRoot,a.installedRelative);const installedNow=identityOf(await regular(installed));
  if(installedNow!==a.installedFP){

@@ -88,13 +88,19 @@ const LOCATION_DETAILS={present:'Soubor je na místě',changed:'Soubor se od zá
  'import-blocked':'Import je blokovaný','queue-failed':'Fronta hlásí chybu','search-failed':'Hledání selhalo',downloading:'Stahuje se','no-download':'Nic se nestahuje'};
 export const ATTENTION_ACTIONS={refresh:['Obnovit stav','Jen znovu načte údaje z Radarru, Tdarru a knihovny; nic nemění.'],openRadarr:['Otevřít film v Radarru','Otevře Radarr; nic nemění.'],
  openReview:['Posoudit výsledek v Review','Otevře posouzení; schválení je samostatný krok.'],replaceSource:['Vyžádat jinou kopii přes Radarr','Spustí vyžádání náhrady; originál zůstane zachovaný v karanténě.'],
- restore:['Vrátit originál i převod z karantény','Přesune zachované soubory zpět do knihovny.']};
+ restore:['Vrátit originál i převod z karantény','Přesune zachované soubory zpět do knihovny.'],assessInstalled:['Posoudit nainstalovanou kopii','Otevře posouzení kopie, která je v knihovně; nic nemění.']};
 const BLOCKERS={'source-not-confirmed':'Vada originálu není potvrzená dvěma kontrolami; náhradu nelze vyžádat.','inspect-case':'Správce musí zkontrolovat záznam případu a zachované kopie.',
  'diagnosis-needed':'Kontrola originálu skončila provozní nebo nejednoznačnou chybou; prověř ji v detailu.','verify-mode':'Recovery běží v režimu Verify; změny povolí až přepnutí na Repair.',
  'transcode-retry-unavailable':'Opakovaný převod Review zatím nenabízí; důvod zkontroluj v Tdarru.','hold-not-released':'Hold v Tdarru Review neuvolňuje; zkontroluj navazující případ a důvod pozastavení.',
  'radarr-download-stuck':'Pokud stahování v Radarru visí, odstraň ho v Radarru.','manual-import-in-radarr':'Stažený soubor přiřaď správnému filmu ručním importem v Radarru.',
  'retention-evidence':'Důkaz pro úklid karantény nesouhlasí; karanténa zůstává zachovaná.','status-unverified':'Stav nelze ověřit; obnov ho, a pokud zůstane neověřený, správce zkontroluje propojení.',
- 'review-result-missing':'Výsledek v Review k této kopii zatím není doložený.','replacement-blocked':'Náhradu teď nelze vyžádat; důvod je uvedený v detailu.','radarr-link-unavailable':'Odkaz do Radarru není k dispozici; zkontroluj připojení Radarru.'};
+ 'review-result-missing':'Výsledek v Review k této kopii zatím není doložený.','replacement-blocked':'Náhradu teď nelze vyžádat; důvod je uvedený v detailu.','radarr-link-unavailable':'Odkaz do Radarru není k dispozici; zkontroluj připojení Radarru.',
+ 'installed-unverified':'Nainstalovanou kopii nelze ověřit; obnov stav.','installed-evidence-exists':'Kopie je schválená; Recovery spustí úklid karantény při další kontrole.',
+ 'installed-file-missing':'V knihovně není žádná kopie k posouzení.','installed-ambiguous':'V knihovně je víc možných kopií; správce musí ponechat jen jednu.',
+ 'installed-file-unsafe':'Kopie v knihovně není běžný samostatný soubor; správce ji musí zkontrolovat.','installed-not-transcoded':'V knihovně je stále nepřevedená náhrada.',
+ 'installed-tdarr-not-success':'Tdarr pro tuto kopii nehlásí Transcode success.','installed-no-success-job':'V historii Tdarru není úspěšný převod této kopie po importu náhrady.',
+ 'installed-review-pending':'K této kopii čeká výsledek v Review; posuď ho tam.','installed-busy':'Probíhá jiná akce; posouzení bude možné po jejím dokončení.',
+ 'restore-over-installed':'Zastaralý originál Review přes aktuální kopii nevrací.'};
 
 export function attentionLocationView(location,translate=tr){
  const rows=LOCATION_SOURCES.filter(([key])=>location?.[key]&&location[key].status!=='not-used').map(([key,label])=>{const v=location[key];

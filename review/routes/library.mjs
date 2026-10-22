@@ -66,6 +66,19 @@ export async function libraryRoutes(ctx,req,res,url,request){
   if(keys!==null&&(!Array.isArray(keys)||keys.length>500||keys.some(k=>typeof k!=='string'||!/^(?:recovery|radarr):[a-f0-9]{24}$/.test(k))))return reply(res,400,apiError('refresh_invalid'));
   return reply(res,200,await ctx.recoveryAttention.refresh(await ctx.replacements.overview(),keys));
  }
+ // Assessment of an already installed transcoded result (#230). Reading and saving start nothing; approval
+ // revalidates every condition and only then writes the approval evidence that starts quarantine retention.
+ const installed=/^\/api\/recovery\/cases\/([a-f0-9]{24})\/installed(\/approve)?$/.exec(url.pathname);
+ if(installed&&req.method==='GET'&&!installed[2])return reply(res,200,await ctx.installedAssessment.view(installed[1],{busy:!!ctx.busyFor('replace')}));
+ if(installed&&req.method==='POST'){
+  const b=await body(req),id=installed[1];
+  try{
+   if(!installed[2])return reply(res,200,await ctx.installedAssessment.save(id,b));
+   if(b.confirm!==true)return reply(res,400,apiError('installed_confirm_required'));
+   await ctx.scan(true,null,request.mutation);
+   const result=await ctx.installedAssessment.approve(id,b);logEvent('installed.approved',{requestId:id});return reply(res,200,{ok:true,...result});
+  }catch(e){if(['installed_not_eligible','installed_changed','installed_incomplete'].includes(e.code))return reply(res,409,{...apiError(e.code),blockers:e.blockers||[]});throw e;}
+ }
  // Runtime diagnostics remain readable even when the separate case snapshot fails.
  if(url.pathname==='/api/recovery/runtime'&&req.method==='GET')return reply(res,200,await readRecoveryRuntime(path.join(ctx.DATA,'recovery','runtime-state.json')));
  const restoreRequest=/^\/api\/radarr\/requests\/([a-f0-9]{24})\/restore$/.exec(url.pathname);

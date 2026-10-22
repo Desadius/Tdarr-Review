@@ -2,6 +2,7 @@ import {mountReviewWorkflow,classifyPreparation,preparationSummary} from '/revie
 import {capabilities, reviewState, classifyRecovery, recoveryProgress, downloadProgress, liveRecoveryRecord, projectRequests, historyWarnings, historyFollowup, recoveryFollowup, fullHashProgress} from '/review-model.js?v=__APP_VERSION__';
 import {$,el,fmt,date,elapsedText,etaText,poster,button,badge,keyed,makeTabs,detailsFacts} from '/ui-kit.js?v=__APP_VERSION__';
 import {decodeProgressView,downloadProgressView,fullHashProgressView,recoveryDetails,recoveryRuntimeView,recoveryRestartWarningView,recoveryConfigNoticeView,attentionView,attentionActionsView} from '/recovery-view.js?v=__APP_VERSION__';
+import {installedAssessmentView} from '/installed-assessment-view.js?v=__APP_VERSION__';
 import {installComparisons,openComparison,openAudioComparison} from '/comparison.js?v=__APP_VERSION__';
 import {installSettingsDialogs} from '/settings-dialogs.js?v=__APP_VERSION__';
 import {installQuarantine,openQuarantine} from '/quarantine.js?v=__APP_VERSION__';
@@ -100,6 +101,7 @@ function askRestore(record){
 // A server-listed attention action (#229). Mutating ones go through their existing confirmation and capability checks.
 function runAttentionAction(record,action){
  const key=(record.source==='recovery'?'recovery:':'radarr:')+record.id;
+ if(action.id==='assessInstalled'){if(!$('filmDetail').open||ui.detail?.id!==key)openDetail('request',key);return changeDetailTab('comparison');}
  if(action.id==='refresh')return loadRequests(true,[key]);
  if(action.id==='openReview'){const item=latest?.items.find(x=>x.id===action.itemId);if(item)return openDetail('review',item.id);return error(Error(tr('Výsledek už v Review není. Obnov stav.')));}
  if(action.id==='replaceSource')return askSourceReplacement(record);
@@ -115,6 +117,7 @@ $('confirm').addEventListener('close',async()=>{
   if(request.action==='batch')for(const item of request.items)writeItem(item,'approveBatch');
   else if(request.action==='keepPaused'){if(!latest?.pendingRestores?.some(n=>n.name===request.node))throw Error('Tento node už Review neobnovuje. Obnov přehled.');}
   else if(request.action==='restore'){const current=requests.find(r=>r.id===request.record.id&&r.source===request.record.source);if(!current||!caps(current).restore)throw Error('Stav obnovy se změnil. Obnov údaje.');}
+  else if(request.action==='installedApprove'){const current=requests.find(r=>r.id===request.record.id&&r.source==='recovery');if(!current?.attention?.actions?.some(a=>a.id==='assessInstalled'))throw Error('Stav případu se změnil. Obnov údaje.');}
   else if(request.action==='replaceSource'){const current=requests.find(r=>r.id===request.record.id&&r.source==='recovery');if(!current||!caps(current).replaceSource||current.sourceReplacement.snapshot!==request.record.sourceReplacement.snapshot)throw Error('Stav případu se změnil. Obnov údaje.');}
   else writeItem(request.item,request.action);
   if(request.action==='approve'&&latest?.reviewSessions?.[request.item.id]?.revision!==request.reviewRevision)throw Error('Posouzení se od otevření potvrzení změnilo. Znovu ověř uložené kontroly.');
@@ -123,6 +126,7 @@ $('confirm').addEventListener('close',async()=>{
   if(request.action==='batch'){await api('/api/approve-batch',{items:request.items.map(x=>({id:x.id,snapshot:x.snapshot,reviewRevision:request.reviewRevisions[x.id]}))});selected.clear()}
   else if(request.action==='keepPaused')await api('/api/node-restores/keep',{name:request.node,confirm:true});
   else if(request.action==='restore')await api('/api/radarr/requests/'+request.record.id+'/restore',{confirm:true});
+  else if(request.action==='installedApprove')await api('/api/recovery/cases/'+request.record.id+'/installed/approve',{snapshot:request.snapshot,confirm:true});
   else if(request.action==='replaceSource')await api('/api/recovery/cases/'+request.record.id+'/replace-source',{snapshot:request.record.sourceReplacement.snapshot,reason});
   else await api(`/api/items/${request.item.id}/${request.action}`,{snapshot:request.item.snapshot,reviewRevision:request.action==='approve'?request.reviewRevision:undefined,acceptDuration:request.acceptDuration===true,reason:['reject','replace'].includes(request.action)?reason:undefined});
   if(request.item)drafts.delete(request.item.id+':'+request.action);
@@ -276,6 +280,16 @@ function detailReview(item,tab){
   if(item.canRecheck)box.append(guardedButton(item,'recheck',item.recheck==='verify'?'Ověřit soubory a začít nové posouzení':'Znovu ověřit soubory',()=>recheckItem(item)));
  }
 }
+// The installed copy of a Recovery case, assessed as it is (#230). The server's view decides what is shown.
+function installedAssessment(r){
+ const holder=el('div','installed-holder'),route='/api/recovery/cases/'+r.id+'/installed';holder.append(el('p','details','Načítám posouzení…'));
+ const show=view=>holder.replaceChildren(installedAssessmentView(view,{
+  save:input=>api(route,input).then(show).catch(error),
+  approve:snapshot=>{pending={record:r,action:'installedApprove',snapshot};confirmSetup('SCHVÁLENÍ NAINSTALOVANÉ KOPIE',r.title,'Schválit kopii, která je teď v knihovně? Posoudil jsi jen tuto kopii, bez porovnání s originálem. Schválení nedokazuje věrnost převodu, jen že je kopie pro tebe přijatelná. Recovery pak spustí běžnou lhůtu úklidu karantény.','Schválit aktuální kopii');$('confirm').showModal();},
+ }));
+ api(route).then(show).catch(e=>{holder.replaceChildren(el('p','failure','Posouzení nelze načíst.'));error(e);});
+ return holder;
+}
 function detailRequest(r,tab){
  const box=$('detailBody'),cl=classifyRecovery(r,Date.now());box.replaceChildren();
  if(tab==='overview'){box.append(el('h3','',cl.label),el('p','',cl.nextStep));if(r.attention)box.append(attentionView(r.attention,action=>runAttentionAction(r,action)));for(const warning of cl.warnings||[])box.append(el('p','alert inline-warning',warning));const progress=recoveryProgress(r);if(progress)box.append(decodeProgressView(progress));const hashProgress=fullHashProgress(r);if(hashProgress)box.append(fullHashProgressView(hashProgress));box.append(detailsFacts([['Poslední potvrzený stav',date(r.statusUpdated||r.updated)],['Původní kopie',r.quarantineRetained?'Zachovaná v karanténě':r.sourceRetained||r.phase==='waiting_source_kept'?'Zůstává v Plexu; vydání vyloučeno z převodů':'Viz aktuální protokol obnovy'],['Další hledání',r.nextSearchAt?date(r.nextSearchAt):'Termín není doložen'],['Další pokus obnovy',r.nextRetryAt?date(r.nextRetryAt):'Termín není doložen']]));if(r.message)box.append(el('p','details',r.message));
@@ -291,6 +305,7 @@ function detailRequest(r,tab){
   const item=latest?.items.find(x=>x.id===r.itemId);box.append(el('h3','','Ověření nové kopie'));
   if(item)box.append(el('p','','Výsledek je v Review a má přesně přiřazené ID.'),button('Posoudit výsledek v Review',()=>openDetail('review',item.id)));
   else box.append(el('p','','Pro tento případ zatím není doložený přiřazený výsledek v Review. Dokončené stažení ani převod nejsou schválením.'));
+  if(!item&&r.attention?.actions?.some(a=>a.id==='assessInstalled'))box.append(installedAssessment(r));
   if(r.replacement)box.append(detailsFacts([['Nové vydání',r.replacement.title||tr('Nedoloženo'),true],['Kvalita',r.replacement.quality||tr('Nedoloženo'),true],['Jazyky',r.replacement.languages?.join(', ')||tr('Nedoloženo'),true]]));
  }else if(tab==='recovery'){
   box.append(el('h3','','Průběh obnovy'),recoveryDetails(r));
@@ -346,7 +361,7 @@ function updateGuards(){
   if(ui.detail.kind==='review'&&changed)reviewWorkspace?.invalidate();else{reviewWorkspace?.refreshGuard();if(ui.detail.kind==='review'){reviewWorkspace?.observe(latest.reviewSessions?.[item.id]);reviewWorkspace?.observePreparation(latest.previews?.[item.id],{authoritative:true})}}
   const guard=caps(item);$('detailGuard').hidden=!guard.writeBlocked&&!changed;$('detailGuard').textContent=tr(changed?'Akce čekají na nové posouzení aktuálního stavu.':guard.reason||'Zapisující akce jsou dočasně zablokované.');
  }
- if(pending){let enabled=!actionInFlight;if(pending.action==='batch')enabled&&=pending.items.every(x=>{const current=latest.items.find(i=>i.id===x.id&&i.snapshot===x.snapshot);return current&&caps(current).approveBatch&&latest.reviewSessions?.[x.id]?.revision===pending.reviewRevisions[x.id]});else if(pending.action==='restore'){const current=requests.find(r=>r.id===pending.record.id&&r.source===pending.record.source);enabled&&=!!current&&caps(current).restore;}else if(pending.action==='keepPaused'){enabled&&=!!latest.pendingRestores?.some(n=>n.name===pending.node);}else{const current=latest.items.find(x=>x.id===pending.item.id&&x.snapshot===pending.item.snapshot);enabled&&=!!current&&caps(current)[pending.action]&&(pending.action!=='approve'||latest.reviewSessions?.[pending.item.id]?.revision===pending.reviewRevision)}$('commit').disabled=!enabled;}
+ if(pending){let enabled=!actionInFlight;if(pending.action==='batch')enabled&&=pending.items.every(x=>{const current=latest.items.find(i=>i.id===x.id&&i.snapshot===x.snapshot);return current&&caps(current).approveBatch&&latest.reviewSessions?.[x.id]?.revision===pending.reviewRevisions[x.id]});else if(pending.action==='restore'){const current=requests.find(r=>r.id===pending.record.id&&r.source===pending.record.source);enabled&&=!!current&&caps(current).restore;}else if(pending.action==='keepPaused'){enabled&&=!!latest.pendingRestores?.some(n=>n.name===pending.node);}else if(pending.action==='installedApprove'){const current=requests.find(r=>r.id===pending.record.id&&r.source==='recovery');enabled&&=!!current?.attention?.actions?.some(a=>a.id==='assessInstalled');}else{const current=latest.items.find(x=>x.id===pending.item.id&&x.snapshot===pending.item.snapshot);enabled&&=!!current&&caps(current)[pending.action]&&(pending.action!=='approve'||latest.reviewSessions?.[pending.item.id]?.revision===pending.reviewRevision)}$('commit').disabled=!enabled;}
 }
 function render(d){
  const priorSessions=latest?.reviewSessions||{};d.reviewSessions||={};for(const [id,record]of Object.entries(priorSessions)){const current=d.items.find(x=>x.id===id);if(current?.snapshot===record.snapshot&&record.revision>(d.reviewSessions[id]?.revision??-1))d.reviewSessions[id]=record}

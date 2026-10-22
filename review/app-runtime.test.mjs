@@ -375,6 +375,39 @@ if(typeof vm.SourceTextModule!=='function'){
   const sent=f.calls.slice(before).find(c=>c.route==='/api/recovery/refresh');assert.equal(sent.method,'POST');assert.deepEqual(sent.body,{keys:['recovery:'+id]});
   assert.equal(f.calls.slice(before).some(c=>c.method==='POST'&&c.route!=='/api/recovery/refresh'),false,'refresh only reads');
  });
+ for(const language of ['cs','en'])test('an installed result is assessed in the case detail with the disclosure, a saved complete assessment and its own confirmation in '+language,async()=>{
+  const id='f'.repeat(24),runtime={present:true,version:1,mode:'repair',state:'running',reason:null},snapshot='s'.repeat(64);
+  const attention={reason:'awaiting-review',recommended:'assessInstalled',blockers:['restore-over-installed'],location:{library:{status:'verified',detail:'changed'}},actions:[{id:'refresh',changes:'information'},{id:'assessInstalled',changes:'nothing'}]};
+  const record={id,source:'recovery',title:'Synthetic installed film',phase:'replacement_imported',tdarrStatus:'Transcode success',canRestore:true,statusUpdated:new Date().toISOString(),attention};
+  const complete={image:true,audio:true,syncStart:true,syncMiddle:true,syncEnd:true,hdr:true};
+  const routes={['/api/recovery/cases/'+id+'/installed']:({body})=>({data:{eligible:true,blockers:[],snapshot,requirements:{hdr:true},draft:body?{...body,complete:Object.values(body.checks).every(Boolean)&&!!body.device.trim()&&!!body.note.trim()}:null}}),
+   ['/api/recovery/cases/'+id+'/installed/approve']:{data:{ok:true,approvedAt:new Date().toISOString()}}};
+  const f=await appFixture(language,{routes}),dom=f.document;
+  await f.update({requests:[record],recoveryRuntime:runtime});await f.hash('#recovery?filter=attention');
+  assert.deepEqual(dom.getElementById('recoveryList').querySelectorAll('[data-attention-action]').map(n=>n.dataset.attentionAction),['assessInstalled']);
+  await dom.getElementById('recoveryList').querySelector('[data-attention-action="assessInstalled"]').emit('click');for(let i=0;i<8;i++)await flush();
+  const body=dom.getElementById('detailBody');
+  assert.equal(dom.getElementById('filmDetail').open,true);
+  assert.match(body.textContent,language==='en'?/You are assessing only the copy that is in the library now/:/Posuzuješ jen kopii, která je teď v knihovně/);
+  assert.match(body.textContent,language==='en'?/does not prove that the transcode is faithful to the original/:/nedokazuje, že převod je věrný originálu/);
+  assert.match(body.textContent,language==='en'?/Opening or playing it confirms nothing/:/Otevření ani přehrání nic nepotvrzuje/);
+  assert.equal(body.querySelector('[data-attention-action="restore"]'),null,'restore is never offered over the installed copy');
+  const approve=()=>body.querySelector('[data-installed="approve"]');
+  assert.equal(approve().disabled,true,'approval needs a saved complete assessment');
+  assert.deepEqual(body.querySelectorAll('input[type=checkbox]').map(n=>n.dataset.check),['image','audio','syncStart','syncMiddle','syncEnd','hdr'],'HDR asks for its own confirmation');
+  assert.equal(body.querySelectorAll('input[type=checkbox]').some(n=>n.checked),false,'opening the assessment ticks nothing');
+  dom.getElementById('installedDevice').value='Living room TV';for(const box of body.querySelectorAll('input[type=checkbox]'))box.checked=true;dom.getElementById('installedNote').value='Watched start, middle and end.';
+  await body.querySelector('[data-installed="save"]').emit('click');for(let i=0;i<8;i++)await flush();
+  const saved=f.calls.find(c=>c.method==='POST'&&c.route==='/api/recovery/cases/'+id+'/installed');assert.deepEqual(saved.body,{snapshot,device:'Living room TV',note:'Watched start, middle and end.',checks:complete});
+  assert.equal(approve().disabled,false);
+  dom.getElementById('installedNote').value='Changed';await dom.getElementById('installedNote').emit('input');assert.equal(approve().disabled,true,'an unsaved edit disables approval');
+  dom.getElementById('installedNote').value='Watched start, middle and end.';await dom.getElementById('installedNote').emit('input');assert.equal(approve().disabled,false);
+  await approve().emit('click');
+  assert.equal(dom.getElementById('confirm').open,true);assert.match(dom.getElementById('dialogText').textContent,language==='en'?/without comparing it with the original/:/bez porovnání s originálem/);
+  assert.equal(f.calls.some(c=>c.route.endsWith('/installed/approve')),false,'opening the dialog changes nothing');
+  dom.getElementById('confirm').returnValue='confirm';await dom.getElementById('confirm').close();for(let i=0;i<8;i++)await flush();
+  assert.deepEqual(f.calls.filter(c=>c.route.endsWith('/installed/approve')).map(c=>c.body),[{snapshot,confirm:true}]);
+ });
  test('Verify the status of all cases asks the server for a read-only refresh of the whole queue',async()=>{
   const runtime={present:true,version:1,mode:'repair',state:'running',reason:null};
   const f=await appFixture('en',{routes:{'/api/recovery/refresh':{data:{requests:[],recoveryConfig:null,recoveryRuntime:runtime}}}}),dom=f.document;

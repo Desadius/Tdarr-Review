@@ -35,3 +35,24 @@ test('characterization: an installed transcoded result is attention without an a
  assert.equal(a.recommended,'refresh');
  assert.ok(a.blockers.includes('review-result-missing'));
 });
+
+test('with the installed result eligible, it is the recommended action and restore is never offered',async t=>{
+ const f=await installed(t);let asked=null;
+ const attention=createRecoveryAttention({data:f.data,getConfig:()=>({libraryId:'library'}),getItems:()=>({}),now:()=>now,tdarr:async()=>null,getConnection:async()=>{throw Error('none')},
+  isBusy:()=>false,installed:{eligibility:async(id,options)=>{asked=[id,options];return {eligible:true,blockers:[]};}}});
+ const overview={requests:[{...ATTENTION_PATHS['replacement transcoded, awaiting review'],radarrMovieUrl:'http://radarr.invalid/movie/x',canRestore:true}]};
+ await attention.attach(overview);const a=overview.requests[0].attention;
+ assert.deepEqual(asked,[f.c.id,{busy:false}]);
+ assert.deepEqual(a.actions.map(x=>x.id),['refresh','openRadarr','assessInstalled']);
+ assert.equal(a.recommended,'assessInstalled');
+ assert.deepEqual(a.blockers,['restore-over-installed']);
+});
+test('an ineligible installed result names why, and a missing installed check changes nothing',async t=>{
+ const f=await installed(t);
+ const make=installed=>createRecoveryAttention({data:f.data,getConfig:()=>({libraryId:'library'}),getItems:()=>({}),now:()=>now,tdarr:async()=>null,getConnection:async()=>{throw Error('none')},installed});
+ const overview={requests:[{...ATTENTION_PATHS['replacement transcoded, awaiting review']}]};
+ await make({eligibility:async()=>({eligible:false,blockers:['installed-tdarr-not-success']})}).attach(overview);
+ assert.deepEqual(overview.requests[0].attention.blockers,['review-result-missing','installed-tdarr-not-success']);
+ await make({eligibility:async()=>{throw Error('broken')}}).attach(overview);
+ assert.deepEqual(overview.requests[0].attention.blockers,['review-result-missing','installed-unverified']);
+});
