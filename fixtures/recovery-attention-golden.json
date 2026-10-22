@@ -1,0 +1,128 @@
+{
+ "binding failure, original confirmed": {
+  "category": "attention",
+  "label": "Vadný originál bez vazby na vydání",
+  "nextStep": "Historie Radarru neobsahuje import tohoto souboru. Vada originálu je potvrzená dvěma kontrolami; originál zůstává beze změny v knihovně.",
+  "warnings": []
+ },
+ "binding failure, original not confirmed": {
+  "category": "attention",
+  "label": "Chybí vazba na vydání v Radarru",
+  "nextStep": "Historie Radarru neobsahuje import tohoto souboru.",
+  "warnings": []
+ },
+ "binding failure with another copy offered": {
+  "category": "attention",
+  "label": "Vadný originál bez vazby na vydání",
+  "nextStep": "Historie Radarru neobsahuje import tohoto souboru. Vada originálu je potvrzená dvěma kontrolami; originál zůstává beze změny v knihovně. Jinou kopii můžeš výslovně vyžádat přes Radarr na kartě Obnova.",
+  "warnings": []
+ },
+ "manual recovery case": {
+  "category": "attention",
+  "label": "Obnova vyžaduje kontrolu",
+  "nextStep": "Otevři detail a ověř zachované kopie před další akcí.",
+  "warnings": []
+ },
+ "manual Radarr request": {
+  "category": "attention",
+  "label": "Obnova vyžaduje kontrolu",
+  "nextStep": "Otevři detail a ověř zachované kopie před další akcí.",
+  "warnings": []
+ },
+ "original check did not confirm a fault": {
+  "category": "attention",
+  "label": "Kontrola originálu nepotvrdila poškození",
+  "nextStep": "Prověř provozní nebo nejednoznačnou chybu v detailu. Náhrada se automaticky nestahuje.",
+  "warnings": []
+ },
+ "fault confirmed in Verify": {
+  "category": "attention",
+  "label": "Chyba potvrzena; změny jsou vypnuté",
+  "nextStep": "Zkontroluj nastavení Recovery před povolením obnovy.",
+  "warnings": []
+ },
+ "replacement transcoded, awaiting review": {
+  "category": "attention",
+  "label": "Převod dokončen; čeká na posouzení",
+  "nextStep": "Ověř výsledek v Review před schválením.",
+  "warnings": []
+ },
+ "replacement transcode error": {
+  "category": "attention",
+  "label": "Převod náhrady skončil chybou",
+  "nextStep": "Zkontroluj detail chyby a zachované kopie.",
+  "warnings": []
+ },
+ "replacement skipped as not required": {
+  "category": "attention",
+  "label": "Tdarr náhradu vynechal",
+  "nextStep": "Posuď důvod vynechání a funkčnost náhrady.",
+  "warnings": []
+ },
+ "replacement on hold in Tdarr": {
+  "category": "attention",
+  "label": "Náhrada je pozastavená v Tdarru",
+  "nextStep": "Zkontroluj důvod pozastavení a navazující případ Recovery.",
+  "warnings": []
+ },
+ "follow-up case completed under a parent": {
+  "category": "attention",
+  "label": "Kontrola náhrady: Kontrola originálu bez chyby",
+  "nextStep": "Otevři navazující případ; dokončení diagnostiky není schválením náhrady.",
+  "warnings": []
+ },
+ "original outside the library for over 24 hours": {
+  "category": "attention",
+  "label": "Originál je déle než 24 hodin mimo knihovnu",
+  "nextStep": "Pokud stahování v Radarru visí, odstraň ho v Radarru; Recovery při příští kontrole vrátí originál do knihovny.",
+  "warnings": []
+ },
+ "search failed": {
+  "category": "attention",
+  "label": "Hledání nebo stažení není doložené",
+  "nextStep": "Zkontroluj upozornění v detailu případu.",
+  "warnings": [
+   "Hledání v Radarru selhalo nebo bylo zrušené."
+  ]
+ },
+ "download queue failed": {
+  "category": "attention",
+  "label": "Radarr stahuje nebo importuje náhradu",
+  "nextStep": "Zkontroluj upozornění v detailu případu.",
+  "warnings": [
+   "Fronta Radarru vyžaduje kontrolu."
+  ]
+ },
+ "import blocked": {
+  "category": "attention",
+  "label": "Staženo; Radarr blokuje import",
+  "nextStep": "Otevři frontu Radarru a přiřaď stažený soubor správnému filmu přes ruční import. Nové stahování není potřeba.",
+  "warnings": [
+   "Fronta Radarru vyžaduje kontrolu."
+  ]
+ },
+ "case error": {
+  "category": "attention",
+  "label": "Čeká na dostupnou náhradu",
+  "nextStep": "Zkontroluj upozornění v detailu případu.",
+  "warnings": [
+   "Replacement file size does not match Radarr"
+  ]
+ },
+ "retention error": {
+  "category": "attention",
+  "label": "Čeká ve frontě Tdarru",
+  "nextStep": "Zkontroluj upozornění v detailu případu.",
+  "warnings": [
+   "Retention identity changed"
+  ]
+ },
+ "stale status, not attention": {
+  "category": "unverified",
+  "label": "Čeká na dostupnou náhradu",
+  "nextStep": "Obnov seznam. Pokud stav zůstane neověřený, správce musí zkontrolovat propojení Recovery a Tdarru; převod ani nové stažení nespouštěj naslepo.",
+  "warnings": [
+   "Stav je starší než 12 minut; obnov aktuální údaje."
+  ]
+ }
+}
