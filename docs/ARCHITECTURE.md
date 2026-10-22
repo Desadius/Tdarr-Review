@@ -191,6 +191,26 @@ Review reads three Recovery files and never writes them: the runtime state above
 
 The library and quarantine states compare the files recorded in Recovery's case state with their current file identity. A Review result is linked only when its recorded original identity is the file in the library now. Recovery's Tdarr and Radarr reports count as verified only while its status is fresh. `POST /api/recovery/refresh` (all attention cases, or the given case keys) reads the Tdarr row and the Radarr queue again; a failed read is `unverified`. Nothing here writes: no Recovery file, Tdarr, Radarr, media file or retention deadline changes. The browser renders buttons only from `actions`, and the existing routes revalidate each mutating action. A parent whose verified follow-up still has unresolved work gets `supersededBy` and is classified as done; the follow-up carries the attention.
 
+### Tdarr handoff of an imported replacement
+
+`review/tdarr-handoff.mjs` (#231) reads the Tdarr row of a `replacement_imported` case's replacement. The Tdarr path is the case file's source root plus `replacementRelative`. When no Tdarr state is reported and the row is verifiably missing, the attention model sets `tdarrMissing`, and `classifyRecovery` makes the case attention (`tdarr-missing`).
+
+The handoff is eligible only when all of these hold:
+- the case is under Review's `mediaRoot`;
+- the library ID is set and Recovery's runtime is readable and not `verify`;
+- the file is a plain single-link file with the recorded identity and was last modified more than 10 minutes ago;
+- the row is missing, with no job since the import and no busy worker;
+- no mutation is running.
+
+A Hold, protected (`preservesHold`) or not, is a blocker; Review never queues or releases a Hold.
+
+`POST /api/recovery/cases/<id>/handoff` runs under the `replace` busy policy and needs `confirm: true` and the view's snapshot:
+1. it writes the intent to `data/recovery-handoffs/<case>.json` with a directory fsync;
+2. it calls `rescan-file` for that exact file;
+3. only a fresh row read confirms the handoff and completes the journal.
+
+An intent without confirmation is `uncertain`, and a retry needs `acknowledgeUncertain: true`. A `manual` case after a failed Recovery handoff gets the `handoff-manual` blocker only, because Recovery runs retention only for `replacement_imported` cases.
+
 ### Assessment of an installed result
 
 `review/installed-assessment.mjs` handles a `replacement_imported` case without approval evidence whose transcoded result already replaced the imported replacement in the library (#230). Eligibility is computed from fresh reads:

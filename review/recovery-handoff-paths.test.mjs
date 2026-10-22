@@ -14,3 +14,10 @@ test('a handoff Recovery could not finish is a manual case error, and an open ha
  assert.deepEqual([classifyRecovery({...base,phase:'manual',error:'Invalid Tdarr file binding'},now).category,classifyRecovery({...base,phase:'manual',error:'Invalid Tdarr file binding'},now).reason],['attention','case-error']);
  assert.equal(classifyRecovery({...base,phase:'replacement_queue_intent'},now).category,'running');
 });
+
+test('a replacement whose Tdarr row the server found missing needs attention, unless approval already exists',()=>{
+ const c=classifyRecovery({...base,phase:'replacement_imported',tdarrMissing:true},now);
+ assert.deepEqual([c.category,c.reason,c.label],['attention','tdarr-missing','Náhrada se do Tdarru nedostala']);
+ assert.equal(classifyRecovery({...base,phase:'replacement_imported',tdarrMissing:true,cleanup:{approvedAt:at(1000)}},now).category,'done');
+ assert.equal(classifyRecovery({...base,phase:'manual',tdarrMissing:true},now).reason,'manual','only an imported replacement');
+});
