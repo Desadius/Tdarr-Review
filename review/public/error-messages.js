@@ -76,6 +76,7 @@ export const ERROR_MESSAGES=Object.freeze({
  batch_item_changed:Object.freeze({cs:"Některý vybraný film se změnil nebo ho nelze schválit. Obnov přehled.",en:"A selected movie has changed or cannot be approved. Refresh the overview."}),
  batch_size:Object.freeze({cs:"Vyber 1 až 100 filmů.",en:"Select 1 to 100 movies."}),
  batch_duplicate:Object.freeze({cs:"Stejný film je v dávce vícekrát.",en:"The batch contains the same movie more than once."}),
+ refresh_invalid:Object.freeze({cs:"Seznam případů k obnovení stavu je neplatný.",en:"The list of cases to refresh is invalid."}),
  restore_confirm_required:Object.freeze({cs:"Potvrď obnovení zachovaných kopií.",en:"Confirm restoration of the retained copies."}),
  sample_mode_invalid:Object.freeze({cs:"Neplatný typ ukázky.",en:"Invalid sample type."}),
  sample_profile_invalid:Object.freeze({cs:"Neplatný profil videonáhledu.",en:"Invalid video preview profile."}),

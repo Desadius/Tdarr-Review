@@ -188,23 +188,24 @@ export function classifyRecovery(record, now = Date.now()) {
   if (stale) warnings.push('Stav je starší než 12 minut; obnov aktuální údaje.');
   if (unknownTime) warnings.push('Čas posledního ověření stavu není dostupný.');
 
-  let category = 'unverified', label = 'Stav nelze ověřit', nextStep = 'Obnov stav a zkontroluj detail případu.', unknown = false;
+  // reason: a stable code for the path that set the label; the server's attention model keys on it (#229).
+  let category = 'unverified', label = 'Stav nelze ověřit', nextStep = 'Obnov stav a zkontroluj detail případu.', unknown = false, reason = 'unverified';
   // deleteAfter is only published after the backend verified approval evidence.
   const approvalTime = finiteTime(r.approvedAt || r.cleanup?.approvedAt);
   const deletionTime = finiteTime(r.deleteAfter || r.cleanup?.deleteAfter);
   const approvalEvidence = (approvalTime !== null && approvalTime <= clock && r.approvalVerified !== false) || deletionTime !== null;
   if (r.cleanupComplete === true || r.cleanup?.complete === true) {
-    category = 'done'; label = 'Náhrada schválena; karanténa uklizena'; nextStep = 'Obnova je dokončená.';
+    category = 'done'; label = 'Náhrada schválena; karanténa uklizena'; nextStep = 'Obnova je dokončená.'; reason = 'complete';
   } else if (approvalEvidence) {
-    category = 'done'; label = 'Náhrada schválena'; nextStep = 'Karanténa zůstává do termínu automatického úklidu.';
+    category = 'done'; label = 'Náhrada schválena'; nextStep = 'Karanténa zůstává do termínu automatického úklidu.'; reason = 'approved';
   } else if (r.phase === 'restored') {
-    category = 'done'; label = 'Obě kopie byly vráceny'; nextStep = 'Vrácený převod před případným schválením znovu ověř v Review.';
+    category = 'done'; reason = 'restored'; label = 'Obě kopie byly vráceny'; nextStep = 'Vrácený převod před případným schválením znovu ověř v Review.';
   } else if (r.phase === 'manual' && r.source === 'recovery' && BINDING_FAILURES[r.bindingFailure]) {
     // Confirmed faulty original whose exact release Radarr's history cannot identify (#153).
-    category = 'attention'; label = r.sourceConfirmed === true ? 'Vadný originál bez vazby na vydání' : 'Chybí vazba na vydání v Radarru';
+    category = 'attention'; reason = 'binding-failure'; label = r.sourceConfirmed === true ? 'Vadný originál bez vazby na vydání' : 'Chybí vazba na vydání v Radarru';
     nextStep = BINDING_FAILURES[r.bindingFailure] + (r.sourceConfirmed === true ? ' Vada originálu je potvrzená dvěma kontrolami; originál zůstává beze změny v knihovně.' + (r.sourceReplacement ? ' Jinou kopii můžeš výslovně vyžádat přes Radarr na kartě Obnova.' : '') : '');
   } else if (r.phase === 'manual') {
-    category = 'attention'; label = 'Obnova vyžaduje kontrolu'; nextStep = 'Otevři detail a ověř zachované kopie před další akcí.';
+    category = 'attention'; reason = 'manual'; label = 'Obnova vyžaduje kontrolu'; nextStep = 'Otevři detail a ověř zachované kopie před další akcí.';
   } else if (r.phase === 'deferred_limit') {
     category = 'waiting'; label = 'Čeká na denní limit obnov'; nextStep = 'Obnova pokračuje po uvolnění limitu.';
   } else if (r.phase === 'deferred_cooldown') {
@@ -213,10 +214,10 @@ export function classifyRecovery(record, now = Date.now()) {
     if (r.originalCheckKind === 'healthy') {
       category = 'done'; label = 'Kontrola originálu bez chyby'; nextStep = 'Celý originál se dekódoval bez chyby. Jde o dokončení diagnostiky; výsledek převodu se schvaluje zvlášť v Review.';
     } else {
-      category = 'attention'; label = 'Kontrola originálu nepotvrdila poškození'; nextStep = 'Prověř provozní nebo nejednoznačnou chybu v detailu. Náhrada se automaticky nestahuje.';
+      category = 'attention'; reason = 'fault-not-confirmed'; label = 'Kontrola originálu nepotvrdila poškození'; nextStep = 'Prověř provozní nebo nejednoznačnou chybu v detailu. Náhrada se automaticky nestahuje.';
     }
   } else if (r.phase === 'dry_run') {
-    category = 'attention'; label = 'Chyba potvrzena; změny jsou vypnuté'; nextStep = 'Zkontroluj nastavení Recovery před povolením obnovy.';
+    category = 'attention'; reason = 'verify-mode'; label = 'Chyba potvrzena; změny jsou vypnuté'; nextStep = 'Zkontroluj nastavení Recovery před povolením obnovy.';
   } else if (r.phase === 'waiting_source_kept') {
     category = 'waiting'; label = 'Náhrada zatím nenalezena'; nextStep = 'Film zůstává v knihovně; vadné vydání se znovu nepřevádí.';
   } else if (r.phase === 'replacement_imported' || r.phase === 'imported') {
@@ -225,7 +226,7 @@ export function classifyRecovery(record, now = Date.now()) {
       // A later case concerns this exact replacement, not the preserved parent.
       // Do not inherit its completion/approval or use the parent's DB freshness.
       const next=classifyRecovery({source:'recovery',phase:followup.phase,statusUpdated:followup.statusUpdated,originalCheckKind:followup.originalCheckKind,verifyPausedStep:followup.verifyPausedStep,nextSearchAt:followup.nextSearchAt,tdarrStatus:followup.tdarrStatus,error:followup.hasError?'Navazující obnova vyžaduje kontrolu.':null},clock);
-      category=next.category==='done'?'attention':next.category;
+      category=next.category==='done'?'attention':next.category;reason=next.category==='done'?'follow-up-complete':next.reason;
       label='Kontrola náhrady: '+next.label;
       nextStep=next.category==='done'?'Otevři navazující případ; dokončení diagnostiky není schválením náhrady.':next.nextStep;
       // The displayed activity belongs to the child. Retain real parent
@@ -239,13 +240,13 @@ export function classifyRecovery(record, now = Date.now()) {
     } else if (tdarrStatus === 'transcoding') {
       category = 'running'; label = 'Tdarr převádí náhradu'; nextStep = 'Výsledek se objeví v Review po dokončení převodu.';
     } else if (tdarrStatus === 'transcode success') {
-      category = 'attention'; label = 'Převod dokončen; čeká na posouzení'; nextStep = 'Ověř výsledek v Review před schválením.';
+      category = 'attention'; reason = 'awaiting-review'; label = 'Převod dokončen; čeká na posouzení'; nextStep = 'Ověř výsledek v Review před schválením.';
     } else if (tdarrStatus === 'transcode error') {
-      category = 'attention'; label = 'Převod náhrady skončil chybou'; nextStep = 'Zkontroluj detail chyby a zachované kopie.';
+      category = 'attention'; reason = 'transcode-error'; label = 'Převod náhrady skončil chybou'; nextStep = 'Zkontroluj detail chyby a zachované kopie.';
     } else if (tdarrStatus === 'not required') {
-      category = 'attention'; label = 'Tdarr náhradu vynechal'; nextStep = 'Posuď důvod vynechání a funkčnost náhrady.';
+      category = 'attention'; reason = 'transcode-skipped'; label = 'Tdarr náhradu vynechal'; nextStep = 'Posuď důvod vynechání a funkčnost náhrady.';
     } else if (tdarrStatus === 'hold') {
-      category = 'attention'; label = 'Náhrada je pozastavená v Tdarru'; nextStep = 'Zkontroluj důvod pozastavení a navazující případ Recovery.';
+      category = 'attention'; reason = 'tdarr-hold'; label = 'Náhrada je pozastavená v Tdarru'; nextStep = 'Zkontroluj důvod pozastavení a navazující případ Recovery.';
     } else {
       unknown = true; label = 'Náhrada předána; stav Tdarru není doložen'; nextStep = 'Obnov stav a ověř, kde se náhrada nachází.';
     }
@@ -265,14 +266,18 @@ export function classifyRecovery(record, now = Date.now()) {
     else unknown = true;
   }
   if(verifyPaused(r)){category='waiting';label='Pozastaveno režimem Verify';nextStep='Po přepnutí na Repair Recovery znovu ověří aktuální stav a automaticky pokračuje.';unknown=false;}
-  if(verifyPaused(r)&&!stale&&!unknownTime&&originalOutsideTooLong(r,clock)){category='attention';label='Originál je déle než 24 hodin mimo knihovnu';nextStep='Pokud stahování v Radarru visí, odstraň ho v Radarru; Recovery při příští kontrole vrátí originál do knihovny.';}
+  if(verifyPaused(r)&&!stale&&!unknownTime&&originalOutsideTooLong(r,clock)){category='attention';reason='original-outside-library';label='Originál je déle než 24 hodin mimo knihovnu';nextStep='Pokud stahování v Radarru visí, odstraň ho v Radarru; Recovery při příští kontrole vrátí originál do knihovny.';}
   if (warnings.some(w => w !== 'Stav je starší než 12 minut; obnov aktuální údaje.' && w !== 'Čas posledního ověření stavu není dostupný.')) {
     category = 'attention'; nextStep = 'Zkontroluj upozornění v detailu případu.';
+    reason = blockedImport ? 'import-blocked' : failedQueue ? 'queue-failed' : failedSearch ? 'search-failed' : r.retentionError ? 'retention-error' : 'case-error';
     if(blockedImport){label='Staženo; Radarr blokuje import';nextStep='Otevři frontu Radarru a přiřaď stažený soubor správnému filmu přes ruční import. Nové stahování není potřeba.';}
+  } else if (itemId(r.supersededBy) && r.supersededBy !== r.id) {
+    // The server found a verified follow-up case that carries the remaining work (#229); this parent stays in history.
+    category = 'done'; reason = 'superseded'; label = 'Pokračuje navazujícím případem'; nextStep = 'Otevři navazující případ. Tento případ zůstává v historii.';
   } else if ((stale || unknownTime) && !['done', 'attention'].includes(category)) {
     category = 'unverified'; nextStep = 'Obnov seznam. Pokud stav zůstane neověřený, správce musí zkontrolovat propojení Recovery a Tdarru; převod ani nové stažení nespouštěj naslepo.';
   }
-  return {category, label, nextStep, stale, unknown: unknown || unknownTime, warnings: [...new Set(warnings)], confirmedAudioFault: r.audioFaultConfirmed === true || r.phase === 'waiting_source_kept'};
+  return {category, label, nextStep, reason, stale, unknown: unknown || unknownTime, warnings: [...new Set(warnings)], confirmedAudioFault: r.audioFaultConfirmed === true || r.phase === 'waiting_source_kept'};
 }
 
 /** Display only measured progress. Completion of FFmpeg's progress stream is

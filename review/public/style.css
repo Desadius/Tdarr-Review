@@ -63,3 +63,7 @@ dialog{padding:24px;max-height:92vh;overflow:auto;border-radius:16px;border:1px 
 .workflow-panel .workflow-checks,.workflow-panel .workflow-field,.workflow-panel .workflow-actions{max-width:none}.workflow-panel .workflow-checks{margin:8px 0}.workflow-panel .workflow-actions{padding-top:12px;margin-top:12px}
 .review-workflow[data-panel=closed] .workflow-panel,.review-workflow[data-focus=on] .workflow-panel,.review-workflow[data-focus=on] .preview-preparation,.review-workflow[data-focus=on] .workflow-main>p.details{display:none}
 .review-workflow[data-focus=on] .workflow-tools{--kino-media-h:max(240px,calc(100dvh - 380px))}}
+/* Needs attention: server-listed actions with what each changes (#229). */
+.attention-actions{display:grid;gap:.5rem;margin:.5rem 0}
+.attention-action{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem}
+.attention-blockers{margin:.25rem 0 .75rem 1.25rem}
