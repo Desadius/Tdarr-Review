@@ -166,6 +166,24 @@ Each case under **Needs attention** (**Vyžaduje zásah**) says what happened, w
 - **What you can do** shows the recommended action first, on the card and in the first tab of the detail, then the other valid actions. Each says what it changes: **Refresh status** only reads Radarr, Tdarr and the library again; **Open the film in Radarr** and **Assess the result in Review** change nothing; **Request another copy through Radarr** starts work and **Return the original and transcode from quarantine** moves files, each after its own confirmation. The server checks every action again when you confirm it.
 - **What blocks the next step** names what an administrator has to do, or why Review offers no action for this case yet.
 
+### Assess an installed copy
+
+Sometimes the transcoded result is already in the library, for example because it was approved before Review kept approval evidence, or because it was replaced outside Review. There is no Review pair to compare, so the quarantine never enters retention. When Review can verify all of the following, the case offers **Assess the installed copy** (**Posoudit nainstalovanou kopii**):
+
+- Recovery imported the replacement and has no approval for it yet;
+- the library holds one plain file in its place that is not the imported replacement itself;
+- Tdarr reports *Transcode success* for that file and its history has a successful transcode of it after the import;
+- no Review result waits for it and no other action is running.
+
+If anything cannot be read, the action is not offered and the case says what blocks it.
+
+The **Comparison** tab of the case then shows the assessment:
+- **Only the copy now in the library is assessed.** The full original is not available for comparison: the replacement's source is gone, and the faulty original in quarantine is not used for comparison.
+- **Approval does not prove that the transcode is faithful to the original,** only that the copy is acceptable to you.
+- **Play the file in your own player.** Name the device, confirm the picture, the sound and the sync at the start, middle and end (and HDR for an HDR file), write a note and save. Opening or playing the file confirms nothing.
+
+**Approve the current copy** (**Schválit aktuální kopii**) is available only for a saved, complete assessment, and asks for its own confirmation. The server then checks every condition again and writes the same approval evidence a Review approval writes. Recovery starts the usual quarantine retention at its next check. Nothing is transcoded, downloaded, copied or moved. If the file in the library changes, the saved assessment no longer applies. Such a case never offers to return the obsolete original over the current copy. If you do not accept the copy, leave the case open.
+
 **Verify the status of all cases** (**Ověřit stav všech případů**) refreshes every case that needs attention the same read-only way. **Refresh list** only reloads the list. Neither changes a file, Tdarr, Radarr or a quarantine deadline.
 
 A case whose remaining work continues in a verified follow-up case is listed once, as the follow-up; the earlier case moves to **Done** with a link. It returns to **Needs attention** if that link no longer holds.

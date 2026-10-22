@@ -191,6 +191,25 @@ Review reads three Recovery files and never writes them: the runtime state above
 
 The library and quarantine states compare the files recorded in Recovery's case state with their current file identity. A Review result is linked only when its recorded original identity is the file in the library now. Recovery's Tdarr and Radarr reports count as verified only while its status is fresh. `POST /api/recovery/refresh` (all attention cases, or the given case keys) reads the Tdarr row and the Radarr queue again; a failed read is `unverified`. Nothing here writes: no Recovery file, Tdarr, Radarr, media file or retention deadline changes. The browser renders buttons only from `actions`, and the existing routes revalidate each mutating action. A parent whose verified follow-up still has unresolved work gets `supersededBy` and is classified as done; the follow-up carries the attention.
 
+### Assessment of an installed result
+
+`review/installed-assessment.mjs` handles a `replacement_imported` case without approval evidence whose transcoded result already replaced the imported replacement in the library (#230). Eligibility is computed from fresh reads:
+- the case in Recovery's `state.json`, under Review's own `mediaRoot`;
+- no evidence file (`approvalEvidencePath`);
+- one plain, single-link file at the replacement path or with the same name and another video extension, whose identity differs from the replacement's;
+- the Tdarr row of that file in `Transcode success`;
+- a successful `jobsjsondb` job for it that ended after the replacement's recorded modification and change times;
+- no Review item for the same path, and no running mutation.
+
+Any read failure is `installed-unverified`. The attention model offers `assessInstalled` and then never `restore`.
+
+The assessment is Review-owned:
+- the draft lives in `data/recovery-assessments/<case>.json` (device, explicit boolean checks, note), bound to a token of the current file identity; a changed file voids it;
+- approval (`POST /api/recovery/cases/<id>/installed/approve`, `confirm: true`, the `replace` busy policy) re-checks eligibility and completeness (the device and HDR rules of `review/public/review-rules.js`);
+- it then calls `publishApproval` keyed by the imported replacement, with the current file as the installed copy, and records `installed-approval` in the decision audit.
+
+Recovery's existing `retainCase` then sets the deadline. Review never writes Recovery's files.
+
 ## Shared lifecycle
 
 Recovery atomically publishes a versioned, allowlisted status file. It includes deferred limits, verification, quarantine, release exclusion, search/download, import and the replacement's Tdarr database state. It does not publish keys or unrestricted quarantine paths.

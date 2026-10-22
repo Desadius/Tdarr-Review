@@ -16,7 +16,7 @@ export const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=
 export async function reviewFixture({pauses=false,recovery=false,clock=false,nodesVisible=!pauses,beforeStart,supervisor=false,env={}}={}){
  const harness=await serverHarness(),{root}=harness;
  const data=path.join(root,'data'),media=path.join(root,'media'),review=path.join(root,'review');
- const gates=[],calls=[],changes=[],nodes={fixture:{_id:'fixture',nodeName:'fixture-node',nodePaused:false,workers:{}}};
+ const gates=[],calls=[],changes=[],tdarrRows=new Map(),nodes={fixture:{_id:'fixture',nodeName:'fixture-node',nodePaused:false,workers:{}}};
  let cookie,base=harness.base,addFilm,probeAdjust=null;
  function hold(route,predicate=()=>true){
   const entered=deferred(),released=deferred(),gate={route,predicate,entered:entered.promise,release:released.resolve};
@@ -31,6 +31,8 @@ export async function reviewFixture({pauses=false,recovery=false,clock=false,nod
    if(req.url==='/api/v2/get-nodes')output=nodesVisible?nodes:{};
    else if(req.url==='/api/v2/update-node'){const update=input.data;nodes.fixture.nodePaused=update.nodeUpdates.nodePaused;changes.push(update.nodeUpdates.nodePaused);res.end('OK');return}
    else if(req.url==='/api/v2/rescan-file'){res.end('OK');return}
+   // Tdarr file rows by path, only read (getById); set by tests through tdarrRows.
+   else if(req.url==='/api/v2/cruddb'&&input?.data?.mode==='getById'||req.url==='/api/v2/cruddb'&&input?.mode==='getById')output=tdarrRows.get(input?.data?.docID??input?.docID)??null;
    else if(req.url==='/api/v3/system/status')output={version:'synthetic'};
    else if(req.url==='/api/v3/movie')output=[{path:'/fixture-library/A'}];
    else if(req.url==='/fixture/probe'){
@@ -77,7 +79,7 @@ export async function reviewFixture({pauses=false,recovery=false,clock=false,nod
   await fs.writeFile(path.join(data,'preview-settings.json'),JSON.stringify({enabled:false}));
   if(pauses)await fs.writeFile(path.join(data,'state.json'),JSON.stringify({items:{},history:[],sessions:{},pauses:[{name:'unavailable-node'}]}));
   if(recovery)await fs.writeFile(path.join(data,'transactions/manual.json'),JSON.stringify({id:'manual',phase:'installed'}));
-  await beforeStart?.({data,root});
+  await beforeStart?.({data,root,media,dbpath});
   await harness.start({settings:JSON.parse(await fs.readFile(path.join(data,'settings.json'),'utf8')),preload,clock,supervisor,env});
   cookie=await harness.login();
   const post=(route,body={})=>fetch(base+route,{method:'POST',headers:{cookie,origin:base,'content-type':'application/json'},body:JSON.stringify(body)});
@@ -120,7 +122,7 @@ export async function reviewFixture({pauses=false,recovery=false,clock=false,nod
    return events(name);
   };
   const restart=async()=>{await harness.stop();await harness.start({settings:JSON.parse(await fs.readFile(path.join(data,'settings.json'),'utf8')),preload,clock,supervisor,env});cookie=await harness.login();};
-  return {setProbe:adjust=>{probeAdjust=adjust},root,data,files,mockBase,nodes,hold,calls,changes,post,get,items,confirm,approve,allMutations,journals,settled,preserved,close,restart,showNodes,addFilm,events,eventually,tick:harness.tick,state:harness.state,diagnostics:harness.diagnostics};
+  return {setProbe:adjust=>{probeAdjust=adjust},tdarrRows,root,data,files,mockBase,nodes,hold,calls,changes,post,get,items,confirm,approve,allMutations,journals,settled,preserved,close,restart,showNodes,addFilm,events,eventually,tick:harness.tick,state:harness.state,diagnostics:harness.diagnostics};
  }catch(error){await close();throw error}
 }
 

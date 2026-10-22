@@ -61,6 +61,9 @@ export function mutationKind(method,pathname){
  if(/^\/api\/radarr\/requests\/[a-f0-9]{24}\/restore$/.test(pathname))return 'restore';
  // Manual replacement of a confirmed faulty original without a Review result (#153).
  if(/^\/api\/recovery\/cases\/[a-f0-9]{24}\/replace-source$/.test(pathname))return 'replace';
+ // Assessment of an installed result (#230): the draft is review state; approval publishes retention evidence.
+ if(/^\/api\/recovery\/cases\/[a-f0-9]{24}\/installed$/.test(pathname))return 'reviewSession';
+ if(/^\/api\/recovery\/cases\/[a-f0-9]{24}\/installed\/approve$/.test(pathname))return 'replace';
  const action=/^\/api\/items\/[a-f0-9]{24}\/(approve|reject|replace|recheck|review-session|approval)$/.exec(pathname)?.[1];
  // Approval without replacement writes review state only, like a saved review.
  return action==='review-session'||action==='approval'?'reviewSession':action||null;

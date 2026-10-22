@@ -55,9 +55,11 @@ function libraryTarget(c){
  * @param {()=>Record<string,any>} deps.getItems Review items by id (relative, originalFP).
  * @param {(route:string,body?:any)=>Promise<any>} deps.tdarr Tdarr API.
  * @param {()=>Promise<{url:string,apiKey:string}>} deps.getConnection Radarr connection.
+ * @param {{eligibility:(id:string,options?:{busy?:boolean})=>Promise<{eligible:boolean,blockers:string[]}>}} [deps.installed] Assessment of an installed result (#230).
+ * @param {()=>boolean} [deps.isBusy] Whether running work excludes a mutation now.
  * @param {()=>number} [deps.now]
  */
-export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnection,now=Date.now}){
+export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnection,installed=null,isBusy=()=>false,now=Date.now}){
  /** @type {Map<string,{at:string,tdarr?:string|null,tdarrError?:boolean,radarr?:string|null,radarrError?:boolean}>} */
  const refreshed=new Map();
  const caseFile=()=>path.join(data,'recovery','state.json');
@@ -90,18 +92,24 @@ export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnec
   const radarrReported=radarrDetail(record);
   const radarrState=update&&'radarr' in update?(update.radarrError?{status:'unverified',at:update.at}:{status:'verified',detail:update.radarr,at:update.at,by:'review'})
    :radarrReported?{status:reported?'verified':'unverified',detail:radarrReported,at:at(record.statusUpdated||record.updated),by:record.source==='recovery'?'recovery':'review'}:{status:'not-used'};
-  return {location:{library,quarantine,review,tdarr:tdarrState,radarr:radarrState},reviewItemId:item};
+  // A transcoded result already installed in place of the imported replacement can be assessed as it is (#230).
+  let installedResult=null;
+  if(installed&&record.source==='recovery'&&!item&&library.detail==='changed'){try{installedResult=await installed.eligibility(record.id,{busy:isBusy()});}catch{installedResult={eligible:false,blockers:['installed-unverified']};}}
+  return {location:{library,quarantine,review,tdarr:tdarrState,radarr:radarrState},reviewItemId:item,installedResult};
  }
- function decide(record,classification,{reviewItemId}){
+ function decide(record,classification,{reviewItemId,installedResult}){
   const reason=classification.reason,actions=[{id:'refresh',changes:'information'}],blockers=[...(BLOCKERS[reason]||['inspect-case'])];
   if(record.radarrMovieUrl)actions.push({id:'openRadarr',changes:'nothing',href:record.radarrMovieUrl});
   else if(['import-blocked','queue-failed','search-failed','original-outside-library'].includes(reason))blockers.push('radarr-link-unavailable');
   if(reviewItemId)actions.push({id:'openReview',changes:'nothing',itemId:reviewItemId});
-  else if(reason==='awaiting-review'||reason==='follow-up-complete')blockers.push('review-result-missing');
+  else if(installedResult?.eligible)actions.push({id:'assessInstalled',changes:'nothing'});
+  else if(reason==='awaiting-review'||reason==='follow-up-complete'){blockers.push('review-result-missing');for(const b of installedResult?.blockers||[])if(b!=='installed-not-applicable')blockers.push(b);}
   if(record.sourceReplacement)actions.push({id:'replaceSource',changes:'starts-work'});
   else if(record.sourceReplacementBlocked)blockers.push('replacement-blocked');
-  if(record.canRestore===true)actions.push({id:'restore',changes:'moves-files'});
-  const prefer={'binding-failure':['replaceSource'],'awaiting-review':['openReview'],'follow-up-complete':['openReview'],'import-blocked':['openRadarr'],'queue-failed':['openRadarr'],'search-failed':['openRadarr'],'original-outside-library':['openRadarr']}[reason]||[];
+  // Never return the obsolete or faulty original over a current copy that can be assessed instead.
+  if(record.canRestore===true&&!installedResult?.eligible)actions.push({id:'restore',changes:'moves-files'});
+  else if(installedResult?.eligible)blockers.push('restore-over-installed');
+  const prefer={'binding-failure':['replaceSource'],'awaiting-review':['openReview','assessInstalled'],'follow-up-complete':['openReview','assessInstalled'],'import-blocked':['openRadarr'],'queue-failed':['openRadarr'],'search-failed':['openRadarr'],'original-outside-library':['openRadarr']}[reason]||[];
   const recommended=prefer.map(id=>actions.find(a=>a.id===id)).find(Boolean)||actions[0];
   // An offered replacement is the confirmed-source case: nothing blocks it.
   const open=record.sourceReplacement?blockers.filter(b=>b!=='source-not-confirmed'):blockers;
