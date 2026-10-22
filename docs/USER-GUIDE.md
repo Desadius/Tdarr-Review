@@ -158,6 +158,18 @@ Do not interpret `replacement_imported` as approved. Watch the Tdarr state, comp
 
 In **Verify**, an in-flight repair is paused and the Recovery detail says which step waits and whether the original is in the library or in quarantine. If a paused replacement request keeps the original outside the library for more than 24 hours, the case appears under **Needs attention** (**Vyžaduje zásah**) with a red notice: a replacement download probably hangs in Radarr. Remove that download in Radarr; Recovery then returns the original to the library on its next poll ([Operations](OPERATIONS.md#original-outside-the-library-for-over-24-hours)).
 
+## Recovery cases that need attention
+
+Each case under **Needs attention** (**Vyžaduje zásah**) says what happened, where the film is now and what you can do. The server works this out from fresh reads; the page only shows it.
+
+- **Where the film is now** lists the library copy, the preserved copy in quarantine, a Review result waiting for assessment, the Tdarr state and the Radarr download. Each line is *verified* or *not verified*. A line that cannot be read is shown as not verified; that is never treated as proof of a fault or as permission to act.
+- **What you can do** shows the recommended action first, on the card and in the first tab of the detail, then the other valid actions. Each says what it changes: **Refresh status** only reads Radarr, Tdarr and the library again; **Open the film in Radarr** and **Assess the result in Review** change nothing; **Request another copy through Radarr** starts work and **Return the original and transcode from quarantine** moves files, each after its own confirmation. The server checks every action again when you confirm it.
+- **What blocks the next step** names what an administrator has to do, or why Review offers no action for this case yet.
+
+**Verify the status of all cases** (**Ověřit stav všech případů**) refreshes every case that needs attention the same read-only way. **Refresh list** only reloads the list. Neither changes a file, Tdarr, Radarr or a quarantine deadline.
+
+A case whose remaining work continues in a verified follow-up case is listed once, as the follow-up; the earlier case moves to **Done** with a link. It returns to **Needs attention** if that link no longer holds.
+
 ## Recovery worker status
 
 The **Recovery** view shows the worker's runtime state separately from its film cases. In the unified container, Recovery runs alongside Review; stopping or updating that container affects both.

@@ -182,6 +182,15 @@ The supervisor publishes `<DATA_ROOT>/recovery/runtime-state.json` (mode 0600) a
 
 Review reads three Recovery files and never writes them: the runtime state above, the shared status file `.tdarr-recovery-status.json` beside the media root, and the case state `/data/recovery/state.json`. `review/recovery-snapshot.mjs` is the only reader of each and gives one verdict: absent, valid (with its content) or invalid (with a value-free reason). The status file is valid only as a regular file of at most 2 MB holding a JSON object with `version: 1`, a `cases` list and a readable `updated`; the case state only as a JSON object with a `cases` object. Health (`recoveryStatusHealth`), the replacement overview and restart notice, the manual replacement's Hold handoff and `/api/recovery/runtime` project from these verdicts: an invalid status file is `recovery-status-stale` attention in health and an error in the overview; an invalid case state blocks the handoff, an absent one protects nothing. `review/recovery-snapshot-readers.test.mjs` runs one table of file contents against every reader.
 
+### Needs attention model
+
+`review/recovery-attention.mjs` adds, to every case that `classifyRecovery` (`review/public/review-model.js`) puts in Needs attention, an `attention` object in `GET /api/radarr/requests`:
+- `reason`: the code of the classification path;
+- `location`: `library`, `quarantine`, `review`, `tdarr` and `radarr`, each `verified`, `unverified` or `not-used`, with a state code and, for Tdarr and Radarr, whether Recovery reported it or Review read it;
+- `recommended`, `actions` (each with what it changes) and `blockers`.
+
+The library and quarantine states compare the files recorded in Recovery's case state with their current file identity. A Review result is linked only when its recorded original identity is the file in the library now. Recovery's Tdarr and Radarr reports count as verified only while its status is fresh. `POST /api/recovery/refresh` (all attention cases, or the given case keys) reads the Tdarr row and the Radarr queue again; a failed read is `unverified`. Nothing here writes: no Recovery file, Tdarr, Radarr, media file or retention deadline changes. The browser renders buttons only from `actions`, and the existing routes revalidate each mutating action. A parent whose verified follow-up still has unresolved work gets `supersededBy` and is classified as done; the follow-up carries the attention.
+
 ## Shared lifecycle
 
 Recovery atomically publishes a versioned, allowlisted status file. It includes deferred limits, verification, quarantine, release exclusion, search/download, import and the replacement's Tdarr database state. It does not publish keys or unrestricted quarantine paths.

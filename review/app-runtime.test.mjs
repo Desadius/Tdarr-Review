@@ -350,6 +350,39 @@ if(typeof vm.SourceTextModule!=='function'){
   assert.equal(await open('Fixture film'),null,'the film being replaced shows no checklist');assert.match(dom.getElementById('detailBody').textContent,/Tento film se právě nahrazuje nebo čeká v dávce/);
   assert.equal(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,0);
  });
+ for(const language of ['cs','en'])test('Needs attention shows the server reason, location and only the server-listed actions, recommended first, in '+language,async()=>{
+  const id='d'.repeat(24),itemId='e'.repeat(24),runtime={present:true,version:1,mode:'repair',state:'running',reason:null};
+  const attention={reason:'awaiting-review',recommended:'openReview',recoveryPolledAt:new Date().toISOString(),blockers:['transcode-retry-unavailable'],
+   location:{library:{status:'verified',detail:'present'},quarantine:{status:'verified',detail:'present'},review:{status:'verified',detail:'pending'},tdarr:{status:'unverified',detail:'transcode success',by:'recovery'},radarr:{status:'not-used'}},
+   actions:[{id:'refresh',changes:'information'},{id:'openRadarr',changes:'nothing',href:'http://radarr.invalid/movie/x'},{id:'openReview',changes:'nothing',itemId}]};
+  const record={id,source:'recovery',title:'Synthetic attention film',phase:'replacement_imported',tdarrStatus:'Transcode success',canRestore:false,statusUpdated:new Date().toISOString(),radarrMovieUrl:'http://radarr.invalid/movie/x',attention};
+  const f=await appFixture(language,{routes:{'/api/recovery/refresh':{data:{requests:[record],recoveryConfig:null,recoveryRuntime:runtime}}}}),dom=f.document;
+  await f.update({requests:[record],recoveryRuntime:runtime});
+  await f.hash('#recovery?filter=attention');
+  const card=dom.getElementById('recoveryList');
+  assert.deepEqual(card.querySelectorAll('[data-attention-action]').map(n=>n.dataset.attentionAction),['openReview'],'the card shows the recommended action only');
+  assert.match(card.textContent,language==='en'?/Opens the assessment; approval is a separate step/:/Otevře posouzení; schválení je samostatný krok/);
+  await dom.querySelectorAll('button').find(n=>/Synthetic attention film/.test(n.getAttribute('aria-label')||'')).emit('click');for(let i=0;i<6;i++)await flush();
+  const body=dom.getElementById('detailBody');
+  assert.deepEqual(body.querySelectorAll('[data-attention-action]').map(n=>n.dataset.attentionAction),['openReview','refresh','openRadarr'],'recommended first, then the other listed actions; nothing else');
+  assert.equal(body.querySelector('[data-attention-action="restore"]'),null);
+  assert.match(body.textContent,language==='en'?/Where the film is now/:/Kde je film teď/);
+  assert.match(body.textContent,language==='en'?/The file is in place · verified/:/Soubor je na místě · ověřeno/);
+  assert.match(body.textContent,language==='en'?/Transcode finished · not verified/:/Převod dokončen · neověřeno/);
+  assert.match(body.textContent,language==='en'?/Review does not offer another transcode yet/:/Opakovaný převod Review zatím nenabízí/);
+  assert.equal(body.querySelector('[data-attention-action="openRadarr"]').href,'http://radarr.invalid/movie/x');
+  const before=f.calls.length;await body.querySelector('[data-attention-action="refresh"]').emit('click');for(let i=0;i<8;i++)await flush();
+  const sent=f.calls.slice(before).find(c=>c.route==='/api/recovery/refresh');assert.equal(sent.method,'POST');assert.deepEqual(sent.body,{keys:['recovery:'+id]});
+  assert.equal(f.calls.slice(before).some(c=>c.method==='POST'&&c.route!=='/api/recovery/refresh'),false,'refresh only reads');
+ });
+ test('Verify the status of all cases asks the server for a read-only refresh of the whole queue',async()=>{
+  const runtime={present:true,version:1,mode:'repair',state:'running',reason:null};
+  const f=await appFixture('en',{routes:{'/api/recovery/refresh':{data:{requests:[],recoveryConfig:null,recoveryRuntime:runtime}}}}),dom=f.document;
+  await f.hash('#recovery?filter=attention');const before=f.calls.length;
+  await dom.getElementById('recoveryVerifyAll').emit('click');for(let i=0;i<8;i++)await flush();
+  const sent=f.calls.slice(before).filter(c=>c.method==='POST');assert.deepEqual(sent.map(c=>[c.route,c.body]),[['/api/recovery/refresh',{}]]);
+  assert.equal(dom.getElementById('recoveryVerifyAll').textContent,'Verify the status of all cases');
+ });
  test('a confirmed binding-failure case offers the manual Radarr replacement only with the server offer and a reason',async()=>{
   const id='c'.repeat(24),record={id,source:'recovery',title:'Vadný film',phase:'manual',bindingFailure:'grab-missing',sourceConfirmed:true,canRestore:false,statusUpdated:new Date().toISOString()};
   const f=await appFixture('cs',{routes:{['/api/recovery/cases/'+id+'/replace-source']:{status:202,data:{ok:true}}}}),dom=f.document;

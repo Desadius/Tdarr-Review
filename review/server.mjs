@@ -68,6 +68,7 @@ KEY=KEY.trim();
 const statefile=path.join(DATA,'state.json');
 import { rejectionReason, recordRejection } from './rejection-audit.mjs';
 import {createReplacement} from './radarr-replacement.mjs';
+import {createRecoveryAttention} from './recovery-attention.mjs';
 let state=JSON.parse(await fs.readFile(statefile,'utf8').catch(()=>'{"items":{},"history":[],"sessions":{},"pauses":[]}'));
 if(!state.reviewSessions||typeof state.reviewSessions!=='object'||Array.isArray(state.reviewSessions))state.reviewSessions={};
 // Confirmed replacements wait here while another replacement or batch runs (#155). After a restart
@@ -273,6 +274,8 @@ const pendingRestores=()=>state.pauses.map(p=>({name:p.name,pausedAt:p.pausedAt|
 async function verifyPaused(item){const nodes=await tdarr('/api/v2/get-nodes');if(Object.values(nodes).some(n=>!n.nodePaused)||workerBusy(nodes,item))throw new Error('Během výměny se změnil stav nodů. Originál nebyl vyměněn.');}
 
 const replacements=createReplacement({data:DATA,getConfig:()=>config,getConnection:activeConnection,safeFile,hash,atomicJSON,tdarr,pauseDispatch,verifyPaused,isWorkerBusy:async item=>workerBusy(await tdarr('/api/v2/get-nodes'),item),resume,onProgress:stage=>progress(stage)});
+// Needs attention: server-computed reason, location and actions for Recovery cases (#229). Read-only.
+const recoveryAttention=createRecoveryAttention({data:DATA,getConfig:()=>config,getItems:()=>state.items,tdarr,getConnection:activeConnection});
 const artwork=createArtwork({data:DATA,getConnection:activeConnection});
 await replacements.recover();
 async function replacementAction(item,reason){
@@ -421,7 +424,7 @@ const authTimer=setInterval(()=>{pruneAuthAttempts(authAttempts);if(pruneSession
 // Getters/setters keep the module variables above authoritative, so the scan,
 // transaction and preview code shares exactly the state the routes change.
 const ctx={
- ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,artwork,reviewSessions,previewPairs,previewPlans,previewAttempts,sharedSettings,
+ ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,recoveryAttention,artwork,reviewSessions,previewPairs,previewPlans,previewAttempts,sharedSettings,
  get config(){return config},set config(value){config=value},
  get previewSettings(){return previewSettings},set previewSettings(value){previewSettings=value},
  get state(){return state},

@@ -59,7 +59,13 @@ export async function libraryRoutes(ctx,req,res,url,request){
    await save({revision:b.revision,patch:{radarr:patch},resolutions:b.resolutions||[],acknowledgeHistory:b.acknowledgeHistory});logEvent('radarr-settings.saved',{draft:true,active:false});return reply(res,200,{ok:true,...await ctx.sharedSettings.public()});
   });
  }
- if(url.pathname==='/api/radarr/requests'&&req.method==='GET')return reply(res,200,await ctx.replacements.overview());
+ if(url.pathname==='/api/radarr/requests'&&req.method==='GET')return reply(res,200,await ctx.recoveryAttention.attach(await ctx.replacements.overview()));
+ // Read-only refresh of the attention cases named by key (all of them without keys): Radarr, Tdarr, files (#229).
+ if(url.pathname==='/api/recovery/refresh'&&req.method==='POST'){
+  const b=await body(req),keys=b.keys===undefined?null:b.keys;
+  if(keys!==null&&(!Array.isArray(keys)||keys.length>500||keys.some(k=>typeof k!=='string'||!/^(?:recovery|radarr):[a-f0-9]{24}$/.test(k))))return reply(res,400,apiError('refresh_invalid'));
+  return reply(res,200,await ctx.recoveryAttention.refresh(await ctx.replacements.overview(),keys));
+ }
  // Runtime diagnostics remain readable even when the separate case snapshot fails.
  if(url.pathname==='/api/recovery/runtime'&&req.method==='GET')return reply(res,200,await readRecoveryRuntime(path.join(ctx.DATA,'recovery','runtime-state.json')));
  const restoreRequest=/^\/api\/radarr\/requests\/([a-f0-9]{24})\/restore$/.exec(url.pathname);

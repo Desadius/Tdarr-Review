@@ -79,3 +79,43 @@ export function fullHashProgressView(p,detail=true){
  return box;
 }
 
+
+// Needs attention (#229): the server's reason, verified location, actions and blockers for one case. Only actions
+// the server lists become buttons; `changes` says what an action does before it runs.
+const LOCATION_SOURCES=[['library','Knihovna'],['quarantine','Karanténa'],['review','Výsledek v Review'],['tdarr','Tdarr'],['radarr','Radarr']];
+const LOCATION_DETAILS={present:'Soubor je na místě',changed:'Soubor se od záznamu změnil',missing:'Soubor chybí',pending:'Čeká na posouzení',retained:'Zachovaná podle záznamu',
+ 'transcode success':'Převod dokončen','transcode error':'Převod skončil chybou','not required':'Vynecháno jako Not required',hold:'Pozastaveno (Hold)',queued:'Ve frontě',transcoding:'Převádí se',
+ 'import-blocked':'Import je blokovaný','queue-failed':'Fronta hlásí chybu','search-failed':'Hledání selhalo',downloading:'Stahuje se','no-download':'Nic se nestahuje'};
+export const ATTENTION_ACTIONS={refresh:['Obnovit stav','Jen znovu načte údaje z Radarru, Tdarru a knihovny; nic nemění.'],openRadarr:['Otevřít film v Radarru','Otevře Radarr; nic nemění.'],
+ openReview:['Posoudit výsledek v Review','Otevře posouzení; schválení je samostatný krok.'],replaceSource:['Vyžádat jinou kopii přes Radarr','Spustí vyžádání náhrady; originál zůstane zachovaný v karanténě.'],
+ restore:['Vrátit originál i převod z karantény','Přesune zachované soubory zpět do knihovny.']};
+const BLOCKERS={'source-not-confirmed':'Vada originálu není potvrzená dvěma kontrolami; náhradu nelze vyžádat.','inspect-case':'Správce musí zkontrolovat záznam případu a zachované kopie.',
+ 'diagnosis-needed':'Kontrola originálu skončila provozní nebo nejednoznačnou chybou; prověř ji v detailu.','verify-mode':'Recovery běží v režimu Verify; změny povolí až přepnutí na Repair.',
+ 'transcode-retry-unavailable':'Opakovaný převod Review zatím nenabízí; důvod zkontroluj v Tdarru.','hold-not-released':'Hold v Tdarru Review neuvolňuje; zkontroluj navazující případ a důvod pozastavení.',
+ 'radarr-download-stuck':'Pokud stahování v Radarru visí, odstraň ho v Radarru.','manual-import-in-radarr':'Stažený soubor přiřaď správnému filmu ručním importem v Radarru.',
+ 'retention-evidence':'Důkaz pro úklid karantény nesouhlasí; karanténa zůstává zachovaná.','status-unverified':'Stav nelze ověřit; obnov ho, a pokud zůstane neověřený, správce zkontroluje propojení.',
+ 'review-result-missing':'Výsledek v Review k této kopii zatím není doložený.','replacement-blocked':'Náhradu teď nelze vyžádat; důvod je uvedený v detailu.','radarr-link-unavailable':'Odkaz do Radarru není k dispozici; zkontroluj připojení Radarru.'};
+
+export function attentionLocationView(location,translate=tr){
+ const rows=LOCATION_SOURCES.filter(([key])=>location?.[key]&&location[key].status!=='not-used').map(([key,label])=>{const v=location[key];
+  return [label,translate(LOCATION_DETAILS[v.detail]||(v.status==='unverified'?'Nelze ověřit':'Není doloženo'))+' · '+translate(v.status==='verified'?'ověřeno':'neověřeno')+(v.at?' · '+date(v.at):''),true];});
+ return rows.length?detailsFacts(rows):el('p','details','Umístění filmu zatím nelze ověřit.');
+}
+/** Buttons for the server-listed actions (only the recommended one when `recommendedOnly`), with what each changes. */
+export function attentionActionsView(attention,run,{recommendedOnly=false}={},translate=tr){
+ const box=el('div','attention-actions'),list=(attention?.actions||[]).filter(a=>ATTENTION_ACTIONS[a.id]&&(!recommendedOnly||a.id===attention.recommended));
+ list.sort((a,b)=>(b.id===attention.recommended)-(a.id===attention.recommended));
+ for(const action of list){const [label,changes]=ATTENTION_ACTIONS[action.id],primary=action.id===attention.recommended;
+  const node=action.id==='openRadarr'?Object.assign(el('a',primary?'primary':'secondary',label),{href:action.href,target:'_blank',rel:'noopener noreferrer'}):el('button',primary?'primary':'secondary',label);
+  if(node.tagName==='BUTTON'){node.type='button';node.onclick=()=>run(action);}node.dataset.attentionAction=action.id;
+  const line=el('div','attention-action');line.append(node,el('small','details',changes));box.append(line);}
+ return box;
+}
+export function attentionView(attention,run,translate=tr){
+ const box=el('section','attention-model');box.setAttribute('aria-label',translate('Co dál'));
+ box.append(el('h4','','Kde je film teď'),attentionLocationView(attention.location,translate),el('h4','','Co můžeš udělat'),attentionActionsView(attention,run,{},translate));
+ const blockers=(attention.blockers||[]).filter(code=>BLOCKERS[code]);
+ if(blockers.length){const list=el('ul','attention-blockers');for(const code of blockers)list.append(el('li','',BLOCKERS[code]));box.append(el('h4','','Co brání dalšímu kroku'),list);}
+ if(attention.recoveryPolledAt)box.append(el('p','details',translate('Recovery naposledy ověřila stav:')+' '+date(attention.recoveryPolledAt),true));
+ return box;
+}
