@@ -26,6 +26,7 @@ const BLOCKERS={
  'transcode-skipped':['transcode-retry-unavailable'],
  'tdarr-hold':['hold-not-released'],
  'follow-up-complete':[],
+ 'tdarr-missing':[],
  'original-outside-library':['radarr-download-stuck'],
  'search-failed':[],'queue-failed':[],'import-blocked':['manual-import-in-radarr'],
  'case-error':['inspect-case'],'retention-error':['retention-evidence'],
@@ -56,10 +57,11 @@ function libraryTarget(c){
  * @param {(route:string,body?:any)=>Promise<any>} deps.tdarr Tdarr API.
  * @param {()=>Promise<{url:string,apiKey:string}>} deps.getConnection Radarr connection.
  * @param {{eligibility:(id:string,options?:{busy?:boolean})=>Promise<{eligible:boolean,blockers:string[]}>}} [deps.installed] Assessment of an installed result (#230).
+ * @param {{rowMissing:(c:any)=>Promise<boolean>,eligibility:(id:string,options?:{busy?:boolean})=>Promise<{eligible:boolean,blockers:string[],uncertain?:boolean}>}} [deps.handoff] Review's Tdarr handoff (#231).
  * @param {()=>boolean} [deps.isBusy] Whether running work excludes a mutation now.
  * @param {()=>number} [deps.now]
  */
-export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnection,installed=null,isBusy=()=>false,now=Date.now}){
+export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnection,installed=null,handoff=null,isBusy=()=>false,now=Date.now}){
  /** @type {Map<string,{at:string,tdarr?:string|null,tdarrError?:boolean,radarr?:string|null,radarrError?:boolean}>} */
  const refreshed=new Map();
  const caseFile=()=>path.join(data,'recovery','state.json');
@@ -97,19 +99,23 @@ export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnec
   if(installed&&record.source==='recovery'&&!item&&library.detail==='changed'){try{installedResult=await installed.eligibility(record.id,{busy:isBusy()});}catch{installedResult={eligible:false,blockers:['installed-unverified']};}}
   return {location:{library,quarantine,review,tdarr:tdarrState,radarr:radarrState},reviewItemId:item,installedResult};
  }
- function decide(record,classification,{reviewItemId,installedResult}){
+ function decide(record,classification,{reviewItemId,installedResult,handoffResult}){
   const reason=classification.reason,actions=[{id:'refresh',changes:'information'}],blockers=[...(BLOCKERS[reason]||['inspect-case'])];
   if(record.radarrMovieUrl)actions.push({id:'openRadarr',changes:'nothing',href:record.radarrMovieUrl});
   else if(['import-blocked','queue-failed','search-failed','original-outside-library'].includes(reason))blockers.push('radarr-link-unavailable');
   if(reviewItemId)actions.push({id:'openReview',changes:'nothing',itemId:reviewItemId});
   else if(installedResult?.eligible)actions.push({id:'assessInstalled',changes:'nothing'});
   else if(reason==='awaiting-review'||reason==='follow-up-complete'){blockers.push('review-result-missing');for(const b of installedResult?.blockers||[])if(b!=='installed-not-applicable')blockers.push(b);}
+  if(handoffResult?.eligible)actions.push({id:'handoffTdarr',changes:'starts-work',...(handoffResult.uncertain?{uncertain:true}:{})});
+  else if(handoffResult)blockers.push(...handoffResult.blockers.filter(b=>b!=='handoff-not-applicable'));
+  // A handoff Recovery gave up on is an administrator step: approval could not start its retention (#231).
+  if(record.source==='recovery'&&record.phase==='manual'&&/Tdarr (?:file binding|state)|handoff/i.test(String(record.error||'')))blockers.push('handoff-manual');
   if(record.sourceReplacement)actions.push({id:'replaceSource',changes:'starts-work'});
   else if(record.sourceReplacementBlocked)blockers.push('replacement-blocked');
   // Never return the obsolete or faulty original over a current copy that can be assessed instead.
   if(record.canRestore===true&&!installedResult?.eligible)actions.push({id:'restore',changes:'moves-files'});
   else if(installedResult?.eligible)blockers.push('restore-over-installed');
-  const prefer={'binding-failure':['replaceSource'],'awaiting-review':['openReview','assessInstalled'],'follow-up-complete':['openReview','assessInstalled'],'import-blocked':['openRadarr'],'queue-failed':['openRadarr'],'search-failed':['openRadarr'],'original-outside-library':['openRadarr']}[reason]||[];
+  const prefer={'binding-failure':['replaceSource'],'awaiting-review':['openReview','assessInstalled'],'follow-up-complete':['openReview','assessInstalled'],'tdarr-missing':['handoffTdarr'],'import-blocked':['openRadarr'],'queue-failed':['openRadarr'],'search-failed':['openRadarr'],'original-outside-library':['openRadarr']}[reason]||[];
   const recommended=prefer.map(id=>actions.find(a=>a.id===id)).find(Boolean)||actions[0];
   // An offered replacement is the confirmed-source case: nothing blocks it.
   const open=record.sourceReplacement?blockers.filter(b=>b!=='source-not-confirmed'):blockers;
@@ -122,11 +128,14 @@ export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnec
   let caseState=null;try{caseState=await cases();}catch{}
   // A parent whose verified follow-up still carries unresolved work is shown once, as the follow-up.
   const classifiedChild=new Map(requests.filter(r=>r?.source==='recovery').map(r=>[r.id,classifyRecovery(r,now())]));
+  // An imported replacement whose Tdarr row a fresh read finds missing (#231).
+  for(const r of requests){delete r.tdarrMissing;if(handoff&&r?.source==='recovery'&&r.phase==='replacement_imported'&&!r.tdarrStatus&&caseState?.[r.id]&&await handoff.rowMissing(caseState[r.id]))r.tdarrMissing=true;}
   for(const r of requests){const child=recoveryFollowup(r,requests);delete r.supersededBy;if(child&&UNRESOLVED.has(classifiedChild.get(child.id)?.category)&&!r.error)r.supersededBy=child.id;}
   for(const r of requests){
    const classification=classifyRecovery(r,now());delete r.attention;
    if(classification.category!=='attention')continue;
    const c=r.source==='recovery'?caseState?.[r.id]:null,found=await locate(r,c);
+   if(handoff&&classification.reason==='tdarr-missing'){try{found.handoffResult=await handoff.eligibility(r.id,{busy:isBusy()});}catch{found.handoffResult={eligible:false,blockers:['handoff-unverified']};}}
    r.attention={reason:classification.reason,location:found.location,...decide(r,classification,found),recoveryPolledAt:at(r.statusUpdated)};
   }
   return overview;

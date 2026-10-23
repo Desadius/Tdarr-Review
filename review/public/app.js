@@ -98,9 +98,18 @@ function askRestore(record){
  if(!caps(record).restore){error(Error(caps(record).reason||'Obnovení není dostupné.'));return}
  pending={record,action:'restore'};confirmSetup('OBNOVENÍ Z KARANTÉNY',record.title,'Vrátit originál i převod z karantény? Radarr nesmí mít aktivní stažení ani novou importovanou kopii. Server znovu ověří identitu souborů a stav Radarru.','Vrátit zachované kopie');$('confirm').showModal();
 }
+// Review's Tdarr handoff (#231): a fresh server view, then its own confirmation. Confirming an uncertain retry
+// states that Tdarr was checked; the server rescans only after revalidating everything.
+async function askHandoff(record){
+ try{const view=await api('/api/recovery/cases/'+record.id+'/handoff');if(!view.eligible)throw Error('Předání teď není dostupné. Obnov stav.');
+  pending={record,action:'handoff',snapshot:view.snapshot,uncertain:view.uncertain===true};
+  confirmSetup('PŘEDÁNÍ TDARRU',record.title,view.uncertain?'Předchozí předání nebylo potvrzeno. Potvrzením prohlašuješ, že jsi Tdarr zkontroloval a soubor v něm není. Tdarr přesně tento soubor znovu naskenuje; v knihovně se nic nepřesouvá, karanténa zůstává zachovaná a převedený výsledek bude potřeba schválit.':'Předat náhradu Tdarru? Tdarr přesně tento soubor znovu naskenuje a zařadí ho podle svých pravidel. V knihovně se nic nepřesouvá, karanténa zůstává zachovaná a převedený výsledek bude potřeba schválit.',view.uncertain?'Zkontroloval jsem Tdarr, předat znovu':'Předat Tdarru');$('confirm').showModal();
+ }catch(e){error(e)}
+}
 // A server-listed attention action (#229). Mutating ones go through their existing confirmation and capability checks.
 function runAttentionAction(record,action){
  const key=(record.source==='recovery'?'recovery:':'radarr:')+record.id;
+ if(action.id==='handoffTdarr')return askHandoff(record);
  if(action.id==='assessInstalled'){if(!$('filmDetail').open||ui.detail?.id!==key)openDetail('request',key);return changeDetailTab('comparison');}
  if(action.id==='refresh')return loadRequests(true,[key]);
  if(action.id==='openReview'){const item=latest?.items.find(x=>x.id===action.itemId);if(item)return openDetail('review',item.id);return error(Error(tr('Výsledek už v Review není. Obnov stav.')));}
@@ -117,6 +126,7 @@ $('confirm').addEventListener('close',async()=>{
   if(request.action==='batch')for(const item of request.items)writeItem(item,'approveBatch');
   else if(request.action==='keepPaused'){if(!latest?.pendingRestores?.some(n=>n.name===request.node))throw Error('Tento node už Review neobnovuje. Obnov přehled.');}
   else if(request.action==='restore'){const current=requests.find(r=>r.id===request.record.id&&r.source===request.record.source);if(!current||!caps(current).restore)throw Error('Stav obnovy se změnil. Obnov údaje.');}
+  else if(request.action==='handoff'){const current=requests.find(r=>r.id===request.record.id&&r.source==='recovery');if(!current?.attention?.actions?.some(a=>a.id==='handoffTdarr'))throw Error('Stav případu se změnil. Obnov údaje.');}
   else if(request.action==='installedApprove'){const current=requests.find(r=>r.id===request.record.id&&r.source==='recovery');if(!current?.attention?.actions?.some(a=>a.id==='assessInstalled'))throw Error('Stav případu se změnil. Obnov údaje.');}
   else if(request.action==='replaceSource'){const current=requests.find(r=>r.id===request.record.id&&r.source==='recovery');if(!current||!caps(current).replaceSource||current.sourceReplacement.snapshot!==request.record.sourceReplacement.snapshot)throw Error('Stav případu se změnil. Obnov údaje.');}
   else writeItem(request.item,request.action);
@@ -126,6 +136,7 @@ $('confirm').addEventListener('close',async()=>{
   if(request.action==='batch'){await api('/api/approve-batch',{items:request.items.map(x=>({id:x.id,snapshot:x.snapshot,reviewRevision:request.reviewRevisions[x.id]}))});selected.clear()}
   else if(request.action==='keepPaused')await api('/api/node-restores/keep',{name:request.node,confirm:true});
   else if(request.action==='restore')await api('/api/radarr/requests/'+request.record.id+'/restore',{confirm:true});
+  else if(request.action==='handoff')await api('/api/recovery/cases/'+request.record.id+'/handoff',{snapshot:request.snapshot,confirm:true,...(request.uncertain?{acknowledgeUncertain:true}:{})});
   else if(request.action==='installedApprove')await api('/api/recovery/cases/'+request.record.id+'/installed/approve',{snapshot:request.snapshot,confirm:true});
   else if(request.action==='replaceSource')await api('/api/recovery/cases/'+request.record.id+'/replace-source',{snapshot:request.record.sourceReplacement.snapshot,reason});
   else await api(`/api/items/${request.item.id}/${request.action}`,{snapshot:request.item.snapshot,reviewRevision:request.action==='approve'?request.reviewRevision:undefined,acceptDuration:request.acceptDuration===true,reason:['reject','replace'].includes(request.action)?reason:undefined});
@@ -361,7 +372,7 @@ function updateGuards(){
   if(ui.detail.kind==='review'&&changed)reviewWorkspace?.invalidate();else{reviewWorkspace?.refreshGuard();if(ui.detail.kind==='review'){reviewWorkspace?.observe(latest.reviewSessions?.[item.id]);reviewWorkspace?.observePreparation(latest.previews?.[item.id],{authoritative:true})}}
   const guard=caps(item);$('detailGuard').hidden=!guard.writeBlocked&&!changed;$('detailGuard').textContent=tr(changed?'Akce čekají na nové posouzení aktuálního stavu.':guard.reason||'Zapisující akce jsou dočasně zablokované.');
  }
- if(pending){let enabled=!actionInFlight;if(pending.action==='batch')enabled&&=pending.items.every(x=>{const current=latest.items.find(i=>i.id===x.id&&i.snapshot===x.snapshot);return current&&caps(current).approveBatch&&latest.reviewSessions?.[x.id]?.revision===pending.reviewRevisions[x.id]});else if(pending.action==='restore'){const current=requests.find(r=>r.id===pending.record.id&&r.source===pending.record.source);enabled&&=!!current&&caps(current).restore;}else if(pending.action==='keepPaused'){enabled&&=!!latest.pendingRestores?.some(n=>n.name===pending.node);}else if(pending.action==='installedApprove'){const current=requests.find(r=>r.id===pending.record.id&&r.source==='recovery');enabled&&=!!current?.attention?.actions?.some(a=>a.id==='assessInstalled');}else{const current=latest.items.find(x=>x.id===pending.item.id&&x.snapshot===pending.item.snapshot);enabled&&=!!current&&caps(current)[pending.action]&&(pending.action!=='approve'||latest.reviewSessions?.[pending.item.id]?.revision===pending.reviewRevision)}$('commit').disabled=!enabled;}
+ if(pending){let enabled=!actionInFlight;if(pending.action==='batch')enabled&&=pending.items.every(x=>{const current=latest.items.find(i=>i.id===x.id&&i.snapshot===x.snapshot);return current&&caps(current).approveBatch&&latest.reviewSessions?.[x.id]?.revision===pending.reviewRevisions[x.id]});else if(pending.action==='restore'){const current=requests.find(r=>r.id===pending.record.id&&r.source===pending.record.source);enabled&&=!!current&&caps(current).restore;}else if(pending.action==='keepPaused'){enabled&&=!!latest.pendingRestores?.some(n=>n.name===pending.node);}else if(pending.action==='handoff'){const current=requests.find(r=>r.id===pending.record.id&&r.source==='recovery');enabled&&=!!current?.attention?.actions?.some(a=>a.id==='handoffTdarr');}else if(pending.action==='installedApprove'){const current=requests.find(r=>r.id===pending.record.id&&r.source==='recovery');enabled&&=!!current?.attention?.actions?.some(a=>a.id==='assessInstalled');}else{const current=latest.items.find(x=>x.id===pending.item.id&&x.snapshot===pending.item.snapshot);enabled&&=!!current&&caps(current)[pending.action]&&(pending.action!=='approve'||latest.reviewSessions?.[pending.item.id]?.revision===pending.reviewRevision)}$('commit').disabled=!enabled;}
 }
 function render(d){
  const priorSessions=latest?.reviewSessions||{};d.reviewSessions||={};for(const [id,record]of Object.entries(priorSessions)){const current=d.items.find(x=>x.id===id);if(current?.snapshot===record.snapshot&&record.revision>(d.reviewSessions[id]?.revision??-1))d.reviewSessions[id]=record}

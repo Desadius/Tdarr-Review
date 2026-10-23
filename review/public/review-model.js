@@ -271,6 +271,9 @@ export function classifyRecovery(record, now = Date.now()) {
     category = 'attention'; nextStep = 'Zkontroluj upozornění v detailu případu.';
     reason = blockedImport ? 'import-blocked' : failedQueue ? 'queue-failed' : failedSearch ? 'search-failed' : r.retentionError ? 'retention-error' : 'case-error';
     if(blockedImport){label='Staženo; Radarr blokuje import';nextStep='Otevři frontu Radarru a přiřaď stažený soubor správnému filmu přes ruční import. Nové stahování není potřeba.';}
+  } else if (r.tdarrMissing === true && r.phase === 'replacement_imported' && !approvalEvidence) {
+    // The server read Tdarr and found no row for the imported replacement (#231): Recovery does not retry it.
+    category = 'attention'; reason = 'tdarr-missing'; label = 'Náhrada se do Tdarru nedostala'; nextStep = 'Předej náhradu Tdarru z přehledu případu.';
   } else if (itemId(r.supersededBy) && r.supersededBy !== r.id) {
     // The server found a verified follow-up case that carries the remaining work (#229); this parent stays in history.
     category = 'done'; reason = 'superseded'; label = 'Pokračuje navazujícím případem'; nextStep = 'Otevři navazující případ. Tento případ zůstává v historii.';

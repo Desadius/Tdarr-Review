@@ -408,6 +408,33 @@ if(typeof vm.SourceTextModule!=='function'){
   dom.getElementById('confirm').returnValue='confirm';await dom.getElementById('confirm').close();for(let i=0;i<8;i++)await flush();
   assert.deepEqual(f.calls.filter(c=>c.route.endsWith('/installed/approve')).map(c=>c.body),[{snapshot,confirm:true}]);
  });
+ for(const language of ['cs','en'])for(const uncertain of [false,true])test('a replacement that did not reach Tdarr is handed over only after its own confirmation'+(uncertain?', acknowledging the unconfirmed previous handoff,':'')+' in '+language,async()=>{
+  const id='c'.repeat(24),runtime={present:true,version:1,mode:'repair',state:'running',reason:null},snapshot='h'.repeat(64);
+  const attention={reason:'tdarr-missing',recommended:'handoffTdarr',blockers:[],location:{library:{status:'verified',detail:'present'}},actions:[{id:'refresh',changes:'information'},{id:'handoffTdarr',changes:'starts-work',...(uncertain?{uncertain:true}:{})}]};
+  const record={id,source:'recovery',title:'Synthetic handoff film',phase:'replacement_imported',tdarrMissing:true,statusUpdated:new Date().toISOString(),attention};
+  const f=await appFixture(language,{routes:{['/api/recovery/cases/'+id+'/handoff']:({body})=>body?{data:{ok:true,state:'Queued'}}:{data:{eligible:true,blockers:[],uncertain,snapshot}}}}),dom=f.document;
+  await f.update({requests:[record],recoveryRuntime:runtime});await f.hash('#recovery?filter=attention');
+  const card=dom.getElementById('recoveryList');
+  assert.match(card.textContent,language==='en'?/The replacement did not reach Tdarr/:/Náhrada se do Tdarru nedostala/);
+  assert.match(card.textContent,language==='en'?/Tdarr rescans the file and queues it by its own rules; nothing in the library moves/:/Tdarr soubor znovu naskenuje a zařadí ho podle svých pravidel; v knihovně se nic nepřesouvá/);
+  await card.querySelector('[data-attention-action="handoffTdarr"]').emit('click');for(let i=0;i<8;i++)await flush();
+  assert.equal(dom.getElementById('confirm').open,true);
+  const text=dom.getElementById('dialogText').textContent;
+  assert.match(text,language==='en'?/the quarantine is kept, and the transcoded result will still need approval/:/karanténa zůstává zachovaná a převedený výsledek bude potřeba schválit/);
+  if(uncertain){assert.match(text,language==='en'?/you checked Tdarr/:/jsi Tdarr zkontroloval/);assert.equal(dom.getElementById('commit').textContent,language==='en'?'I checked Tdarr, hand over again':'Zkontroloval jsem Tdarr, předat znovu');}
+  assert.equal(f.calls.some(c=>c.method==='POST'&&c.route.endsWith('/handoff')),false,'opening the dialog changes nothing');
+  dom.getElementById('confirm').returnValue='confirm';await dom.getElementById('confirm').close();for(let i=0;i<8;i++)await flush();
+  assert.deepEqual(f.calls.filter(c=>c.method==='POST'&&c.route.endsWith('/handoff')).map(c=>c.body),[uncertain?{snapshot,confirm:true,acknowledgeUncertain:true}:{snapshot,confirm:true}]);
+ });
+ test('a cancelled handoff dialog writes nothing',async()=>{
+  const id='c'.repeat(24),runtime={present:true,version:1,mode:'repair',state:'running',reason:null};
+  const record={id,source:'recovery',title:'Synthetic handoff film',phase:'replacement_imported',tdarrMissing:true,statusUpdated:new Date().toISOString(),attention:{reason:'tdarr-missing',recommended:'handoffTdarr',blockers:[],location:{},actions:[{id:'refresh',changes:'information'},{id:'handoffTdarr',changes:'starts-work'}]}};
+  const f=await appFixture('en',{routes:{['/api/recovery/cases/'+id+'/handoff']:{data:{eligible:true,blockers:[],uncertain:false,snapshot:'h'.repeat(64)}}}}),dom=f.document;
+  await f.update({requests:[record],recoveryRuntime:runtime});await f.hash('#recovery?filter=attention');
+  await dom.getElementById('recoveryList').querySelector('[data-attention-action="handoffTdarr"]').emit('click');for(let i=0;i<8;i++)await flush();
+  dom.getElementById('confirm').returnValue='cancel';await dom.getElementById('confirm').close();for(let i=0;i<8;i++)await flush();
+  assert.equal(f.calls.some(c=>c.method==='POST'&&c.route.endsWith('/handoff')),false);
+ });
  test('Verify the status of all cases asks the server for a read-only refresh of the whole queue',async()=>{
   const runtime={present:true,version:1,mode:'repair',state:'running',reason:null};
   const f=await appFixture('en',{routes:{'/api/recovery/refresh':{data:{requests:[],recoveryConfig:null,recoveryRuntime:runtime}}}}),dom=f.document;

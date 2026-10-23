@@ -88,7 +88,8 @@ const LOCATION_DETAILS={present:'Soubor je na místě',changed:'Soubor se od zá
  'import-blocked':'Import je blokovaný','queue-failed':'Fronta hlásí chybu','search-failed':'Hledání selhalo',downloading:'Stahuje se','no-download':'Nic se nestahuje'};
 export const ATTENTION_ACTIONS={refresh:['Obnovit stav','Jen znovu načte údaje z Radarru, Tdarru a knihovny; nic nemění.'],openRadarr:['Otevřít film v Radarru','Otevře Radarr; nic nemění.'],
  openReview:['Posoudit výsledek v Review','Otevře posouzení; schválení je samostatný krok.'],replaceSource:['Vyžádat jinou kopii přes Radarr','Spustí vyžádání náhrady; originál zůstane zachovaný v karanténě.'],
- restore:['Vrátit originál i převod z karantény','Přesune zachované soubory zpět do knihovny.'],assessInstalled:['Posoudit nainstalovanou kopii','Otevře posouzení kopie, která je v knihovně; nic nemění.']};
+ restore:['Vrátit originál i převod z karantény','Přesune zachované soubory zpět do knihovny.'],assessInstalled:['Posoudit nainstalovanou kopii','Otevře posouzení kopie, která je v knihovně; nic nemění.'],
+ handoffTdarr:['Předat náhradu Tdarru','Tdarr soubor znovu naskenuje a zařadí ho podle svých pravidel; v knihovně se nic nepřesouvá.']};
 const BLOCKERS={'source-not-confirmed':'Vada originálu není potvrzená dvěma kontrolami; náhradu nelze vyžádat.','inspect-case':'Správce musí zkontrolovat záznam případu a zachované kopie.',
  'diagnosis-needed':'Kontrola originálu skončila provozní nebo nejednoznačnou chybou; prověř ji v detailu.','verify-mode':'Recovery běží v režimu Verify; změny povolí až přepnutí na Repair.',
  'transcode-retry-unavailable':'Opakovaný převod Review zatím nenabízí; důvod zkontroluj v Tdarru.','hold-not-released':'Hold v Tdarru Review neuvolňuje; zkontroluj navazující případ a důvod pozastavení.',
@@ -100,7 +101,19 @@ const BLOCKERS={'source-not-confirmed':'Vada originálu není potvrzená dvěma 
  'installed-file-unsafe':'Kopie v knihovně není běžný samostatný soubor; správce ji musí zkontrolovat.','installed-not-transcoded':'V knihovně je stále nepřevedená náhrada.',
  'installed-tdarr-not-success':'Tdarr pro tuto kopii nehlásí Transcode success.','installed-no-success-job':'V historii Tdarru není úspěšný převod této kopie po importu náhrady.',
  'installed-review-pending':'K této kopii čeká výsledek v Review; posuď ho tam.','installed-busy':'Probíhá jiná akce; posouzení bude možné po jejím dokončení.',
- 'restore-over-installed':'Zastaralý originál Review přes aktuální kopii nevrací.'};
+ 'restore-over-installed':'Zastaralý originál Review přes aktuální kopii nevrací.',
+ 'handoff-unverified':'Stav předání nelze ověřit; obnov stav.',
+ 'handoff-library-id':'Pro předání Tdarru vyplň v nastavení ID knihovny Tdarr.',
+ 'handoff-file-missing':'Soubor náhrady v knihovně chybí.',
+ 'handoff-file-unsafe':'Soubor náhrady není běžný samostatný soubor; správce ho musí zkontrolovat.',
+ 'handoff-file-changed':'Soubor náhrady se od importu změnil; správce musí zkontrolovat, co ho změnilo.',
+ 'handoff-file-unstable':'Soubor náhrady se nedávno změnil; předání bude možné po 10 minutách klidu.',
+ 'handoff-hold':'Náhrada je v Tdarru pozastavená (Hold); Review Hold neuvolňuje, uvolni ho v Tdarru.',
+ 'handoff-hold-protected':'Náhradu drží Hold jiného případu, který ji chrání; Review ho neuvolní.',
+ 'handoff-reached':'Náhrada už do Tdarru došla; obnov stav.',
+ 'handoff-worker-busy':'Tdarr soubor právě zpracovává.',
+ 'handoff-busy':'Probíhá jiná akce; předání bude možné po jejím dokončení.',
+ 'handoff-manual':'Recovery předání vzdala; správce musí případ zkontrolovat. Schválení by tu úklid karantény nespustilo.'};
 
 export function attentionLocationView(location,translate=tr){
  const rows=LOCATION_SOURCES.filter(([key])=>location?.[key]&&location[key].status!=='not-used').map(([key,label])=>{const v=location[key];

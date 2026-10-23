@@ -166,6 +166,19 @@ Each case under **Needs attention** (**Vyžaduje zásah**) says what happened, w
 - **What you can do** shows the recommended action first, on the card and in the first tab of the detail, then the other valid actions. Each says what it changes: **Refresh status** only reads Radarr, Tdarr and the library again; **Open the film in Radarr** and **Assess the result in Review** change nothing; **Request another copy through Radarr** starts work and **Return the original and transcode from quarantine** moves files, each after its own confirmation. The server checks every action again when you confirm it.
 - **What blocks the next step** names what an administrator has to do, or why Review offers no action for this case yet.
 
+### Hand a replacement to Tdarr
+
+When Recovery has imported a replacement but Tdarr has no entry for it, Recovery does not try again. Review then reads Tdarr itself, and the case appears under **Needs attention** as **The replacement did not reach Tdarr**. It offers **Hand the replacement to Tdarr** (**Předat náhradu Tdarru**) when all of these hold:
+- the file in the library is exactly the imported replacement and has not changed for 10 minutes;
+- no Tdarr worker is processing it and Tdarr's history has no job for it since the import;
+- the Tdarr library ID is set in the settings and Recovery is not in Verify mode.
+
+A Hold in Tdarr always blocks the action, whether another case set it to protect the file or its origin is unknown. Review never releases a Hold; release it in Tdarr.
+
+After its own confirmation, Tdarr rescans exactly that file and queues it by its own rules. Nothing in the library moves, the quarantine is kept, and the transcoded result still needs your approval. If Tdarr does not list the file afterwards, the handoff is shown as not confirmed. Check Tdarr; a new attempt asks you to confirm that you did.
+
+A case Recovery gave up on during its own handoff is a manual case for an administrator. Review does not hand it over, because an approval would not start its quarantine cleanup.
+
 ### Assess an installed copy
 
 Sometimes the transcoded result is already in the library, for example because it was approved before Review kept approval evidence, or because it was replaced outside Review. There is no Review pair to compare, so the quarantine never enters retention. When Review can verify all of the following, the case offers **Assess the installed copy** (**Posoudit nainstalovanou kopii**):

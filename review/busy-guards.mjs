@@ -64,6 +64,8 @@ export function mutationKind(method,pathname){
  // Assessment of an installed result (#230): the draft is review state; approval publishes retention evidence.
  if(/^\/api\/recovery\/cases\/[a-f0-9]{24}\/installed$/.test(pathname))return 'reviewSession';
  if(/^\/api\/recovery\/cases\/[a-f0-9]{24}\/installed\/approve$/.test(pathname))return 'replace';
+ // Review's Tdarr handoff of an imported replacement without a Tdarr row (#231).
+ if(/^\/api\/recovery\/cases\/[a-f0-9]{24}\/handoff$/.test(pathname))return 'replace';
  const action=/^\/api\/items\/[a-f0-9]{24}\/(approve|reject|replace|recheck|review-session|approval)$/.exec(pathname)?.[1];
  // Approval without replacement writes review state only, like a saved review.
  return action==='review-session'||action==='approval'?'reviewSession':action||null;
