@@ -177,14 +177,18 @@ export function classifyRecovery(record, now = Date.now()) {
   let unknownTime = stamp === null || stamp > clock + 120000;
   let stale = !unknownTime && clock - stamp > RECOVERY_STALE_MS;
   const queue = ['waiting','waiting_replacement','waiting_source_kept','manual'].includes(r.phase) ? list(r.queue).filter(q=>q&&typeof q==='object'&&!Array.isArray(q)) : [];
+  const freshImportDiagnosis=r.attention?.importDiagnosis?.status==='verified'?r.attention.importDiagnosis:null;
+  const freshImportBlocked=!!freshImportDiagnosis&&['import-problem','language-quality-mismatch'].includes(freshImportDiagnosis.category);
+  const freshImportUnconfirmed=!!freshImportDiagnosis&&!freshImportBlocked;
   const searchStatus = normalize(r.search?.status);
   const tdarrStatus = normalize(r.tdarrStatus);
-  const warnings = [text(r.error), text(r.retentionError), text(r.warning), ...queue.map(q => text(q.error))].filter(Boolean);
+  const blockedImport = freshImportDiagnosis ? freshImportBlocked : queue.some(q => normalize(q.trackedDownloadState)==='importblocked');
+  const warnings = [blockedImport?null:text(r.error), text(r.retentionError), blockedImport?null:text(r.warning), ...queue.map(q => blockedImport?null:text(q.error))].filter(Boolean);
   const failedSearch = ['failed', 'aborted', 'cancelled'].includes(searchStatus);
-  const blockedImport = queue.some(q => normalize(q.trackedDownloadState)==='importblocked');
-  const failedQueue = blockedImport || queue.some(q => ['failed', 'error', 'warning', 'downloadclientunavailable'].includes(normalize(q.status)));
+  const failedQueue = blockedImport || freshImportUnconfirmed || queue.some(q => ['failed', 'error', 'warning', 'downloadclientunavailable'].includes(normalize(q.status)));
   if (failedSearch) warnings.push('Hledání v Radarru selhalo nebo bylo zrušené.');
   if (failedQueue) warnings.push('Fronta Radarru vyžaduje kontrolu.');
+  if (freshImportUnconfirmed) warnings.push('Čerstvý stav Radarru nepotvrzuje blokovaný import.');
   if (stale) warnings.push('Stav je starší než 12 minut; obnov aktuální údaje.');
   if (unknownTime) warnings.push('Čas posledního ověření stavu není dostupný.');
 
@@ -271,6 +275,7 @@ export function classifyRecovery(record, now = Date.now()) {
     category = 'attention'; nextStep = 'Zkontroluj upozornění v detailu případu.';
     reason = blockedImport ? 'import-blocked' : failedQueue ? 'queue-failed' : failedSearch ? 'search-failed' : r.retentionError ? 'retention-error' : 'case-error';
     if(blockedImport){label='Staženo; Radarr blokuje import';nextStep='Otevři frontu Radarru a přiřaď stažený soubor správnému filmu přes ruční import. Nové stahování není potřeba.';}
+    else if(freshImportUnconfirmed){label=freshImportDiagnosis.category==='download-pending'?'Radarr stahuje; blokovaný import není potvrzen':'Radarr nepotvrdil blokovaný import';nextStep='Zkontroluj aktuální diagnózu a frontu Radarru; stav případu zůstává k vyřízení.';}
   } else if (r.tdarrMissing === true && r.phase === 'replacement_imported' && !approvalEvidence) {
     // The server read Tdarr and found no row for the imported replacement (#231): Recovery does not retry it.
     category = 'attention'; reason = 'tdarr-missing'; label = 'Náhrada se do Tdarru nedostala'; nextStep = 'Předej náhradu Tdarru z přehledu případu.';
@@ -316,7 +321,7 @@ export function downloadProgress(record) {
     const measured=typeof q.percent==='number'&&Number.isFinite(q.percent)&&q.percent>=0;
     const left=text(q.timeleft);
     const eta=stage==='downloading'&&/^\d{1,6}:[0-5]\d:[0-5]\d$/.test(left)&&!/^0+:00:00$/.test(left)?left:null;
-    return {title:text(q.title),stage,label:labels[stage],downloadPercent:measured?Math.min(100,q.percent):null,eta,error:text(q.error)};
+    return {title:text(q.title),stage,label:labels[stage],downloadPercent:measured?Math.min(100,q.percent):null,eta,error:stage==='blocked'?null:text(q.error)};
   });
 }
 

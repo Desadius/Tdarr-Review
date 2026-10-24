@@ -86,7 +86,7 @@ const LOCATION_SOURCES=[['library','Knihovna'],['quarantine','Karanténa'],['rev
 const LOCATION_DETAILS={present:'Soubor je na místě',changed:'Soubor se od záznamu změnil',missing:'Soubor chybí',pending:'Čeká na posouzení',retained:'Zachovaná podle záznamu',
  'transcode success':'Převod dokončen','transcode error':'Převod skončil chybou','not required':'Vynecháno jako Not required',hold:'Pozastaveno (Hold)',queued:'Ve frontě',transcoding:'Převádí se',
  'import-blocked':'Import je blokovaný','queue-failed':'Fronta hlásí chybu','search-failed':'Hledání selhalo',downloading:'Stahuje se','no-download':'Nic se nestahuje'};
-export const ATTENTION_ACTIONS={refresh:['Obnovit stav','Jen znovu načte údaje z Radarru, Tdarru a knihovny; nic nemění.'],openRadarr:['Otevřít film v Radarru','Otevře Radarr; nic nemění.'],
+export const ATTENTION_ACTIONS={refresh:['Obnovit stav','Jen znovu načte údaje z Radarru, Tdarru a knihovny; nic nemění.'],openRadarr:['Otevřít film v Radarru','Otevře Radarr; nic nemění.'],openQueue:['Otevřít frontu Radarru','Otevře obecnou frontu Radarru; nic nemění.'],
  openReview:['Posoudit výsledek v Review','Otevře posouzení; schválení je samostatný krok.'],replaceSource:['Vyžádat jinou kopii přes Radarr','Spustí vyžádání náhrady; originál zůstane zachovaný v karanténě.'],
  restore:['Vrátit originál i převod z karantény','Přesune zachované soubory zpět do knihovny.'],assessInstalled:['Posoudit nainstalovanou kopii','Otevře posouzení kopie, která je v knihovně; nic nemění.'],
  handoffTdarr:['Předat náhradu Tdarru','Tdarr soubor znovu naskenuje a zařadí ho podle svých pravidel; v knihovně se nic nepřesouvá.']};
@@ -115,6 +115,26 @@ const BLOCKERS={'source-not-confirmed':'Vada originálu není potvrzená dvěma 
  'handoff-busy':'Probíhá jiná akce; předání bude možné po jejím dokončení.',
  'handoff-manual':'Recovery předání vzdala; správce musí případ zkontrolovat. Schválení by tu úklid karantény nespustilo.'};
 
+const IMPORT_DIAGNOSIS={
+ 'language-quality-mismatch':'Nesoulad jazyka nebo kvality; podrobnosti ověř v Radarru.',
+ 'download-pending':'Stahování stále probíhá; podrobnosti ověř ve frontě Radarru.',
+ 'import-problem':'Radarr hlásí problém při importu; vyřeš ho v Radarru.',
+ unrecognized:'Příčina není jednoznačná; podrobnosti ověř ve frontě Radarru.',
+ unverified:'Diagnóza importu zatím není ověřena. Obnov stav ručně.',
+ unavailable:'Diagnózu importu se nepodařilo ověřit. Obnov stav ručně.'
+};
+export function importDiagnosisView(diagnosis,translate=tr){
+ if(!diagnosis||!IMPORT_DIAGNOSIS[diagnosis.status==='verified'?diagnosis.category:diagnosis.status])return null;
+ const box=el('section','import-diagnosis'),status=diagnosis.status==='verified'?diagnosis.category:diagnosis.status;
+ box.setAttribute('aria-label',translate('Diagnóza importu'));
+ box.append(el('p','details',translate(IMPORT_DIAGNOSIS[status])));
+ const links=el('div','import-diagnosis-links');
+ const addLink=(url,label)=>{if(typeof url!=='string'||!/^https?:\/\/[^/?#@]+(?:\/[^?#]*)?$/i.test(url)||/[\u0000-\u0020\\]/.test(url))return;const link=el('a','secondary',translate(label));link.href=url;link.target='_blank';link.rel='noopener noreferrer';links.append(link)};
+ addLink(diagnosis.movieUrl,'Otevřít ověřený film v Radarru');addLink(diagnosis.queueUrl,'Otevřít frontu Radarru');
+ if(links.children.length)box.append(links);
+ return box;
+}
+
 export function attentionLocationView(location,translate=tr){
  const rows=LOCATION_SOURCES.filter(([key])=>location?.[key]&&location[key].status!=='not-used').map(([key,label])=>{const v=location[key];
   return [label,translate(LOCATION_DETAILS[v.detail]||(v.status==='unverified'?'Nelze ověřit':'Není doloženo'))+' · '+translate(v.status==='verified'?'ověřeno':'neověřeno')+(v.at?' · '+date(v.at):''),true];});
@@ -125,14 +145,15 @@ export function attentionActionsView(attention,run,{recommendedOnly=false}={},tr
  const box=el('div','attention-actions'),list=(attention?.actions||[]).filter(a=>ATTENTION_ACTIONS[a.id]&&(!recommendedOnly||a.id===attention.recommended));
  list.sort((a,b)=>(b.id===attention.recommended)-(a.id===attention.recommended));
  for(const action of list){const [label,changes]=ATTENTION_ACTIONS[action.id],primary=action.id===attention.recommended;
-  const node=action.id==='openRadarr'?Object.assign(el('a',primary?'primary':'secondary',label),{href:action.href,target:'_blank',rel:'noopener noreferrer'}):el('button',primary?'primary':'secondary',label);
+  const node=['openRadarr','openQueue'].includes(action.id)?Object.assign(el('a',primary?'primary':'secondary',label),{href:action.href,target:'_blank',rel:'noopener noreferrer'}):el('button',primary?'primary':'secondary',label);
   if(node.tagName==='BUTTON'){node.type='button';node.onclick=()=>run(action);}node.dataset.attentionAction=action.id;
   const line=el('div','attention-action');line.append(node,el('small','details',changes));box.append(line);}
  return box;
 }
 export function attentionView(attention,run,translate=tr){
  const box=el('section','attention-model');box.setAttribute('aria-label',translate('Co dál'));
- box.append(el('h4','','Kde je film teď'),attentionLocationView(attention.location,translate),el('h4','','Co můžeš udělat'),attentionActionsView(attention,run,{},translate));
+ box.append(el('h4','','Kde je film teď'),attentionLocationView(attention.location,translate));const diagnosis=importDiagnosisView(attention.importDiagnosis,translate);if(diagnosis)box.append(diagnosis);
+ box.append(el('h4','','Co můžeš udělat'),attentionActionsView(attention,run,{},translate));
  const blockers=(attention.blockers||[]).filter(code=>BLOCKERS[code]);
  if(blockers.length){const list=el('ul','attention-blockers');for(const code of blockers)list.append(el('li','',BLOCKERS[code]));box.append(el('h4','','Co brání dalšímu kroku'),list);}
  if(attention.recoveryPolledAt)box.append(el('p','details',translate('Recovery naposledy ověřila stav:')+' '+date(attention.recoveryPolledAt),true));
