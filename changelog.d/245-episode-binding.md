@@ -1,0 +1,1 @@
+- Prepare a separate, inactive Sonarr episode-file binding foundation with exact linked episode IDs and explicit ambiguity checks; TV discovery and processing remain unavailable.
