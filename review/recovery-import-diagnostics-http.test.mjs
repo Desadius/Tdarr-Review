@@ -18,13 +18,13 @@ test('Recovery import explanation uses a fresh exact Radarr binding and exposes 
   statusMessages:[{title:'Import blocked',messages:['Quality profile does not allow this quality and language. SECRET=/private/radarr-error']}],
   errorMessage:'SECRET=/private/radarr-error',downloadUrl:'http://radarr.invalid/private'
  }]},queueStatus=200;
- let movieGate=null,recoveryStatusFile;
+ let movieGate=null,recoveryStatusFile,batchMode=false;
  const radarr=http.createServer(async(req,res)=>{
   const chunks=[];for await(const chunk of req)chunks.push(chunk);
   calls.push({method:req.method,url:req.url,key:req.headers['x-api-key'],body:Buffer.concat(chunks).toString('utf8')});
   const url=new URL(req.url,'http://radarr.invalid');let result,status=200;
-  if(req.method==='GET'&&url.pathname.startsWith('/api/v3/movie/')){if(movieGate){const gate=movieGate;movieGate=null;gate.entered();await gate.released;}result=movieResponse;status=movieStatus;}
-  else if(req.method==='GET'&&url.pathname==='/api/v3/queue'&&url.searchParams.get('movieId')){result=queueResponse;status=queueStatus;}
+  if(req.method==='GET'&&url.pathname.startsWith('/api/v3/movie/')){const requestedId=Number(url.pathname.split('/').at(-1));if(movieGate&&(!movieGate.movieId||movieGate.movieId===requestedId)){const gate=movieGate;movieGate=null;gate.entered();await gate.released;}result=batchMode?{id:requestedId,tmdbId:requestedId===MOVIE_ID?9001:9002,title:'Synthetic film',titleSlug:'synthetic-'+requestedId}:movieResponse;status=movieStatus;}
+  else if(req.method==='GET'&&url.pathname==='/api/v3/queue'&&url.searchParams.get('movieId')){const requestedId=Number(url.searchParams.get('movieId'));result=batchMode?{page:1,pageSize:100,totalRecords:1,records:[{id:700+requestedId,movieId:requestedId,status:'completed',trackedDownloadState:'ImportBlocked',statusMessages:[{messages:['Import failed']}]}]}:queueResponse;status=queueStatus;}
   else {res.writeHead(404);res.end('{}');return;}
   res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(result));
  });
@@ -99,15 +99,20 @@ test('Recovery import explanation uses a fresh exact Radarr binding and exposes 
  assert.equal(calls.length,2,'opening the overview does not repeat or reuse a fresh Radarr read');
 
  let state=JSON.parse(await fs.readFile(path.join(f.data,'recovery','state.json'),'utf8'));
- async function inspectAgain(){const response=await f.post('/api/recovery/refresh',{keys:['recovery:'+CASE_ID]});assert.equal(response.status,200,await response.clone().text());return (await response.json()).requests.find(value=>value.id===CASE_ID).attention.importDiagnosis;}
+ async function inspectAgainRecord(){const response=await f.post('/api/recovery/refresh',{keys:['recovery:'+CASE_ID]});assert.equal(response.status,200,await response.clone().text());return (await response.json()).requests.find(value=>value.id===CASE_ID);}
+ async function inspectAgain(){return (await inspectAgainRecord()).attention.importDiagnosis;}
  queueResponse={page:1,pageSize:100,totalRecords:1,records:[{id:601,movieId:999,status:'completed',trackedDownloadState:'importBlocked'}]};
  let nextDiagnosis=await inspectAgain();assert.equal(nextDiagnosis.status,'unavailable');assert.equal(nextDiagnosis.category,null,'a movieId-filtered queue result must still prove record membership');
  queueResponse={page:1,pageSize:100,totalRecords:2,records:[{id:602,movieId:MOVIE_ID,status:'completed',trackedDownloadState:'importBlocked'}]};
  nextDiagnosis=await inspectAgain();assert.equal(nextDiagnosis.status,'unavailable','truncated queue pages are not complete evidence');
  queueResponse={page:1,pageSize:100,totalRecords:1,records:[{id:603,movieId:MOVIE_ID,status:'downloading',trackedDownloadState:'Downloading',trackedDownloadStatus:'Warning',statusMessages:[{messages:['Download client connection failed']}]}]};
- nextDiagnosis=await inspectAgain();assert.equal(nextDiagnosis.status,'verified');assert.equal(nextDiagnosis.category,'unrecognized','a download-client failure is not proof of an import or stalled-download cause');
+ const unrecognizedRecord=await inspectAgainRecord();nextDiagnosis=unrecognizedRecord.attention.importDiagnosis;assert.equal(nextDiagnosis.status,'verified');assert.equal(nextDiagnosis.category,'unrecognized','a download-client failure is not proof of an import or stalled-download cause');
+ assert.equal(unrecognizedRecord.attention.reason,'queue-failed','fresh unrecognized status keeps the case in attention without reusing the saved import-blocked reason');
+ assert.equal(unrecognizedRecord.attention.blockers.includes('manual-import-in-radarr'),false,'fresh unrecognized status must not require manual import');
  queueResponse={page:1,pageSize:100,totalRecords:1,records:[{id:604,movieId:MOVIE_ID,status:'downloading',trackedDownloadState:'Downloading'}]};
- nextDiagnosis=await inspectAgain();assert.equal(nextDiagnosis.category,'download-pending');
+ const pendingRecord=await inspectAgainRecord();nextDiagnosis=pendingRecord.attention.importDiagnosis;assert.equal(nextDiagnosis.category,'download-pending');
+ assert.equal(pendingRecord.attention.reason,'queue-failed','fresh pending downloads remain attention without stale import guidance');
+ assert.equal(pendingRecord.attention.blockers.includes('manual-import-in-radarr'),false,'fresh pending downloads must not require manual import');
  queueResponse={page:1,pageSize:100,totalRecords:1,records:[{id:605,movieId:MOVIE_ID,status:'completed',trackedDownloadState:'ImportBlocked'}]};
  nextDiagnosis=await inspectAgain();assert.equal(nextDiagnosis.category,'import-problem');
 
@@ -158,6 +163,23 @@ test('Recovery import explanation uses a fresh exact Radarr binding and exposes 
  const beforeRestart=calls.length;await f.restart();const restarted=await f.get('/api/radarr/requests'),afterRestart=restarted.requests.find(value=>value.id===CASE_ID);
  assert.equal(afterRestart.attention.importDiagnosis.status,'unverified','fresh reports are ephemeral and restart requires another manual read');
  assert.equal(afterRestart.radarrMovieUrl,undefined);assert.equal(calls.length,beforeRestart,'restart overview does not silently fetch or reuse old evidence');
+
+ const secondCaseId='d'.repeat(24),stateFile=path.join(f.data,'recovery','state.json'),batchState=JSON.parse(await fs.readFile(stateFile,'utf8'));
+ batchState.cases[CASE_ID].binding.movieFileId=44;
+ batchState.cases[secondCaseId]={id:secondCaseId,status:'waiting_replacement',movieId:74,tmdbId:9002,binding:{movieFileId:46}};
+ await fs.writeFile(stateFile,JSON.stringify(batchState));
+ const batchStatus=JSON.parse(await fs.readFile(recoveryStatusFile,'utf8'));
+ batchStatus.cases.push({id:secondCaseId,title:'Second synthetic film',phase:'waiting_replacement',statusUpdated:new Date().toISOString(),tmdbId:9002,queue:[{status:'completed',trackedDownloadState:'ImportBlocked'}]});
+ await fs.writeFile(recoveryStatusFile,JSON.stringify(batchStatus));batchMode=true;
+ let secondEntered;const secondSeen=new Promise(resolve=>{secondEntered=resolve});let releaseSecond;const secondReleased=new Promise(resolve=>{releaseSecond=resolve});movieGate={movieId:74,entered:()=>secondEntered(),released:secondReleased};
+ const batchRefresh=f.post('/api/recovery/refresh',{keys:['recovery:'+CASE_ID,'recovery:'+secondCaseId]});await secondSeen;
+ batchState.cases[CASE_ID].binding.movieFileId=47;await fs.writeFile(stateFile,JSON.stringify(batchState));
+ releaseSecond();const batchResponse=await batchRefresh;assert.equal(batchResponse.status,200);const batchBody=await batchResponse.json();
+ const firstAfterBatch=batchBody.requests.find(value=>value.id===CASE_ID),secondAfterBatch=batchBody.requests.find(value=>value.id===secondCaseId);
+ assert.equal(firstAfterBatch.attention.importDiagnosis.status,'unavailable','a result validated before another slow case must be revalidated against the final case snapshot');
+ assert.equal(firstAfterBatch.attention.importDiagnosis.movieUrl,null,'a changed earlier binding must not retain its exact movie URL');
+ assert.equal(firstAfterBatch.attention.location.radarr.status,'unverified','the earlier cached Radarr location is invalidated with its stale diagnosis');
+ assert.equal(secondAfterBatch.attention.importDiagnosis.status,'verified','the unchanged slow case keeps its fresh diagnosis');
 });
 
 test('Recovery Off refuses the manual Radarr diagnosis without making upstream requests',linux,async t=>{

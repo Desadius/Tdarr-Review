@@ -167,16 +167,30 @@ export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnec
    ['timeleft',typeof q.timeleft==='string'&&/^\d{1,6}:[0-5]\d:[0-5]\d$/.test(q.timeleft)?q.timeleft:null]
   ].filter(([,value])=>value!==null))).filter(q=>Object.keys(q).length);
  }
- async function attach(overview,importDiagnoses=new Map()){
+ async function attach(overview,importDiagnoses=new Map(),importDiagnosisBindings=new Map()){
   const requests=Array.isArray(overview?.requests)?overview.requests:[];
   let caseState=null;try{caseState=await cases();}catch{}
+  if(importDiagnosisBindings.size){
+   let finalConnection=null;try{finalConnection=await getConnection();}catch{}
+   let finalConfigMatches=false;try{if(finalConnection)finalConfigMatches=await recoveryConfigMatches(finalConnection);}catch{}
+   for(const [id,binding] of importDiagnosisBindings){
+    const currentCase=caseState?.[id],record={id,phase:binding.phase,tmdbId:binding.tmdbId};
+    const caseMatches=exactRecoveryBinding(record,currentCase,caseState)&&currentCase.movieId===binding.movieId&&currentCase.tmdbId===binding.tmdbId&&currentCase.binding.movieFileId===binding.movieFileId;
+    const connectionMatches=finalConnection?.apiKey===binding.apiKey&&finalConnection?.mediaRoot===binding.mediaRoot&&recoveryNamespaceUrl(finalConnection?.url)===binding.url&&finalConfigMatches;
+    if(!caseMatches||!connectionMatches){
+     importDiagnoses.set(id,unavailableImportDiagnosis(finalConnection));
+     const update=refreshed.get('recovery:'+id);if(update){update.radarr=null;update.radarrError=true;}
+    }
+   }
+  }
   // A parent whose verified follow-up still carries unresolved work is shown once, as the follow-up.
   const classifiedChild=new Map(requests.filter(r=>r?.source==='recovery').map(r=>[r.id,classifyRecovery(r,now())]));
   // An imported replacement whose Tdarr row a fresh read finds missing (#231).
   for(const r of requests){delete r.tdarrMissing;if(handoff&&r?.source==='recovery'&&r.phase==='replacement_imported'&&!r.tdarrStatus&&caseState?.[r.id]&&await handoff.rowMissing(caseState[r.id]))r.tdarrMissing=true;}
   for(const r of requests){const child=recoveryFollowup(r,requests);delete r.supersededBy;if(child&&UNRESOLVED.has(classifiedChild.get(child.id)?.category)&&!r.error)r.supersededBy=child.id;}
   for(const r of requests){
-   const classification=classifyRecovery(r,now());delete r.attention;
+   const freshDiagnosis=importDiagnoses.get(r.id);
+   const classification=classifyRecovery(freshDiagnosis?{...r,attention:{importDiagnosis:freshDiagnosis}}:r,now());delete r.attention;
    if(classification.category!=='attention')continue;
    if(importDiagnosisReasons.has(classification.reason))redactQueueDiagnosis(r,classification);
    const c=r.source==='recovery'?caseState?.[r.id]:null,found=await locate(r,c);
@@ -198,7 +212,7 @@ export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnec
   const requests=Array.isArray(overview?.requests)?overview.requests:[],state=await cases().catch(()=>null),stamp=new Date(now()).toISOString();
   let connection=null;try{connection=await getConnection();}catch{}
   const radarrGet=async route=>{const r=await fetch(connection.url.replace(/\/$/,'')+'/api/v3'+route,{redirect:'error',headers:{'X-Api-Key':connection.apiKey},signal:AbortSignal.timeout(12000)});if(!r.ok)throw Error('Radarr '+r.status);return r.json();};
-  const importDiagnoses=new Map();let importInspections=0;
+  const importDiagnoses=new Map(),importDiagnosisBindings=new Map();let importInspections=0;
   let recoveryConfigIsCurrent=false;try{if(connection)recoveryConfigIsCurrent=await recoveryConfigMatches(connection);}catch{}
   for(const r of requests){
    const key=r.source+':'+r.id;if(keys?!keys.includes(key):classifyRecovery(r,now()).category!=='attention')continue;
@@ -215,7 +229,7 @@ export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnec
      try{currentConnection=await getConnection()}catch{}
      const stillBound=exactRecoveryBinding(r,currentCase,currentCases)&&currentCase.movieId===c.movieId&&currentCase.tmdbId===c.tmdbId&&currentCase.binding.movieFileId===c.binding.movieFileId&&
       currentConnection?.apiKey===connection.apiKey&&currentConnection?.mediaRoot===connection.mediaRoot&&recoveryNamespaceUrl(currentConnection?.url)===recoveryNamespaceUrl(connection.url)&&await recoveryConfigMatches(currentConnection);
-     if(inspected.status==='verified'&&stillBound)diagnosis=inspected;
+     if(inspected.status==='verified'&&stillBound){diagnosis=inspected;importDiagnosisBindings.set(r.id,{phase:c.status,movieId:c.movieId,tmdbId:c.tmdbId,movieFileId:c.binding.movieFileId,url:recoveryNamespaceUrl(connection.url),apiKey:connection.apiKey,mediaRoot:connection.mediaRoot});}
      else diagnosis=unavailableImportDiagnosis(currentConnection);
      if(diagnosis.status==='verified')update.radarr=diagnosis.category==='download-pending'?'downloading':diagnosis.category==='import-problem'||diagnosis.category==='language-quality-mismatch'?'import-blocked':null;
      else update.radarrError=true;
@@ -225,7 +239,7 @@ export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnec
     update.radarr=radarrDetail({source:'review',queue:records.map(q=>({status:q.status,trackedDownloadState:q.trackedDownloadState})),radarrMovieUrl:true});}catch{update.radarr=null;update.radarrError=true;}}
    refreshed.set(key,update);
   }
-  return attach(overview,importDiagnoses);
+  return attach(overview,importDiagnoses,importDiagnosisBindings);
  }
  return {attach,refresh};
 }

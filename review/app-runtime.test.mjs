@@ -422,6 +422,13 @@ test('a mapped Sonarr file cannot be source-checked without an explicit saved ro
   assert.equal(detail.querySelectorAll('a').some(a=>a.href==='http://radarr.invalid/movie/synthetic-import-film'),true);
   assert.equal(detail.querySelectorAll('a').some(a=>a.href==='http://radarr.invalid/activity/queue'),true);
   assert.doesNotMatch(detail.textContent,/PRIVATE RAW ERROR|api[_ -]?key|\/private\//i);
+  const savedBlock={...fresh,phase:'waiting_replacement',queue:[{status:'completed',trackedDownloadState:'ImportBlocked'}],attention:{...fresh.attention,reason:'import-blocked',blockers:['manual-import-in-radarr'],importDiagnosis:{status:'verified',category:'unrecognized',movieUrl:'http://radarr.invalid/movie/synthetic-import-film',queueUrl:'http://radarr.invalid/activity/queue'}}};
+  await f.update({requests:[savedBlock],recoveryRuntime:runtime});await flush();
+  const unconfirmedCard=dom.getElementById('recoveryList');
+  assert.match(unconfirmedCard.textContent,en?/cause is unclear/i:/příčina není jednoznačná/i,'the fresh diagnosis remains visible');
+  assert.doesNotMatch(unconfirmedCard.textContent,en?/Radarr import is blocked|manual import/i:/Radarr blokuje import|ruční import/i,'a stale saved importBlocked state cannot drive current import guidance');
+  assert.match(unconfirmedCard.textContent,/Synthetic import film/,'the case remains visible in attention/history');
+  assert.equal(unconfirmedCard.querySelectorAll('a').some(a=>a.href==='http://radarr.invalid/activity/queue'),true,'the fresh general queue link remains available');
   const failedQueue={...fresh,phase:'waiting_replacement',queue:[{status:'failed',trackedDownloadState:'failed'}],attention:{...fresh.attention,reason:'queue-failed',recommended:'refresh',actions:[{id:'refresh',changes:'information'},{id:'openQueue',changes:'nothing',href:'http://radarr.invalid/activity/queue'}],importDiagnosis:{status:'verified',category:'unrecognized',movieUrl:'http://radarr.invalid/movie/synthetic-import-film',queueUrl:'http://radarr.invalid/activity/queue'}}};
   await f.update({requests:[failedQueue],recoveryRuntime:runtime});await flush();
   const failedCard=dom.getElementById('recoveryList');assert.match(failedCard.textContent,en?/cause is unclear/i:/příčina není jednoznačná/i);
