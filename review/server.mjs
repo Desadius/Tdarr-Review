@@ -78,6 +78,7 @@ import {createReplacement} from './radarr-replacement.mjs';
 import {createRecoveryAttention} from './recovery-attention.mjs';
 import {createInstalledAssessment} from './installed-assessment.mjs';
 import {createTdarrHandoff} from './tdarr-handoff.mjs';
+import {createRecoverySafeRestore} from './recovery-safe-restore.mjs';
 let state=JSON.parse(await fs.readFile(statefile,'utf8').catch(()=>'{"items":{},"history":[],"sessions":{},"pauses":[]}'));
 if(!state.reviewSessions||typeof state.reviewSessions!=='object'||Array.isArray(state.reviewSessions))state.reviewSessions={};
 // Confirmed replacements wait here while another replacement or batch runs (#155). After a restart
@@ -89,6 +90,7 @@ for(const h of state.history||[])if(h.status==='error'&&h.message?.includes('Une
 let previewBusy=false;
 let active=null,scanPromise=null,cache=null,cacheAt=0,batchRunning=false;
 let mutationOwner=null;
+let recoveryRestoreBusy=false;
 // Node pauses taken by the running replacement or batch are owned by it, not unresolved: they do not
 // block reviews of other films. Once the operation ends, any pause left behind blocks as before.
 const operationPauses=()=>!!(active||batchRunning);
@@ -124,7 +126,7 @@ async function drainQueue(){
  }finally{queueRunning=false;if(mutationOwner?.kind==='queue')mutationOwner=null}
 }
 function busyFor(kind,owner=null){
- return policyBusyFor(kind,{foreground:mutationOwner&&mutationOwner!==owner,active,batchRunning,resumeTask,previewBusy,settingsBusy,reviewSessions:reviewSessions.busy,scan:scanPromise,recovery:recovery.length,pauses:operationPauses()?0:state.pauses.length,statistics:statsTask,previewHolds:previewMutationHolds});
+ return policyBusyFor(kind,{foreground:mutationOwner&&mutationOwner!==owner,active,batchRunning,resumeTask,previewBusy,settingsBusy,reviewSessions:reviewSessions.busy,recoveryRestore:recoveryRestoreBusy,scan:scanPromise,recovery:recovery.length,pauses:operationPauses()?0:state.pauses.length,statistics:statsTask,previewHolds:previewMutationHolds});
 }
 let saveChain=Promise.resolve();
 const save=()=>{const snapshot=structuredClone(state);saveChain=saveChain.catch(()=>{}).then(()=>atomicJSON(statefile,snapshot));return saveChain};
@@ -287,6 +289,10 @@ const replacements=createReplacement({data:DATA,getConfig:()=>config,getConnecti
 const installedAssessment=createInstalledAssessment({data:DATA,getConfig:()=>config,getItems:()=>state.items,tdarr,readRows:table=>dbRows(table),probe:file=>probe(FFPROBE,file),atomicJSON,recordDecision:entry=>recordDecision(DATA,entry)});
 const tdarrHandoff=createTdarrHandoff({data:DATA,getConfig:()=>config,tdarr,readRows:table=>dbRows(table),isWorkerBusy:async item=>workerBusy(await tdarr('/api/v2/get-nodes'),item),atomicJSON});
 const recoveryAttention=createRecoveryAttention({data:DATA,getConfig:()=>config,getItems:()=>state.items,tdarr,getConnection:activeConnection,mode:process.env.RECOVERY_MODE||'off',installed:installedAssessment,handoff:tdarrHandoff,isBusy:()=>!!busyFor('replace')});
+const localOff={requestDrain:async()=>({state:'off'}),status:async()=>({state:'off'}),cancel:async()=>({state:'off'}),stopAfterDrain:async()=>({state:'stopped'}),restart:async()=>({state:'off'}),wait:async()=>({state:'off'})};
+const restoreControl=!process.connected&&(!process.env.RECOVERY_MODE||process.env.RECOVERY_MODE==='off')?localOff:createRecoveryControlClient();
+const recoverySafeRestore=createRecoverySafeRestore({data:DATA,mode:process.env.RECOVERY_MODE||'off',tdarr,control:restoreControl});
+await recoverySafeRestore.initialize();recoveryRestoreBusy=recoverySafeRestore.busy;
 const artwork=createArtwork({data:DATA,getConnection:activeConnection});
 await replacements.recover();
 async function replacementAction(item,reason){
@@ -435,7 +441,7 @@ const authTimer=setInterval(()=>{pruneAuthAttempts(authAttempts);if(pruneSession
 // Getters/setters keep the module variables above authoritative, so the scan,
 // transaction and preview code shares exactly the state the routes change.
 const ctx={
- ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,recoveryAttention,installedAssessment,tdarrHandoff,artwork,reviewSessions,previewPairs,previewPlans,previewAttempts,sharedSettings,sonarrSourceInspection,
+ ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,recoveryAttention,recoverySafeRestore,installedAssessment,tdarrHandoff,artwork,reviewSessions,previewPairs,previewPlans,previewAttempts,sharedSettings,sonarrSourceInspection,
  get config(){return config},set config(value){config=value},
  get previewSettings(){return previewSettings},set previewSettings(value){previewSettings=value},
  get state(){return state},
@@ -449,6 +455,7 @@ const ctx={
  get statsCache(){return statsCache},set statsCache(value){statsCache=value},
  get statsTask(){return statsTask},set statsTask(value){statsTask=value},
  get mutationOwner(){return mutationOwner},set mutationOwner(value){mutationOwner=value},
+ setRecoveryRestoreBusy:value=>{recoveryRestoreBusy=value;},
  applyConfig,save,busyFor,itemInOperation,enqueueReplacement,keepNodePaused,pendingRestores,scan,perform,performBatch,replacementAction,resume,readRows,dbRows,verifyReviewItem,reviewMutationBlocked,
  previewIdentity,previewPair,previewVersion,previewPreparation,planPreviewItem,preparePreviews,forgetPreviews,
 };
@@ -468,8 +475,7 @@ const activateSettings=(value,invalidation={level:'all'})=>{
  logEvent('settings.activated',{generation:invalidation.generation,invalidation:invalidation.level,fields:invalidation.fields,reviews:invalidation.cleared?.reviews,approvals:invalidation.cleared?.approvals});
 };
 activateSettings.flush=async()=>{if(pendingInvalidation!=='none')await previews.invalidate({all:true});await save();};
-const localOff={requestDrain:async()=>({state:'off'}),status:async()=>({state:'off'}),cancel:async()=>({state:'off'}),stopAfterDrain:async()=>({state:'stopped'}),restart:async()=>({state:'off'}),wait:async()=>({state:'off'})};
-ctx.settingsApply=await createSettingsApply({assess:assessInvalidation,data:DATA,store:sharedSettings,mode:process.env.RECOVERY_MODE||'off',control:!process.connected&&(!process.env.RECOVERY_MODE||process.env.RECOVERY_MODE==='off')?localOff:createRecoveryControlClient(),safe:()=>!busyFor('settings')&&!replacementTask&&!previewPlanning,barrier:value=>{settingsBusy=value;},activate:activateSettings,readRows});
+ctx.settingsApply=await createSettingsApply({assess:assessInvalidation,data:DATA,store:sharedSettings,mode:process.env.RECOVERY_MODE||'off',control:restoreControl,safe:()=>!busyFor('settings')&&!replacementTask&&!previewPlanning,barrier:value=>{settingsBusy=value;},activate:activateSettings,readRows});
 const routes=[sharedSettingsRoutes,sonarrRoutes,libraryRoutes,itemRoutes,previewRoutes,settingsRoutes,nodeRoutes,staticRoutes];
 const server=http.createServer(async(req,res)=>{
   let releasePreviewBackground=false;const request={mutation:null};

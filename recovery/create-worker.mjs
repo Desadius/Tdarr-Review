@@ -16,6 +16,7 @@ import {classify,confirmed,originalFailureReport,fatalMpeg2Input,PREMATURE_EOF,r
 import {readHeader} from './container-header.mjs';
 import {lowPriorityHash} from './full-hash.mjs';
 import {createTdarrFileState} from './tdarr-file-state.mjs';
+import {hasRecoveryRestoreEvidence} from './restore-evidence.mjs';
 import {DatabaseSync} from 'node:sqlite';
 import {readRecoveryConfiguration,readRecoveryApprovals} from './recovery-authority.mjs';
 import {atomicJson as atomic} from './atomic-json.mjs';
@@ -266,7 +267,8 @@ export function createWorker({data,mode,cfg,configText,managed,state,pendingAppr
     if(!canStart())return;
     let c;
     try{
-     const rel=relative(f._id,cfg.sourceRoot),s=await safeSource(rel),id=caseId(f._id,s.fp);
+    const rel=relative(f._id,cfg.sourceRoot),s=await safeSource(rel),id=caseId(f._id,s.fp);
+    if(await hasRecoveryRestoreEvidence({data,file:f._id,identity:s.fp,cfg}))continue;
     if(Object.values(state.cases).some(c=>c.skipCurrentEdition&&c.file===f._id&&c.preservedSourceFP===s.fp))continue;
      if(state.cases[id])continue;
      if(await readHeader(s.p)!=='terminal_overwrite')continue;
@@ -295,6 +297,7 @@ export function createWorker({data,mode,cfg,configText,managed,state,pendingAppr
    let c;
    try{
     const rel=relative(j.file,cfg.sourceRoot),s=await safeSource(rel),id=caseId(j.file,s.fp);
+    if(await hasRecoveryRestoreEvidence({data,file:j.file,identity:s.fp,cfg}))continue;
     if(Object.values(state.cases).some(c=>c.skipCurrentEdition&&c.file===j.file&&c.preservedSourceFP===s.fp))continue;
     state.jobs[j._id]=id;
     if(state.cases[id])continue;

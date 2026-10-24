@@ -1,7 +1,7 @@
 // Policies describe application work, not authentication or approval authority.
 // A foreground reservation covers request parsing, preview draining and preflight
 // before the longer-running active/settings/preview flags are set.
-const foreground=['foreground','active','batchRunning','resumeTask','previewBusy','settingsBusy','reviewSessions'];
+const foreground=['foreground','active','batchRunning','resumeTask','previewBusy','settingsBusy','reviewSessions','recoveryRestore'];
 const settled=['recovery','pauses'];
 const scan=['scan'];
 export const BUSY_POLICIES=Object.freeze({
@@ -15,6 +15,7 @@ export const BUSY_POLICIES=Object.freeze({
  batch:Object.freeze([...foreground,...settled]),
  replace:Object.freeze([...foreground,...settled]),
  restore:Object.freeze([...foreground,...scan,...settled]),
+ restoreReconcile:Object.freeze([...foreground.filter(flag=>flag!=='recoveryRestore'),...scan,...settled]),
  recheck:Object.freeze([...foreground,...scan,...settled]),
  settings:Object.freeze([...foreground,...scan,...settled,'statistics']),
  // Connection/cache configuration cannot replace media or resume dispatch.
@@ -39,7 +40,7 @@ export const BUSY_POLICIES=Object.freeze({
  background:Object.freeze([...foreground,...scan,...settled,'previewHolds']),
  // Forgetting a pending node restore is allowed during an action (that is when a
  // node paused by the user would be resumed) but never while a resume is running.
- keepPaused:Object.freeze(['foreground','resumeTask']),
+ keepPaused:Object.freeze(['foreground','resumeTask','recoveryRestore']),
 });
 
 export function busyFor(kind,activities){
@@ -59,6 +60,8 @@ export function mutationKind(method,pathname){
  if(pathname==='/api/approve-batch')return 'batch';
  if(pathname==='/api/node-restores/keep')return 'keepPaused';
  if(/^\/api\/radarr\/requests\/[a-f0-9]{24}\/restore$/.test(pathname))return 'restore';
+ if(/^\/api\/recovery\/cases\/[a-f0-9]{24}\/restore-original$/.test(pathname))return 'restore';
+ if(/^\/api\/recovery\/cases\/[a-f0-9]{24}\/restore-original\/reconcile$/.test(pathname))return 'restoreReconcile';
  // Manual replacement of a confirmed faulty original without a Review result (#153).
  if(/^\/api\/recovery\/cases\/[a-f0-9]{24}\/replace-source$/.test(pathname))return 'replace';
  // Assessment of an installed result (#230): the draft is review state; approval publishes retention evidence.

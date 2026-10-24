@@ -9,15 +9,16 @@ export function createRecoveryControlClient({transport=process}={}){
   if(!transport?.connected)return reject(Error('recovery_control_unavailable'));
   const token=randomUUID();
   const done=(error,result)=>{clearTimeout(timer);transport.off('message',receive);transport.off('disconnect',disconnect);error?reject(error):resolve(result);};
-  const disconnect=()=>done(Error('recovery_control_unavailable'));
+  const unavailable=()=>Object.assign(Error('recovery_control_unavailable'),{code:'recovery_control_unavailable'});
+  const disconnect=()=>done(unavailable());
   const receive=m=>{if(!controlMessage(m)||m.channel!==CHANNELS.reply||m.token!==token)return;if(m.error)return done(Object.assign(Error(m.error),{code:m.error}));session=m.result.session;done(null,m.result);};
   // An acknowledged drain may still be flushing durable status on slow storage. Wait for exit,
   // without a settings timeout; a lost supervisor still rejects through disconnect.
-  const timer=action==='stopAfterDrain'?null:setTimeout(()=>done(Error('recovery_control_unavailable')),5000);timer?.unref?.();
+  const timer=action==='stopAfterDrain'?null:setTimeout(()=>done(unavailable()),5000);timer?.unref?.();
   transport.on('message',receive);transport.once('disconnect',disconnect);
   if(!sendControl(transport,{channel:CHANNELS.control,version:CONTROL_VERSION,token,session,action,id}))disconnect();
  });
- const client=Object.fromEntries(['requestDrain','status','cancel','stopAfterDrain','restart'].map(action=>[action,id=>call(action,id)]));
+ const client=Object.fromEntries(['requestDrain','status','restoreStatus','cancel','stopAfterDrain','restart'].map(action=>[action,id=>call(action,id)]));
  client.wait=async id=>{for(;;){const snapshot=await client.status(id);if(snapshot.state!=='draining'&&snapshot.state!=='starting')return snapshot;await new Promise(r=>setTimeout(r,25));}};
  return client;
 }

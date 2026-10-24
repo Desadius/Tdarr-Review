@@ -14,6 +14,7 @@ import {createSharedSettingsStore} from '../review/shared-settings.mjs';
 import {createWorker} from './create-worker.mjs';
 import {readRecoveryConfiguration} from './recovery-authority.mjs';
 import {loadApprovalRegistry} from './approval-registry.mjs';
+import {writeRecoveryRestoreEvidence} from './restore-evidence.mjs';
 
 // Exercise the actual journal/worker wiring, using only disposable files,
 // loopback APIs and a synthetic decoder. No production media or API contacts.
@@ -28,9 +29,9 @@ async function fixture({terminalHeader=false,mode='repair',largeSource=false,sou
  await fs.writeFile(parent.quarantine,'PRESERVED PARENT');
  const state={version:1,jobs:{},cases:{[parent.id]:parent}};
  const db=new DatabaseSync(cfg.database);db.exec('CREATE TABLE jobsjsondb (json_data TEXT); CREATE TABLE filejsondb (json_data TEXT)');
- const row={_id:file,DB:cfg.libraryId,TranscodeDecisionMaker:'Transcode error'};
+ const row={_id:file,DB:cfg.libraryId,TranscodeDecisionMaker:'Transcode error'},job={_id:'fixture-job',DB:cfg.libraryId,file,start:Date.now()-2000,end:Date.now()-1000,status:'Transcode error',job:{footprintId:'fixture',fileId:'report'}};
  db.prepare('INSERT INTO filejsondb VALUES (?)').run(JSON.stringify(row));
- db.prepare('INSERT INTO jobsjsondb VALUES (?)').run(JSON.stringify({_id:'fixture-job',DB:cfg.libraryId,file,start:Date.now()-2000,end:Date.now()-1000,status:'Transcode error',job:{footprintId:'fixture',fileId:'report'}}));
+ db.prepare('INSERT INTO jobsjsondb VALUES (?)').run(JSON.stringify(job));
  await fs.writeFile(root+'/reports/fixture/report','quant_step_size larger than huff_lsbs');
  await fs.writeFile(root+'/decoder/ffprobe','#!/usr/bin/env node\nconsole.log(JSON.stringify({format:{duration:"100"}}));\n',{mode:0o755});
  await fs.writeFile(cfg.ffmpeg,'#!/usr/bin/env node\nconst fs=require("node:fs"),a=process.argv.slice(2);if(a.filter((v,i)=>a[i-1]==="-threads").join()!=="2,2"||!a.includes("0:a?"))process.exit(99);fs.appendFileSync(process.env.DATA_ROOT+"/decode-calls","1\\n");console.log("out_time_us=50000000\\nspeed=2x\\nprogress=end");console.error("quant_step_size larger than huff_lsbs");process.exit(1);\n',{mode:0o755});
@@ -62,13 +63,14 @@ async function fixture({terminalHeader=false,mode='repair',largeSource=false,sou
  }catch(e){forbidden=true;res.writeHead(500);res.end(JSON.stringify({error:e.message}));}});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;cfg.radarrUrl=base;cfg.tdarrUrl=base;cfg.radarrApiKey='fixture-only';
  async function write(){db.prepare('UPDATE filejsondb SET json_data=?').run(JSON.stringify(row));await fs.writeFile(data+'/config.json',JSON.stringify(cfg));await fs.writeFile(data+'/state.json',JSON.stringify(state));}
+ async function setLibrary(value){cfg.libraryId=value;row.DB=value;job.DB=value;db.prepare('UPDATE filejsondb SET json_data=?').run(JSON.stringify(row));db.prepare('UPDATE jobsjsondb SET json_data=?').run(JSON.stringify(job));await fs.writeFile(data+'/config.json',JSON.stringify(cfg));}
  async function run(){return new Promise((resolve,reject)=>{const child=spawn(process.execPath,['--require',preload,new URL('./worker.mjs',import.meta.url).pathname,'--once'],{env:{...process.env,DATA_ROOT:data,RECOVERY_MODE:mode},stdio:['ignore','pipe','pipe']});let output='';const timer=setTimeout(()=>child.kill('SIGKILL'),20000);child.stdout.on('data',b=>output+=b);child.stderr.on('data',b=>output+=b);child.on('error',reject);child.on('close',(code,signal)=>{clearTimeout(timer);if(code!==0||signal)return reject(Error('Worker fixture failed: '+output));resolve(output)});});}
  // Long-running worker as in the container: no --once, stopped only by a signal.
  function daemon(){const child=spawn(process.execPath,['--require',preload,new URL('./worker.mjs',import.meta.url).pathname],{env:{...process.env,DATA_ROOT:data,RECOVERY_MODE:mode},stdio:['ignore','pipe','pipe']});let output='';const timer=setTimeout(()=>child.kill('SIGKILL'),20000);child.stdout.on('data',b=>output+=b);child.stderr.on('data',b=>output+=b);const closed=new Promise((resolve,reject)=>{child.on('error',reject);child.on('close',(code,signal)=>{clearTimeout(timer);resolve({code,signal,output})});});return {child,closed};}
  async function result(){assert.equal((await fs.stat(root+'/media/.tdarr-recovery-status.json')).mode&0o777,0o644);assert.equal((await fs.stat(data+'/state.json')).mode&0o777,0o600);return {state:JSON.parse(await fs.readFile(data+'/state.json')),public:JSON.parse(await fs.readFile(root+'/media/.tdarr-recovery-status.json'))};}
  async function unchanged(){assert.equal(identityOf(await fs.stat(source)),sourceFP);assert.deepEqual(await fs.readFile(source),Buffer.from(sourceBytes));assert.equal(await fs.readFile(parent.quarantine,'utf8'),'PRESERVED PARENT');assert.equal(forbidden,false,'worker attempted an unexpected download or API mutation');}
  async function cleanup(){db.close();await new Promise(r=>server.close(r));assert(root.startsWith(path.resolve(os.tmpdir())+path.sep)&&path.basename(root).startsWith('recovery-worker-'));await fs.rm(root,{recursive:true,force:true});}
- return {root,cfg,state,parent,movie,row,requests,file,relative,source,sourceFP,size,sourceBytes,data,write,run,daemon,result,unchanged,cleanup,id:caseId(file,sourceFP),binding:bindHistory(movie,history,movie.movieFile.path,size),allowRepair:()=>{allowRepair=true;},ignoreHold:()=>{ignoreHold=true;},onHold:callback=>{beforeHold=callback;},setDecoder:script=>fs.writeFile(cfg.ffmpeg,script,{mode:0o755})};
+ return {root,cfg,state,parent,movie,row,requests,file,relative,source,sourceFP,size,sourceBytes,data,write,setLibrary,run,daemon,result,unchanged,cleanup,id:caseId(file,sourceFP),binding:bindHistory(movie,history,movie.movieFile.path,size),allowRepair:()=>{allowRepair=true;},ignoreHold:()=>{ignoreHold=true;},onHold:callback=>{beforeHold=callback;},setDecoder:script=>fs.writeFile(cfg.ffmpeg,script,{mode:0o755})};
 }
 
 test('actual worker loads committed shared authority without a legacy worker config file',{skip:process.platform!=='linux'},async()=>{
@@ -78,6 +80,51 @@ test('actual worker loads committed shared authority without a legacy worker con
   const store=createSharedSettingsStore({data:f.root,env:{RECOVERY_MODE:'verify'}}),current=await store.current();await store.applyGeneration({revision:current.revision});
   await fs.unlink(path.join(f.data,'config.json'));
   const output=await f.run();assert.match(output,/Tdarr recovery started; mode=verify/);assert.equal(f.requests.filter(r=>r.method!=='GET').length,0);await f.unchanged();
+ }finally{await f.cleanup();}
+});
+
+test('actual worker refuses a Review restore fence before reading Recovery state or contacting APIs',{skip:process.platform!=='linux'},async()=>{
+ const f=await fixture({mode:'repair'});try{
+  await f.write();const stateBefore=await fs.readFile(path.join(f.data,'state.json'),'utf8');
+  await fs.writeFile(path.join(f.root,'recovery-restore-fence.json'),JSON.stringify({version:1,kind:'recovery-original-restore',operationId:'00000000-0000-4000-8000-000000000001',caseId:'c'.repeat(24),blocking:true}));
+  await assert.rejects(f.run(),/RECOVERY_REFUSED recovery-restore-pending/);
+  assert.deepEqual(f.requests,[],'no Radarr or Tdarr API is contacted before the startup fence check');
+  assert.equal(await fs.readFile(path.join(f.data,'state.json'),'utf8'),stateBefore,'Recovery private state is not loaded or changed');
+ }finally{await f.cleanup();}
+});
+
+test('actual worker skips the exact Review-restored edition in both candidate admission paths',{skip:process.platform!=='linux'},async()=>{
+ for(const terminalHeader of [true,false]){
+  const f=await fixture({terminalHeader});try{
+   f.cfg.detectTerminalHeaders=terminalHeader;
+   await f.write();
+   await writeRecoveryRestoreEvidence({data:f.data,operationId:'00000000-0000-4000-8000-000000000001',caseId:'b'.repeat(24),movieId:1,tmdbId:9001,file:f.file,identity:f.sourceFP,cfg:f.cfg,restoredAt:new Date().toISOString()});
+   f.cfg.radarrApiKey='rotated-fixture-key';await fs.writeFile(path.join(f.data,'config.json'),JSON.stringify(f.cfg));
+   await f.run();
+   const result=await f.result();
+   assert.equal(result.state.cases[f.id],undefined,terminalHeader?'terminal-header scan must skip the exact restored edition':'Tdarr error-job scan must skip the exact restored edition');
+   assert.equal(f.requests.filter(r=>r.method!=='GET').length,0,'the matching edition must not trigger any API mutation');
+   await assert.rejects(fs.stat(path.join(f.data,'decode-calls')),{code:'ENOENT'},'the matching edition must not be decoded again');
+   await f.unchanged();
+  }finally{await f.cleanup();}
+ }
+});
+
+test('a different configured library does not inherit exact restored-edition suppression',{skip:process.platform!=='linux'},async()=>{
+ const f=await fixture({terminalHeader:true,mode:'verify'});try{
+  f.cfg.detectTerminalHeaders=true;await f.write();
+  await writeRecoveryRestoreEvidence({data:f.data,operationId:'00000000-0000-4000-8000-000000000002',caseId:'c'.repeat(24),movieId:1,tmdbId:9001,file:f.file,identity:f.sourceFP,cfg:f.cfg,restoredAt:new Date().toISOString()});
+  await f.setLibrary('another-library');await f.run();
+  const result=await f.result();assert.equal(result.state.cases[f.id]?.status,'dry_run','a changed library binding does not inherit an old edition record');
+  assert.equal(f.requests.filter(r=>r.method!=='GET').length,0);await f.unchanged();
+ }finally{await f.cleanup();}
+});
+
+test('a malformed present restored-edition record blocks candidate mutation instead of looking absent',{skip:process.platform!=='linux'},async()=>{
+ const f=await fixture({terminalHeader:true});try{
+  f.cfg.detectTerminalHeaders=true;await f.write();const file=path.join(f.data,'recovery-restores','editions',f.id+'.json');await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,'{not-json');
+  await f.run();const result=await f.result();assert.equal(result.state.cases[f.id],undefined);assert.match(result.state.jobs['fixture-job'],/manual: restore-evidence-invalid/);
+  assert.equal(f.requests.filter(r=>r.method!=='GET').length,0);await f.unchanged();
  }finally{await f.cleanup();}
 });
 

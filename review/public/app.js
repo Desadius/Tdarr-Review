@@ -126,6 +126,8 @@ $('confirm').addEventListener('close',async()=>{
   if(request.action==='batch')for(const item of request.items)writeItem(item,'approveBatch');
   else if(request.action==='keepPaused'){if(!latest?.pendingRestores?.some(n=>n.name===request.node))throw Error('Tento node už Review neobnovuje. Obnov přehled.');}
   else if(request.action==='restore'){const current=requests.find(r=>r.id===request.record.id&&r.source===request.record.source);if(!current||!caps(current).restore)throw Error('Stav obnovy se změnil. Obnov údaje.');}
+  else if(request.action==='restoreOriginal'){const view=await api('/api/recovery/cases/'+request.record.id+'/restore-original');if(!view.eligible||view.snapshot!==request.snapshot)throw Error('Stav obnovy se změnil. Obnov údaje.');}
+  else if(request.action==='restoreReconcile'){const status=await api('/api/recovery/cases/'+request.record.id+'/restore-original/status');if(!['blocked','unreadable','running'].includes(status.state))throw Error('Stav obnovy se změnil. Obnov údaje.');}
   else if(request.action==='handoff'){const current=requests.find(r=>r.id===request.record.id&&r.source==='recovery');if(!current?.attention?.actions?.some(a=>a.id==='handoffTdarr'))throw Error('Stav případu se změnil. Obnov údaje.');}
   else if(request.action==='installedApprove'){const current=requests.find(r=>r.id===request.record.id&&r.source==='recovery');if(!current?.attention?.actions?.some(a=>a.id==='assessInstalled'))throw Error('Stav případu se změnil. Obnov údaje.');}
   else if(request.action==='replaceSource'){const current=requests.find(r=>r.id===request.record.id&&r.source==='recovery');if(!current||!caps(current).replaceSource||current.sourceReplacement.snapshot!==request.record.sourceReplacement.snapshot)throw Error('Stav případu se změnil. Obnov údaje.');}
@@ -136,6 +138,8 @@ $('confirm').addEventListener('close',async()=>{
   if(request.action==='batch'){await api('/api/approve-batch',{items:request.items.map(x=>({id:x.id,snapshot:x.snapshot,reviewRevision:request.reviewRevisions[x.id]}))});selected.clear()}
   else if(request.action==='keepPaused')await api('/api/node-restores/keep',{name:request.node,confirm:true});
   else if(request.action==='restore')await api('/api/radarr/requests/'+request.record.id+'/restore',{confirm:true});
+  else if(request.action==='restoreOriginal')await api('/api/recovery/cases/'+request.record.id+'/restore-original',{confirm:true,snapshot:request.snapshot});
+  else if(request.action==='restoreReconcile')await api('/api/recovery/cases/'+request.record.id+'/restore-original/reconcile',{confirm:true});
   else if(request.action==='handoff')await api('/api/recovery/cases/'+request.record.id+'/handoff',{snapshot:request.snapshot,confirm:true,...(request.uncertain?{acknowledgeUncertain:true}:{})});
   else if(request.action==='installedApprove')await api('/api/recovery/cases/'+request.record.id+'/installed/approve',{snapshot:request.snapshot,confirm:true});
   else if(request.action==='replaceSource')await api('/api/recovery/cases/'+request.record.id+'/replace-source',{snapshot:request.record.sourceReplacement.snapshot,reason});
@@ -302,6 +306,32 @@ function installedAssessment(r){
  api(route).then(show).catch(e=>{holder.replaceChildren(el('p','failure','Posouzení nelze načíst.'));error(e);});
  return holder;
 }
+function originalRestorePanel(r){
+ const holder=el('section','installed-holder');let timer=null;
+ const route='/api/recovery/cases/'+r.id+'/restore-original';
+ const refresh=async()=>{
+  if(!holder.isConnected)return;
+  try{
+   const status=await api(route+'/status');
+   if(status.state==='completed'){
+    holder.replaceChildren(el('p','details','Obnovení dokončeno. Originál může být stále vadný; schválení ani úklid karantény se nezměnily.'));return;
+   }
+   if(['running','resuming'].includes(status.state)){
+    holder.replaceChildren(el('p','details','Obnova původního souboru probíhá…'));
+    timer=setTimeout(refresh,1200);return;
+   }
+   if(status.state==='blocked'||status.state==='unreadable'){
+    holder.replaceChildren(el('p','alert inline-warning','Obnova je zablokovaná; pokračuj explicitním ověřením stavu.'),button('Ověřit uložený výsledek',()=>{pending={record:r,action:'restoreReconcile'};confirmSetup('NEJASNÝ STAV NÁVRATU ORIGINÁLU',r.title,'Review znovu ověří pouze trvalý záznam a soubory. Nejasnou operaci znovu nespustí a nevymaže bezpečnostní zábranu bez důkazu.','Ověřit uložený výsledek');$('confirm').showModal();}));return;
+   }
+   const view=await api(route);
+   if(view.eligible)holder.replaceChildren(button('Vrátit pouze původní soubor',()=>{
+    pending={record:r,action:'restoreOriginal',snapshot:view.snapshot};
+    confirmSetup('VRÁCENÍ POUZE PŮVODNÍHO SOUBORU',r.title,'Vrátit do knihovny přesně uložený původní soubor? Recovery ho dříve označila jako poškozený, takže může být stále vadný. Akce vrátí jen tento soubor do původní prázdné cesty; nepřesune převod, neschválí jej a nemění lhůtu karantény, profily Radarru ani neprokázané Holds Tdarru. Review znovu ověří soubory, Radarr, frontu a Tdarr a koordinuje Recovery.','Vrátit pouze originál');$('confirm').showModal();}));
+   else holder.replaceChildren(el('p','details','Originál teď nelze bezpečně vrátit. Ověř stav Radarru, Tdarru a Recovery.'));
+  }catch(error){holder.replaceChildren(el('p','failure','Stav návratu originálu nelze načíst.'));}
+ };
+ void Promise.resolve().then(refresh);return holder;
+}
 function detailRequest(r,tab){
  const box=$('detailBody'),cl=classifyRecovery(r,Date.now());box.replaceChildren();
  if(tab==='overview'){box.append(el('h3','',cl.label),el('p','',cl.nextStep));if(r.attention)box.append(attentionView(r.attention,action=>runAttentionAction(r,action)));for(const warning of cl.warnings||[])box.append(el('p','alert inline-warning',warning));const progress=recoveryProgress(r);if(progress)box.append(decodeProgressView(progress));const hashProgress=fullHashProgress(r);if(hashProgress)box.append(fullHashProgressView(hashProgress));box.append(detailsFacts([['Poslední potvrzený stav',date(r.statusUpdated||r.updated)],['Původní kopie',r.quarantineRetained?'Zachovaná v karanténě':r.sourceRetained||r.phase==='waiting_source_kept'?'Zůstává v Plexu; vydání vyloučeno z převodů':'Viz aktuální protokol obnovy'],['Další hledání',r.nextSearchAt?date(r.nextSearchAt):'Termín není doložen'],['Další pokus obnovy',r.nextRetryAt?date(r.nextRetryAt):'Termín není doložen']]));if(r.message&&!['import-blocked','queue-failed'].includes(r.attention?.reason))box.append(el('p','details',r.message));
@@ -324,6 +354,7 @@ function detailRequest(r,tab){
   const progress=recoveryProgress(r);if(progress)box.append(decodeProgressView(progress));
   const hashProgress=fullHashProgress(r);if(hashProgress)box.append(fullHashProgressView(hashProgress));
   if(r.canRestore)box.append(guardedButton(r,'restore','Vrátit originál i převod z karantény',()=>askRestore(r)));
+ if(r.source==='recovery'&&r.phase==='manual')box.append(originalRestorePanel(r));
   if(r.sourceReplacement)box.append(guardedButton(r,'replaceSource','Vyžádat jinou kopii přes Radarr',()=>askSourceReplacement(r)));
   else if(r.sourceReplacementBlocked)box.append(el('p','alert inline-warning',r.sourceReplacementBlocked));
   box.append(button('Prohlédnout karanténu případu',()=>openQuarantine(r.title,r.id)));
@@ -373,7 +404,7 @@ function updateGuards(){
   if(ui.detail.kind==='review'&&changed)reviewWorkspace?.invalidate();else{reviewWorkspace?.refreshGuard();if(ui.detail.kind==='review'){reviewWorkspace?.observe(latest.reviewSessions?.[item.id]);reviewWorkspace?.observePreparation(latest.previews?.[item.id],{authoritative:true})}}
   const guard=caps(item);$('detailGuard').hidden=!guard.writeBlocked&&!changed;$('detailGuard').textContent=tr(changed?'Akce čekají na nové posouzení aktuálního stavu.':guard.reason||'Zapisující akce jsou dočasně zablokované.');
  }
- if(pending){let enabled=!actionInFlight;if(pending.action==='batch')enabled&&=pending.items.every(x=>{const current=latest.items.find(i=>i.id===x.id&&i.snapshot===x.snapshot);return current&&caps(current).approveBatch&&latest.reviewSessions?.[x.id]?.revision===pending.reviewRevisions[x.id]});else if(pending.action==='restore'){const current=requests.find(r=>r.id===pending.record.id&&r.source===pending.record.source);enabled&&=!!current&&caps(current).restore;}else if(pending.action==='keepPaused'){enabled&&=!!latest.pendingRestores?.some(n=>n.name===pending.node);}else if(pending.action==='handoff'){const current=requests.find(r=>r.id===pending.record.id&&r.source==='recovery');enabled&&=!!current?.attention?.actions?.some(a=>a.id==='handoffTdarr');}else if(pending.action==='installedApprove'){const current=requests.find(r=>r.id===pending.record.id&&r.source==='recovery');enabled&&=!!current?.attention?.actions?.some(a=>a.id==='assessInstalled');}else{const current=latest.items.find(x=>x.id===pending.item.id&&x.snapshot===pending.item.snapshot);enabled&&=!!current&&caps(current)[pending.action]&&(pending.action!=='approve'||latest.reviewSessions?.[pending.item.id]?.revision===pending.reviewRevision)}$('commit').disabled=!enabled;}
+ if(pending){let enabled=!actionInFlight;if(pending.action==='batch')enabled&&=pending.items.every(x=>{const current=latest.items.find(i=>i.id===x.id&&i.snapshot===x.snapshot);return current&&caps(current).approveBatch&&latest.reviewSessions?.[x.id]?.revision===pending.reviewRevisions[x.id]});else if(pending.action==='restore'){const current=requests.find(r=>r.id===pending.record.id&&r.source===pending.record.source);enabled&&=!!current&&caps(current).restore;}else if(pending.action==='restoreOriginal'||pending.action==='restoreReconcile'){const current=requests.find(r=>r.id===pending.record.id&&r.source==='recovery');enabled&&=!!current&&(pending.action==='restoreReconcile'||current.phase==='manual');}else if(pending.action==='keepPaused'){enabled&&=!!latest.pendingRestores?.some(n=>n.name===pending.node);}else if(pending.action==='handoff'){const current=requests.find(r=>r.id===pending.record.id&&r.source==='recovery');enabled&&=!!current?.attention?.actions?.some(a=>a.id==='handoffTdarr');}else if(pending.action==='installedApprove'){const current=requests.find(r=>r.id===pending.record.id&&r.source==='recovery');enabled&&=!!current?.attention?.actions?.some(a=>a.id==='assessInstalled');}else{const current=latest.items.find(x=>x.id===pending.item.id&&x.snapshot===pending.item.snapshot);enabled&&=!!current&&caps(current)[pending.action]&&(pending.action!=='approve'||latest.reviewSessions?.[pending.item.id]?.revision===pending.reviewRevision)}$('commit').disabled=!enabled;}
 }
 function render(d){
  const priorSessions=latest?.reviewSessions||{};d.reviewSessions||={};for(const [id,record]of Object.entries(priorSessions)){const current=d.items.find(x=>x.id===id);if(current?.snapshot===record.snapshot&&record.revision>(d.reviewSessions[id]?.revision??-1))d.reviewSessions[id]=record}

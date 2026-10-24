@@ -96,6 +96,17 @@ test('supervisor restart discards pending requests instead of replaying them',as
  assert.equal(after.state,'draining');
 });
 
+test('only explicit restore reconciliation adopts the matching fenced control request after Review restarts',async t=>{
+ const operationId='00000000-0000-4000-8000-000000000010';
+ const f=await fixture(t);await wait(async()=>await f.starts()===1);
+ await f.call('requestDrain',operationId);await f.call('wait',operationId);await f.call('stopAfterDrain',operationId);
+ await fs.writeFile(path.join(f.root,'recovery-restore-fence.json'),JSON.stringify({version:1,kind:'recovery-original-restore',operationId,caseId:'a'.repeat(24),blocking:true,restartAuthorized:false}));
+ await f.relaunch();
+ await assert.rejects(f.call('status',operationId),/expired/,'ordinary status cannot adopt a prior supervisor session');
+ await assert.rejects(f.call('restoreStatus','00000000-0000-4000-8000-000000000011'),/fenced|expired/,'restore adoption is restricted to the fence owner');
+ assert.equal((await f.call('restoreStatus',operationId)).state,'stopped','explicit reconciliation can inspect its own fenced stop');
+});
+
 test('actual worker finishes its current case, admits no next case until cancel, and restarts through supervisor',{skip:process.platform!=='linux'?'Requires directory fsync':false},async t=>{
  const requests=[];let release,blocked=false;
  const server=http.createServer(async(req,res)=>{

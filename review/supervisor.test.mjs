@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {DELAY_MS,start,stop,waitFor,started,exitedWithin} from './test-supervisor-helpers.mjs';
+import {supervise} from './supervisor.mjs';
 
 // The supervisor runs as a real process with stand-in scripts in place of Review and Recovery.
 // Only temporary directories are used; nothing touches media, Tdarr or Radarr.
@@ -14,11 +15,58 @@ const linux={skip:process.platform!=='linux'?'Requires Linux signals, ionice and
 // is ready, then fails every time instead of now and then. supervisor-delayed.test.mjs runs this file so.
 const test=(name,...rest)=>nodeTest(DELAY_MS?name+' (stand-ins delayed '+DELAY_MS+' ms)':name,...rest);
 
+async function gatedAdmission(t,{overlap=false}={}){
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'supervisor-gated-admission-')),dataRoot=path.join(root,'data'),events=path.join(root,'events.log');await fs.mkdir(dataRoot);
+ const review=path.join(root,'review.cjs'),recovery=path.join(root,'recovery.cjs'),exitFlag=path.join(root,'exit-review');
+ const event=name=>`require('node:fs').appendFileSync(${JSON.stringify(events)},${JSON.stringify(name+'\n')});`;
+ const source=`const fs=require('node:fs');${event('review-start')}let session=null,sequence=0;function call(action,id='restore-overlap'){return new Promise((resolve,reject)=>{const token='token-'+(++sequence),onMessage=m=>{if(m.channel!=='recovery-control-reply'||m.token!==token)return;process.off('message',onMessage);if(m.error)return reject(Error(m.error));session=m.result.session;resolve(m.result)};process.on('message',onMessage);process.send({channel:'recovery-control',version:1,token,session,action,id})})}if(${overlap}){(async()=>{${event('request-drain')}await call('requestDrain');${event('stop-after-drain')}await call('stopAfterDrain');${event('restart')}await call('restart');${event('restart-replied')}`+`})().catch(e=>{fs.appendFileSync(${JSON.stringify(events)},'control-error:'+e.message+'\\n')})}const timer=setInterval(()=>{if(fs.existsSync(${JSON.stringify(exitFlag)})){clearInterval(timer);${event('review-exit')}process.exit(0)}},10);`;
+ await fs.writeFile(review,source);await fs.writeFile(recovery,`const fs=require('node:fs');${event('recovery-start')}process.send({channel:'recovery-worker',version:1,session:process.env.RECOVERY_CONTROL_SESSION,event:'ready'});process.on('SIGTERM',()=>process.exit(0));setInterval(()=>{},1000);`);
+ let release;const gate=new Promise(resolve=>release=resolve);let readCount=0,notifyEntered;
+ const entered=new Promise(resolve=>notifyEntered=resolve),readRestoreFence=async()=>{readCount++;if(readCount===1){notifyEntered();await gate;}return {present:false};};
+ const run=supervise({mode:'verify',dataRoot,review:[process.execPath,review],recovery:[process.execPath,recovery],restart:{initialMs:20,maxMs:20,crashLoopAfter:4,stableMs:60000},stopGraceMs:500,lowPriority:[],readRestoreFence});
+ const readEvents=async()=>(await fs.readFile(events,'utf8').catch(()=>'' )).split('\n').filter(Boolean);
+ t.after(async()=>{release();await fs.writeFile(exitFlag,'exit').catch(()=>{});await run.catch(()=>{});await fs.rm(root,{recursive:true,force:true});});
+ return {root,dataRoot,events,exitFlag,entered,release,run,readEvents,get readCount(){return readCount;}};
+}
+
+test('Review exit during a gated Recovery admission prevents a late worker spawn',linux,async t=>{
+ const run=await gatedAdmission(t);await run.entered;
+ await fs.writeFile(run.exitFlag,'exit');
+ await waitFor(async()=>(await run.readEvents()).includes('review-exit'));
+ run.release();await run.run;
+ assert.equal((await run.readEvents()).filter(event=>event==='recovery-start').length,0);
+});
+
+test('overlapping Recovery starts share one admission and spawn at most one worker',linux,async t=>{
+ const run=await gatedAdmission(t,{overlap:true});await run.entered;
+ await waitFor(async()=>(await run.readEvents()).includes('restart'));
+ run.release();
+ await waitFor(async()=>(await run.readEvents()).includes('restart-replied'));
+ await waitFor(async()=>(await run.readEvents()).includes('recovery-start'));
+ const events=await run.readEvents();assert.equal(events.filter(event=>event==='recovery-start').length,1);
+ await fs.writeFile(run.exitFlag,'exit');await run.run;
+});
+
 test('an interrupted activation refuses initial Recovery startup while Review remains available',linux,async t=>{
  const run=await start({mode:'verify',beforeStart:async({dataRoot})=>fs.writeFile(path.join(dataRoot,'settings-activation.json'),JSON.stringify({version:1,id:'interrupted-apply',state:'committing',blocking:true}))});t.after(()=>stop(run));
  await started(run,'review');const state=await waitFor(async()=>{const s=await run.readState();return s.state!=='off'&&s;});
  assert.equal(state.state,'refused');
  assert.equal(state.reason,'settings-activation-incomplete');assert.equal(state.lastStartedAt,null);assert.equal((await run.readEvents()).some(e=>e.name==='recovery'),false);
+});
+
+test('a Review restore fence blocks initial Recovery worker admission while Review stays available',linux,async t=>{
+ const run=await start({mode:'verify',beforeStart:async({dataRoot})=>fs.writeFile(path.join(dataRoot,'recovery-restore-fence.json'),JSON.stringify({version:1,kind:'recovery-original-restore',operationId:'00000000-0000-4000-8000-000000000001',caseId:'a'.repeat(24),blocking:true,restartAuthorized:false}))});t.after(()=>stop(run));
+ await started(run,'review');const state=await waitFor(async()=>{const value=await run.readState();return value.state==='refused'&&value;});
+ assert.equal(state.reason,'recovery-restore-pending');assert.equal(state.lastStartedAt,null);assert.equal((await run.readEvents()).some(event=>event.name==='recovery'),false);
+});
+
+test('a new restore fence cancels Recovery crash-backoff admission',linux,async t=>{
+ const run=await start({mode:'verify',recovery:'crash-after:80',restart:{initialMs:400,maxMs:400,crashLoopAfter:3,stableMs:60000}});t.after(()=>stop(run));
+ await waitFor(async()=>(await run.readState()).state==='restarting');
+ await fs.writeFile(path.join(run.dataRoot,'recovery-restore-fence.json'),JSON.stringify({version:1,kind:'recovery-original-restore',operationId:'00000000-0000-4000-8000-000000000002',caseId:'b'.repeat(24),blocking:true,restartAuthorized:false}));
+ const state=await waitFor(async()=>{const value=await run.readState();return value.state==='refused'&&value;});
+ assert.equal(state.reason,'recovery-restore-pending');assert.equal((await run.readEvents()).filter(event=>event.name==='recovery'&&event.event==='start').length,1);
+ await started(run,'review');assert.equal(run.child.exitCode,null);
 });
 
 // Waits for n Recovery restarts and returns the time from each recorded exit to the next recorded start:

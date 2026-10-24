@@ -9,6 +9,7 @@ import {REFUSED_EXIT} from '../recovery/recovery-mode.mjs';
 import {randomUUID} from 'node:crypto';
 import {CONTROL_VERSION,controlMessage,sendControl,validId,CHANNELS,controlTransition,runControlCommands} from './recovery-control.mjs';
 import {readSettingsActivation} from './settings-activation.mjs';
+import {readRecoveryRestoreFence} from '../recovery/recovery-authority.mjs';
 import {LOW_PRIORITY} from './low-priority.mjs';
 
 export const STATE_FILE='runtime-state.json';
@@ -16,10 +17,10 @@ export const STATE_FILE='runtime-state.json';
 // Container entrypoint: runs Review and, in Recovery mode verify or repair, Recovery (docs/ARCHITECTURE.md, Supervisor).
 /**
  * @typedef {{initialMs:number,maxMs:number,crashLoopAfter:number,stableMs:number}} RestartPolicy
- * @param {{mode?:string,dataRoot:string,review:string[],recovery:string[],restart?:RestartPolicy,stopGraceMs?:number,lowPriority?:readonly string[]}} options
+ * @param {{mode?:string,dataRoot:string,review:string[],recovery:string[],restart?:RestartPolicy,stopGraceMs?:number,lowPriority?:readonly string[],readRestoreFence?:typeof readRecoveryRestoreFence}} options
  * @returns {Promise<number>}
  */
-export async function supervise({mode,dataRoot,review,recovery,restart=RESTART,stopGraceMs=8000,lowPriority=LOW_PRIORITY}){
+export async function supervise({mode,dataRoot,review,recovery,restart=RESTART,stopGraceMs=8000,lowPriority=LOW_PRIORITY,readRestoreFence=readRecoveryRestoreFence}){
  // Only the supervisor applies the default. Any other value than off still goes to Recovery,
  // which refuses it (fail closed); the state file records it only as invalid.
  mode=mode||'off';
@@ -32,7 +33,7 @@ export async function supervise({mode,dataRoot,review,recovery,restart=RESTART,s
  // Not awaited: the signal handlers below must be in place at once, because PID 1 ignores signals without one.
  void update({});
  const session=randomUUID();
- let control=null,resumeCrash=false;
+ let control=null,resumeCrash=false,restoreBlocked=false,restoreFenceValid=false,restoreRestartAuthorized=false,restoreOperationId=null;
  const usedIds=new Set();
  const reviewChild=spawn(review[0],review.slice(1),{stdio:['inherit','inherit','inherit','ipc']});
  const reviewExit=new Promise(resolve=>{
@@ -43,14 +44,34 @@ export async function supervise({mode,dataRoot,review,recovery,restart=RESTART,s
  // Consecutive crashes set the delay and, from crashLoopAfter on, report a crash loop.
  // A run that lasts stableMs starts the count again.
  let crashes=0,stopReason=null,restartTimer;
+ void reviewExit.then(()=>{if(!stopReason){stopReason='review-exited';clearTimeout(restartTimer);}});
  /** @type {Promise<void>|null} */
  let workerExit=null;
  /** @type {import('node:child_process').ChildProcess|null} */
  let worker=null;
+ let startingRecovery=null,startingRecoveryIntent=null,spawnedRecoveryCount=0,countedRecoveryCount=0;
  const crashLoopReason=()=>crashes>=restart.crashLoopAfter?'crash-loop':null;
  const startRecovery=()=>{
+  const intent=control?{id:control.id,state:control.state}:null;
+  if(startingRecovery){
+   if((!intent&&!startingRecoveryIntent)||(intent&&startingRecoveryIntent?.id===intent.id&&startingRecoveryIntent.state===intent.state))return startingRecovery;
+   return startingRecovery.then(()=>startRecovery());
+  }
+  if(mode==='off'||stopReason||stopping||worker)return Promise.resolve(false);
+  let flight;
+  flight=(async()=>{
+  const fence=await readRestoreFence({data:dataRoot});
+  const intentStillCurrent=intent?control?.id===intent.id&&control.state===intent.state:control===null;
+  if(stopReason||stopping||worker||!intentStillCurrent)return false;
+  const admittedRestart=fence.present&&fence.valid&&fence.restartAuthorized&&control?.state==='starting'&&control.id===fence.operationId;
+  if(fence.present&&!admittedRestart){
+   if(control?.state==='starting')control={...control,state:'failed',reason:'restore-fence'};
+   await update({state:'refused',reason:fence.valid?'recovery-restore-pending':'recovery-restore-fence-invalid'});
+   return false;
+  }
   const [command,...args]=[...lowPriority,...recovery];
-  const child=worker=spawn(command,args,{stdio:['ignore','inherit','pipe','ipc'],env:{...process.env,DATA_ROOT:recoveryData,RECOVERY_MODE:mode,RECOVERY_CONTROL_SESSION:session,RECOVERY_ACTIVATION_ID:control?.state==='starting'?control.id:''}});
+  const child=worker=spawn(command,args,{stdio:['ignore','inherit','pipe','ipc'],env:{...process.env,DATA_ROOT:recoveryData,RECOVERY_MODE:mode,RECOVERY_CONTROL_SESSION:session,RECOVERY_ACTIVATION_ID:control?.state==='starting'?control.id:'',RECOVERY_RESTORE_OPERATION_ID:admittedRestart?fence.operationId:''}});
+  spawnedRecoveryCount++;
   child.on('message',m=>{
    if(worker!==child||!controlMessage(m)||m.channel!==CHANNELS.worker||m.session!==session)return;
    control=controlTransition(context(),{type:'worker',event:m.event,id:m.id}).control;
@@ -82,18 +103,24 @@ export async function supervise({mode,dataRoot,review,recovery,restart=RESTART,s
     crashes++;
     const delay=Math.min(restart.initialMs*2**(crashes-1),restart.maxMs);
     void update({state:'restarting',reason:crashLoopReason()??'crash',...exited});
-    restartTimer=setTimeout(()=>{state.restarts++;startRecovery();},delay);
+    restartTimer=setTimeout(()=>{void startRecovery().then(started=>{if(started&&spawnedRecoveryCount>countedRecoveryCount){countedRecoveryCount++;state.restarts++;void update({restarts:state.restarts});}});},delay);
     resolve();
    });
   });
+  return true;
+  })();
+  startingRecoveryIntent=intent;
+  const tracked=flight.finally(()=>{if(startingRecovery===tracked){startingRecovery=null;startingRecoveryIntent=null;}});
+  startingRecovery=tracked;return tracked;
  };
  // Requests are volatile and tied to this supervisor instance. Restart never replays an old request.
  // controlTransition() decides (recovery/control-protocol.mjs); this executes its commands in order.
  const workerCommand=action=>sendControl(worker,{channel:CHANNELS.worker,version:CONTROL_VERSION,session,id:control.id,action});
  const snapshot=()=>({...control,session});
- const context=()=>({control,mode,session,worker:!!worker,restarting:state.state==='restarting',resumeCrash,used:usedIds,stopping:!!(stopping||stopReason)});
+ const context=()=>({control,mode,session,worker:!!worker,restarting:state.state==='restarting',resumeCrash,used:usedIds,stopping:!!(stopping||stopReason),restoreBlocked,restoreFenceValid,restoreRestartAuthorized,restoreOperationId});
  const handleControl=async m=>{
   if(!controlMessage(m)||m.channel!==CHANNELS.control||!validId(m.id)||!validId(m.token))return;
+  const fence=await readRestoreFence({data:dataRoot});restoreBlocked=fence.present;restoreFenceValid=fence.valid===true;restoreRestartAuthorized=fence.restartAuthorized===true;restoreOperationId=fence.operationId??null;
   const step=controlTransition(context(),{type:'request',action:m.action,id:m.id,session:m.session});
   if(step.resumeCrash!==undefined)resumeCrash=step.resumeCrash;
   return runControlCommands(step,{send:workerCommand,start:startRecovery,clearRestart:()=>clearTimeout(restartTimer),markUsed:id=>usedIds.add(id),awaitExit:()=>workerExit,setControl:value=>{control=value},snapshot});
@@ -123,7 +150,7 @@ export async function supervise({mode,dataRoot,review,recovery,restart=RESTART,s
  try{
   if(mode!=='off'){
    const marker=await readSettingsActivation(dataRoot);
-   if(marker?.blocking)await update({state:'refused',reason:'settings-activation-incomplete'});else if(!stopping)startRecovery();
+   if(marker?.blocking)await update({state:'refused',reason:'settings-activation-incomplete'});else if(!stopping)await startRecovery();
   }
   const status=await reviewExit;
   await stopRecovery('review-exited');
