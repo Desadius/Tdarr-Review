@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveEpisodeBinding } from './episode-binding.mjs';
+import { createEpisodeBindingResolver, resolveEpisodeBinding } from './episode-binding.mjs';
 
 function snapshot(overrides = {}) {
   return {
@@ -351,4 +351,52 @@ test('requires exact path agreement and at least one linked episode', () => {
 
   assert.deepEqual(resolveEpisodeBinding(disagreement), { status: 'unmapped', reason: 'file-not-found' });
   assert.deepEqual(resolveEpisodeBinding(noEpisodes), { status: 'unmapped', reason: 'no-linked-episodes' });
+});
+
+test('indexed resolver preserves the single-path API for multiple files and all linked episodes', () => {
+  const input = snapshot({
+    episodeFiles: [
+      ...snapshot().episodeFiles,
+      { id: 32, seriesId: 12, path: '/media/second.mkv', relativePath: 'second.mkv', seasonNumber: 1 },
+    ],
+    episodes: [
+      ...snapshot().episodes,
+      { id: 103, seriesId: 12, episodeFileId: 32, seasonNumber: 1, episodeNumber: 3 },
+      { id: 104, seriesId: 12, episodeFileId: 32, seasonNumber: 1, episodeNumber: 4 },
+    ],
+  });
+  const resolver = createEpisodeBindingResolver(input);
+  for (const filePath of input.episodeFiles.map(({ path }) => path)) {
+    assert.deepEqual(resolver.resolve(filePath), resolveEpisodeBinding({ ...input, filePath }));
+  }
+  assert.deepEqual(resolver.resolve('/media/second.mkv').binding.episodeIds, [103, 104]);
+});
+
+test('indexed resolver snapshots inputs and returns fresh binding arrays for each resolution', () => {
+  const input = snapshot();
+  const resolver = createEpisodeBindingResolver(input);
+  const expected = resolver.resolve(input.filePath);
+  input.episodeFiles[0].path = '/changed-later.mkv';
+  input.episodes[0].episodeNumber = 99;
+  expected.binding.episodeIds.push(900);
+  expected.episodes[0].episodeNumber = 99;
+  const next = resolver.resolve('/media/Shows/Example/Season 01/Example.mkv');
+  assert.deepEqual(next.binding.episodeIds, [101, 102]);
+  assert.equal(next.episodes[0].episodeNumber, 1);
+});
+
+test('indexed resolver returns fresh issue objects for invalid file, episode and link snapshots', () => {
+  const base = snapshot();
+  const cases = [
+    [snapshot({ episodeFiles: [{ id: 31, seriesId: 12, path: '' }] }), { status: 'invalid', reason: 'invalid-episode-file' }],
+    [snapshot({ episodes: [{ id: 0, seriesId: 12, episodeFileId: 31 }] }), { status: 'invalid', reason: 'invalid-episode' }],
+    [snapshot({ episodes: [{ id: 101, seriesId: 12, episodeFileId: 88 }] }), { status: 'invalid', reason: 'episode-file-missing' }],
+  ];
+  for (const [input, expected] of cases) {
+    const resolver = createEpisodeBindingResolver(input);
+    const first = resolver.resolve(base.filePath);
+    assert.deepEqual(first, expected);
+    first.status = 'mapped'; first.reason = 'modified by caller';
+    assert.deepEqual(resolver.resolve(base.filePath), expected);
+  }
 });

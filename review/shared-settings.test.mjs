@@ -62,6 +62,29 @@ test('blank API key preserves the credential while explicit replacement stays pr
  assert.equal(JSON.stringify(history).includes('replacement-key'),false);
  assert.equal((await readActiveSettings(data,{mode:'verify'})).radarr.apiKey,'replacement-key');
 });
+test('Sonarr credentials stay private, blank updates preserve them, and inspection requires the exact saved revision',async t=>{
+ const data=await fixture(t),store=createSharedSettingsStore({data,env:{}}),first=await store.current();
+ const saved=await store.saveDraft({revision:first.revision,patch:{sonarr:{url:'http://127.0.0.1:8989/sonarr',apiKey:'private-sonarr-key'}}}),visible=await store.public();
+ assert.equal(visible.draft.sonarr.hasApiKey,true);assert.equal(visible.draft.sonarr.apiKey,undefined);assert.equal(JSON.stringify(visible).includes('private-sonarr-key'),false);
+ assert.deepEqual(await store.sonarrConnection(saved.revision),{url:'http://127.0.0.1:8989/sonarr',apiKey:'private-sonarr-key'});
+ const blank=await store.saveDraft({revision:saved.revision,patch:{sonarr:{apiKey:''}}});assert.equal((await store.sonarrConnection(blank.revision)).apiKey,'private-sonarr-key');
+ await assert.rejects(store.sonarrConnection(saved.revision),{code:'settings_conflict'});
+ await assert.rejects(store.saveDraft({revision:blank.revision,patch:{sonarr:{hasApiKey:true}}}),{code:'settings_invalid'});
+ for(const url of ['http://user:pass@127.0.0.1:8989','http://127.0.0.1:8989/?apikey=private-sonarr-key'])await assert.rejects(store.saveDraft({revision:blank.revision,patch:{sonarr:{url}}}),{code:'settings_invalid'});
+ assert.equal(JSON.stringify(await store.audit()).includes('private-sonarr-key'),false);
+ const audit=await store.audit(),sonarrSave=audit.findLast(item=>item.action==='save'&&item.fields.includes('sonarr.url'));
+ assert.ok(sonarrSave);assert.ok(sonarrSave.fields.includes('sonarr.apiKey'));assert.equal(JSON.stringify(sonarrSave).includes('http://127.0.0.1:8989/sonarr'),false);assert.equal(JSON.stringify(sonarrSave).includes('private-sonarr-key'),false);
+});
+test('applying a saved Sonarr connection does not invalidate Movie review data',async t=>{
+ const data=await fixture(t),store=createSharedSettingsStore({data,env:{}}),first=await store.current();
+ const statePath=path.join(data,'state.json'),movieState=JSON.stringify({reviewSessions:{film:{revision:5}},approvals:{film:{snapshot:'same'}},items:{film:{snapshot:'same'}},history:[{id:'unchanged'}],pendingTransactions:[{phase:'pending'}]});
+ await fs.writeFile(statePath,movieState);
+ const saved=await store.saveDraft({revision:first.revision,patch:{sonarr:{url:'http://127.0.0.1:8989',apiKey:'private-sonarr-key'}}});
+ const applied=await store.applyGeneration({revision:saved.revision});
+ assert.equal(applied.active.sonarr.apiKey,'private-sonarr-key');assert.equal(applied.active.review.label,first.draft.review.label);
+ assert.equal(await fs.readFile(statePath,'utf8'),movieState);
+ assert.equal((await readActiveSettings(data,{checkPrivate:false})).sonarr.apiKey,'private-sonarr-key');
+});
 test('public legacy projections allowlist every section even before an invalid import is corrected',async t=>{
  const {data,saved}=await configured(t);
  await fs.writeFile(path.join(data,'settings.json'),JSON.stringify({...saved.draft.review,unknownSecret:'hidden-value'}));

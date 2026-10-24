@@ -53,6 +53,20 @@ test('an inactive offline TV path plan preserves movie settings, confirmations, 
  await f.preserved();
 });
 
+test('applying an optional Sonarr connection preserves Movie review, Approve and preview state across restart',linuxServer,async t=>{
+ const f=await reviewFixture();t.after(()=>f.close());const a=await reviewedAndApproved(f);await sampled(f,a);
+ const before=(await f.get('/api/settings')).config,sonarrUrl=f.mockBase+'/sonarr',secret='synthetic-sonarr-inspection-key';
+ const report=await applied(f,{url:sonarrUrl,apiKey:secret},{section:'sonarr'});
+ assert.deepEqual(report.invalidation,{level:'none',fields:[],reviews:0,approvals:0});
+ assert.deepEqual(await kept(f,a),{review:true,approval:true});assert.equal((await artifacts(f)).length,1);assert.equal((await sampled(f,a)).cached,true);
+ const shared=await f.get('/api/shared-settings');assert.equal(shared.active.sonarr.url,sonarrUrl);assert.equal(shared.active.sonarr.apiKey,undefined);assert.equal(JSON.stringify(shared).includes(secret),false);
+ assert.equal(f.calls.filter(call=>call.route.startsWith('/sonarr/api/v3/')).length,0,'Test and Apply must not contact Sonarr');
+ await f.restart();assert.deepEqual(await kept(f,a),{review:true,approval:true});assert.deepEqual((await f.get('/api/settings')).config,before);
+ assert.equal((await artifacts(f)).length,1);assert.equal((await sampled(f,a)).cached,true);
+ assert.equal(f.calls.filter(call=>call.route.startsWith('/sonarr/api/v3/')).length,0,'restart must not contact Sonarr');
+ await f.preserved();
+});
+
 test('the first Apply of the imported settings unchanged, and a Recovery-only change, clear nothing',linuxServer,async t=>{
  const f=await reviewFixture();t.after(()=>f.close());const a=await reviewedAndApproved(f);await sampled(f,a);
  assert.deepEqual((await applied(f,{})).invalidation,{level:'none',fields:[],reviews:0,approvals:0});

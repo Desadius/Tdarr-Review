@@ -47,6 +47,7 @@ import {createSettingsApply} from './settings-apply.mjs';
 import {invalidationLevel} from './settings-invalidation.mjs';
 import {createRecoveryControlClient} from './recovery-control.mjs';
 import {sharedSettingsRoutes} from './routes/shared-settings.mjs';
+import {sonarrRoutes} from './routes/sonarr.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 const DATA=process.env.DATA_ROOT||'/data',PORT=Number(process.env.PORT||8270),APP_VERSION=await appVersion();
@@ -463,7 +464,7 @@ const activateSettings=(value,invalidation={level:'all'})=>{
 activateSettings.flush=async()=>{if(pendingInvalidation!=='none')await previews.invalidate({all:true});await save();};
 const localOff={requestDrain:async()=>({state:'off'}),status:async()=>({state:'off'}),cancel:async()=>({state:'off'}),stopAfterDrain:async()=>({state:'stopped'}),restart:async()=>({state:'off'}),wait:async()=>({state:'off'})};
 ctx.settingsApply=await createSettingsApply({assess:assessInvalidation,data:DATA,store:sharedSettings,mode:process.env.RECOVERY_MODE||'off',control:!process.connected&&(!process.env.RECOVERY_MODE||process.env.RECOVERY_MODE==='off')?localOff:createRecoveryControlClient(),safe:()=>!busyFor('settings')&&!replacementTask&&!previewPlanning,barrier:value=>{settingsBusy=value;},activate:activateSettings,readRows});
-const routes=[sharedSettingsRoutes,libraryRoutes,itemRoutes,previewRoutes,settingsRoutes,nodeRoutes,staticRoutes];
+const routes=[sharedSettingsRoutes,sonarrRoutes,libraryRoutes,itemRoutes,previewRoutes,settingsRoutes,nodeRoutes,staticRoutes];
 const server=http.createServer(async(req,res)=>{
   let releasePreviewBackground=false;const request={mutation:null};
   try {
