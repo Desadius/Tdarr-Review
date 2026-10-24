@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {readRecoveryConfiguration,resolveRecoveryConfig} from '../recovery/recovery-authority.mjs';
+import {readRecoveryConfiguration,readRecoveryRestoreBinding,resolveRecoveryConfig} from '../recovery/recovery-authority.mjs';
 import {startupValidator} from '../recovery/config-watch.mjs';
 import {createWorker} from '../recovery/create-worker.mjs';
 import {main as migrateRegistry} from './migrate-recovery-registry.mjs';
@@ -146,3 +146,31 @@ for(const [readerName,reader] of Object.entries(readers)){
   assert.ok(applicable>0);
  });
 }
+
+test('the original-restore binding reader is metadata-only in Off and refuses incomplete authority',async t=>{
+ const good={...base,enabled:false};
+ for(const c of [
+  {name:'legacy Off',legacy:good,ok:true},
+  {name:'managed Off',managed:true,ok:true},
+  {name:'legacy enabled conflicts with Off',legacy:{...good,enabled:true},ok:false},
+  {name:'missing legacy config',legacy:null,ok:false},
+  {name:'corrupt managed authority',managed:true,corrupt:true,ok:false},
+  {name:'stale managed private exception',managed:true,staleException:true,ok:false},
+ ]){
+  const f=await setup({...c,mode:'off'});
+  try{
+   const before=await Promise.all(['config.json','state.json','pending-approvals.json','shared-settings.json'].map(async name=>{
+    try{return [name,await fs.readFile(path.join(name==='shared-settings.json'?f.dir:f.data,name))];}catch(e){return [name,e.code];}
+   }));
+   if(c.ok){
+    const result=await readRecoveryRestoreBinding({data:f.data,mode:'off'});
+    assert.equal(result.mode,'off',c.name);assert.equal(result.managed,c.managed===true,c.name);assert.equal('enabled' in result.binding,false,c.name);
+   }else await assert.rejects(readRecoveryRestoreBinding({data:f.data,mode:'off'}),undefined,c.name);
+   await assert.rejects(readRecoveryConfiguration({data:f.data,mode:'off'}),e=>e.reason==='mode-off',c.name+' must not enable runtime configuration');
+   const after=await Promise.all(['config.json','state.json','pending-approvals.json','shared-settings.json'].map(async name=>{
+    try{return [name,await fs.readFile(path.join(name==='shared-settings.json'?f.dir:f.data,name))];}catch(e){return [name,e.code];}
+   }));
+   assert.deepEqual(after,before,c.name+' reads metadata without changing authority files');
+  }finally{await f.cleanup();}
+ }
+});

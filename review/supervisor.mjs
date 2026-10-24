@@ -70,7 +70,7 @@ export async function supervise({mode,dataRoot,review,recovery,restart=RESTART,s
    return false;
   }
   const [command,...args]=[...lowPriority,...recovery];
-  const child=worker=spawn(command,args,{stdio:['ignore','inherit','pipe','ipc'],env:{...process.env,DATA_ROOT:recoveryData,RECOVERY_MODE:mode,RECOVERY_CONTROL_SESSION:session,RECOVERY_ACTIVATION_ID:control?.state==='starting'?control.id:'',RECOVERY_RESTORE_OPERATION_ID:admittedRestart?fence.operationId:''}});
+  const child=worker=spawn(command,args,{stdio:['ignore','inherit','pipe','ipc'],env:{...process.env,DATA_ROOT:recoveryData,REVIEW_DATA_ROOT:dataRoot,RECOVERY_MODE:mode,RECOVERY_CONTROL_SESSION:session,RECOVERY_ACTIVATION_ID:control?.state==='starting'?control.id:'',RECOVERY_RESTORE_OPERATION_ID:admittedRestart?fence.operationId:''}});
   spawnedRecoveryCount++;
   child.on('message',m=>{
    if(worker!==child||!controlMessage(m)||m.channel!==CHANNELS.worker||m.session!==session)return;

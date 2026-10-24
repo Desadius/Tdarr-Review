@@ -57,6 +57,8 @@ export const ERROR_MESSAGES=Object.freeze({
  restore_reconcile_unavailable:Object.freeze({cs:'Uložený výsledek návratu nelze bezpečně ověřit.',en:'The saved restore result cannot be verified safely.'}),
  restore_not_eligible:Object.freeze({cs:'Originál teď nelze bezpečně vrátit.',en:'The original cannot be safely restored now.'}),
  restore_snapshot_changed:Object.freeze({cs:'Stav obnovy se změnil. Obnov údaje.',en:'The restore state has changed. Refresh the details.'}),
+ restore_attempt_changed:Object.freeze({cs:'Potvrzení návratu je zastaralé. Obnov údaje.',en:'The restore confirmation is stale. Refresh the details.'}),
+ restore_reconcile_confirmation_changed:Object.freeze({cs:'Uložený výsledek se změnil. Obnov údaje a ověř aktuální stav.',en:'The saved result changed. Refresh the details and verify its current state.'}),
  recovery_control_restore_fenced:Object.freeze({cs:'Řízení Recovery je uzamčené probíhajícím návratem originálu.',en:'Recovery control is fenced by an original-file restore.'}),
  response_too_large:Object.freeze({cs:'Radarr vrátil příliš velkou odpověď; bezpečnostní kontrola není úplná.',en:'Radarr returned an oversized response; the safety check is incomplete.'}),
  radarr_unavailable:Object.freeze({cs:'Radarr teď neodpovídá pro bezpečné ověření originálu.',en:'Radarr is unavailable for a safe original-file check.'}),

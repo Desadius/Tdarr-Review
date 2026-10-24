@@ -27,7 +27,7 @@ import {identityOf} from './file-identity.mjs';
 // loaded and checked by the caller (recovery/worker.mjs), which also owns signals, the control
 // channel and the poll loop. The adapters (Tdarr, Radarr, phase journal, source checks) are built
 // once here and shared by every step, so one poll can be driven from a test.
-export function createWorker({data,mode,cfg,configText,managed,state,pendingApprovals,canStart}){
+export function createWorker({data,reviewData=data,mode,cfg,configText,managed,state,pendingApprovals,canStart}){
  const configFile=path.join(data,'config.json'),stateFile=path.join(data,'state.json'),loadedConfigDigest=configDigest(configText);
  const isApprovedCase=c=>registryHasApproval(pendingApprovals,c);
  const delay=ms=>new Promise(r=>setTimeout(r,ms));
@@ -268,7 +268,7 @@ export function createWorker({data,mode,cfg,configText,managed,state,pendingAppr
     let c;
     try{
     const rel=relative(f._id,cfg.sourceRoot),s=await safeSource(rel),id=caseId(f._id,s.fp);
-    if(await hasRecoveryRestoreEvidence({data,file:f._id,identity:s.fp,cfg}))continue;
+    if(await hasRecoveryRestoreEvidence({data:reviewData,file:f._id,identity:s.fp,cfg}))continue;
     if(Object.values(state.cases).some(c=>c.skipCurrentEdition&&c.file===f._id&&c.preservedSourceFP===s.fp))continue;
      if(state.cases[id])continue;
      if(await readHeader(s.p)!=='terminal_overwrite')continue;
@@ -297,7 +297,7 @@ export function createWorker({data,mode,cfg,configText,managed,state,pendingAppr
    let c;
    try{
     const rel=relative(j.file,cfg.sourceRoot),s=await safeSource(rel),id=caseId(j.file,s.fp);
-    if(await hasRecoveryRestoreEvidence({data,file:j.file,identity:s.fp,cfg}))continue;
+    if(await hasRecoveryRestoreEvidence({data:reviewData,file:j.file,identity:s.fp,cfg}))continue;
     if(Object.values(state.cases).some(c=>c.skipCurrentEdition&&c.file===j.file&&c.preservedSourceFP===s.fp))continue;
     state.jobs[j._id]=id;
     if(state.cases[id])continue;

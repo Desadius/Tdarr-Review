@@ -9,7 +9,7 @@ import {readRecoveryRuntime} from '../recovery-snapshot.mjs';
 import {settingsRequest} from './shared-settings.mjs';
 
 const RESTORE_RECONCILE_ERRORS=new Set(['restore_reconcile_confirm_required','restore_busy','restore_case_invalid','restore_reconcile_unavailable',
- 'restore_fence_owner_changed','restore_case_unavailable','restore_binding_unavailable','restore_binding_changed','restore_case_snapshot_changed',
+ 'restore_fence_owner_changed','restore_case_unavailable','restore_binding_unavailable','restore_binding_changed','restore_case_snapshot_changed','restore_reconcile_confirmation_changed',
  'restore_journal_unproven','restore_case_binding_changed','restore_destination_unproven','restore_source_unproven','restore_link_unproven',
  'restore_unchanged_state_unproven','restore_destination_occupied','recovery_control_unavailable','recovery_restart_unconfirmed',
  'recovery_cancel_unconfirmed','recovery_control_outcome_unknown','recovery_worker_resume_unverified']);
@@ -74,7 +74,7 @@ export async function libraryRoutes(ctx,req,res,url,request){
  const originalRestoreReconcile=/^\/api\/recovery\/cases\/([a-f0-9]{24})\/restore-original\/reconcile$/.exec(url.pathname);
  if(originalRestoreReconcile&&req.method==='POST'){
   const input=await body(req),owner=request.mutation||{kind:'restoreReconcile'};
-  try{return reply(res,200,await ctx.recoverySafeRestore.reconcile(originalRestoreReconcile[1],{confirm:input.confirm,owner,
+  try{return reply(res,200,await ctx.recoverySafeRestore.reconcile(originalRestoreReconcile[1],{confirm:input.confirm,operationId:input.operationId,revision:input.revision,owner,
    claimBusy:value=>{ctx.mutationOwner=value;request.mutation=null;ctx.setRecoveryRestoreBusy(true);},
    releaseBusy:value=>{if(ctx.mutationOwner===value)ctx.mutationOwner=null;ctx.setRecoveryRestoreBusy(ctx.recoverySafeRestore.busy);}}));}
   catch(error){const code=typeof error.code==='string'?error.code.replaceAll('-','_'):error.code;if(RESTORE_RECONCILE_ERRORS.has(code))return reply(res,code==='restore_reconcile_confirm_required'?400:409,{...apiError(code),...(error.status?{status:error.status}:{})});throw error;}
@@ -82,13 +82,13 @@ export async function libraryRoutes(ctx,req,res,url,request){
  if(originalRestore&&req.method==='POST'){
   const input=await body(req),owner=request.mutation||{kind:'restore'};
   try{
-   const result=await ctx.recoverySafeRestore.start(originalRestore[1],{confirm:input.confirm,snapshot:input.snapshot,owner,
+   const result=await ctx.recoverySafeRestore.start(originalRestore[1],{confirm:input.confirm,snapshot:input.snapshot,attempt:input.attempt,owner,
     claimBusy:value=>{ctx.mutationOwner=value;request.mutation=null;ctx.setRecoveryRestoreBusy(true);},
     releaseBusy:value=>{if(ctx.mutationOwner===value)ctx.mutationOwner=null;ctx.setRecoveryRestoreBusy(ctx.recoverySafeRestore.busy);}});
    return reply(res,202,result);
   }catch(error){
    const code=typeof error.code==='string'?error.code.replaceAll('-','_'):error.code;
-   if(['restore_confirm_required','restore_busy','restore_case_invalid','restore_reconcile_required','restore_snapshot_changed','restore_not_eligible'].includes(code))return reply(res,code==='restore_confirm_required'?400:409,{...apiError(code),...(error.status?{status:error.status}:{}),...(error.blockers?{blockers:error.blockers}:{})});
+   if(['restore_confirm_required','restore_busy','restore_case_invalid','restore_reconcile_required','restore_snapshot_changed','restore_attempt_changed','restore_not_eligible'].includes(code))return reply(res,code==='restore_confirm_required'?400:409,{...apiError(code),...(error.status?{status:error.status}:{}),...(error.blockers?{blockers:error.blockers}:{})});
    throw error;
   }
  }

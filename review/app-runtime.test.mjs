@@ -496,14 +496,14 @@ test('a mapped Sonarr file cannot be source-checked without an explicit saved ro
   assert.equal(f.calls.some(c=>c.method==='POST'&&c.route.endsWith('/handoff')),false);
  });
  for(const language of ['cs','en'])test('manual Recovery original restore has its own confirmation, progress, completion and exact snapshot in '+language,async()=>{
-  const id='d'.repeat(24),snapshot='r'.repeat(64),record={id,source:'recovery',title:'Synthetic original film',phase:'manual',statusUpdated:new Date().toISOString()};let state='idle';
-  const base='/api/recovery/cases/'+id+'/restore-original',f=await appFixture(language,{routes:{[base]:({body})=>body?(state='completed',{status:202,data:{accepted:true}}):({data:{eligible:true,snapshot}}),[base+'/status']:()=>({data:{state}})}}),dom=f.document;
+  const id='d'.repeat(24),snapshot='r'.repeat(64),attempt='a'.repeat(64),record={id,source:'recovery',title:'Synthetic original film',phase:'manual',statusUpdated:new Date().toISOString()};let state='idle';
+  const base='/api/recovery/cases/'+id+'/restore-original',f=await appFixture(language,{routes:{[base]:({body})=>body?(state='completed',{status:202,data:{accepted:true}}):({data:{eligible:true,snapshot,attempt}}),[base+'/status']:()=>({data:{state}})}}),dom=f.document;
   await f.update({requests:[record],recoveryRuntime:{present:true,version:1,mode:'off',state:'off',reason:null}});await f.hash('#recovery?filter=attention');
   const label=language==='en'?'View recovery for Synthetic original film':'Prohlédnout obnovu Synthetic original film';await dom.querySelectorAll('button').find(n=>n.getAttribute('aria-label')===label).emit('click');for(let i=0;i<8;i++)await flush();await dom.getElementById('detailTabs-recovery').emit('click');for(let i=0;i<8;i++)await flush();
   const panel=dom.querySelector('.installed-holder');assert.ok(panel,'Recovery detail tab should show restore panel: '+dom.getElementById('detailBody').textContent);const restore=panel.querySelector('button');assert.ok(restore,'eligible case should show restore action: '+panel.textContent);assert.equal(restore.textContent,language==='en'?'Restore only the original file':'Vrátit pouze původní soubor');await restore.emit('click');
   assert.equal(dom.getElementById('confirm').open,true);assert.match(dom.getElementById('dialogText').textContent,language==='en'?/does not move a transcode, approve it, change quarantine retention/:/nepřesune převod, neschválí jej a nemění lhůtu karantény/);assert.equal(dom.getElementById('commit').disabled,false);
   assert.equal(f.calls.some(c=>c.method==='POST'&&c.route===base),false,'opening confirmation changes nothing');dom.getElementById('confirm').returnValue='confirm';await dom.getElementById('confirm').close();for(let i=0;i<10;i++)await flush();
-  assert.deepEqual(f.calls.filter(c=>c.method==='POST'&&c.route===base).map(c=>c.body),[{confirm:true,snapshot}]);
+  assert.deepEqual(f.calls.filter(c=>c.method==='POST'&&c.route===base).map(c=>c.body),[{confirm:true,snapshot,attempt}]);
  });
  for(const language of ['cs','en'])test('original restore status shows running progress and final completion in '+language,async()=>{
   for(const state of ['running','completed']){
@@ -515,14 +515,14 @@ test('a mapped Sonarr file cannot be source-checked without an explicit saved ro
   }
  });
  for(const language of ['cs','en'])test('blocked original restore requires explicit reconciliation confirmation in '+language,async()=>{
-  const id='e'.repeat(24),record={id,source:'recovery',title:'Synthetic blocked film',phase:'manual',statusUpdated:new Date().toISOString()};let reconciled=false;
-  const base='/api/recovery/cases/'+id+'/restore-original',f=await appFixture(language,{routes:{[base]:{data:{eligible:false,blockers:['restore-blocked']}},[base+'/status']:()=>({data:{state:reconciled?'cancelled':'blocked'}}),[base+'/reconcile']:({body})=>{assert.deepEqual(body,{confirm:true});reconciled=true;return {data:{state:'cancelled'}}}}}),dom=f.document;
+  const id='e'.repeat(24),operationId='00000000-0000-4000-8000-000000000123',revision='b'.repeat(64),record={id,source:'recovery',title:'Synthetic blocked film',phase:'manual',statusUpdated:new Date().toISOString()};let reconciled=false;
+  const base='/api/recovery/cases/'+id+'/restore-original',f=await appFixture(language,{routes:{[base]:{data:{eligible:false,blockers:['restore-blocked']}},[base+'/status']:()=>({data:{state:reconciled?'cancelled':'blocked',operationId,revision}}),[base+'/reconcile']:({body})=>{assert.deepEqual(body,{confirm:true,operationId,revision});reconciled=true;return {data:{state:'cancelled'}}}}}),dom=f.document;
   await f.update({requests:[record],recoveryRuntime:{present:true,version:1,mode:'off',state:'off',reason:null}});await f.hash('#recovery?filter=attention');
   const label=language==='en'?'View recovery for Synthetic blocked film':'Prohlédnout obnovu Synthetic blocked film';await dom.querySelectorAll('button').find(n=>n.getAttribute('aria-label')===label).emit('click');for(let i=0;i<8;i++)await flush();await dom.getElementById('detailTabs-recovery').emit('click');for(let i=0;i<8;i++)await flush();
   const panel=dom.querySelector('.installed-holder');assert.ok(panel,'Recovery detail tab should show restore panel: '+dom.getElementById('detailBody').textContent);const reconcile=panel.querySelector('button');assert.ok(reconcile,'blocked status should show reconcile action: '+panel.textContent+' calls='+JSON.stringify(f.calls.filter(c=>c.route.includes(id))));assert.equal(reconcile.textContent,language==='en'?'Reconcile the saved result':'Ověřit uložený výsledek');await reconcile.emit('click');
   assert.equal(dom.getElementById('confirm').open,true);assert.match(dom.getElementById('dialogText').textContent,language==='en'?/will not rerun an uncertain operation/:/Nejasnou operaci znovu nespustí/);assert.equal(dom.getElementById('commit').disabled,false);
   assert.equal(f.calls.some(c=>c.method==='POST'&&c.route===base+'/reconcile'),false);dom.getElementById('confirm').returnValue='confirm';await dom.getElementById('confirm').close();for(let i=0;i<10;i++)await flush();
-  assert.deepEqual(f.calls.filter(c=>c.method==='POST'&&c.route===base+'/reconcile').map(c=>c.body),[{confirm:true}]);assert.equal(reconciled,true);
+  assert.deepEqual(f.calls.filter(c=>c.method==='POST'&&c.route===base+'/reconcile').map(c=>c.body),[{confirm:true,operationId,revision}]);assert.equal(reconciled,true);
  });
  test('Verify the status of all cases asks the server for a read-only refresh of the whole queue',async()=>{
   const runtime={present:true,version:1,mode:'repair',state:'running',reason:null};

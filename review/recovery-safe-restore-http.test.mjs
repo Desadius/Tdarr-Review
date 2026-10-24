@@ -25,7 +25,8 @@ async function crossDeviceFixture(t,caseId,{mode='off',supervisor=false,loseRest
  const external=await fs.mkdtemp('/dev/shm/recovery234-');t.after(()=>fs.rm(external,{recursive:true,force:true}));
  let original,quarantine,dropAckFile;
  const f=await reviewFixture({supervisor,env:{RECOVERY_MODE:mode},beforeStart:async({data,media,root,dbpath,mockBase})=>{
-  original=path.join(media,'A','A.mkv');quarantine=path.join(external,caseId,'A.mkv');await fs.mkdir(path.dirname(quarantine),{recursive:true});await fs.copyFile(original,quarantine);await fs.unlink(original);
+  original=path.join(media,'A','A.mkv');quarantine=path.join(external,caseId,'A.mkv');
+  await fs.mkdir(path.dirname(quarantine),{recursive:true});await fs.copyFile(original,quarantine);await fs.unlink(original);
   const fp=identityOf(await fs.stat(quarantine)),recoveryData=path.join(data,'recovery');await fs.mkdir(recoveryData,{recursive:true});
   await fs.writeFile(path.join(recoveryData,'config.json'),JSON.stringify({enabled:mode==='repair',tdarrUrl:mockBase,radarrUrl:mockBase,radarrApiKey:'synthetic-key',libraryId:'fixture-library',sourceRoot:'/fixture-library',radarrRoot:'/fixture-library',mediaRoot:media,reviewRoot:path.join(root,'review'),reviewPrefixes:['PROD-Movies'],quarantineRoot:external,database:dbpath,reports:path.join(root,'reports'),ffmpeg:process.execPath,ffprobe:process.execPath,stableMinutes:10,decodeTimeoutHours:12,fullSourceHash:false,confirmDelaySeconds:30,maxRepairsPerDay:3,movieCooldownDays:30,pollSeconds:300,detectTerminalHeaders:true,since:0,approvedCaseIds:[],approvedImportRepairs:{}}));
   const outside='2026-10-24T09:00:00.000Z',updated='2026-10-24T10:03:00.000Z';
@@ -91,7 +92,7 @@ test('Off-mode operator can read exact original restore eligibility without chan
  ]){
   f.setRadarrMovie(movie);
   const moved=await f.get(`/api/recovery/cases/${caseId}/restore-original`);assert.equal(moved.eligible,false,JSON.stringify(moved));assert.ok(moved.blockers.includes('radarr_binding_changed'));
-  const stale=await f.post(`/api/recovery/cases/${caseId}/restore-original`,{confirm:true,snapshot:queueCleared.snapshot});assert.equal(stale.status,409);assert.equal((await stale.json()).code,'restore_not_eligible');
+  const stale=await f.post(`/api/recovery/cases/${caseId}/restore-original`,{confirm:true,snapshot:queueCleared.snapshot,attempt:queueCleared.attempt});assert.equal(stale.status,409);assert.equal((await stale.json()).code,'restore_not_eligible');
   await assert.rejects(fs.lstat(path.join(f.data,'recovery-restore-fence.json')),{code:'ENOENT'});await assert.rejects(fs.lstat(path.join(f.data,'recovery-restores',caseId+'.json')),{code:'ENOENT'});
   assert.deepEqual(await fs.readFile(quarantine),Buffer.alloc(128,'A'.charCodeAt(0)));
  }
@@ -117,6 +118,19 @@ test('Off-mode operator can read exact original restore eligibility without chan
  assert.deepEqual(f.calls.slice(checkedCalls).filter(call=>call.route.startsWith('/api/v2/')),[],'refusal paths make no Tdarr API calls');
 });
 
+test('reconciliation rejects non-UUID operation paths before looking up an operation',{skip:process.platform!=='linux'?'Requires /dev/shm on a separate Linux filesystem':false},async t=>{
+ const caseId='2'.repeat(24),{f,original,quarantine,bytes}=await crossDeviceFixture(t,caseId),eligibility=await f.get(`/api/recovery/cases/${caseId}/restore-original`);
+ const accepted=await f.post(`/api/recovery/cases/${caseId}/restore-original`,{confirm:true,snapshot:eligibility.snapshot,attempt:eligibility.attempt});assert.equal(accepted.status,202);
+ const status=await waitFor(async()=>{const value=await f.get(`/api/recovery/cases/${caseId}/restore-original/status`);return ['completed','blocked'].includes(value.state)&&value;},'restore did not settle');
+ const journal=path.join(f.data,'recovery-restores',caseId+'.json'),journalBefore=await fs.readFile(journal);
+ for(const operationId of ['../outside','..\\outside','/tmp/operation','00000000-0000-4000-8000-000000000001/../outside']){
+  const response=await f.post(`/api/recovery/cases/${caseId}/restore-original/reconcile`,{confirm:true,operationId,revision:status.revision});
+  assert.equal(response.status,409,operationId+': '+await response.clone().text());assert.equal((await response.json()).code,'restore_reconcile_confirmation_changed');
+ }
+ assert.deepEqual(await fs.readFile(journal),journalBefore,'invalid operation paths do not rewrite the current journal');
+ assert.deepEqual(await fs.readFile(original),bytes);await assert.rejects(fs.lstat(quarantine),{code:'ENOENT'});
+});
+
 test('a confirmed Off-mode restore returns only the recorded original and publishes durable completion',async t=>{
  const caseId='b'.repeat(24);let original,quarantine;
  const f=await reviewFixture({env:{RECOVERY_MODE:'off'},beforeStart:async({data,media,root,dbpath,mockBase})=>{
@@ -130,7 +144,7 @@ test('a confirmed Off-mode restore returns only the recorded original and publis
  }});t.after(()=>f.close());
  const originalBytes=await fs.readFile(quarantine),privateState=await fs.readFile(path.join(f.data,'recovery','state.json'),'utf8');
  const eligibility=await f.get(`/api/recovery/cases/${caseId}/restore-original`);
- const response=await f.post(`/api/recovery/cases/${caseId}/restore-original`,{confirm:true,snapshot:eligibility.snapshot});
+ const response=await f.post(`/api/recovery/cases/${caseId}/restore-original`,{confirm:true,snapshot:eligibility.snapshot,attempt:eligibility.attempt});
  assert.equal(response.status,202,await response.clone().text());
  const accepted=await response.json();assert.equal(accepted.accepted,true);assert.equal(accepted.caseId,caseId);
  let status;
@@ -140,13 +154,18 @@ test('a confirmed Off-mode restore returns only the recorded original and publis
  await assert.rejects(fs.lstat(quarantine),{code:'ENOENT'});
  assert.equal(await fs.readFile(path.join(f.data,'recovery','state.json'),'utf8'),privateState,'Review leaves Recovery private state untouched');
  assert.equal((await f.get('/api/recovery/runtime')).mode,'off','restoring while Off never enables Recovery');
+ const terminal=await f.get(`/api/recovery/cases/${caseId}/restore-original/status`),journal=path.join(f.data,'recovery-restores',caseId+'.json'),journalBefore=await fs.readFile(journal);
+ const replay=await f.post(`/api/recovery/cases/${caseId}/restore-original/reconcile`,{confirm:true,operationId:terminal.operationId,revision:terminal.revision});
+ assert.equal(replay.status,200,await replay.clone().text());assert.deepEqual(await replay.json(),terminal,'completed reconciliation is an idempotent read');
+ assert.deepEqual(await fs.readFile(journal),journalBefore,'terminal reconciliation never rewrites its closed journal');
+ const duplicate=await f.post(`/api/recovery/cases/${caseId}/restore-original`,{confirm:true,snapshot:eligibility.snapshot,attempt:eligibility.attempt});assert.equal(duplicate.status,409);
 });
 
 test('an unrelated idle Tdarr worker update does not stale the confirmed restore snapshot',{skip:process.platform!=='linux'?'Requires /dev/shm on a separate Linux filesystem':false},async t=>{
  const caseId='9'.repeat(24),{f,original,bytes}=await crossDeviceFixture(t,caseId),eligibility=await f.get(`/api/recovery/cases/${caseId}/restore-original`);
  assert.equal(eligibility.eligible,true,JSON.stringify(eligibility));
  f.nodes.fixture.workers.background={id:'background',idle:true,file:'/unrelated-library/Other.mkv',progress:{percent:42}};
- const accepted=await f.post(`/api/recovery/cases/${caseId}/restore-original`,{confirm:true,snapshot:eligibility.snapshot});assert.equal(accepted.status,202,await accepted.clone().text());
+ const accepted=await f.post(`/api/recovery/cases/${caseId}/restore-original`,{confirm:true,snapshot:eligibility.snapshot,attempt:eligibility.attempt});assert.equal(accepted.status,202,await accepted.clone().text());
  const result=await accepted.json();let status;
  for(let i=0;i<150;i++){status=await f.get(`/api/recovery/cases/${caseId}/restore-original/status`);if(['completed','blocked'].includes(status.state))break;await new Promise(resolve=>setTimeout(resolve,10));}
  assert.equal(status.state,'completed',JSON.stringify(status));assert.deepEqual(await fs.readFile(original),bytes);
@@ -156,7 +175,7 @@ test('a real cross-filesystem restore installs an exclusive verified copy before
  const caseId='c'.repeat(24),{f,original,quarantine,bytes}=await crossDeviceFixture(t,caseId);
  assert.notEqual((await fs.stat(path.dirname(original))).dev,(await fs.stat(quarantine)).dev,'fixture crosses filesystem devices');
  const eligibility=await f.get(`/api/recovery/cases/${caseId}/restore-original`);
- const response=await f.post(`/api/recovery/cases/${caseId}/restore-original`,{confirm:true,snapshot:eligibility.snapshot});assert.equal(response.status,202,await response.clone().text());
+ const response=await f.post(`/api/recovery/cases/${caseId}/restore-original`,{confirm:true,snapshot:eligibility.snapshot,attempt:eligibility.attempt});assert.equal(response.status,202,await response.clone().text());
  let status;for(let i=0;i<150;i++){status=await f.get(`/api/recovery/cases/${caseId}/restore-original/status`);if(['completed','blocked'].includes(status.state))break;await new Promise(resolve=>setTimeout(resolve,10));}
  assert.equal(status.state,'completed',JSON.stringify(status));assert.equal(status.crossDevice,true,JSON.stringify(status));
  assert.deepEqual(await fs.readFile(original),bytes);assert.equal((await fs.stat(original)).nlink,1);await assert.rejects(fs.lstat(quarantine),{code:'ENOENT'});
@@ -165,7 +184,7 @@ test('a real cross-filesystem restore installs an exclusive verified copy before
 test('a cross-filesystem temporary-name collision preserves the existing temp and both original copies',{skip:process.platform!=='linux'?'Requires /dev/shm on a separate Linux filesystem':false},async t=>{
  const caseId='d'.repeat(24),{f,original,quarantine,bytes}=await crossDeviceFixture(t,caseId),eligibility=await f.get(`/api/recovery/cases/${caseId}/restore-original`);
  let commandReads=0;const gate=f.hold('/api/v3/command/84',()=>++commandReads===2);
- const response=await f.post(`/api/recovery/cases/${caseId}/restore-original`,{confirm:true,snapshot:eligibility.snapshot});assert.equal(response.status,202,await response.clone().text());
+ const response=await f.post(`/api/recovery/cases/${caseId}/restore-original`,{confirm:true,snapshot:eligibility.snapshot,attempt:eligibility.attempt});assert.equal(response.status,202,await response.clone().text());
  const accepted=await response.json(),temporary=path.join(path.dirname(original),`.tdarr-review-restore-${accepted.operationId}.tmp`),existing=Buffer.from('pre-existing unrelated temporary file');
  await gate.entered;await fs.writeFile(temporary,existing);gate.release();
  let status;for(let i=0;i<150;i++){status=await f.get(`/api/recovery/cases/${caseId}/restore-original/status`);if(status.state==='blocked')break;await new Promise(resolve=>setTimeout(resolve,10));}
@@ -174,12 +193,23 @@ test('a cross-filesystem temporary-name collision preserves the existing temp an
  assert.equal((await fs.stat(path.join(f.data,'recovery-restore-fence.json'))).isFile(),true,'uncertain operation stays fenced for explicit reconciliation');
 });
 
+test('a destination created after the final eligibility check is preserved by exclusive install',{skip:process.platform!=='linux'?'Requires /dev/shm on a separate Linux filesystem':false},async t=>{
+ const caseId='6'.repeat(24),{f,original,quarantine,bytes}=await crossDeviceFixture(t,caseId),eligibility=await f.get(`/api/recovery/cases/${caseId}/restore-original`);
+ let commandReads=0;const gate=f.hold('/api/v3/command/84',()=>++commandReads===2);
+ const accepted=await f.post(`/api/recovery/cases/${caseId}/restore-original`,{confirm:true,snapshot:eligibility.snapshot,attempt:eligibility.attempt});assert.equal(accepted.status,202,await accepted.clone().text());
+ await gate.entered;const newer=Buffer.from('newer copy created during the last eligibility read');await fs.writeFile(original,newer);gate.release();
+ const status=await waitFor(async()=>{const value=await f.get(`/api/recovery/cases/${caseId}/restore-original/status`);return value.state==='blocked'&&value;},'exclusive install did not block on the raced destination');
+ assert.deepEqual(await fs.readFile(original),newer,'install does not replace a file that appeared after preflight');assert.equal(status.error,'restore_destination_occupied',JSON.stringify(status));
+ assert.deepEqual(await fs.readFile(quarantine),bytes,'the preserved source remains available after the refused install');
+ assert.equal((await fs.stat(path.join(f.data,'recovery-restore-fence.json'))).isFile(),true,'the uncertain file effect remains fenced for reconciliation');
+});
+
 test('a changed private case snapshot is rejected before fencing or file effects',{skip:process.platform!=='linux'?'Requires /dev/shm on a separate Linux filesystem':false},async t=>{
  const caseId='e'.repeat(24),{f,original,quarantine,bytes}=await crossDeviceFixture(t,caseId),view=await f.get(`/api/recovery/cases/${caseId}/restore-original`);
  const stateFile=path.join(f.data,'recovery','state.json'),state=JSON.parse(await fs.readFile(stateFile,'utf8'));state.cases[caseId].binding.movieFileId++;
  await fs.writeFile(stateFile,JSON.stringify(state));
  const changed=await f.get(`/api/recovery/cases/${caseId}/restore-original`);assert.notEqual(changed.snapshot,view.snapshot);
- const refused=await f.post(`/api/recovery/cases/${caseId}/restore-original`,{confirm:true,snapshot:view.snapshot});
+ const refused=await f.post(`/api/recovery/cases/${caseId}/restore-original`,{confirm:true,snapshot:view.snapshot,attempt:view.attempt});
  assert.equal(refused.status,409);assert.equal((await refused.json()).code,'restore_snapshot_changed');
  await assert.rejects(fs.lstat(original),{code:'ENOENT'});assert.deepEqual(await fs.readFile(quarantine),bytes);
  await assert.rejects(fs.lstat(path.join(f.data,'recovery-restore-fence.json')),{code:'ENOENT'});
@@ -188,15 +218,31 @@ test('a changed private case snapshot is rejected before fencing or file effects
 test('explicit reconciliation releases a proven unchanged Off-mode operation after a changed Radarr binding',{skip:process.platform!=='linux'?'Requires /dev/shm on a separate Linux filesystem':false},async t=>{
  const caseId='f'.repeat(24),{f,original,quarantine,bytes}=await crossDeviceFixture(t,caseId),view=await f.get(`/api/recovery/cases/${caseId}/restore-original`);
  let commandReads=0;const gate=f.hold('/api/v3/command/84',()=>++commandReads===2);
- const accepted=await f.post(`/api/recovery/cases/${caseId}/restore-original`,{confirm:true,snapshot:view.snapshot});assert.equal(accepted.status,202);
+ const accepted=await f.post(`/api/recovery/cases/${caseId}/restore-original`,{confirm:true,snapshot:view.snapshot,attempt:view.attempt});assert.equal(accepted.status,202);
  await gate.entered;f.setRadarrMovie({id:71,tmdbId:1234,path:'/fixture-library/A',movieFileId:null});gate.release();
  let status;for(let i=0;i<150;i++){status=await f.get(`/api/recovery/cases/${caseId}/restore-original/status`);if(status.state==='blocked')break;await new Promise(resolve=>setTimeout(resolve,10));}
  assert.equal(status.state,'blocked');assert.equal((await fs.stat(path.join(f.data,'recovery-restore-fence.json'))).isFile(),true);
  assert.deepEqual(await fs.readFile(quarantine),bytes);await assert.rejects(fs.lstat(original),{code:'ENOENT'});
  f.setRadarrMovie({id:71,tmdbId:9001,path:'/fixture-library/A',movieFileId:null});
- const reconciled=await f.post(`/api/recovery/cases/${caseId}/restore-original/reconcile`,{confirm:true});assert.equal(reconciled.status,200,await reconciled.clone().text());
- assert.equal((await reconciled.json()).state,'cancelled');await assert.rejects(fs.lstat(path.join(f.data,'recovery-restore-fence.json')),{code:'ENOENT'});
+ const blockedStatus=await f.get(`/api/recovery/cases/${caseId}/restore-original/status`);
+ const reconciled=await f.post(`/api/recovery/cases/${caseId}/restore-original/reconcile`,{confirm:true,operationId:blockedStatus.operationId,revision:blockedStatus.revision});assert.equal(reconciled.status,200,await reconciled.clone().text());
+ const cancelled=await reconciled.json();assert.equal(cancelled.state,'cancelled');await assert.rejects(fs.lstat(path.join(f.data,'recovery-restore-fence.json')),{code:'ENOENT'});
  assert.deepEqual(await fs.readFile(quarantine),bytes);await assert.rejects(fs.lstat(original),{code:'ENOENT'});
+ const cancelledStatus=await f.get(`/api/recovery/cases/${caseId}/restore-original/status`),journal=path.join(f.data,'recovery-restores',caseId+'.json'),journalBefore=await fs.readFile(journal);
+ const replay=await f.post(`/api/recovery/cases/${caseId}/restore-original/reconcile`,{confirm:true,operationId:cancelledStatus.operationId,revision:cancelledStatus.revision});
+ assert.equal(replay.status,200,await replay.clone().text());assert.deepEqual(await replay.json(),cancelledStatus,'cancelled reconciliation is an idempotent read');
+ assert.deepEqual(await fs.readFile(journal),journalBefore,'terminal replay leaves the closed journal unchanged');
+ const duplicate=await f.post(`/api/recovery/cases/${caseId}/restore-original`,{confirm:true,snapshot:view.snapshot,attempt:view.attempt});assert.equal(duplicate.status,409,'the pre-cancellation token cannot start another attempt');
+ const fresh=await f.get(`/api/recovery/cases/${caseId}/restore-original`);assert.equal(fresh.eligible,true,JSON.stringify(fresh));
+ const retry=await f.post(`/api/recovery/cases/${caseId}/restore-original`,{confirm:true,snapshot:fresh.snapshot,attempt:fresh.attempt});assert.equal(retry.status,202,await retry.clone().text());
+ const retryAccepted=await retry.json();assert.notEqual(retryAccepted.operationId,cancelledStatus.operationId);
+ const retryStatus=await waitFor(async()=>{const value=await f.get(`/api/recovery/cases/${caseId}/restore-original/status`);return ['completed','blocked'].includes(value.state)&&value;},'freshly confirmed retry did not settle');
+ assert.equal(retryStatus.state,'completed',JSON.stringify(retryStatus));
+ const currentJournal=path.join(f.data,'recovery-restores',caseId+'.json'),currentBefore=await fs.readFile(currentJournal);
+ const archivedReplay=await f.post(`/api/recovery/cases/${caseId}/restore-original/reconcile`,{confirm:true,operationId:cancelledStatus.operationId,revision:cancelledStatus.revision});
+ assert.equal(archivedReplay.status,200,await archivedReplay.clone().text());assert.equal((await archivedReplay.json()).state,'cancelled');
+ assert.deepEqual(await fs.readFile(currentJournal),currentBefore,'an archived terminal replay cannot rewrite the newer operation');
+ assert.equal((await f.get(`/api/recovery/cases/${caseId}/restore-original/status`)).operationId,retryStatus.operationId);
 });
 
 test('explicit reconciliation finishes an interrupted exact install without losing the last source link',{skip:process.platform!=='linux'?'Requires /dev/shm on a separate Linux filesystem':false},async t=>{
@@ -214,7 +260,8 @@ test('explicit reconciliation finishes an interrupted exact install without losi
   const journal=path.join(f.data,'recovery-restores',caseId+'.json');await fs.mkdir(path.dirname(journal),{recursive:true});
   const record=await interruptedRecord({f,caseId,operationId,source,destination:original,bytes,crossDevice,phase:crossDevice?'installing':'destination-installed'});
   await fs.writeFile(journal,JSON.stringify(record));await fs.writeFile(path.join(f.data,'recovery-restore-fence.json'),JSON.stringify({version:1,kind:'recovery-original-restore',operationId,caseId,blocking:true,restartAuthorized:false}));
-  const response=await f.post(`/api/recovery/cases/${caseId}/restore-original/reconcile`,{confirm:true});assert.equal(response.status,200,JSON.stringify({body:await response.clone().text(),status:await f.get(`/api/recovery/cases/${caseId}/restore-original/status`)}));assert.equal((await response.json()).state,'completed');
+  const current=await f.get(`/api/recovery/cases/${caseId}/restore-original/status`);
+  const response=await f.post(`/api/recovery/cases/${caseId}/restore-original/reconcile`,{confirm:true,operationId:current.operationId,revision:current.revision});assert.equal(response.status,200,JSON.stringify({body:await response.clone().text(),status:await f.get(`/api/recovery/cases/${caseId}/restore-original/status`)}));assert.equal((await response.json()).state,'completed');
   assert.deepEqual(await fs.readFile(original),bytes);assert.equal((await fs.stat(original)).nlink,1);await assert.rejects(fs.lstat(source),{code:'ENOENT'});await assert.rejects(fs.lstat(path.join(f.data,'recovery-restore-fence.json')),{code:'ENOENT'});
  }
 });
@@ -233,7 +280,8 @@ test('reconciliation refuses forged paths and missing file-effect proof without 
   if(tamper==='missing-proof')delete record.caseRevision;
   await fs.mkdir(path.dirname(record.journal),{recursive:true});await fs.writeFile(record.journal,JSON.stringify(record));
   await fs.writeFile(path.join(f.data,'recovery-restore-fence.json'),JSON.stringify({version:1,kind:'recovery-original-restore',operationId,caseId,blocking:true,restartAuthorized:false}));
-  const rejected=await f.post(`/api/recovery/cases/${caseId}/restore-original/reconcile`,{confirm:true});assert.equal(rejected.status,409,JSON.stringify(await rejected.clone().text()));
+  const current=await f.get(`/api/recovery/cases/${caseId}/restore-original/status`);
+  const rejected=await f.post(`/api/recovery/cases/${caseId}/restore-original/reconcile`,{confirm:true,operationId:current.operationId,revision:current.revision});assert.equal(rejected.status,409,JSON.stringify(await rejected.clone().text()));
   const expected=tamper==='missing-proof'?'restore_journal_unproven':'restore_case_binding_changed';assert.equal((await rejected.json()).code,expected);
   assert.deepEqual(await fs.readFile(quarantine),bytes,'the Recovery quarantine remains untouched');
   if(tamper==='source-path'){assert.deepEqual(await fs.readFile(source),bytes);assert.deepEqual(await fs.readFile(original),bytes);}
@@ -249,7 +297,7 @@ test('supervised HTTP restore drains and restarts the real worker in its origina
   await waitFor(async()=>started()===1,'initial '+mode+' Recovery worker did not become ready');
   const beforeRuntime=await f.get('/api/recovery/runtime');assert.equal(beforeRuntime.mode,mode);assert.equal(beforeRuntime.state,'running');
   const eligible=await f.get(`/api/recovery/cases/${caseId}/restore-original`);assert.equal(eligible.eligible,true,JSON.stringify(eligible));
-  const accepted=await f.post(`/api/recovery/cases/${caseId}/restore-original`,{confirm:true,snapshot:eligible.snapshot});assert.equal(accepted.status,202,await accepted.clone().text());
+  const accepted=await f.post(`/api/recovery/cases/${caseId}/restore-original`,{confirm:true,snapshot:eligible.snapshot,attempt:eligible.attempt});assert.equal(accepted.status,202,await accepted.clone().text());
   const status=await waitFor(async()=>{const value=await f.get(`/api/recovery/cases/${caseId}/restore-original/status`);return ['completed','blocked'].includes(value.state)&&value;},mode+' restore did not settle');
   assert.equal(status.state,'completed',JSON.stringify(status));assert.equal(status.workerState,'running');
   assert.deepEqual(await fs.readFile(original),bytes);await assert.rejects(fs.lstat(quarantine),{code:'ENOENT'});
@@ -264,14 +312,15 @@ test('supervised HTTP restore keeps its fence after a lost restart reply and rec
  const started=()=>f.output().split('Tdarr recovery started; mode=verify').length-1;
  await waitFor(async()=>started()===1,'initial Verify worker did not become ready');
  const eligible=await f.get(`/api/recovery/cases/${caseId}/restore-original`);
- const accepted=await f.post(`/api/recovery/cases/${caseId}/restore-original`,{confirm:true,snapshot:eligible.snapshot});assert.equal(accepted.status,202,await accepted.clone().text());
+ const accepted=await f.post(`/api/recovery/cases/${caseId}/restore-original`,{confirm:true,snapshot:eligible.snapshot,attempt:eligible.attempt});assert.equal(accepted.status,202,await accepted.clone().text());
  const blocked=await waitFor(async()=>{const value=await f.get(`/api/recovery/cases/${caseId}/restore-original/status`);return value.state==='blocked'&&value;},'lost restart acknowledgement did not leave an explicit blocked result');
  assert.equal(blocked.error,'recovery_control_unavailable',JSON.stringify(blocked));await fs.access(dropAckFile);
  assert.deepEqual(await fs.readFile(original),bytes);await assert.rejects(fs.lstat(quarantine),{code:'ENOENT'});
  assert.equal((await fs.stat(path.join(f.data,'recovery-restore-fence.json'))).isFile(),true,'uncertain response retains the startup fence');
  await waitFor(async()=>started()===2,'worker restart after the dropped reply was not observed');
  const running=await f.get('/api/recovery/runtime');assert.equal(running.mode,'verify');assert.equal(running.state,'running');
- const reconciled=await f.post(`/api/recovery/cases/${caseId}/restore-original/reconcile`,{confirm:true});assert.equal(reconciled.status,200,await reconciled.clone().text());
+ const blockedStatus=await f.get(`/api/recovery/cases/${caseId}/restore-original/status`);
+ const reconciled=await f.post(`/api/recovery/cases/${caseId}/restore-original/reconcile`,{confirm:true,operationId:blockedStatus.operationId,revision:blockedStatus.revision});assert.equal(reconciled.status,200,await reconciled.clone().text());
  assert.equal((await reconciled.json()).state,'completed');await assert.rejects(fs.lstat(path.join(f.data,'recovery-restore-fence.json')),{code:'ENOENT'});
  const after=await f.get('/api/recovery/runtime');assert.equal(after.mode,'verify');assert.equal(after.state,'running');
  assert.deepEqual(await fs.readFile(original),bytes);await assert.rejects(fs.lstat(quarantine),{code:'ENOENT'});

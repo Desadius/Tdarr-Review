@@ -12,6 +12,7 @@ import {writeRecoveryRestoreEvidence,recoveryRestoreBindingDigest} from '../reco
 const object=value=>!!value&&typeof value==='object'&&!Array.isArray(value);
 const positive=value=>Number.isSafeInteger(value)&&value>0;
 const SAME=new Set(['same','ctime-changed']);
+const RESTORE_OPERATION_ID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const JOURNAL_STATES=new Set(['running','blocked','resuming','completed','cancelled']);
 const JOURNAL_PHASES=new Set(['claiming','draining','installing','destination-installed','resuming','completed','unchanged']);
 const caseId=value=>typeof value==='string'&&/^[a-f0-9]{24}$/.test(value);
@@ -89,9 +90,15 @@ async function syncDirectory(directory){const handle=await fs.open(directory,'r'
 export function createRecoverySafeRestore({data,mode=process.env.RECOVERY_MODE||'off',tdarr,control,readBinding=readRecoveryRestoreBinding}={}){
  const fenceFile=path.join(data,'recovery-restore-fence.json'),journalDir=path.join(data,'recovery-restores');
  let running=null,fenceBlocked=false;
- async function inspect(caseKey,{busy=false,details=false}={}){
+ async function inspect(caseKey,{busy=false,details=false,operationId=null}={}){
   const response={eligible:false,mode,caseId:caseKey,title:null,bytes:null,blockers:[]};
   if(!caseId(caseKey)){response.blockers.push('invalid-case');return response;}
+  const prior=await readJournal(caseKey);
+  if(prior?.state==='unreadable'){response.blockers.push('restore-reconcile-required');return response;}
+  response.attempt=snapshotHash({caseId:caseKey,operationId:prior?.operationId||null,revision:prior?snapshotHash(prior):null});
+  if(prior&&prior.operationId!==operationId&&!(prior.state==='cancelled'&&prior.phase==='unchanged'&&prior.filesystemState==='unchanged')){response.blockers.push('restore-reconcile-required');return response;}
+  const admissionFence=await readRecoveryRestoreFence({data});
+  if(admissionFence.present&&!(admissionFence.valid&&admissionFence.operationId===operationId)){response.blockers.push('restore-reconcile-required');return response;}
   if(busy){response.blockers.push('busy');return response;}
   let authority;
   try{authority=await readBinding({data:path.join(data,'recovery'),mode});}
@@ -153,10 +160,20 @@ export function createRecoverySafeRestore({data,mode=process.env.RECOVERY_MODE||
   }catch(error){response.blockers.push(error?.message==='unsafe_root'||error?.message==='unsafe_path'?'path_unsafe':'file_state_unavailable');}
   return response;
  }
- async function readJournal(caseKey){
-  const file=path.join(journalDir,caseKey+'.json');
-  try{const stat=await fs.lstat(file);if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||stat.size>65536)return {state:'unreadable'};const value=JSON.parse(await fs.readFile(file,'utf8'));return value?.version===1&&value.caseId===caseKey&&/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value.operationId)&&['off','verify','repair'].includes(value.mode)&&JOURNAL_STATES.has(value.state)&&JOURNAL_PHASES.has(value.phase)&&value.journal===file?value:{state:'unreadable'};}
+ async function readJournalFile(file,caseKey){
+  try{const stat=await fs.lstat(file);if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||stat.size>65536)return {state:'unreadable'};const value=JSON.parse(await fs.readFile(file,'utf8'));return value?.version===1&&value.caseId===caseKey&&/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value.operationId)&&['off','verify','repair'].includes(value.mode)&&JOURNAL_STATES.has(value.state)&&JOURNAL_PHASES.has(value.phase)&&value.journal===path.join(journalDir,caseKey+'.json')?value:{state:'unreadable'};}
   catch(error){return error?.code==='ENOENT'?null:{state:'unreadable'};}
+ }
+ async function readJournal(caseKey){return readJournalFile(path.join(journalDir,caseKey+'.json'),caseKey);}
+ async function readOperationJournal(caseKey,operationId){
+  const current=await readJournal(caseKey);if(current?.operationId===operationId)return current;
+  return readJournalFile(path.join(journalDir,caseKey,operationId+'.json'),caseKey);
+ }
+ async function archiveJournal(record){
+  const archiveDir=path.join(journalDir,record.caseId);await fs.mkdir(archiveDir,{recursive:true,mode:0o700});await syncDirectory(journalDir);
+  const destination=path.join(archiveDir,record.operationId+'.json');let handle;
+  try{handle=await fs.open(destination,'wx',0o600);try{await handle.writeFile(JSON.stringify(record));await handle.sync();}finally{await handle.close();}await syncDirectory(archiveDir);}
+  catch(error){if(error?.code!=='EEXIST'||await fs.readFile(destination,'utf8')!==JSON.stringify(record))throw error;}
  }
  async function claimFence(record){
   await fs.mkdir(journalDir,{recursive:true,mode:0o700});
@@ -207,7 +224,7 @@ export function createRecoverySafeRestore({data,mode=process.env.RECOVERY_MODE||
   if(!installed.isFile()||installed.isSymbolicLink()||installed.nlink!==1)throw failure('restore-destination-uncertain');
   return identityOf(installed);
  }
- async function start(caseKey,{confirm,snapshot,owner,claimBusy=()=>{},releaseBusy=()=>{}}={}){
+ async function start(caseKey,{confirm,snapshot,attempt,owner,claimBusy=()=>{},releaseBusy=()=>{}}={}){
   if(confirm!==true)throw Object.assign(Error('restore_confirm_required'),{code:'restore_confirm_required'});
   if(running)throw Object.assign(Error('restore_busy'),{code:'restore_busy'});
   if(!caseId(caseKey))throw Object.assign(Error('restore_case_invalid'),{code:'restore_case_invalid'});
@@ -215,12 +232,16 @@ export function createRecoverySafeRestore({data,mode=process.env.RECOVERY_MODE||
   running={record,owner};claimBusy(owner);
   try{
    const existing=await readJournal(caseKey);
-   if(existing)throw Object.assign(Error('restore_reconcile_required'),{code:'restore_reconcile_required',status:publicJournal(existing)});
+   const expectedAttempt=snapshotHash({caseId:caseKey,operationId:existing?.operationId||null,revision:existing?snapshotHash(existing):null});
+   if(typeof attempt!=='string'||attempt!==expectedAttempt)throw failure('restore-attempt-changed');
+   if(existing&&!(existing.state==='cancelled'&&existing.phase==='unchanged'&&existing.filesystemState==='unchanged'))throw Object.assign(Error('restore_reconcile_required'),{code:'restore_reconcile_required',status:publicJournal(existing)});
+   if(existing){const fence=await readRecoveryRestoreFence({data});if(fence.present)throw failure('restore-reconcile-required');}
    if(typeof snapshot!=='string'||!/^[a-f0-9]{64}$/.test(snapshot))throw Object.assign(Error('restore_snapshot_changed'),{code:'restore_snapshot_changed'});
    const preflight=await inspect(caseKey,{details:true});
    if(!preflight.eligible)throw Object.assign(Error('restore_not_eligible'),{code:'restore_not_eligible',blockers:preflight.blockers});
    if(preflight.snapshot!==snapshot)throw Object.assign(Error('restore_snapshot_changed'),{code:'restore_snapshot_changed'});
    record.confirmedSnapshot=snapshot;
+   if(existing)await archiveJournal(existing);
    await claimFence(record);
    await atomicJSON(record.journal,record);
   }catch(error){running=null;releaseBusy(owner);throw error;}
@@ -228,8 +249,8 @@ export function createRecoverySafeRestore({data,mode=process.env.RECOVERY_MODE||
   running.promise=work;void work.catch(()=>{});
   return {accepted:true,...publicJournal(record)};
  }
- function publicJournal(record){return {operationId:record.operationId,caseId:record.caseId,state:record.state,phase:record.phase,filesystemState:record.filesystemState||'unchanged',workerState:record.workerState||'unknown',crossDevice:record.crossDevice===true,updatedAt:record.updatedAt||record.createdAt,error:record.error||null,blockers:Array.isArray(record.blockers)?record.blockers:[]};}
- async function status(caseKey){const record=await readJournal(caseKey);return record?publicJournal(record):{state:'idle',caseId:caseKey};}
+ function publicJournal(record){return {operationId:record.operationId,caseId:record.caseId,state:record.state,phase:record.phase,revision:snapshotHash(record),filesystemState:record.filesystemState||'unchanged',workerState:record.workerState||'unknown',crossDevice:record.crossDevice===true,updatedAt:record.updatedAt||record.createdAt,error:record.error||null,blockers:Array.isArray(record.blockers)?record.blockers:[]};}
+ async function status(caseKey){const record=await readJournal(caseKey);return record?publicJournal(record):{state:'idle',caseId:caseKey,revision:null};}
  async function execute(record,ctl){
   let stopped=false,controlClaimed=false,initial=null;
   const save=async(phase,extra={})=>{Object.assign(record,extra,{phase,updatedAt:new Date().toISOString()});await atomicJSON(record.journal,record);};
@@ -244,7 +265,7 @@ export function createRecoverySafeRestore({data,mode=process.env.RECOVERY_MODE||
    const stop=await ctl.stopAfterDrain(record.operationId);stopped=stop.state==='stopped';
    if(!stopped&&mode!=='off')throw failure('recovery-stop-unconfirmed');
    record.workerStopped=stopped&&mode!=='off';record.workerState=mode==='off'?'off':'stopped';await atomicJSON(record.journal,record);
-   initial=await inspect(record.caseId,{details:true});
+   initial=await inspect(record.caseId,{details:true,operationId:record.operationId});
    if(!initial.eligible)throw Object.assign(failure('restore-not-eligible'),{blockers:initial.blockers});
    if(initial.snapshot!==record.confirmedSnapshot)throw Object.assign(Error('restore_snapshot_changed'),{code:'restore_snapshot_changed'});
    const evidence=initial.private;
@@ -270,12 +291,20 @@ export function createRecoverySafeRestore({data,mode=process.env.RECOVERY_MODE||
    if(!controlClaimed&&!stopped){try{await clearFence(record);}catch{}}
   }
  }
- async function reconcile(caseKey,{confirm,owner,claimBusy=()=>{},releaseBusy=()=>{}}={}){
+ async function reconcile(caseKey,{confirm,operationId,revision,owner,claimBusy=()=>{},releaseBusy=()=>{}}={}){
   if(confirm!==true)throw Object.assign(Error('restore_reconcile_confirm_required'),{code:'restore_reconcile_confirm_required'});
-  if(running)throw Object.assign(Error('restore_busy'),{code:'restore_busy'});
   if(!caseId(caseKey))throw Object.assign(Error('restore_case_invalid'),{code:'restore_case_invalid'});
-  const record=await readJournal(caseKey);
+  if(typeof operationId!=='string'||!RESTORE_OPERATION_ID.test(operationId)||typeof revision!=='string')throw failure('restore-reconcile-confirmation-changed');
+  const record=await readOperationJournal(caseKey,operationId);
   if(!record||record.state==='unreadable')throw Object.assign(Error('restore_reconcile_unavailable'),{code:'restore_reconcile_unavailable'});
+  if(snapshotHash(record)!==revision)throw failure('restore-reconcile-confirmation-changed');
+  const current=await readJournal(caseKey);
+  if(current?.operationId!==record.operationId){if(['completed','cancelled'].includes(record.state))return publicJournal(record);throw failure('restore-reconcile-confirmation-changed');}
+  if(['completed','cancelled'].includes(record.state)){
+   const terminalFence=await readRecoveryRestoreFence({data});if(terminalFence.present)throw failure('restore-reconcile-confirmation-changed');
+   return publicJournal(record);
+  }
+  if(running)throw Object.assign(Error('restore_busy'),{code:'restore_busy'});
   running={record,owner};claimBusy(owner);
   try{
    const fence=await readRecoveryRestoreFence({data});
@@ -320,7 +349,7 @@ export function createRecoverySafeRestore({data,mode=process.env.RECOVERY_MODE||
     await writeRecoveryRestoreEvidence({data,operationId:record.operationId,caseId:caseKey,movieId:c.movieId,tmdbId:c.tmdbId,file:c.file,identity:identityOf(verified),cfg:authority.binding,restoredAt:record.filesystemCompletedAt||new Date().toISOString()});
     record.destinationIdentity=identityOf(verified);record.filesystemState='restored';
    }else{
-    const current=await inspect(caseKey,{details:true});
+    const current=await inspect(caseKey,{details:true,operationId:record.operationId});
     if(!current.eligible||record.sourceIdentity&&!SAME.has(compareIdentity(record.sourceIdentity,current.private.identity)))throw failure('restore-unchanged-state-unproven');
     if(await missing(current.private.destination)!==null)throw failure('restore-destination-occupied');
     const controlState=mode==='off'?{state:'off'}:await control?.restoreStatus(record.operationId);

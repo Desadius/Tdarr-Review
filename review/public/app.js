@@ -126,8 +126,8 @@ $('confirm').addEventListener('close',async()=>{
   if(request.action==='batch')for(const item of request.items)writeItem(item,'approveBatch');
   else if(request.action==='keepPaused'){if(!latest?.pendingRestores?.some(n=>n.name===request.node))throw Error('Tento node už Review neobnovuje. Obnov přehled.');}
   else if(request.action==='restore'){const current=requests.find(r=>r.id===request.record.id&&r.source===request.record.source);if(!current||!caps(current).restore)throw Error('Stav obnovy se změnil. Obnov údaje.');}
-  else if(request.action==='restoreOriginal'){const view=await api('/api/recovery/cases/'+request.record.id+'/restore-original');if(!view.eligible||view.snapshot!==request.snapshot)throw Error('Stav obnovy se změnil. Obnov údaje.');}
-  else if(request.action==='restoreReconcile'){const status=await api('/api/recovery/cases/'+request.record.id+'/restore-original/status');if(!['blocked','unreadable','running'].includes(status.state))throw Error('Stav obnovy se změnil. Obnov údaje.');}
+  else if(request.action==='restoreOriginal'){const view=await api('/api/recovery/cases/'+request.record.id+'/restore-original');if(!view.eligible||view.snapshot!==request.snapshot||view.attempt!==request.attempt)throw Error('Stav obnovy se změnil. Obnov údaje.');}
+  else if(request.action==='restoreReconcile'){const status=await api('/api/recovery/cases/'+request.record.id+'/restore-original/status');if(!['blocked','unreadable','running'].includes(status.state)||status.operationId!==request.operationId||status.revision!==request.revision)throw Error('Uložený výsledek se změnil. Obnov údaje.');}
   else if(request.action==='handoff'){const current=requests.find(r=>r.id===request.record.id&&r.source==='recovery');if(!current?.attention?.actions?.some(a=>a.id==='handoffTdarr'))throw Error('Stav případu se změnil. Obnov údaje.');}
   else if(request.action==='installedApprove'){const current=requests.find(r=>r.id===request.record.id&&r.source==='recovery');if(!current?.attention?.actions?.some(a=>a.id==='assessInstalled'))throw Error('Stav případu se změnil. Obnov údaje.');}
   else if(request.action==='replaceSource'){const current=requests.find(r=>r.id===request.record.id&&r.source==='recovery');if(!current||!caps(current).replaceSource||current.sourceReplacement.snapshot!==request.record.sourceReplacement.snapshot)throw Error('Stav případu se změnil. Obnov údaje.');}
@@ -138,8 +138,8 @@ $('confirm').addEventListener('close',async()=>{
   if(request.action==='batch'){await api('/api/approve-batch',{items:request.items.map(x=>({id:x.id,snapshot:x.snapshot,reviewRevision:request.reviewRevisions[x.id]}))});selected.clear()}
   else if(request.action==='keepPaused')await api('/api/node-restores/keep',{name:request.node,confirm:true});
   else if(request.action==='restore')await api('/api/radarr/requests/'+request.record.id+'/restore',{confirm:true});
-  else if(request.action==='restoreOriginal')await api('/api/recovery/cases/'+request.record.id+'/restore-original',{confirm:true,snapshot:request.snapshot});
-  else if(request.action==='restoreReconcile')await api('/api/recovery/cases/'+request.record.id+'/restore-original/reconcile',{confirm:true});
+  else if(request.action==='restoreOriginal')await api('/api/recovery/cases/'+request.record.id+'/restore-original',{confirm:true,snapshot:request.snapshot,attempt:request.attempt});
+  else if(request.action==='restoreReconcile')await api('/api/recovery/cases/'+request.record.id+'/restore-original/reconcile',{confirm:true,operationId:request.operationId,revision:request.revision});
   else if(request.action==='handoff')await api('/api/recovery/cases/'+request.record.id+'/handoff',{snapshot:request.snapshot,confirm:true,...(request.uncertain?{acknowledgeUncertain:true}:{})});
   else if(request.action==='installedApprove')await api('/api/recovery/cases/'+request.record.id+'/installed/approve',{snapshot:request.snapshot,confirm:true});
   else if(request.action==='replaceSource')await api('/api/recovery/cases/'+request.record.id+'/replace-source',{snapshot:request.record.sourceReplacement.snapshot,reason});
@@ -321,11 +321,11 @@ function originalRestorePanel(r){
     timer=setTimeout(refresh,1200);return;
    }
    if(status.state==='blocked'||status.state==='unreadable'){
-    holder.replaceChildren(el('p','alert inline-warning','Obnova je zablokovaná; pokračuj explicitním ověřením stavu.'),button('Ověřit uložený výsledek',()=>{pending={record:r,action:'restoreReconcile'};confirmSetup('NEJASNÝ STAV NÁVRATU ORIGINÁLU',r.title,'Review znovu ověří pouze trvalý záznam a soubory. Nejasnou operaci znovu nespustí a nevymaže bezpečnostní zábranu bez důkazu.','Ověřit uložený výsledek');$('confirm').showModal();}));return;
+    holder.replaceChildren(el('p','alert inline-warning','Obnova je zablokovaná; pokračuj explicitním ověřením stavu.'),button('Ověřit uložený výsledek',async()=>{try{const current=await api(route+'/status');if(!['blocked','unreadable','running'].includes(current.state))throw Error('Stav obnovy se změnil. Obnov údaje.');pending={record:r,action:'restoreReconcile',operationId:current.operationId,revision:current.revision};confirmSetup('NEJASNÝ STAV NÁVRATU ORIGINÁLU',r.title,'Review znovu ověří pouze trvalý záznam a soubory. Nejasnou operaci znovu nespustí a nevymaže bezpečnostní zábranu bez důkazu.','Ověřit uložený výsledek');$('confirm').showModal();}catch(e){error(e)}}));return;
    }
    const view=await api(route);
    if(view.eligible)holder.replaceChildren(button('Vrátit pouze původní soubor',()=>{
-    pending={record:r,action:'restoreOriginal',snapshot:view.snapshot};
+    pending={record:r,action:'restoreOriginal',snapshot:view.snapshot,attempt:view.attempt};
     confirmSetup('VRÁCENÍ POUZE PŮVODNÍHO SOUBORU',r.title,'Vrátit do knihovny přesně uložený původní soubor? Recovery ho dříve označila jako poškozený, takže může být stále vadný. Akce vrátí jen tento soubor do původní prázdné cesty; nepřesune převod, neschválí jej a nemění lhůtu karantény, profily Radarru ani neprokázané Holds Tdarru. Review znovu ověří soubory, Radarr, frontu a Tdarr a koordinuje Recovery.','Vrátit pouze originál');$('confirm').showModal();}));
    else holder.replaceChildren(el('p','details','Originál teď nelze bezpečně vrátit. Ověř stav Radarru, Tdarru a Recovery.'));
   }catch(error){holder.replaceChildren(el('p','failure','Stav návratu originálu nelze načíst.'));}

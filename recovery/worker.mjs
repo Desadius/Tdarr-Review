@@ -6,6 +6,7 @@ import {readRecoveryConfiguration,authorizeRecoveryApprovals} from './recovery-a
 import {createWorker} from './create-worker.mjs';
 
 const DATA=process.env.DATA_ROOT||'/data';
+const REVIEW_DATA=process.env.REVIEW_DATA_ROOT||DATA;
 // The container runs the worker as PID 1, which ignores signals without a handler.
 // A stop ends an idle wait at once; work already in progress is never cut short here.
 let stopping=false,wake=()=>{};
@@ -17,7 +18,7 @@ const {mode,cfg,text:configText,managed}=await readRecoveryConfiguration({data:D
 const state=JSON.parse(await fs.readFile(path.join(DATA,'state.json'),'utf8').catch(e=>{if(e.code!=='ENOENT')throw e;return '{"version":1,"jobs":{},"cases":{}}'}));
 // Validate persistent authorization before DB reads, APIs or restart recovery.
 const pendingApprovals=await authorizeRecoveryApprovals({data:DATA,cfg,state}).catch(e=>{if(e instanceof RecoveryRefusal)return exitRefused(e);throw e;});
-const worker=createWorker({data:DATA,mode,cfg,configText,managed,state,pendingApprovals,canStart});
+const worker=createWorker({data:DATA,reviewData:REVIEW_DATA,mode,cfg,configText,managed,state,pendingApprovals,canStart});
 await worker.markInterrupted();
 console.log('Tdarr recovery started; mode='+mode);
 control.ready();

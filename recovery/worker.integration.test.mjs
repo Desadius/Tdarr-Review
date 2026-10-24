@@ -6,6 +6,7 @@ import path from 'node:path';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import {spawn} from 'node:child_process';
+import {supervise} from '../review/supervisor.mjs';
 import {DatabaseSync} from 'node:sqlite';
 import {caseId,bindHistory} from './policy.mjs';
 import {identityOf} from './file-identity.mjs';
@@ -18,11 +19,13 @@ import {writeRecoveryRestoreEvidence} from './restore-evidence.mjs';
 
 // Exercise the actual journal/worker wiring, using only disposable files,
 // loopback APIs and a synthetic decoder. No production media or API contacts.
-async function fixture({terminalHeader=false,mode='repair',largeSource=false,sourceBytesOverride=null}={}){
- const root=await fs.mkdtemp(path.join(os.tmpdir(),'recovery-worker-')),data=root+'/data',media=root+'/media/movies',relative='Fixture/new.mkv',source=media+'/'+relative,file='/media/movies/'+relative;
- for(const dir of [data,path.dirname(source),root+'/review',root+'/quarantine',root+'/reports/fixture',root+'/decoder'])await fs.mkdir(dir,{recursive:true});
- const sourceBytes=sourceBytesOverride??(largeSource?Buffer.alloc(5*1024*1024,7):(terminalHeader?'\x1b[0m':'')+'DISPOSABLE SOURCE BYTES');await fs.writeFile(source,sourceBytes);const before=await fs.stat(source),sourceFP=identityOf(before),size=before.size;
- const cfg={libraryId:'fixture-library',sourceRoot:'/media/movies',mediaRoot:media,radarrRoot:'/radarr/movies',reviewRoot:root+'/review',reviewPrefixes:[],quarantineRoot:root+'/quarantine',database:root+'/db.sqlite',reports:root+'/reports',ffmpeg:root+'/decoder/ffmpeg',stableMinutes:0,decodeTimeoutHours:1,confirmDelaySeconds:0,maxRepairsPerDay:3,movieCooldownDays:30,pollSeconds:300,detectTerminalHeaders:false,since:0,approvedImportRepairs:{}};
+async function fixture({terminalHeader=false,mode='repair',largeSource=false,sourceBytesOverride=null,productionLayout=false}={}){
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'recovery-worker-')),reviewData=root+'/data',data=productionLayout?path.join(reviewData,'recovery'):reviewData,media=root+'/media/movies',relative='Fixture/new.mkv',source=media+'/'+relative,file='/media/movies/'+relative;
+ for(const dir of [data,reviewData,path.dirname(source),root+'/review',root+'/quarantine',root+'/reports/fixture',root+'/decoder'])await fs.mkdir(dir,{recursive:true});
+ const sourceBytes=sourceBytesOverride??(largeSource?Buffer.alloc(5*1024*1024,7):(terminalHeader?'\x1b[0m':'')+'DISPOSABLE SOURCE BYTES');await fs.writeFile(source,sourceBytes);
+ // Tests use stableMinutes:0; keep the synthetic source safely older than a fractional-millisecond stat timestamp.
+ const stableMtime=new Date(Date.now()-60000);await fs.utimes(source,stableMtime,stableMtime);const before=await fs.stat(source),sourceFP=identityOf(before),size=before.size;
+ const cfg={libraryId:'fixture-library',sourceRoot:'/media/movies',mediaRoot:media,radarrRoot:'/radarr/movies',reviewRoot:root+'/review',reviewPrefixes:[],quarantineRoot:root+'/quarantine',database:root+'/db.sqlite',reports:root+'/reports',ffmpeg:root+'/decoder/ffmpeg',stableMinutes:0,decodeTimeoutHours:1,confirmDelaySeconds:0,maxRepairsPerDay:3,movieCooldownDays:30,pollSeconds:300,detectTerminalHeaders:terminalHeader,since:0,approvedImportRepairs:{}};
  const movie={id:1,monitored:true,movieFileId:11,movieFile:{id:11,path:cfg.radarrRoot+'/'+relative,size,sceneName:'Fixture.New.Release'}};
  const history=[{id:21,eventType:'downloadFolderImported',movieId:1,downloadId:'fixture-download',sourceTitle:movie.movieFile.sceneName,data:{fileId:'11',importedPath:movie.movieFile.path,size:String(size)}},{id:22,eventType:'grabbed',movieId:1,downloadId:'fixture-download',sourceTitle:movie.movieFile.sceneName,data:{publishedDate:'2026-10-11T00:00:00Z',indexer:'Fixture',size:String(size),protocol:'1'}}];
  const parent={id:'a'.repeat(24),status:'manual',movieId:1,mutationStarted:Date.now()-1000,binding:{movieFileId:10,sourceTitle:'Fixture.Old.Release'},replacement:{movieFileId:11},replacementRelative:relative,replacementSourceFP:sourceFP,quarantine:root+'/quarantine/old.mkv',message:'Preserved historical quarantine'};
@@ -64,14 +67,43 @@ async function fixture({terminalHeader=false,mode='repair',largeSource=false,sou
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;cfg.radarrUrl=base;cfg.tdarrUrl=base;cfg.radarrApiKey='fixture-only';
  async function write(){db.prepare('UPDATE filejsondb SET json_data=?').run(JSON.stringify(row));await fs.writeFile(data+'/config.json',JSON.stringify(cfg));await fs.writeFile(data+'/state.json',JSON.stringify(state));}
  async function setLibrary(value){cfg.libraryId=value;row.DB=value;job.DB=value;db.prepare('UPDATE filejsondb SET json_data=?').run(JSON.stringify(row));db.prepare('UPDATE jobsjsondb SET json_data=?').run(JSON.stringify(job));await fs.writeFile(data+'/config.json',JSON.stringify(cfg));}
- async function run(){return new Promise((resolve,reject)=>{const child=spawn(process.execPath,['--require',preload,new URL('./worker.mjs',import.meta.url).pathname,'--once'],{env:{...process.env,DATA_ROOT:data,RECOVERY_MODE:mode},stdio:['ignore','pipe','pipe']});let output='';const timer=setTimeout(()=>child.kill('SIGKILL'),20000);child.stdout.on('data',b=>output+=b);child.stderr.on('data',b=>output+=b);child.on('error',reject);child.on('close',(code,signal)=>{clearTimeout(timer);if(code!==0||signal)return reject(Error('Worker fixture failed: '+output));resolve(output)});});}
+ async function run(){return new Promise((resolve,reject)=>{const child=spawn(process.execPath,['--require',preload,new URL('./worker.mjs',import.meta.url).pathname,'--once'],{env:{...process.env,DATA_ROOT:data,REVIEW_DATA_ROOT:reviewData,RECOVERY_MODE:mode},stdio:['ignore','pipe','pipe']});let output='';const timer=setTimeout(()=>child.kill('SIGKILL'),20000);child.stdout.on('data',b=>output+=b);child.stderr.on('data',b=>output+=b);child.on('error',reject);child.on('close',(code,signal)=>{clearTimeout(timer);if(code!==0||signal)return reject(Error('Worker fixture failed: '+output));resolve(output)});});}
  // Long-running worker as in the container: no --once, stopped only by a signal.
  function daemon(){const child=spawn(process.execPath,['--require',preload,new URL('./worker.mjs',import.meta.url).pathname],{env:{...process.env,DATA_ROOT:data,RECOVERY_MODE:mode},stdio:['ignore','pipe','pipe']});let output='';const timer=setTimeout(()=>child.kill('SIGKILL'),20000);child.stdout.on('data',b=>output+=b);child.stderr.on('data',b=>output+=b);const closed=new Promise((resolve,reject)=>{child.on('error',reject);child.on('close',(code,signal)=>{clearTimeout(timer);resolve({code,signal,output})});});return {child,closed};}
  async function result(){assert.equal((await fs.stat(root+'/media/.tdarr-recovery-status.json')).mode&0o777,0o644);assert.equal((await fs.stat(data+'/state.json')).mode&0o777,0o600);return {state:JSON.parse(await fs.readFile(data+'/state.json')),public:JSON.parse(await fs.readFile(root+'/media/.tdarr-recovery-status.json'))};}
  async function unchanged(){assert.equal(identityOf(await fs.stat(source)),sourceFP);assert.deepEqual(await fs.readFile(source),Buffer.from(sourceBytes));assert.equal(await fs.readFile(parent.quarantine,'utf8'),'PRESERVED PARENT');assert.equal(forbidden,false,'worker attempted an unexpected download or API mutation');}
  async function cleanup(){db.close();await new Promise(r=>server.close(r));assert(root.startsWith(path.resolve(os.tmpdir())+path.sep)&&path.basename(root).startsWith('recovery-worker-'));await fs.rm(root,{recursive:true,force:true});}
- return {root,cfg,state,parent,movie,row,requests,file,relative,source,sourceFP,size,sourceBytes,data,write,setLibrary,run,daemon,result,unchanged,cleanup,id:caseId(file,sourceFP),binding:bindHistory(movie,history,movie.movieFile.path,size),allowRepair:()=>{allowRepair=true;},ignoreHold:()=>{ignoreHold=true;},onHold:callback=>{beforeHold=callback;},setDecoder:script=>fs.writeFile(cfg.ffmpeg,script,{mode:0o755})};
+ return {root,cfg,state,parent,movie,row,requests,file,relative,source,sourceFP,size,sourceBytes,data,reviewData,write,setLibrary,run,daemon,result,unchanged,cleanup,id:caseId(file,sourceFP),binding:bindHistory(movie,history,movie.movieFile.path,size),allowRepair:()=>{allowRepair=true;},ignoreHold:()=>{ignoreHold=true;},onHold:callback=>{beforeHold=callback;},setDecoder:script=>fs.writeFile(cfg.ffmpeg,script,{mode:0o755})};
 }
+
+async function supervisedPoll(f,{previousUpdated=null,expectedCaseId=null}={}){
+ const stopFile=path.join(f.root,'review-stop'),reviewScript=path.join(f.root,'review-child.cjs');
+ await fs.rm(stopFile,{force:true});
+ await fs.writeFile(reviewScript,`const fs=require('node:fs');const timer=setInterval(()=>{if(fs.existsSync(${JSON.stringify(stopFile)})){clearInterval(timer);process.exit(0)}},10);process.on('SIGTERM',()=>process.exit(0));`);
+ const run=supervise({mode:'verify',dataRoot:f.reviewData,review:[process.execPath,reviewScript],recovery:[process.execPath,new URL('./worker.mjs',import.meta.url).pathname,'--once'],restart:{initialMs:60000,maxMs:60000,crashLoopAfter:5,stableMs:60000},lowPriority:[]});
+ try{
+  const until=Date.now()+15000;
+  while(Date.now()<until){try{const state=JSON.parse(await fs.readFile(path.join(f.data,'state.json'),'utf8'));if(expectedCaseId&&state.cases[expectedCaseId]||!expectedCaseId&&state.updated&&state.updated!==previousUpdated)return state;}catch{}await new Promise(resolve=>setTimeout(resolve,20));}
+  assert.fail('the actual supervised Recovery worker did not finish its first poll');
+ }finally{await fs.writeFile(stopFile,'stop');await run;}
+}
+
+test('the production-layout supervisor passes Review data to the worker for restored-edition evidence',{skip:process.platform!=='linux'},async t=>{
+ for(const terminalHeader of [true,false])await t.test(terminalHeader?'terminal-header admission':'Tdarr-job admission',async()=>{
+  const f=await fixture({terminalHeader,mode:'verify',productionLayout:true});
+  try{
+   if(!terminalHeader)f.state.jobs['fixture-job']='not_confirmed_decode_error_v2';
+   await f.write();
+   await writeRecoveryRestoreEvidence({data:f.reviewData,operationId:'00000000-0000-4000-8000-000000000003',caseId:'d'.repeat(24),movieId:1,tmdbId:9001,file:f.file,identity:f.sourceFP,cfg:f.cfg,restoredAt:new Date().toISOString()});
+   const restoredEdition=await supervisedPoll(f);
+   assert.equal(restoredEdition.cases[f.id],undefined,'the admission path must read evidence from Review data root');
+   assert.equal((await fs.readFile(f.data+'/decode-calls').catch(()=>Buffer.alloc(0))).length,0,'the restored edition is not decoded again');
+   await fs.appendFile(f.source,' changed edition');const changedId=caseId(f.file,identityOf(await fs.stat(f.source)));
+   const changedEdition=await supervisedPoll(f,{previousUpdated:restoredEdition.updated,expectedCaseId:changedId});
+   assert.notEqual(changedId,f.id);assert.ok(changedEdition.cases[changedId],'a changed edition does not inherit prior restore evidence');
+  }finally{await f.cleanup();}
+ });
+});
 
 test('actual worker loads committed shared authority without a legacy worker config file',{skip:process.platform!=='linux'},async()=>{
  const f=await fixture({mode:'verify'});try{
