@@ -26,6 +26,7 @@ test('library plans preserve absent and null while normalizing partial TV plans'
  assert.deepEqual(validateLibraryPlans({tv:{mediaRoot:'/media/tv'}}),{tv:plan({mediaRoot:'/media/tv'})});
  const input={tv:{sourceRoots:['Z:\\Tdarr\\TV\\','/tdarr//TV/','\\\\nas\\share\\TV\\'] ,reviewPrefixes:['TV']}};
  const output=validateLibraryPlans(input);assert.deepEqual(output,{tv:plan({sourceRoots:['Z:/Tdarr/TV','/tdarr/TV','//nas/share/TV'],reviewPrefixes:['TV']})});
+ assert.equal(validateLibraryPlans({tv:{sonarrRoot:'z:\\Sonarr\\TV'}}).tv.sonarrRoot,'z:/Sonarr/TV','the Sonarr path keeps its configured drive-letter case');
  assert.deepEqual(input,{tv:{sourceRoots:['Z:\\Tdarr\\TV\\','/tdarr//TV/','\\\\nas\\share\\TV\\'],reviewPrefixes:['TV']}});
 });
 

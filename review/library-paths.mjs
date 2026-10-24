@@ -20,7 +20,7 @@ function containerPath(value){
  return value;
 }
 
-function namespacePath(value){
+function namespacePath(value,{preserveDriveCase=false}={}){
  if(typeof value!=='string'||value.length===0||value.length>2048||value.includes('\0'))return null;
  let normalized=value.replaceAll('\\','/');
  const drive=/^[A-Za-z]:\//.test(normalized);
@@ -28,7 +28,7 @@ function namespacePath(value){
  const linux=normalized.startsWith('/')&&!normalized.startsWith('//');
  if(!drive&&!unc&&!linux)return null;
  if(hasTraversal(normalized))return null;
- if(drive){const driveLetter=normalized[0].toUpperCase(),tail=path.posix.normalize('/'+normalized.slice(3)).replace(/\/+$/,'');if(!tail)return null;return driveLetter+':'+tail;}
+ if(drive){const driveLetter=preserveDriveCase?normalized[0]:normalized[0].toUpperCase(),tail=path.posix.normalize('/'+normalized.slice(3)).replace(/\/+$/,'');if(!tail)return null;return driveLetter+':'+tail;}
  if(unc){const parts=normalized.slice(2).split('/').filter(Boolean);if(parts.length<2)return null;return '//'+parts.join('/');}
  const normal=path.posix.normalize(normalized),clean=normal==='/'?'/':normal.replace(/\/+$/,'');
  return clean==='/'?null:clean;
@@ -59,7 +59,7 @@ function validateTv(value){
    normalized[key]=clean;
   }else if(type==='namespace'){
    if(item===''){normalized[key]='';continue;}
-   const clean=namespacePath(item);
+   const clean=namespacePath(item,{preserveDriveCase:key==='sonarrRoot'});
    if(clean===null)throw error('settings_invalid','libraries.tv');
    normalized[key]=clean;
   }else if(type==='namespaces'){

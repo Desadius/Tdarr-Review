@@ -12,15 +12,16 @@ const numbering=episode=>{
  return values.join(' · ')||tr('Číslování neuvedeno');
 };
 const bindingStatus={mapped:'Přesně přiřazeno',unmapped:'Vazba nenalezena',ambiguous:'Nejednoznačná vazba',invalid:'Neplatná metadata'};
+const sourceStatus={present:'Metadata jednoho běžného souboru jsou dostupná; obsah a identita nejsou ověřené.',missing:'Soubor na odvozené cestě nebyl nalezen.',unsafe:'Soubor nebo cesta nesplňuje bezpečnostní omezení.',unsupported:'Typ souboru není podporován pro tuto kontrolu.',changed:'Cesta se během kontroly změnila.',busy:'Kontrola zdroje už probíhá.',unavailable:'Kontrola zdroje není dostupná.',unmapped:'Cestu Sonarru nelze přesně namapovat.',ambiguous:'Vazba epizody není jednoznačná.',invalid:'Metadata Sonarru nejsou platná.'};
 
-export function renderSonarrInspector({el,button,api,revision,configured,dirty}){
- let activeConfigured=configured,activeDirty=dirty;
+export function renderSonarrInspector({el,button,api,revision,configured,sourceConfigured=false,dirty}){
+ let activeConfigured=configured,activeSourceConfigured=sourceConfigured,activeDirty=dirty;
  const panel=el('section','sonarr-inspector');panel.setAttribute('aria-label',tr('Ruční kontrola Sonarru'));
  panel.append(el('h3','','Ruční kontrola Sonarru'),el('p','details','Zdroj a odpovědi Sonarru jsou neověřené. Výsledek popisuje pouze metadata; nepotvrzuje existenci souboru ani povolení ke zpracování.'));
  const state=el('p','details','Načtení vyžaduje uložený návrh a ruční akci.');state.setAttribute('role','status');
  const select=el('select');select.setAttribute('aria-label',tr('Vybraná série'));select.disabled=true;
  const selectLabel=el('label','settings-field','Série');selectLabel.append(select);
- const results=el('div','sonarr-inspection-results');
+ const results=el('div','sonarr-inspection-results'),sourceChecks=[];
  let series=[];
  const load=button('Načíst série',async()=>{
   if(load.disabled)return;load.disabled=true;inspect.disabled=true;state.textContent=tr('Načítám série z uloženého Sonarru…');results.replaceChildren();
@@ -38,6 +39,19 @@ export function renderSonarrInspector({el,button,api,revision,configured,dirty})
     block.append(el('p',item.status==='mapped'?'success':'alert',tr('Stav vazby')+': '+tr(bindingStatus[item.status]||'Neznámý stav vazby')+(item.reason?' ('+item.reason+')':'')));
     if(item.episodes.length)for(const episode of item.episodes){const row=el('p','details',tr('ID epizody')+': '+episode.id+' · '+numbering(episode));block.append(row);}
     else block.append(el('p','details',tr('Nebyly vráceny přesné vazby epizod.')));
+    if(item.status==='mapped'){
+     const sourceResult=el('p','details','');sourceResult.setAttribute('role','status');
+     const check=button('Zkontrolovat cestu zdroje',async()=>{
+      if(check.disabled||activeDirty||!activeSourceConfigured)return;check.disabled=true;sourceResult.textContent=tr('Kontrola odvozené cesty běží v odděleném procesu…');
+      try{
+       const query=new URLSearchParams({revision,seriesId:String(value.series.id),episodeFileId:String(item.file.id)});
+       const checked=await api('/api/sonarr/source?'+query.toString());
+       sourceResult.textContent=tr(sourceStatus[checked.status]||sourceStatus.unavailable)+(checked.relative?' '+tr('Relativní cesta')+': '+checked.relative:'')+(Number.isSafeInteger(checked.size)?' · '+tr('Velikost')+': '+checked.size+' B':'');
+      }catch(error){sourceResult.textContent=apiError(error);}
+      finally{check.disabled=activeDirty||!activeSourceConfigured;}
+     });
+     check.disabled=activeDirty||!activeSourceConfigured;sourceChecks.push(check);block.append(check,sourceResult);
+    }
     results.append(block);
    }
    if(value.unacquiredEpisodes?.length){const block=el('article','sonarr-file-binding');block.append(el('h4','','Epizody bez souboru v Sonarru'));for(const episode of value.unacquiredEpisodes)block.append(el('p','details',tr('ID epizody')+': '+episode.id+' · '+numbering(episode)));results.append(block);}
@@ -46,7 +60,7 @@ export function renderSonarrInspector({el,button,api,revision,configured,dirty})
  });
  select.onchange=()=>{inspect.disabled=activeDirty||!activeConfigured||!select.value};
  const buttons=el('div','dialog-actions');buttons.append(load,inspect);panel.append(selectLabel,buttons,state,results);
- panel.setAvailability=({isDirty,isConfigured})=>{activeDirty=isDirty;activeConfigured=isConfigured;load.disabled=isDirty||!isConfigured;inspect.disabled=isDirty||!isConfigured||!series.length||!select.value;select.disabled=isDirty||!series.length;};
+ panel.setAvailability=({isDirty,isConfigured,isSourceConfigured=activeSourceConfigured})=>{activeDirty=isDirty;activeConfigured=isConfigured;activeSourceConfigured=isSourceConfigured;load.disabled=isDirty||!isConfigured;inspect.disabled=isDirty||!isConfigured||!series.length||!select.value;select.disabled=isDirty||!series.length;for(const check of sourceChecks)check.disabled=isDirty||!isSourceConfigured;};
  panel.setAvailability({isDirty:dirty,isConfigured:configured});return panel;
 }
 

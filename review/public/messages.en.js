@@ -1290,7 +1290,21 @@ export default {
     "Vazba nenalezena": "No exact binding",
     "Nejednoznačná vazba": "Ambiguous binding",
     "Neplatná metadata": "Invalid metadata",
-    "Neznámý stav vazby": "Unknown binding status"
+    "Neznámý stav vazby": "Unknown binding status",
+    "Zkontrolovat cestu zdroje": "Check source path",
+    "Kontrola odvozené cesty běží v odděleném procesu…": "Checking the derived path in an isolated process…",
+    "Metadata jednoho běžného souboru jsou dostupná; obsah a identita nejsou ověřené.": "Metadata for one regular file are available; its contents and identity are unverified.",
+    "Soubor na odvozené cestě nebyl nalezen.": "No file was found at the derived path.",
+    "Soubor nebo cesta nesplňuje bezpečnostní omezení.": "The file or path does not meet the safety requirements.",
+    "Typ souboru není podporován pro tuto kontrolu.": "This file type is not supported for this check.",
+    "Cesta se během kontroly změnila.": "The path changed during the check.",
+    "Kontrola zdroje už probíhá.": "A source check is already running.",
+    "Kontrola zdroje není dostupná.": "The source check is unavailable.",
+    "Cestu Sonarru nelze přesně namapovat.": "The Sonarr path cannot be mapped exactly.",
+    "Vazba epizody není jednoznačná.": "The episode binding is ambiguous.",
+    "Metadata Sonarru nejsou platná.": "The Sonarr metadata is invalid.",
+    "Relativní cesta": "Relative path",
+    "Velikost": "Size"
   },
   "patterns": [
     ["Originál: {0} Posuď film ve vlastním přehrávači.", "Original: {0} Review the film in your own player."],

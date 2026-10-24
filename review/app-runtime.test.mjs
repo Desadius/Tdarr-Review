@@ -112,12 +112,16 @@ if(typeof vm.SourceTextModule!=='function'){
  });
  for(const language of ['cs','en'])test('manual Sonarr inspector waits for explicit actions and renders selected metadata in '+language,async()=>{
   const result={series:{id:7,title:'Synthetic Show'},complete:true,source:'unverified',bindings:[{status:'mapped',reason:null,file:{id:31,label:'Synthetic Show/Specials/S00E01.mkv',seasonNumber:0},episodes:[{id:42,seasonNumber:0,episodeNumber:1,absoluteEpisodeNumber:1,sceneAbsoluteEpisodeNumber:101,unverifiedSceneNumbering:true,airDate:'2020-01-02'}]}],unacquiredEpisodes:[{id:43,seasonNumber:1,episodeNumber:3,absoluteEpisodeNumber:null,sceneAbsoluteEpisodeNumber:null,sceneSeasonNumber:null,sceneEpisodeNumber:null,unverifiedSceneNumbering:null,airDate:null,airDateUtc:null}]};
-  const f=await settingsFixture(language,{'/api/sonarr/series?revision=fixture-revision':{data:{series:[{id:7,title:'Synthetic Show'}]}},'/api/sonarr/inspect?revision=fixture-revision&seriesId=7':{data:result}}),dom=f.document,panel=dom.querySelector('.sonarr-inspector'),buttons=panel.querySelectorAll('button');
+  const snapshot={...sharedFixture,draft:{...sharedFixture.draft,libraries:{tv:{sonarrRoot:'/sonarr/tv',mediaRoot:'/media/tv'}}}};
+  const f=await settingsFixture(language,{'/api/shared-settings':{data:snapshot},'/api/sonarr/series?revision=fixture-revision':{data:{series:[{id:7,title:'Synthetic Show'}]}},'/api/sonarr/inspect?revision=fixture-revision&seriesId=7':{data:result},'/api/sonarr/source?revision=fixture-revision&seriesId=7&episodeFileId=31':{data:{status:'present',source:'unverified',relative:'Show/S00E01.mkv',size:1024}}}),dom=f.document,panel=dom.querySelector('.sonarr-inspector'),buttons=panel.querySelectorAll('button');
   assert.ok(panel);assert.match(panel.textContent,language==='en'?/unverified/iu:/neověřené/i);assert.equal(f.calls.some(call=>call.route.startsWith('/api/sonarr/')),false,'opening settings must not contact Sonarr');
   await buttons[0].emit('click');assert.equal(f.calls.at(-1).route,'/api/sonarr/series?revision=fixture-revision');assert.equal(f.calls.at(-1).method,'GET');
   await buttons[1].emit('click');assert.equal(f.calls.at(-1).route,'/api/sonarr/inspect?revision=fixture-revision&seriesId=7');assert.equal(f.calls.at(-1).method,'GET');
   assert.match(panel.textContent,/S00E01/);assert.match(panel.textContent,language==='en'?/Episode ID: 42/:/ID epizody: 42/);assert.match(panel.textContent,language==='en'?/Scene absolute episode number 101/:/Scénové absolutní číslo 101/);assert.match(panel.textContent,language==='en'?/UNVERIFIED Sonarr metadata/:/NEOVĚŘENÁ metadata Sonarru/);
   assert.match(panel.textContent,language==='en'?/Episodes without a file in Sonarr/:/Epizody bez souboru v Sonarru/);assert.match(panel.textContent,language==='en'?/Episode ID: 43/:/ID epizody: 43/);
+  const sourceCheck=panel.querySelectorAll('button')[2];assert.match(sourceCheck.textContent,language==='en'?/Check source path/:/Zkontrolovat cestu zdroje/);await sourceCheck.emit('click');
+  assert.equal(f.calls.at(-1).route,'/api/sonarr/source?revision=fixture-revision&seriesId=7&episodeFileId=31');assert.equal(f.calls.at(-1).method,'GET');
+  assert.match(panel.textContent,language==='en'?/Relative path: Show\/S00E01\.mkv/:/Relativní cesta: Show\/S00E01\.mkv/);assert.equal(f.calls.filter(call=>call.route.includes('/api/sonarr/source')).length,1);
   assert.equal(f.calls.some(call=>call.method==='POST'&&call.route!=='/api/shared-settings/draft'),false);
  });
  test('an unconfigured Sonarr connection offers no inspection action',async()=>{
@@ -135,6 +139,11 @@ test('editing the optional Sonarr URL never submits the redacted API key status 
  let submitted;const f=await settingsFixture('en',{'/api/shared-settings/draft':request=>{submitted=request.body;return {data:{...sharedFixture,revision:'saved'}};}}),dom=f.document;
  const url=setting(dom,'sonarr.url');url.value='http://127.0.0.1:8990/sonarr';await url.emit('input');await action(dom,'save').emit('click');
  assert.deepEqual(submitted.patch,{sonarr:{url:'http://127.0.0.1:8990/sonarr'}});assert.equal(submitted.patch.sonarr.hasApiKey,undefined);assert.equal(submitted.patch.sonarr.apiKey,undefined);
+});
+test('a mapped Sonarr file cannot be source-checked without an explicit saved root mapping',async()=>{
+ const result={series:{id:7,title:'Synthetic Show'},complete:true,source:'unverified',bindings:[{status:'mapped',reason:null,file:{id:31,label:'Show/E01.mkv',seasonNumber:1},episodes:[{id:42,seasonNumber:1,episodeNumber:1}]}],unacquiredEpisodes:[]};
+ const f=await settingsFixture('cs',{'/api/sonarr/series?revision=fixture-revision':{data:{series:[{id:7,title:'Synthetic Show'}]}},'/api/sonarr/inspect?revision=fixture-revision&seriesId=7':{data:result}}),panel=f.document.querySelector('.sonarr-inspector');
+ await panel.querySelectorAll('button')[0].emit('click');await panel.querySelectorAll('button')[1].emit('click');assert.equal(panel.querySelectorAll('button')[2].disabled,true);assert.equal(f.calls.some(call=>call.route.includes('/api/sonarr/source')),false);
 });
  test('validation errors preserve entered values and refresh revision while real CAS conflicts require reload',async()=>{
   const sent=[];let failures=0;const f=await settingsFixture('en',{'/api/shared-settings/draft':request=>{sent.push(request.body);failures++;return {status:409,data:{code:failures===1?'settings_invalid':'settings_conflict',field:'review.label',revision:failures===1?'audit-revision':'newer-user-revision'}};}}),dom=f.document;
