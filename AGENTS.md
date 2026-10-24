@@ -83,6 +83,8 @@ These rules apply to both Claude Code and Codex.
 
 ## Agent skills
 
+For Codex GitHub issue work, follow the [Codex subagent orchestration protocol](docs/agents/codex-orchestration.md).
+
 ### Issue tracker
 
 Before choosing or claiming an issue in `Desadius/Tdarr-Review`, read `docs/agents/issue-tracker.md`. Its claiming procedure applies to every agent.
