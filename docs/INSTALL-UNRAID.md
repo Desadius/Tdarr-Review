@@ -23,7 +23,7 @@ The five-step assessment and current `reviewRevision` required since 1.10.2 rema
 
 ## 1. Prepare paths and permissions
 
-Choose four persistent locations: Review state, original media, Tdarr output awaiting approval, and the Tdarr DB2 directory. The example uses `/mnt/user/media/movies` for films and mounts its parent `/mnt/user/media` so quarantine can live outside the Plex library.
+Choose four persistent locations: Review state, original media, Tdarr output awaiting approval, and the Tdarr DB2 directory. The example uses `/mnt/user/media/movies` for films and mounts its parent `/mnt/user/media` so quarantine can live outside the Plex library. This shared parent may also expose `/mnt/user/media/tvshows` inside `/media`; visibility alone does not configure TV paths. The `/review` mapping may already contain movie and TV result folders. Keep their Tdarr prefixes separate.
 
 Do not point `REVIEW_HOST` at the original library. Tdarr must write results to this separate location and preserve the original. If you already have Review results, use that existing directory.
 
@@ -123,6 +123,8 @@ database:              /tdarr/SQL/database.db
 ```
 
 See [Configuration](CONFIGURATION.md) for aliases and extension-changing flows.
+
+The optional TV library path draft is not needed for movie installation. To prepare it safely, follow [Add TV paths](ADD-TV-PATHS.md). TV paths do not enable episode discovery or replacement.
 
 ## 5. Verify before approval
 

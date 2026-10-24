@@ -10,6 +10,28 @@ import {DatabaseSync} from 'node:sqlite';
 // broadest level, which a recomputed level can never exceed.
 const SHOWN={level:'all',reviews:0,approvals:0};
 
+test('HTTP library path diagnostics read only the saved revision without API calls or filesystem changes',linuxServer,async t=>{
+ const f=await reviewFixture({clock:true});t.after(()=>f.close());await f.items();
+ const current=await f.get('/api/shared-settings');
+ const saved=await f.post('/api/shared-settings/draft',{revision:current.revision,patch:{libraries:{tv:{enabled:false,mediaRoot:path.join(f.root,'offline-tv'),reviewRoot:path.join(f.root,'offline-results')}}}});
+ assert.equal(saved.status,200,await saved.clone().text());const draft=await saved.json();
+ const settings=path.join(f.data,'shared-settings.json'),before=await fs.readFile(settings),calls=structuredClone(f.calls),names=await fs.readdir(f.root);
+ const value=await f.get('/api/shared-settings/paths?revision='+draft.revision);
+ assert.equal(value.paths.readOnly,true);assert.equal(value.paths.processingEnabled,false);
+ const tv=value.paths.libraries.find(library=>library.id==='tv');assert.equal(tv.enabled,false);assert.equal(tv.paths.find(entry=>entry.role==='source').status,'missing_or_unmounted');
+ assert.deepEqual(f.calls,calls,'filesystem diagnostics must not call Tdarr, Radarr, scanners or renderers');assert.deepEqual(await fs.readFile(settings),before);assert.deepEqual(await fs.readdir(f.root),names);await f.preserved();
+ const wrongMethod=await f.post('/api/shared-settings/paths?revision='+draft.revision,{});assert.equal(wrongMethod.status,404,'the diagnostic route is GET-only');
+});
+
+test('HTTP library path diagnostics require authentication and the exact saved revision',linuxServer,async t=>{
+ const f=await serverHarness();t.after(()=>f.close());await f.start();const route='/api/shared-settings/paths';assert.equal((await f.request(route)).status,401);
+ const cookie=await f.login(),headers={cookie},current=await (await f.request('/api/shared-settings',{headers})).json();
+ const data=await fs.readFile(path.join(f.root,'data','shared-settings.json'));
+ for(const query of ['', '?revision=stale']){const response=await f.request(route+query,{headers});assert.equal(response.status,409,await response.clone().text());assert.equal((await response.json()).code,'settings_conflict');}
+ const response=await f.request(route+'?revision='+current.revision,{headers});assert.equal(response.status,200);assert.equal((await response.json()).paths.readOnly,true);
+ assert.deepEqual(await fs.readFile(path.join(f.root,'data','shared-settings.json')),data);
+});
+
 test('HTTP Off mode rejects an unavailable manual quarantine before Test or Apply changes any generation',linuxServer,async t=>{
  const f=await reviewFixture();t.after(()=>f.close());const current=await f.get('/api/shared-settings'),target=path.join(f.root,'missing-parent','manual-quarantine');
  const save=await f.post('/api/shared-settings/draft',{revision:current.revision,patch:{radarr:{url:f.mockBase,apiKey:'synthetic-manual-key',mediaRoot:'/fixture-library',quarantineRoot:target}}});assert.equal(save.status,200);const revision=(await save.json()).revision;

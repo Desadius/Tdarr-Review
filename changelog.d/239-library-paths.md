@@ -1,0 +1,1 @@
+- Add an optional inactive TV library path draft and read-only saved-path diagnostics; TV episode discovery and replacement authorization remain future work ([guide](docs/ADD-TV-PATHS.md)).

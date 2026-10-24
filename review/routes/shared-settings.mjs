@@ -10,12 +10,13 @@ export async function settingsRequest(ctx,res,handler){
  catch(error){return reply(res,error.status||409,saving?await failedSettingsSave(ctx.sharedSettings,error):settingsError(error));}
 }
 export async function sharedSettingsRoutes(ctx,req,res,url){
- if(!/^\/api\/shared-settings(?:\/(?:draft|test|apply|cancel|status|audit))?$/.test(url.pathname))return false;
+ if(!/^\/api\/shared-settings(?:\/(?:draft|test|apply|cancel|status|audit|paths))?$/.test(url.pathname))return false;
  const action=url.pathname.split('/')[3];
  if(req.method==='GET'){
   if(!action)return reply(res,200,{...await ctx.sharedSettings.public(),apply:ctx.settingsApply.status(),history:await ctx.sharedSettings.audit()});
   if(action==='status')return reply(res,200,ctx.settingsApply.status());
   if(action==='audit')return reply(res,200,{history:await ctx.sharedSettings.audit()});
+  if(action==='paths')return settingsRequest(ctx,res,async()=>reply(res,200,await ctx.settingsApply.paths({revision:url.searchParams.get('revision')})));
  }
  if(req.method==='POST'&&['draft','test','apply','cancel'].includes(action)){
   return settingsRequest(ctx,res,async save=>{
