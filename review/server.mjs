@@ -286,7 +286,7 @@ const replacements=createReplacement({data:DATA,getConfig:()=>config,getConnecti
 // Needs attention: server-computed reason, location and actions for Recovery cases (#229). Read-only.
 const installedAssessment=createInstalledAssessment({data:DATA,getConfig:()=>config,getItems:()=>state.items,tdarr,readRows:table=>dbRows(table),probe:file=>probe(FFPROBE,file),atomicJSON,recordDecision:entry=>recordDecision(DATA,entry)});
 const tdarrHandoff=createTdarrHandoff({data:DATA,getConfig:()=>config,tdarr,readRows:table=>dbRows(table),isWorkerBusy:async item=>workerBusy(await tdarr('/api/v2/get-nodes'),item),atomicJSON});
-const recoveryAttention=createRecoveryAttention({data:DATA,getConfig:()=>config,getItems:()=>state.items,tdarr,getConnection:activeConnection,installed:installedAssessment,handoff:tdarrHandoff,isBusy:()=>!!busyFor('replace')});
+const recoveryAttention=createRecoveryAttention({data:DATA,getConfig:()=>config,getItems:()=>state.items,tdarr,getConnection:activeConnection,mode:process.env.RECOVERY_MODE||'off',installed:installedAssessment,handoff:tdarrHandoff,isBusy:()=>!!busyFor('replace')});
 const artwork=createArtwork({data:DATA,getConnection:activeConnection});
 await replacements.recover();
 async function replacementAction(item,reason){

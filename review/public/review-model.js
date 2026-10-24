@@ -179,9 +179,9 @@ export function classifyRecovery(record, now = Date.now()) {
   const queue = ['waiting','waiting_replacement','waiting_source_kept','manual'].includes(r.phase) ? list(r.queue).filter(q=>q&&typeof q==='object'&&!Array.isArray(q)) : [];
   const searchStatus = normalize(r.search?.status);
   const tdarrStatus = normalize(r.tdarrStatus);
-  const warnings = [text(r.error), text(r.retentionError), text(r.warning), ...queue.map(q => text(q.error))].filter(Boolean);
-  const failedSearch = ['failed', 'aborted', 'cancelled'].includes(searchStatus);
   const blockedImport = queue.some(q => normalize(q.trackedDownloadState)==='importblocked');
+  const warnings = [blockedImport?null:text(r.error), text(r.retentionError), blockedImport?null:text(r.warning), ...queue.map(q => blockedImport?null:text(q.error))].filter(Boolean);
+  const failedSearch = ['failed', 'aborted', 'cancelled'].includes(searchStatus);
   const failedQueue = blockedImport || queue.some(q => ['failed', 'error', 'warning', 'downloadclientunavailable'].includes(normalize(q.status)));
   if (failedSearch) warnings.push('Hledání v Radarru selhalo nebo bylo zrušené.');
   if (failedQueue) warnings.push('Fronta Radarru vyžaduje kontrolu.');
@@ -316,7 +316,7 @@ export function downloadProgress(record) {
     const measured=typeof q.percent==='number'&&Number.isFinite(q.percent)&&q.percent>=0;
     const left=text(q.timeleft);
     const eta=stage==='downloading'&&/^\d{1,6}:[0-5]\d:[0-5]\d$/.test(left)&&!/^0+:00:00$/.test(left)?left:null;
-    return {title:text(q.title),stage,label:labels[stage],downloadPercent:measured?Math.min(100,q.percent):null,eta,error:text(q.error)};
+    return {title:text(q.title),stage,label:labels[stage],downloadPercent:measured?Math.min(100,q.percent):null,eta,error:stage==='blocked'?null:text(q.error)};
   });
 }
 

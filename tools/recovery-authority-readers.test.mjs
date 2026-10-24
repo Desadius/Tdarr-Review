@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {resolveRecoveryConfig} from '../recovery/recovery-authority.mjs';
+import {readRecoveryConfiguration,resolveRecoveryConfig} from '../recovery/recovery-authority.mjs';
 import {startupValidator} from '../recovery/config-watch.mjs';
 import {createWorker} from '../recovery/create-worker.mjs';
 import {main as migrateRegistry} from './migrate-recovery-registry.mjs';
@@ -113,6 +113,10 @@ const readers={
  // Review's reader of the active managed generation, as Recovery uses it (strict).
  'Review active generation':{scope:'config',applies:c=>c.managed&&['verify','repair'].includes(c.mode),run:async(f,c)=>{
   try{await readActiveSettings(f.dir,{mode:c.mode});return 'ok';}catch{return 'invalid-config';}
+ }},
+ // Review's read-only Recovery diagnosis obtains its effective configuration only through the Recovery authority.
+ 'Review diagnosis effective configuration':{scope:'config',run:async(f,c)=>{
+  try{await readRecoveryConfiguration({data:f.data,mode:c.mode});return 'ok';}catch(e){return e.reason||reasonOf(e.message);}
  }},
  // Review's settings Apply of the same configuration: it builds a generation in which RECOVERY_MODE alone
  // sets enabled, so it judges the registry for a configuration that is otherwise accepted.
