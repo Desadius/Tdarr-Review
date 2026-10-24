@@ -42,6 +42,17 @@ test('Apply of a changed installation name clears nothing: review, Approve decis
  assert.deepEqual((await lastApply(f)).invalidation,{level:'none',fields:[],shown:{reviews:0,approvals:0},cleared:{reviews:0,approvals:0}});
 });
 
+test('an inactive offline TV path plan preserves movie settings, confirmations, approval and previews across restart',linuxServer,async t=>{
+ const f=await reviewFixture();t.after(()=>f.close());const a=await reviewedAndApproved(f);await sampled(f,a);
+ const before=(await f.get('/api/shared-settings')).draft.review;
+ const report=await applied(f,{tv:{enabled:false,mediaRoot:path.join(f.root,'offline-tv'),reviewRoot:path.join(f.root,'offline-tv-results'),libraryId:'tv-only'}},{section:'libraries'});
+ assert.deepEqual(report.invalidation,{level:'none',fields:[],reviews:0,approvals:0});assert.deepEqual(await kept(f,a),{review:true,approval:true});
+ assert.deepEqual((await f.get('/api/settings')).config,before);assert.equal((await sampled(f,a)).cached,true);
+ await f.restart();assert.deepEqual(await kept(f,a),{review:true,approval:true});assert.deepEqual((await f.get('/api/settings')).config,before);
+ const shared=await f.get('/api/shared-settings');assert.equal(shared.active.libraries.tv.enabled,false);assert.equal(shared.active.libraries.tv.libraryId,'tv-only');assert.equal((await sampled(f,a)).cached,true);
+ await f.preserved();
+});
+
 test('the first Apply of the imported settings unchanged, and a Recovery-only change, clear nothing',linuxServer,async t=>{
  const f=await reviewFixture();t.after(()=>f.close());const a=await reviewedAndApproved(f);await sampled(f,a);
  assert.deepEqual((await applied(f,{})).invalidation,{level:'none',fields:[],reviews:0,approvals:0});

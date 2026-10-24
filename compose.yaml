@@ -17,6 +17,13 @@ services:
       - "${MEDIA_HOST:?Set MEDIA_HOST}:/media"
       - "${REVIEW_HOST:?Set REVIEW_HOST}:/review"
       - "${TDARR_DB_HOST:?Set TDARR_DB_HOST}:/tdarr:ro"
+      # Optional narrower TV mappings. Define these host variables in .env and
+      # save the matching /tv-media, /tv-review, /tv-quarantine and
+      # /tdarr-tv-reports paths in the inactive TV library draft.
+      # - "${TV_MEDIA_HOST}:/tv-media:ro"
+      # - "${TV_REVIEW_HOST}:/tv-review:rw"
+      # - "${TV_QUARANTINE_HOST}:/tv-quarantine:rw"
+      # - "${TDARR_TV_REPORTS_HOST}:/tdarr-tv-reports:ro"
     restart: unless-stopped
     read_only: true
     tmpfs:

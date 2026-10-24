@@ -70,3 +70,8 @@ dialog{padding:24px;max-height:92vh;overflow:auto;border-radius:16px;border:1px 
 /* Assessment of an installed result (#230). */
 .installed-assessment{display:grid;gap:.5rem;margin-top:1rem}
 .installed-assessment label.check{display:flex;gap:.5rem;align-items:center}
+/* Keep the optional TV mapping and readonly diagnostics readable at every width. */
+.settings-group>.tv-library-settings{grid-column:1/-1}
+.tv-path-row{display:grid;grid-template-columns:minmax(5.5rem,max-content) minmax(0,min(24rem,40%)) minmax(0,1fr);align-items:baseline;gap:.2rem .75rem;padding:.45rem 0;border-bottom:1px solid var(--line)}
+.tv-path-row code,.tv-path-row span{min-width:0;overflow-wrap:anywhere;white-space:normal}
+@media(max-width:700px){.tv-path-row{grid-template-columns:minmax(0,1fr);gap:.1rem}.tv-path-row>*{min-width:0}}

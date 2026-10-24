@@ -21,6 +21,7 @@ export const ERROR_MESSAGES=Object.freeze({
  settings_library_unavailable:{cs:'Knihovnu a zdrojové cesty Tdarru nelze jednoznačně přiřadit.',en:'The Tdarr library and source paths cannot be matched unambiguously.'},
  settings_radarr_unavailable:{cs:'Radarr, oprávnění nebo cesta knihovny neprošly diagnostikou.',en:'Radarr, permissions or the library path failed diagnostics.'},
  settings_recovery_paths_unavailable:{cs:'Cesty nebo oprávnění Recovery neprošly diagnostikou.',en:'Recovery paths or permissions failed diagnostics.'},
+ settings_tv_processing_unavailable:{cs:'Zpracování TV knihovny zatím není dostupné.',en:'TV library processing is not available yet.'},
  settings_quarantine_setup_failed:{cs:'Karanténu nelze bezpečně připravit. Recovery zůstává zastavené.',en:'Quarantine could not be prepared safely. Recovery remains stopped.'},
  settings_apply_pending:{cs:'Jiné použití změn již probíhá.',en:'Another settings apply is already running.'},
  settings_test_required:{cs:'Před použitím otestuj uložený návrh. Test ukáže, co použití smaže.',en:'Test the saved draft before applying it. The test shows what applying clears.'},

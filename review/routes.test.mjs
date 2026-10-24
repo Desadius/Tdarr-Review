@@ -13,7 +13,8 @@ const modules={libraryRoutes,itemRoutes,previewRoutes,settingsRoutes,nodeRoutes,
 const ID='a'.repeat(24);
 // Every authenticated route served before the split of server.mjs (#12).
 const ROUTES=[
- ...['','/status','/audit'].map(p=>['GET','/api/shared-settings'+p,'sharedSettingsRoutes']),
+ ...['','/status','/audit','/paths'].map(p=>['GET','/api/shared-settings'+p,'sharedSettingsRoutes']),
+ ['GET','/library-paths-view.js','staticRoutes'],
  ...['draft','test','apply','cancel'].map(p=>['POST','/api/shared-settings/'+p,'sharedSettingsRoutes']),
  ['GET','/api/artwork/review/'+ID,'libraryRoutes'],['GET','/api/artwork/request/'+ID,'libraryRoutes'],
  ['GET','/api/statistics','libraryRoutes'],['GET','/api/quarantine','libraryRoutes'],

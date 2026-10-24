@@ -5,6 +5,7 @@ import {defaults,validate as validateReview} from './config.mjs';
 import {configValueProblem} from '../recovery/config-values.mjs';
 import {sameValue} from '../recovery/frozen-config.mjs';
 import {recoveryApprovalProblem} from '../recovery/recovery-authority.mjs';
+import {emptyTvLibrary,validateLibraryPlans} from './library-paths.mjs';
 
 const FILE='shared-settings.json',MAX_BYTES=4*1024*1024,AUDIT_LIMIT=200;
 const recoveryKeys=['sourceRoot','quarantineRoot','reports','stableMinutes','decodeTimeoutHours','fullSourceHash','confirmDelaySeconds','maxRepairsPerDay','movieCooldownDays','pollSeconds','detectTerminalHeaders','since'];
@@ -57,10 +58,10 @@ function initial(inputs,env,now){
 }
 // Resolved snapshots contain credentials and file-only exceptions; RECOVERY_MODE alone sets enabled.
 export function resolveSharedSettings(draft,{mode='off',fileOnly={}}={}){
- return {review:clone(draft.review),radarr:clone(draft.radarr),recovery:{...clone(fileOnly),...entries(draft.review,shared),...clone(draft.recovery),radarrUrl:draft.radarr.url,radarrApiKey:draft.radarr.apiKey,radarrRoot:draft.radarr.mediaRoot,enabled:mode==='repair'}};
+ return {review:clone(draft.review),radarr:clone(draft.radarr),recovery:{...clone(fileOnly),...entries(draft.review,shared),...clone(draft.recovery),radarrUrl:draft.radarr.url,radarrApiKey:draft.radarr.apiKey,radarrRoot:draft.radarr.mediaRoot,enabled:mode==='repair'},...(Object.hasOwn(draft,'libraries')?{libraries:validateLibraryPlans(draft.libraries)}:{})};
 }
 export function validateSharedSettings(draft,{complete=false,mode='off',fileOnly={},requireRecovery=false}={}){
- if(!object(draft)||Object.keys(draft).some(k=>!['review','radarr','recovery'].includes(k))||!['review','radarr','recovery'].every(k=>object(draft[k])))fail('settings_invalid');
+ if(!object(draft)||Object.keys(draft).some(k=>!['review','radarr','recovery','libraries'].includes(k))||!['review','radarr','recovery'].every(k=>object(draft[k])))fail('settings_invalid');
  const review=clone(draft.review);try{validateReview(review);}catch{fail('settings_invalid','review');}
  for(const [section,keys] of [['radarr',radarrKeys],['recovery',recoveryKeys]])if(Object.keys(draft[section]).some(k=>!keys.includes(k))||keys.some(k=>!Object.hasOwn(draft[section],k)))fail('settings_invalid',section);
  const {radarr,recovery}=draft;
@@ -80,8 +81,8 @@ export function validateSharedSettings(draft,{complete=false,mode='off',fileOnly
 // Imported legacy inputs are not yet schema-validated. Never project userinfo/query values,
 // including alternative migration endpoints. Keep private input intact for explicit correction.
 function publicEndpoint(value){try{const u=new URL(value);return ['http:','https:'].includes(u.protocol)&&!u.username&&!u.password&&!u.search&&!u.hash?value:'';}catch{return '';}}
-function visibleDraft(draft){const result={review:entries(draft.review,Object.keys(defaults({}))),radarr:entries(draft.radarr,radarrKeys),recovery:entries(draft.recovery,recoveryKeys)};delete result.radarr.apiKey;result.radarr.hasApiKey=!!draft.radarr.apiKey;for(const key of ['tdarrUrl','publicOrigin'])result.review[key]=publicEndpoint(result.review[key]);result.radarr.url=publicEndpoint(result.radarr.url);return result;}
-function changed(before,after){const fields=[];for(const section of ['review','radarr','recovery'])for(const key of new Set([...Object.keys(before?.[section]||{}),...Object.keys(after?.[section]||{})]))if(!sameValue(before?.[section]?.[key],after?.[section]?.[key]))fields.push(section+'.'+key);return fields;}
+function visibleDraft(draft){const result={review:entries(draft.review,Object.keys(defaults({}))),radarr:entries(draft.radarr,radarrKeys),recovery:entries(draft.recovery,recoveryKeys)};if(object(draft.libraries))result.libraries={...(Object.hasOwn(draft.libraries,'tv')?{tv:object(draft.libraries.tv)?entries(draft.libraries.tv,Object.keys(emptyTvLibrary())):null}:{})};delete result.radarr.apiKey;result.radarr.hasApiKey=!!draft.radarr.apiKey;for(const key of ['tdarrUrl','publicOrigin'])result.review[key]=publicEndpoint(result.review[key]);result.radarr.url=publicEndpoint(result.radarr.url);return result;}
+function changed(before,after){const fields=[];for(const section of ['review','radarr','recovery','libraries'])for(const key of new Set([...Object.keys(before?.[section]||{}),...Object.keys(after?.[section]||{})]))if(!sameValue(before?.[section]?.[key],after?.[section]?.[key]))fields.push(section+'.'+key);return fields;}
 // An Apply also records what it invalidated: the level, the Review field names causing it, and the films whose
 // saved reviews and Approve decisions Test showed and Apply cleared (names and counts only, never values).
 const invalidationRecord=v=>({level:v.level,fields:[...v.fields],shown:{reviews:v.shown.reviews,approvals:v.shown.approvals},cleared:{reviews:v.cleared.reviews,approvals:v.cleared.approvals}});
@@ -177,7 +178,7 @@ export function createSharedSettingsStore({data,env=process.env,now=Date.now}){
  function requireRecovery(s){return !!s.legacy.recovery.value||!!(s.doc.active?.review.libraryId&&s.doc.active?.radarr.url&&s.doc.active?.radarr.apiKey);}
  async function validate({revision,forApply=false,acknowledgeHistory=false}={}){const s=await snapshot();if(revision!==undefined&&revision!==s.revision)fail('settings_conflict');const c=outward(s);if(forApply&&c.conflicts.length)fail('settings_migration_conflict');if(forApply&&c.requiresHistoryAcknowledgement&&!acknowledgeHistory)fail('settings_history_acknowledgement');const result=validateSharedSettings(s.doc.draft,{complete:forApply,mode:env.RECOVERY_MODE,fileOnly:s.doc.fileOnly,requireRecovery:requireRecovery(s)});await guards(s,result,{pending:forApply});return result;}
  async function saveDraft({revision,patch,resolutions=[],acknowledgeHistory=false}){return lock(async()=>{
-  const s=await snapshot();if(revision!==s.revision)fail('settings_conflict');if(!object(patch)||Object.keys(patch).some(k=>!['review','radarr','recovery'].includes(k))||Object.values(patch).some(v=>!object(v)))fail('settings_invalid');
+  const s=await snapshot();if(revision!==s.revision)fail('settings_conflict');if(!object(patch)||Object.keys(patch).some(k=>!['review','radarr','recovery','libraries'].includes(k))||Object.values(patch).some(v=>!object(v)))fail('settings_invalid');
   const before=clone(s.doc.draft),draft=clone(before);
   if(!Array.isArray(resolutions))fail('settings_invalid','resolutions');
   const resolvedFields=resolutions.map(decision=>typeof decision==='string'?decision:decision?.field);
@@ -188,8 +189,9 @@ export function createSharedSettingsStore({data,env=process.env,now=Date.now}){
     if(!Object.hasOwn(s.legacy.recovery.value||{},recoveryKey)||!object(draft[section]))fail('settings_invalid','resolutions');draft[section][key]=clone(s.legacy.recovery.value[recoveryKey]);}
   }
   if(resolvedFields.includes('legacyFiles'))s.doc.fileOnly=initial(s.legacy,env,now()).fileOnly;
+  if(Object.hasOwn(patch,'libraries'))draft.libraries??={};
   for(const section of Object.keys(patch))for(const [key,value] of Object.entries(patch[section])){if(section==='radarr'&&key==='apiKey'&&value==='')continue;draft[section][key]=clone(value);}
-  const result=validateSharedSettings(draft,{mode:env.RECOVERY_MODE,fileOnly:s.doc.fileOnly});await guards(s,result);
+  const result=validateSharedSettings(draft,{mode:env.RECOVERY_MODE,fileOnly:s.doc.fileOnly});await guards(s,result);if(Object.hasOwn(result,'libraries'))draft.libraries=clone(result.libraries);
   if(Object.hasOwn(patch.recovery||{},'since')&&patch.recovery.since!==before.recovery.since){const boundary=s.doc.active?.recovery.since??s.legacy.recovery.value?.since??now();if(draft.recovery.since<boundary&&!acknowledgeHistory)fail('settings_history_acknowledgement');s.doc.historyExplicit=true;}
   s.doc.draft=draft;s.doc.conflicts=s.doc.conflicts.filter(k=>!resolvedFields.includes(k));if(resolvedFields.includes('legacyFiles'))s.doc.legacy=Object.fromEntries(Object.entries(s.legacy).map(([k,v])=>[k,v.digest]));
   auditEntry(s.doc,{action:'save',result:'success',fields:changed(before,draft),now:now()});if((await snapshot()).revision!==revision)fail('settings_conflict');await durable(file,s.doc);return current();
@@ -212,7 +214,7 @@ export async function readActiveSettings(data,{mode=process.env.RECOVERY_MODE,ch
  const active=clone(saved.active);active.recovery.enabled=mode==='repair';
  const fileOnly=privateFields(active.recovery),legacy=checkPrivate?(await read(path.join(data,'recovery','config.json'))).value:null;
  if(checkPrivate&&!sameValue(fileOnly,privateFields(legacy)))fail('settings_private_changed');
- const resolved=validateSharedSettings({review:active.review,radarr:active.radarr,recovery:entries(active.recovery,recoveryKeys)},{complete:checkPrivate,mode,fileOnly});
+ const resolved=validateSharedSettings({review:active.review,radarr:active.radarr,recovery:entries(active.recovery,recoveryKeys),...(Object.hasOwn(active,'libraries')?{libraries:active.libraries}:{})},{complete:checkPrivate,mode,fileOnly});
  if(!sameValue(active,resolved)||saved.generation<1)fail('settings_file_invalid');
  return {...active,generation:saved.generation};
 }

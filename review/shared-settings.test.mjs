@@ -25,6 +25,30 @@ async function configured(t,{env={RECOVERY_MODE:'verify'},now=()=>1700000000000}
  const saved=await store.saveDraft({revision:first.revision,patch:{review:{libraryId:'movies'},radarr:{url:'http://127.0.0.1:7878/radarr',apiKey:'private-key'}}});
  return {data,store,saved};
 }
+
+test('inactive TV path drafts survive activation and restart without rewriting movie settings or evidence',async t=>{
+ const {data,store,saved}=await configured(t),first=await store.applyGeneration({revision:saved.revision});
+ const movie=structuredClone(first.active.review),radarr=structuredClone(first.active.radarr),recovery=structuredClone(first.active.recovery);
+ const evidence=path.join(data,'state.json'),bytes=JSON.stringify({reviewSessions:{film:{revision:7}},transactions:[{phase:'pending'}],approvals:{film:{snapshot:'unchanged'}}});await fs.writeFile(evidence,bytes);
+ assert.equal(first.active.libraries,undefined,'legacy movie-only settings retain their original shape');
+ const tv={enabled:false,mediaRoot:'/optional-tv-offline',reviewRoot:'/optional-tv-results',libraryId:'tv-library',sourceRoots:['Z:\\Series'],tdarrReviewRoot:'Y:\\ReviewTV',sonarrRoot:'/sonarr/tv',reviewPrefixes:['TV'],quarantineRoot:'/tv-parent/.quarantine',reports:'/reports/tv'};
+ const normalized={...tv,sourceRoots:['Z:/Series'],tdarrReviewRoot:'Y:/ReviewTV'};
+ const draft=await store.saveDraft({revision:first.revision,patch:{libraries:{tv}}});assert.deepEqual(draft.active.review,movie);assert.equal(draft.active.libraries,undefined);
+ assert.deepEqual((await store.public()).draft.libraries.tv,normalized);
+ const applied=await store.applyGeneration({revision:draft.revision});assert.deepEqual(applied.active.review,movie);assert.deepEqual(applied.active.radarr,radarr);assert.deepEqual(applied.active.recovery,recovery);
+ const restarted=await readActiveSettings(data,{checkPrivate:false});assert.deepEqual(restarted.libraries.tv,normalized);assert.equal(restarted.libraries.tv.enabled,false);assert.deepEqual(restarted.review,movie);
+ assert.equal(await fs.readFile(evidence,'utf8'),bytes,'adding an inactive path plan must not rewrite review state or pending transactions');
+});
+
+test('TV path drafts allow incomplete disabled plans and cannot enable processing or smuggle unknown fields',async t=>{
+ const {store,saved}=await configured(t);
+ const draft=await store.saveDraft({revision:saved.revision,patch:{libraries:{tv:{mediaRoot:'/optional-tv'}}}});
+ assert.equal(draft.draft.libraries.tv.enabled,false);assert.equal(draft.draft.libraries.tv.reviewRoot,'');
+ await assert.rejects(store.saveDraft({revision:draft.revision,patch:{libraries:{tv:{enabled:true}}}}),{code:'settings_tv_processing_unavailable'});
+ await assert.rejects(store.saveDraft({revision:draft.revision,patch:{libraries:{tv:{unknownSecret:'do-not-expose'}}}}),{code:'settings_invalid'});
+ const cleared=await store.saveDraft({revision:draft.revision,patch:{libraries:{tv:null}}});assert.equal(cleared.draft.libraries.tv,null);
+ assert.equal(JSON.stringify(await store.public()).includes('do-not-expose'),false);
+});
 test('blank API key preserves the credential while explicit replacement stays private',async t=>{
  const {data,store,saved}=await configured(t);
  const blank=await store.saveDraft({revision:saved.revision,patch:{radarr:{apiKey:''}}});

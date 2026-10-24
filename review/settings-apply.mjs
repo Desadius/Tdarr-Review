@@ -7,6 +7,7 @@ import {readSettingsActivation,writeSettingsActivation,settingsPublicOrigin} fro
 import {settingsError} from './settings-errors.mjs';
 import {checkManualQuarantine} from './quarantine-path.mjs';
 import {LEVELS,stricter} from './settings-invalidation.mjs';
+import {diagnoseLibraryPaths} from './library-paths.mjs';
 
 const error=code=>Object.assign(Error(code),{code,status:409});
 const pause=()=>new Promise(resolve=>setTimeout(resolve,25));
@@ -57,6 +58,7 @@ export async function createSettingsApply({data,store,control,mode='off',safe,ba
  const status=()=>state?{...state,...(running&&['succeeded','failed','cancelled'].includes(state.state)?{state:'finalizing',stage:'finalizing'}:{})}:{state:'idle'};
  const set=async(stage,extra={})=>{state={...state,...extra,state:stage,stage,updated:new Date().toISOString()};await writeSettingsActivation(data,state);};
  const assertLive=()=>{if(cancelled)throw error('settings_apply_cancelled');};
+ async function paths(input){if(typeof input?.revision!=='string')throw error('settings_conflict');const candidate=await store.validate({revision:input.revision});return {paths:await diagnoseLibraryPaths(candidate,{data})};}
  async function test(input){if(typeof input.revision!=='string')throw error('settings_conflict');const candidate=await store.validate({...input,forApply:true});await diagnoseSettings(candidate,{readRows,mode});return {ok:true,invalidation:assess(candidate)};}
  // The level at this moment, refused when it is stricter than the one the administrator saw.
  function reassess(candidate,expected){const now=assess(candidate);if(stricter(now.level,expected.level))throw error('settings_invalidation_changed');return now;}
@@ -111,5 +113,5 @@ export async function createSettingsApply({data,store,control,mode='off',safe,ba
   return status();
  }
  async function cancel(id){if(!running||id!==state.id||!['waiting','draining','validating'].includes(state.state))throw error('settings_cancel_unavailable');cancelled=true;return {...status(),cancelling:true};}
- return {status,start,cancel,test,get busy(){return running}};
+ return {status,start,cancel,test,paths,get busy(){return running}};
 }

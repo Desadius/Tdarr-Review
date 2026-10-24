@@ -13,9 +13,10 @@ const check=(cfg,mode='verify')=>resolveRecoveryConfig({mode,text:JSON.stringify
 
 test('the shipped example, a typical 1.11 config.json and every config in the docs start in both modes',async()=>{
  const configs={'examples/recovery-config.example.json':await read('examples/recovery-config.example.json'),'fixtures/recovery-config-1.11.json':await read('fixtures/recovery-config-1.11.json')};
- // A JSON block in the documentation that sets libraryId is a complete config.json example.
+ // A JSON block with a top-level libraryId is a complete Recovery config.json example.
+ // Other settings documents may contain a libraryId inside a separate TV path plan.
  for(const doc of (await fs.readdir(new URL('../docs/',import.meta.url))).filter(f=>f.endsWith('.md'))){
-  for(const [,block] of (await read('docs/'+doc)).matchAll(/```json\n([\s\S]*?)```/g))if(block.includes('"libraryId"'))configs['docs/'+doc]=block;
+  for(const [,block] of (await read('docs/'+doc)).matchAll(/```json\n([\s\S]*?)```/g))if(Object.hasOwn(JSON.parse(block),'libraryId'))configs['docs/'+doc]=block;
  }
  for(const [name,text] of Object.entries(configs)){
   const value=JSON.parse(text),modes=Object.hasOwn(value,'enabled')?[value.enabled?'repair':'verify']:['verify','repair'];

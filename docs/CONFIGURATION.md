@@ -30,6 +30,18 @@ History is bounded to 200 entries in the private settings authority. It exposes 
 | `reviewPrefixes` | Top-level result directory names stripped for matching, e.g. `PROD-Movies` |
 | `libraryId` | Tdarr library ID; explicit ID is needed for automated replacement handoff |
 
+### Optional TV path draft
+
+The shared settings file may contain an optional top-level `libraries` object with a `tv` plan. Its fields are `enabled` (always saved as `false`), `mediaRoot`, `reviewRoot`, `libraryId`, `sourceRoots`, `tdarrReviewRoot`, `reviewPrefixes`, `sonarrRoot`, `quarantineRoot` and `reports`. These describe each service's container paths; they do not create Docker mounts. An absent or incomplete TV plan does not prevent movie settings or movie review from working.
+
+TV path planning is a foundation only. It does not discover TV episodes, prove that two paths refer to the same episode, or authorize a replacement. Windows Tdarr paths and Linux Review/Sonarr paths are separate namespaces; their mapping remains unverified until an explicit episode identity check exists. TV processing cannot be enabled until the separate safety work is complete.
+
+Use **Check library paths** to run a GET-only diagnostic against the saved draft revision. It reports whether configured paths are ready, missing or unmounted, unreadable, not writable, unsafe, or otherwise unavailable, and flags detected overlaps or an unverified path namespace. It creates no files and makes no Tdarr, Sonarr or other API calls. A successful check confirms access at that moment; it does not guarantee a later write or transaction. Every operation that may write or replace a file must recheck identity and access when it runs.
+
+The shared `/media` bind may already expose both `/media/movies` and `/media/tvshows`. That is Docker access only. Configure TV's own Review, Tdarr and Sonarr paths in the optional plan. A common parent mapping is convenient where its access scope is intended; separate narrow mounts are also possible. The Compose file shows commented examples. The existing `/review` mapping may contain both `PROD-Movies` and a separate `TV` result prefix. Keep the movie prefix assigned only to movies; never reuse `PROD-Movies` for TV. `/review/movies` is an example path, not a required migration target.
+
+For the complete setup sequence and migration safeguards, see [Add TV paths](ADD-TV-PATHS.md).
+
 The provided image uses `/app/Tdarr_Node/assets/app/ffmpeg/linux_x64/ffmpeg` and its sibling `ffprobe`. The application requires `node:sqlite`; use Node 24, not an older Node runtime.
 
 `PORT` and `DATA_ROOT` are startup environment variables. `PUBLIC_ORIGIN`, `TDARR_URL`, `MEDIA_ROOT`, `REVIEW_ROOT`, `TDARR_DB`, `FFMPEG` and `FFPROBE` provide initial defaults. They do not override a saved settings file.
