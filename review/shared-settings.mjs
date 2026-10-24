@@ -10,6 +10,8 @@ import {emptyTvLibrary,validateLibraryPlans} from './library-paths.mjs';
 const FILE='shared-settings.json',MAX_BYTES=4*1024*1024,AUDIT_LIMIT=200;
 const recoveryKeys=['sourceRoot','quarantineRoot','reports','stableMinutes','decodeTimeoutHours','fullSourceHash','confirmDelaySeconds','maxRepairsPerDay','movieCooldownDays','pollSeconds','detectTerminalHeaders','since'];
 const radarrKeys=['url','apiKey','mediaRoot','quarantineRoot','preferCzechEnglish'];
+const sonarrKeys=['url','apiKey'];
+const emptySonarr=()=>({url:'',apiKey:''});
 const legacyRadarrKeys=Object.freeze({url:'radarrUrl',apiKey:'radarrApiKey',mediaRoot:'radarrRoot'});
 const legacyKey=(section,key)=>section==='radarr'?legacyRadarrKeys[key]:key;
 const shared=['tdarrUrl','libraryId','mediaRoot','reviewRoot','reviewPrefixes','database','ffmpeg','ffprobe'];
@@ -45,7 +47,7 @@ function validateDocument(doc){
 }
 function recoveryDefaults(review,now){return {sourceRoot:review.sourceRoots[0],quarantineRoot:path.posix.join(path.posix.dirname(review.mediaRoot),'.tdarr-corrupt'),reports:'/tdarr/JobReports',stableMinutes:10,decodeTimeoutHours:12,fullSourceHash:false,confirmDelaySeconds:30,maxRepairsPerDay:3,movieCooldownDays:30,pollSeconds:300,detectTerminalHeaders:true,since:now};}
 function entries(value,keys){return Object.fromEntries(keys.filter(k=>Object.hasOwn(value,k)).map(k=>[k,clone(value[k])]));}
-function privateFields(value){return Object.fromEntries(Object.entries(value||{}).filter(([k])=>!['enabled','radarrUrl','radarrApiKey','radarrRoot',...shared,...recoveryKeys].includes(k)));}
+function privateFields(value){return Object.fromEntries(Object.entries(value||{}).filter(([k])=>!['enabled','radarrUrl','radarrApiKey','radarrRoot','sonarrUrl','sonarrApiKey',...shared,...recoveryKeys].includes(k)));}
 function initial(inputs,env,now){
  const previous=inputs.recovery.value||{},review=inputs.review.value||{...defaults(env),...entries(previous,shared),...(previous.sourceRoot?{sourceRoots:[previous.sourceRoot]}:{})};
  const radarr=inputs.radarr.value||{url:previous.radarrUrl||'',apiKey:previous.radarrApiKey||'',mediaRoot:previous.radarrRoot||review.mediaRoot,preferCzechEnglish:true};
@@ -54,17 +56,22 @@ function initial(inputs,env,now){
  if(inputs.review.value&&inputs.recovery.value){for(const k of shared)if(Object.hasOwn(previous,k)&&!sameValue(review[k],previous[k]))conflicts.push('review.'+k);
   if(previous.sourceRoot&&!review.sourceRoots.includes(previous.sourceRoot))conflicts.push('recovery.sourceRoot');}
  if(inputs.radarr.value&&inputs.recovery.value)for(const [k,r] of Object.entries(legacyRadarrKeys))if(Object.hasOwn(previous,r)&&!sameValue(radarr[k],previous[r]))conflicts.push('radarr.'+k);
- return {version:1,generation:0,active:null,draft:{review:clone(review),radarr:clone(radarr),recovery},conflicts,legacy:Object.fromEntries(Object.entries(inputs).map(([k,v])=>[k,v.digest])),historyExplicit:!!inputs.recovery.value,fileOnly:privateFields(previous),audit:[]};
+ return {version:1,generation:0,active:null,draft:{review:clone(review),radarr:clone(radarr),sonarr:emptySonarr(),recovery},conflicts,legacy:Object.fromEntries(Object.entries(inputs).map(([k,v])=>[k,v.digest])),historyExplicit:!!inputs.recovery.value,fileOnly:privateFields(previous),audit:[]};
 }
 // Resolved snapshots contain credentials and file-only exceptions; RECOVERY_MODE alone sets enabled.
 export function resolveSharedSettings(draft,{mode='off',fileOnly={}}={}){
- return {review:clone(draft.review),radarr:clone(draft.radarr),recovery:{...clone(fileOnly),...entries(draft.review,shared),...clone(draft.recovery),radarrUrl:draft.radarr.url,radarrApiKey:draft.radarr.apiKey,radarrRoot:draft.radarr.mediaRoot,enabled:mode==='repair'},...(Object.hasOwn(draft,'libraries')?{libraries:validateLibraryPlans(draft.libraries)}:{})};
+ return {review:clone(draft.review),radarr:clone(draft.radarr),sonarr:clone(draft.sonarr||emptySonarr()),recovery:{...clone(fileOnly),...entries(draft.review,shared),...clone(draft.recovery),radarrUrl:draft.radarr.url,radarrApiKey:draft.radarr.apiKey,radarrRoot:draft.radarr.mediaRoot,enabled:mode==='repair'},...(Object.hasOwn(draft,'libraries')?{libraries:validateLibraryPlans(draft.libraries)}:{})};
 }
 export function validateSharedSettings(draft,{complete=false,mode='off',fileOnly={},requireRecovery=false}={}){
- if(!object(draft)||Object.keys(draft).some(k=>!['review','radarr','recovery','libraries'].includes(k))||!['review','radarr','recovery'].every(k=>object(draft[k])))fail('settings_invalid');
+ if(!object(draft)||Object.keys(draft).some(k=>!['review','radarr','recovery','libraries','sonarr'].includes(k))||!['review','radarr','recovery'].every(k=>object(draft[k])))fail('settings_invalid');
  const review=clone(draft.review);try{validateReview(review);}catch{fail('settings_invalid','review');}
  for(const [section,keys] of [['radarr',radarrKeys],['recovery',recoveryKeys]])if(Object.keys(draft[section]).some(k=>!keys.includes(k))||keys.some(k=>!Object.hasOwn(draft[section],k)))fail('settings_invalid',section);
  const {radarr,recovery}=draft;
+ const sonarr=draft.sonarr===undefined?emptySonarr():draft.sonarr;
+ if(!object(sonarr)||Object.keys(sonarr).some(k=>!sonarrKeys.includes(k))||sonarrKeys.some(k=>!Object.hasOwn(sonarr,k)))fail('settings_invalid','sonarr');
+ if(typeof sonarr.url==='string'&&sonarr.url!==sonarr.url.trim())fail('settings_invalid','sonarr.url');
+ endpoint(sonarr.url,'sonarr.url',{empty:!sonarr.url});
+ if(typeof sonarr.apiKey!=='string'||sonarr.apiKey.length>2048||/[\0\r\n]/.test(sonarr.apiKey)||sonarr.apiKey.trim()&&!/^[\x21-\x7e]+$/.test(sonarr.apiKey.trim()))fail('settings_invalid','sonarr.apiKey');
  const required=complete&&(requireRecovery||['verify','repair'].includes(mode)),radarrConfigured=!!(radarr.url||radarr.apiKey);
  endpoint(radarr.url,'radarr.url',{empty:!complete||!required&&!radarrConfigured});
  if(typeof radarr.apiKey!=='string'||radarr.apiKey.length>2048||radarr.apiKey.includes('\0')||complete&&(required||radarrConfigured)&&!radarr.apiKey.trim())fail('settings_invalid','radarr.apiKey');
@@ -72,7 +79,7 @@ export function validateSharedSettings(draft,{complete=false,mode='off',fileOnly
  for(const [k,v] of [['radarr.mediaRoot',radarr.mediaRoot],['radarr.quarantineRoot',radarr.quarantineRoot],['recovery.sourceRoot',recovery.sourceRoot],['recovery.quarantineRoot',recovery.quarantineRoot],['recovery.reports',recovery.reports]])if(!absolute(v))fail('settings_invalid',k);
  if(!review.sourceRoots.includes(recovery.sourceRoot))fail('settings_invalid','recovery.sourceRoot');
  const root=review.mediaRoot;for(const q of [recovery.quarantineRoot,radarr.quarantineRoot])if(q===root||q.startsWith(root+'/')||root.startsWith(q+'/'))fail('settings_invalid','quarantineRoot');
- const resolved=resolveSharedSettings({...draft,review},{mode,fileOnly});
+ const resolved=resolveSharedSettings({...draft,review,sonarr},{mode,fileOnly});
  const problem=configValueProblem({...resolved.recovery,libraryId:review.libraryId||(!required?'setup':review.libraryId),radarrUrl:radarr.url||(!required?'http://setup':radarr.url),radarrApiKey:radarr.apiKey||(!required?'setup':radarr.apiKey)});
  if(problem)fail('settings_invalid','recovery.'+problem.split(' ')[0]);
  for(const k of ['stableMinutes','movieCooldownDays','since'])if(resolved.recovery[k]>Number.MAX_SAFE_INTEGER)fail('settings_invalid','recovery.'+k);
@@ -81,8 +88,8 @@ export function validateSharedSettings(draft,{complete=false,mode='off',fileOnly
 // Imported legacy inputs are not yet schema-validated. Never project userinfo/query values,
 // including alternative migration endpoints. Keep private input intact for explicit correction.
 function publicEndpoint(value){try{const u=new URL(value);return ['http:','https:'].includes(u.protocol)&&!u.username&&!u.password&&!u.search&&!u.hash?value:'';}catch{return '';}}
-function visibleDraft(draft){const result={review:entries(draft.review,Object.keys(defaults({}))),radarr:entries(draft.radarr,radarrKeys),recovery:entries(draft.recovery,recoveryKeys)};if(object(draft.libraries))result.libraries={...(Object.hasOwn(draft.libraries,'tv')?{tv:object(draft.libraries.tv)?entries(draft.libraries.tv,Object.keys(emptyTvLibrary())):null}:{})};delete result.radarr.apiKey;result.radarr.hasApiKey=!!draft.radarr.apiKey;for(const key of ['tdarrUrl','publicOrigin'])result.review[key]=publicEndpoint(result.review[key]);result.radarr.url=publicEndpoint(result.radarr.url);return result;}
-function changed(before,after){const fields=[];for(const section of ['review','radarr','recovery','libraries'])for(const key of new Set([...Object.keys(before?.[section]||{}),...Object.keys(after?.[section]||{})]))if(!sameValue(before?.[section]?.[key],after?.[section]?.[key]))fields.push(section+'.'+key);return fields;}
+function visibleDraft(draft){const result={review:entries(draft.review,Object.keys(defaults({}))),radarr:entries(draft.radarr,radarrKeys),sonarr:entries(draft.sonarr||emptySonarr(),sonarrKeys),recovery:entries(draft.recovery,recoveryKeys)};if(object(draft.libraries))result.libraries={...(Object.hasOwn(draft.libraries,'tv')?{tv:object(draft.libraries.tv)?entries(draft.libraries.tv,Object.keys(emptyTvLibrary())):null}:{})};delete result.radarr.apiKey;result.radarr.hasApiKey=!!draft.radarr.apiKey;delete result.sonarr.apiKey;result.sonarr.hasApiKey=typeof draft.sonarr?.apiKey==='string'&&!!draft.sonarr.apiKey.trim();for(const key of ['tdarrUrl','publicOrigin'])result.review[key]=publicEndpoint(result.review[key]);result.radarr.url=publicEndpoint(result.radarr.url);result.sonarr.url=publicEndpoint(result.sonarr.url);return result;}
+function changed(before,after){const fields=[];for(const section of ['review','radarr','sonarr','recovery','libraries'])for(const key of new Set([...Object.keys(before?.[section]||{}),...Object.keys(after?.[section]||{})]))if(!sameValue(before?.[section]?.[key],after?.[section]?.[key]))fields.push(section+'.'+key);return fields;}
 // An Apply also records what it invalidated: the level, the Review field names causing it, and the films whose
 // saved reviews and Approve decisions Test showed and Apply cleared (names and counts only, never values).
 const invalidationRecord=v=>({level:v.level,fields:[...v.fields],shown:{reviews:v.shown.reviews,approvals:v.shown.approvals},cleared:{reviews:v.cleared.reviews,approvals:v.cleared.approvals}});
@@ -128,7 +135,7 @@ export function createSharedSettingsStore({data,env=process.env,now=Date.now}){
  async function snapshot(){
   const [saved,legacy,registry]=await Promise.all([read(file),inputs(),read(path.join(recoveryData,'pending-approvals.json'))]);
   const doc=saved.value||initial(legacy,env,now());validateDocument(doc);
-  doc.draft.radarr.quarantineRoot??=path.posix.join(path.posix.dirname(doc.draft.review.mediaRoot),'.tdarr-review-quarantine');
+  doc.draft.radarr.quarantineRoot??=path.posix.join(path.posix.dirname(doc.draft.review.mediaRoot),'.tdarr-review-quarantine');doc.draft.sonarr??=emptySonarr();
   const external=Object.keys(legacy).filter(k=>legacy[k].digest!==doc.legacy[k]);
   const revision=hash(JSON.stringify([saved.digest||doc,Object.fromEntries(Object.entries(legacy).map(([k,v])=>[k,v.digest])),registry.digest]));
   return {doc,revision,legacy,registry:registry.value,external};
@@ -178,7 +185,7 @@ export function createSharedSettingsStore({data,env=process.env,now=Date.now}){
  function requireRecovery(s){return !!s.legacy.recovery.value||!!(s.doc.active?.review.libraryId&&s.doc.active?.radarr.url&&s.doc.active?.radarr.apiKey);}
  async function validate({revision,forApply=false,acknowledgeHistory=false}={}){const s=await snapshot();if(revision!==undefined&&revision!==s.revision)fail('settings_conflict');const c=outward(s);if(forApply&&c.conflicts.length)fail('settings_migration_conflict');if(forApply&&c.requiresHistoryAcknowledgement&&!acknowledgeHistory)fail('settings_history_acknowledgement');const result=validateSharedSettings(s.doc.draft,{complete:forApply,mode:env.RECOVERY_MODE,fileOnly:s.doc.fileOnly,requireRecovery:requireRecovery(s)});await guards(s,result,{pending:forApply});return result;}
  async function saveDraft({revision,patch,resolutions=[],acknowledgeHistory=false}){return lock(async()=>{
-  const s=await snapshot();if(revision!==s.revision)fail('settings_conflict');if(!object(patch)||Object.keys(patch).some(k=>!['review','radarr','recovery','libraries'].includes(k))||Object.values(patch).some(v=>!object(v)))fail('settings_invalid');
+  const s=await snapshot();if(revision!==s.revision)fail('settings_conflict');if(!object(patch)||Object.keys(patch).some(k=>!['review','radarr','recovery','libraries','sonarr'].includes(k))||Object.values(patch).some(v=>!object(v)))fail('settings_invalid');
   const before=clone(s.doc.draft),draft=clone(before);
   if(!Array.isArray(resolutions))fail('settings_invalid','resolutions');
   const resolvedFields=resolutions.map(decision=>typeof decision==='string'?decision:decision?.field);
@@ -190,7 +197,7 @@ export function createSharedSettingsStore({data,env=process.env,now=Date.now}){
   }
   if(resolvedFields.includes('legacyFiles'))s.doc.fileOnly=initial(s.legacy,env,now()).fileOnly;
   if(Object.hasOwn(patch,'libraries'))draft.libraries??={};
-  for(const section of Object.keys(patch))for(const [key,value] of Object.entries(patch[section])){if(section==='radarr'&&key==='apiKey'&&value==='')continue;draft[section][key]=clone(value);}
+  for(const section of Object.keys(patch))for(const [key,value] of Object.entries(patch[section])){if(['radarr','sonarr'].includes(section)&&key==='apiKey'&&value==='')continue;draft[section][key]=clone(value);}
   const result=validateSharedSettings(draft,{mode:env.RECOVERY_MODE,fileOnly:s.doc.fileOnly});await guards(s,result);if(Object.hasOwn(result,'libraries'))draft.libraries=clone(result.libraries);
   if(Object.hasOwn(patch.recovery||{},'since')&&patch.recovery.since!==before.recovery.since){const boundary=s.doc.active?.recovery.since??s.legacy.recovery.value?.since??now();if(draft.recovery.since<boundary&&!acknowledgeHistory)fail('settings_history_acknowledgement');s.doc.historyExplicit=true;}
   s.doc.draft=draft;s.doc.conflicts=s.doc.conflicts.filter(k=>!resolvedFields.includes(k));if(resolvedFields.includes('legacyFiles'))s.doc.legacy=Object.fromEntries(Object.entries(s.legacy).map(([k,v])=>[k,v.digest]));
@@ -203,18 +210,19 @@ export function createSharedSettingsStore({data,env=process.env,now=Date.now}){
   s.doc.generation++;auditEntry(s.doc,{action:'apply',result:'success',fields:changed(s.doc.active,resolved),invalidation,now:now()});s.doc.active=resolved;s.doc.draft=draft;s.doc.historyExplicit=true;s.doc.legacy=Object.fromEntries(Object.entries(s.legacy).map(([k,v])=>[k,v.digest]));if((await snapshot()).revision!==revision)fail('settings_conflict');await durable(file,s.doc);return current();
  });}
  async function audit(){return clone((await snapshot()).doc.audit);}
+ async function sonarrConnection(revision){const s=await snapshot();if(revision!==s.revision)fail('settings_conflict');return clone(s.doc.draft.sonarr||emptySonarr());}
  async function recordOutcome({action,result}){if(!['apply','startup','cancel','save'].includes(action)||!['success','failure','interrupted','cancelled'].includes(result))fail('settings_invalid','audit');return lock(async()=>{const s=await snapshot();auditEntry(s.doc,{action,result,now:now()});await durable(file,s.doc);});}
- return {current,public:publicSettings,saveDraft,validate,applyGeneration,audit,recordOutcome};
+ return {current,public:publicSettings,saveDraft,validate,applyGeneration,audit,recordOutcome,sonarrConnection};
 }
 // Recovery uses the strict default. Review/health use checkPrivate:false so the authenticated
 // settings UI remains available to repair a revoked exception or newly incomplete integration.
 // Neither reader falls back from corrupt authority to unrelated legacy configuration.
 export async function readActiveSettings(data,{mode=process.env.RECOVERY_MODE,checkPrivate=true}={}){
  const saved=(await read(path.join(data,FILE))).value;if(!saved)return null;validateDocument(saved);if(!saved.active)return null;
- const active=clone(saved.active);active.recovery.enabled=mode==='repair';
+ const active=clone(saved.active);active.recovery.enabled=mode==='repair';active.sonarr??=emptySonarr();
  const fileOnly=privateFields(active.recovery),legacy=checkPrivate?(await read(path.join(data,'recovery','config.json'))).value:null;
  if(checkPrivate&&!sameValue(fileOnly,privateFields(legacy)))fail('settings_private_changed');
- const resolved=validateSharedSettings({review:active.review,radarr:active.radarr,recovery:entries(active.recovery,recoveryKeys),...(Object.hasOwn(active,'libraries')?{libraries:active.libraries}:{})},{complete:checkPrivate,mode,fileOnly});
+ const resolved=validateSharedSettings({review:active.review,radarr:active.radarr,sonarr:active.sonarr,recovery:entries(active.recovery,recoveryKeys),...(Object.hasOwn(active,'libraries')?{libraries:active.libraries}:{})},{complete:checkPrivate,mode,fileOnly});
  if(!sameValue(active,resolved)||saved.generation<1)fail('settings_file_invalid');
  return {...active,generation:saved.generation};
 }

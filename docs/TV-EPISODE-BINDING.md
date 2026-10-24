@@ -1,6 +1,6 @@
 # TV episode binding foundation
 
-`review/episode-binding.mjs` exports the pure synchronous function `resolveEpisodeBinding(input)`. It prepares descriptive Sonarr bindings for #238. It is not connected to discovery, routes, settings, approvals, Recovery or replacement transactions. TV processing remains unavailable.
+`review/episode-binding.mjs` exports the pure synchronous function `resolveEpisodeBinding(input)`. The manual Sonarr inspector calls it with a request-scoped namespace and selected-series snapshot; results remain descriptive metadata and are not persisted. The inspector is separate from discovery, approvals, Recovery and replacement transactions. TV processing remains unavailable. See the [manual inspector guide](SONARR-INSPECTOR.md).
 
 ## Input boundary
 
@@ -18,7 +18,7 @@ resolveEpisodeBinding({
 
 Records follow the [official Sonarr v3 API schema](https://github.com/Sonarr/Sonarr/blob/develop/src/Sonarr.Api.V3/openapi.json). Episodes carry `episodeFileId`; joining those records to the file table supplies membership. A zero file ID means an episode has no associated file. The implementation also accepts explicit null for that unbound state. A file's own ID, episode IDs and series IDs must be positive safe integers, with no string coercion.
 
-The caller owns the instance namespace, complete reads and freshness. This function cannot detect a consistently incomplete or old snapshot. A future adapter must reconcile changes between reads and verify actual files before using a binding. Do not derive a persistent namespace from a URL, API key or title. Selecting and persisting that namespace is a separate integration decision; this module writes no state.
+The caller owns the instance namespace, complete reads and freshness. This function cannot detect a consistently incomplete or old snapshot. The manual adapter checks the saved settings revision before and after its requests, but cannot prove Sonarr returned a fresh or internally complete snapshot. A future processing adapter must reconcile changes between reads and verify actual files before using a binding. Do not derive a persistent namespace from a URL, API key or title; this inspector uses a fresh ephemeral namespace and persists no identity.
 
 `filePath` and record paths must already be expressed in the same namespace. Comparison is byte-for-byte, including Windows paths; there is no separator conversion, case folding, filename parsing or fuzzy matching. A matching string is not a filesystem safety check or proof that Sonarr and Review see the same file. Path translation belongs to the multi-library integration under #239.
 
@@ -41,4 +41,4 @@ Supplied `hasFile` and embedded file data must agree with explicit links. Missin
 
 No result from this module grants technical validation, individual observation, sampled coverage, approval, retention, dispatch or replacement authority. A future TV workflow must independently combine the current binding with exact source/result file identities, the intended Tdarr library/job/receipt, fresh revisions, technical evidence and explicit review policy. Changed imports, ambiguous mappings and changed cohort membership must invalidate the relevant authorisation.
 
-Movie IDs, paths and state are unchanged. This foundation neither calls Sonarr nor verifies an installed Sonarr version. API references describe the fixture contract; live adapters, persistent bindings, multi-library routing, UI and TV transactions remain follow-up work under #238.
+Movie IDs, paths and state are unchanged. The manual inspector contacts only the explicitly configured Sonarr endpoint and does not verify an installed Sonarr version. API references describe the v3 contract. Persistent bindings, multi-library routing, Tdarr result/receipt matching, previews, cohort review, TV transactions and Sonarr Recovery remain follow-up work under #238.

@@ -31,7 +31,7 @@ An `invalid` recorded identity never matches. Transaction recovery leaves such a
 
 ### TV episode binding foundation
 
-`review/episode-binding.mjs` resolves supplied Sonarr records into an ephemeral, instance-scoped episode-file binding with all linked episode IDs. It performs no I/O and is not integrated into discovery or approval. A binding is descriptive metadata, separate from filesystem file identity and any human authorisation. [Input contract and integration limits](TV-EPISODE-BINDING.md) describe the boundary; TV processing remains unavailable pending #238.
+`review/episode-binding.mjs` resolves supplied Sonarr records into an ephemeral, instance-scoped episode-file binding with all linked episode IDs. The manual inspector in `review/sonarr-inspection.mjs` fetches saved-revision Sonarr metadata through authenticated GET-only routes and uses this resolver without storing the result. A binding is descriptive metadata, separate from filesystem file identity and any human authorisation. [Input contract and integration limits](TV-EPISODE-BINDING.md) and the [manual inspector guide](SONARR-INSPECTOR.md) describe the boundary; TV processing remains unavailable pending #238.
 
 ### Server layout
 
