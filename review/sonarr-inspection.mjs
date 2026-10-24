@@ -77,5 +77,33 @@ export function createSonarrInspection({getConnection,fetchFn=globalThis.fetch,r
   }));
   return {series:{id:seriesId,title:selected[0].title},complete:true,source:'unverified',bindings,unacquiredEpisodes};
  }
- return {series,inspect};
+ // Internal source-check seam. `sonarrPath` is request-local backend data and must
+ // never be copied into an HTTP response or persisted by a caller.
+ async function inspectEpisodeFile(revision,seriesId,episodeFileId){
+  if(!positive(seriesId)||!positive(episodeFileId))throw Error('sonarr_unavailable');
+  const {base,apiKey}=await connection(revision);
+  const seriesList=array(await get(base,apiKey,'/api/v3/series',seriesLimit),maxSeries);
+  const selected=seriesList.filter(item=>record(item)&&item.id===seriesId);
+  if(selected.length!==1||typeof selected[0].title!=='string')throw Error('sonarr_unavailable');
+  const query='?seriesId='+encodeURIComponent(String(seriesId));
+  const [files,episodes]=await Promise.all([
+   get(base,apiKey,'/api/v3/episodefile'+query,snapshotLimit).then(value=>array(value,maxFiles)),
+   get(base,apiKey,'/api/v3/episode'+query,snapshotLimit).then(value=>array(value,maxEpisodes)),
+  ]);
+  if(files.some(item=>!record(item)||item.seriesId!==seriesId)||episodes.some(item=>!record(item)||item.seriesId!==seriesId))throw Error('sonarr_unavailable');
+  const matches=files.filter(item=>item.id===episodeFileId);
+  if(matches.length!==1)throw Error('sonarr_unavailable');
+  const namespace='sonarr-source-check:'+randomUUID();
+  const resolveBinding=createEpisodeBindingResolver({instanceKey:namespace,seriesId,episodeFiles:files,episodes});
+  const file=matches[0],result=resolveBinding.resolve(file.path);
+  await connection(revision);
+  if(result.status!=='mapped'||result.binding.episodeFileId!==episodeFileId)return {status:result.status,reason:result.reason};
+  return {
+   status:'mapped',reason:null,sonarrPath:file.path,
+   binding:{instanceKey:result.binding.instanceKey,seriesId:result.binding.seriesId,episodeFileId:result.binding.episodeFileId,episodeIds:[...result.binding.episodeIds]},
+   file:{id:episodeFileId,label:safeRelative(file.relativePath),seasonNumber:Number.isSafeInteger(file.seasonNumber)&&file.seasonNumber>=0?file.seasonNumber:null},
+   episodes:result.episodes.map(({id,...numbers})=>({id,...numbers})),
+  };
+ }
+ return {series,inspect,inspectEpisodeFile};
 }

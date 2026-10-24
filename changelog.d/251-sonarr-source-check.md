@@ -1,0 +1,1 @@
+- Add a manual read-only Sonarr EpisodeFile source-path check using exact configured TV path mapping and an isolated bounded worker; TV processing remains unavailable.
