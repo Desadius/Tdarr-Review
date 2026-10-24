@@ -33,3 +33,5 @@ Film je zablokovaný, pokud výsledek nesplňuje přísná pravidla převodu: or
 Skóre kontroly vyjadřuje množství doložených kontrol, nikoli procentní pravděpodobnost bezvadného filmu. Úspory ukazují doložený rozdíl velikostí souborů; nemusí odpovídat okamžité změně volného místa array.
 
 V repozitáři nejsou skutečné API klíče, SSH klíče, seznamy osobních filmů, transakční protokoly ani osobní schválení oprav. Existující produkční instalace se tímto zveřejněním nemění.
+
+Nové vestavěné řízené porovnání nabízí průběžnou pracovní plochu se třemi ukázkami, ručními potvrzeními a jedním výslovným uložením; přehrávání samo nic nepotvrzuje. Pro průběh, klávesnici a limity ukázek viz [návod k řízenému porovnání](GUIDED-COMPARISON.md) a [uživatelský návod](USER-GUIDE.md#review-a-film).

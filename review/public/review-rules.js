@@ -8,6 +8,7 @@ export const CHECKS=Object.freeze(['preparation','image','audio','syncStart','sy
 // Checks of each step: preparation, picture, audio, synchronisation, decision.
 export const STEP_CHECKS=Object.freeze([['preparation'],['image'],['audio'],['syncStart','syncMiddle','syncEnd'],[]].map(Object.freeze));
 const AUDIO_AND_SYNC=Object.freeze(['audio','syncStart','syncMiddle','syncEnd']);
+const COMPARISON_CHECKS=Object.freeze(['image','hdr','audio','syncStart','syncMiddle','syncEnd']);
 
 /** The checks of a step; with HDR required the picture step also holds the HDR confirmation. */
 export const stepChecks=(step,{hdr=false}={})=>step===1&&hdr?['image','hdr']:[...STEP_CHECKS[step]];
@@ -28,8 +29,12 @@ export const deviceSatisfied=(session,{hdr=false}={})=>session.method!=='externa
 
 export const identityChanged=(before,after)=>before.method!==after.method||before.device!==after.device;
 export const pairChanged=(before,after)=>before.scope.originalIndex!==after.scope.originalIndex||before.scope.reviewIndex!==after.scope.reviewIndex;
+/** A changed guided playback context invalidates observations made using that context. */
+export const comparisonChanged=(before,after)=>JSON.stringify(before.comparison??null)!==JSON.stringify(after.comparison??null);
 
 /** A changed method or device clears every confirmation and returns to the first step. Changes `session`. */
 export function clearForIdentity(session){for(const key of CHECKS)session.checks[key]=false;session.step=0;return session;}
 /** A changed track pair clears audio and synchronisation and caps the step at audio. Changes `session`. */
 export function clearForPair(session){for(const key of AUDIO_AND_SYNC)session.checks[key]=false;session.step=Math.min(session.step,2);return session;}
+/** Keep the file-pair confirmation but require fresh human picture, audio and sync checks. */
+export function clearForComparison(session){for(const key of COMPARISON_CHECKS)session.checks[key]=false;session.step=Math.min(session.step,1);return session;}

@@ -1,4 +1,6 @@
-import {STEP_CHECKS,stepChecks as checksOfStep,hasPair,stepReachable,deviceSatisfied,identityChanged,pairChanged,clearForIdentity,clearForPair} from './review-rules.js?v=__APP_VERSION__';
+import {STEP_CHECKS,stepChecks as checksOfStep,hasPair,stepReachable,deviceSatisfied,identityChanged,pairChanged,comparisonChanged,clearForIdentity,clearForPair,clearForComparison} from './review-rules.js?v=__APP_VERSION__';
+import {mountContinuousReview} from './continuous-review.js?v=__APP_VERSION__';
+import {guidedExcerptTimes} from './guided-preparation.js?v=__APP_VERSION__';
 const STEPS=['Podklady','Obraz','Zvuk','Synchronizace','Rozhodnutí'].map((title,i)=>[title,STEP_CHECKS[i]]);
 const clone=value=>JSON.parse(JSON.stringify(value));
 
@@ -54,10 +56,10 @@ export function createCachedPreviewLoader({load,readPreparation,current,onReady,
 // Kino layout: the checks/decision panel and focus mode are viewer preferences, kept across films.
 const layout={panel:'open',focus:false};
 try{const saved=JSON.parse(sessionStorage.getItem('tdarr-review-layout')||'null');if(saved?.panel==='closed')layout.panel='closed'}catch{}
-export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openAudioComparison,onSession=()=>{},onPreparation=()=>{},preparation=null,onApprove=()=>{},onApproveOnly=()=>{},onReject=()=>{},onDeferred=()=>{},canApprove=()=>false,canApproveOnly=()=>false,isApproved=()=>false,tr=x=>x,formatBytes=x=>String(x)}={}){
+export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openAudioComparison,openGuidedComparison,onSession=()=>{},onPreparation=()=>{},preparation=null,onApprove=()=>{},onApproveOnly=()=>{},onReject=()=>{},onDeferred=()=>{},canApprove=()=>false,canApproveOnly=()=>false,isApproved=()=>false,tr=x=>x,formatBytes=x=>String(x)}={}){
  const make=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=tr(text);return n};
  const button=(text,fn,cls='secondary')=>{const n=make('button',cls,text);n.type='button';n.onclick=fn;return n};
- let dead=false,loaded=false,saving=false,conflict=false,stale=false,revision=0,session=null,baseline=null,complete=false,tracks=null,toolCleanups=[],metadataLoading=false,hdrRequired=false,observations={},scopeValid=true,explainingSave=false;
+ let dead=false,loaded=false,saving=false,conflict=false,stale=false,revision=0,session=null,baseline=null,complete=false,tracks=null,toolCleanups=[],continuousView=null,metadataLoading=false,hdrRequired=false,observations={},scopeValid=true,explainingSave=false;
  const cacheKey='tdarr-review-draft:'+item.id+':'+item.snapshot;
  const root=make('div','review-workflow'),sidebar=make('nav','workflow-nav'),main=make('section','workflow-main'),status=make('p','workflow-status'),warning=make('div','alert workflow-warning'),steps=make('div','workflow-step-buttons'),preparationPanel=make('div','preview-preparation');
  sidebar.setAttribute('aria-label',tr('Kroky posouzení'));status.setAttribute('role','status');warning.setAttribute('role','alert');warning.hidden=true;
@@ -73,7 +75,7 @@ export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openA
  applyLayout();
  const sessionDirty=()=>!!session&&JSON.stringify(session)!==JSON.stringify(baseline);
  const cache=()=>{if(!session||!loaded||dead)return;try{sessionStorage.setItem(cacheKey,JSON.stringify({revision,session}))}catch{}};
- const clearTools=()=>{scopeValid=true;for(const cleanup of toolCleanups.splice(0))cleanup?.()};
+ const clearTools=()=>{scopeValid=true;continuousView?.destroy();continuousView=null;for(const cleanup of toolCleanups.splice(0))cleanup?.()};
  const allowed=()=>loaded&&!dead&&!stale&&!conflict&&!saving&&canWrite();
  const validPair=()=>hasPair(session?.scope)&&(!tracks||tracks.original.some(x=>x.index===session.scope.originalIndex)&&tracks.review.some(x=>x.index===session.scope.reviewIndex));
  // Stricter than the server on purpose (review-rules.js): the device and, with HDR, its confirmation gate each step.
@@ -107,6 +109,7 @@ export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openA
   for(const n of root.querySelectorAll('[data-preview-control]'))n.disabled=!allowed()||n.dataset.previewBusy==='true'||n.dataset.previewInvalid==='true';
   const approve=root.querySelector('[data-workflow-approve]');if(approve)approve.disabled=!allowed()||!complete||sessionDirty()||!canApprove();
   const only=root.querySelector('[data-workflow-approve-only]');if(only){const done=isApproved();only.disabled=done||!allowed()||!complete||sessionDirty()||!canApproveOnly();only.textContent=tr(done?'Schváleno · čeká na nahrazení':'Schválit')}
+  continuousView?.refresh({session,observations,allowed:allowed(),scopeValid,hdrRequired});
  }
  function showWarning(message,reload=false){explainingSave=false;warning.replaceChildren(make('p','',message));if(reload)warning.append(button('Načíst uložený stav',()=>loadSession(false)));warning.hidden=false;refreshGuard()}
  function applyRecord(record,{render=true}={}){
@@ -143,9 +146,9 @@ export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openA
  }
  // Persist a changed identity first. The server deliberately clears confirmations when method, device or pair changes.
  async function persistIdentity(){
-  const identity=identityChanged(baseline,session),pair=pairChanged(baseline,session);
-  if(!identity&&!pair)return;
-  const desired=clone(session),value=clone(session);if(identity)clearForIdentity(value);else clearForPair(value);
+  const identity=identityChanged(baseline,session),pair=pairChanged(baseline,session),comparison=comparisonChanged(baseline,session);
+  if(!identity&&!pair&&!comparison)return;
+  const desired=clone(session),value=clone(session);if(identity)clearForIdentity(value);else{if(pair)clearForPair(value);if(comparison)clearForComparison(value)}
   await postSession(value);if(dead)return;
   // Input handlers already removed checks for the previous identity. Keep subsequent manual changes as an unsaved draft.
   session={...desired,step:Math.min(desired.step,baseline.step),checks:{...baseline.checks,...desired.checks}};cache();
@@ -193,6 +196,32 @@ export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openA
   if(!allowed()||!scopeValid||!validPair())return;const value=clone(session);value.checks={...baseline.checks,[key]:session.checks[key]};value.deferred=false;
   try{const result=await postSession(value);if(result){updateChecks();refreshObservations();updateSaveButton()}}catch{}
  }
+ function guidedDefaults(){try{return guidedExcerptTimes(Math.min(item.durationA,item.durationB))}catch{return [0,0,0]}}
+ const currentComparison=()=>session.comparison||{mode:'guided-ears',swapEars:false,excerpts:guidedDefaults()};
+ const validGuidedComparison=value=>!!value&&['guided-ears','guided-sequential'].includes(value.mode)&&typeof value.swapEars==='boolean'&&Array.isArray(value.excerpts)&&value.excerpts.length===3&&value.excerpts.every((seconds,i)=>Number.isFinite(seconds)&&seconds>=0&&seconds+12<=Math.min(item.durationA,item.durationB)&&(i===0||seconds>value.excerpts[i-1]));
+ function setComparison(value){
+  if(!allowed()||!value)return;const next={mode:value.mode,swapEars:value.swapEars,excerpts:Array.isArray(value.excerpts)?[...value.excerpts]:[]};
+  if(JSON.stringify(session.comparison??null)===JSON.stringify(next))return;session.comparison=next;clearForComparison(session);complete=false;cache();updateChecks();updateSaveButton();continuousView?.refresh({session,observations,allowed:allowed(),scopeValid,hdrRequired});
+ }
+ async function saveContinuous(){
+  const required=['preparation','image',...(hdrRequired?['hdr']:[]),'audio','syncStart','syncMiddle','syncEnd'];
+  if(!allowed()||!validPair()||!scopeValid||!validGuidedComparison(session.comparison)||!required.every(key=>session.checks[key])||hdrRequired&&!deviceSatisfied(session,{hdr:true})){
+   showWarning('Vyber platný pár a tři úseky, zadej zařízení pro kontrolu HDR a výslovně potvrď všechny oblasti.');return;
+  }
+  const desired=clone(session);desired.comparison ||= currentComparison();const times=desired.comparison.excerpts;try{
+   await persistIdentity();if(dead)return;
+   for(const [step,keys]of [[1,['preparation']],[2,['image',...(hdrRequired?['hdr']:[])]],[3,['audio']]]){
+    if(keys.every(key=>baseline.checks[key]))continue;const value=clone(session);value.checks=clone(baseline.checks);for(const key of keys)value.checks[key]=desired.checks[key];value.step=Math.max(baseline.step,step);value.note=desired.note;value.deferred=false;await postSession(value);if(dead)return;
+   }
+   for(const [i,key]of ['syncStart','syncMiddle','syncEnd'].entries()){
+    const old=observations[key],same=baseline.checks[key]&&old&&old.scope?.seconds===times[i]&&JSON.stringify(old.comparison??null)===JSON.stringify(desired.comparison);
+    if(same)continue;const value=clone(session);value.scope.seconds=times[i];value.checks=clone(baseline.checks);value.checks[key]=desired.checks[key];value.step=i===2?4:3;value.note=desired.note;value.deferred=false;await postSession(value);if(dead)return;
+   }
+   if(!dead){if(complete&&session.step===4&&!sessionDirty())renderStep();else continuousView?.refresh({session,observations,allowed:allowed(),scopeValid,hdrRequired})}
+  }catch{
+   if(!dead){const committed=clone(baseline);session={...committed,...desired,step:committed.step,checks:{...committed.checks,...desired.checks}};cache();continuousView?.refresh({session,observations,allowed:allowed(),scopeValid,hdrRequired});}
+  }
+ }
  const observationText=key=>{const saved=observations[key];if(!saved)return tr('Kontrola zatím není uložená.');return saved.scope.seconds===null?tr('Uloženo bez času kontrolovaného úseku.'):tr('Uloženo v čase:')+' '+Number(saved.scope.seconds).toFixed(2)+' s'};
  function refreshObservations(){for(const n of root.querySelectorAll('[data-observation]'))n.textContent=observationText(n.dataset.observation);for(const b of root.querySelectorAll('[data-checkpoint]'))b.dataset.invalid=String(session.checks[b.dataset.checkpoint]===baseline.checks[b.dataset.checkpoint]);refreshGuard()}
  function markWrite(n,invalid=false){n.dataset.workflowWrite='';n.dataset.invalid=String(invalid);return n}
@@ -212,6 +241,9 @@ export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openA
  function renderStep(){
   if(dead||!session)return;clearTools();steps.replaceChildren();main.replaceChildren(warning);root.dataset.step=String(session.step);
   for(const [i,[title]] of STEPS.entries()){const keys=stepChecks(i),b=button(title,()=>{if(!allowed()||i>baseline.step)return;session.step=i;cache();renderStep()});b.classList.add('workflow-step');b.setAttribute('aria-current',i===session.step?'step':'false');b.dataset.workflowWrite='';b.dataset.invalid=String(i>baseline.step);const number=make('span','workflow-number',keys.length&&keys.every(key=>session.checks[key])?'✓':String(i+1));b.prepend(number);steps.append(b)}
+  const continuous=!!openGuidedComparison&&session.method==='review'&&session.step<4;
+  if(continuous){root.dataset.continuousReview='on';sidebar.hidden=true;renderPreparation();main.append(preparationPanel);const tools=make('div','workflow-tools');main.append(tools);const comparison=currentComparison();if(!session.comparison){session.comparison=clone(comparison);clearForComparison(session);complete=false;cache()}continuousView=mountContinuousReview(tools,{item,session,observations,hdrRequired,tr,openGuidedComparison,playerOptions:{scope:session.scope,comparison,excerptTimes:comparison.excerpts,canInteract:allowed,beforePreview,tracks,preparation,onScopeChange:setScope,onScopeValidityChange:setScopeValidity,onPreparation:observePreparation,onPlaybackState:()=>{},onExternalReview:()=>changeMethod('external')},onCheck:(key,value)=>{session.checks[key]=value;if(!value){const at=STEPS.findIndex(([,keys])=>keys.includes(key));for(const [,keys]of STEPS.slice(at+1))for(const downstream of keys)session.checks[downstream]=false;complete=false}cache();updateChecks();updateSaveButton()},onNote:value=>{session.note=value;cache();refreshGuard()},onDevice:value=>{session.device=value;clearForIdentity(session);complete=false;cache();updateChecks()},onMethod:changeMethod,onScope:setScope,onComparison:setComparison,onSave:saveContinuous,onDraft:deferred=>saveDraft(deferred),onPreparation:observePreparation,onExternalReview:()=>changeMethod('external')});cache();refreshGuard();return;}
+  root.dataset.continuousReview='off';sidebar.hidden=false;
   const title=make('h3','',STEPS[session.step][0]);title.tabIndex=-1;renderPreparation();main.append(title,preparationPanel);
   const tools=make('div','workflow-tools'),checks=make('fieldset','workflow-checks');checks.append(make('legend','','Tvoje kontrola'));
   if(session.step===0){

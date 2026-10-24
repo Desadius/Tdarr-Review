@@ -15,7 +15,7 @@ if(typeof vm.SourceTextModule!=='function'){
  });
 }else{
  class Element{
-  constructor(tag){this.tagName=tag.toUpperCase();this.children=[];this.attributes={};this.dataset={};this.events=new Map();this.className='';this.value='';this.hidden=false;this.open=false;this.checked=false;this.disabled=false;this.ownText='';this.parentElement=null;this.style={};this.classList={add:(...names)=>{for(const name of names)this.classList.toggle(name,true)},remove:(...names)=>{for(const name of names)this.classList.toggle(name,false)},toggle:(name,on)=>{const classes=new Set(this.className.split(/\s+/).filter(Boolean));if(on??!classes.has(name))classes.add(name);else classes.delete(name);this.className=[...classes].join(' ')}}}
+  constructor(tag){this.tagName=tag.toUpperCase();this.children=[];this.attributes={};this.dataset={};this.events=new Map();this.className='';this.value='';this.hidden=false;this.open=false;this.checked=false;this.disabled=false;this.ownText='';this.parentElement=null;this.style={setProperty(){}};this.classList={add:(...names)=>{for(const name of names)this.classList.toggle(name,true)},remove:(...names)=>{for(const name of names)this.classList.toggle(name,false)},toggle:(name,on)=>{const classes=new Set(this.className.split(/\s+/).filter(Boolean));if(on??!classes.has(name))classes.add(name);else classes.delete(name);this.className=[...classes].join(' ')}}}
   // Like the DOM, the type property reflects the type attribute (input[type=checkbox] selectors).
   get type(){return this.attributes.type??''}
   set type(value){this.attributes.type=String(value)}
@@ -43,6 +43,7 @@ if(typeof vm.SourceTextModule!=='function'){
   closest(selector){return this.matches(selector)?this:this.parentElement?.closest(selector)||null}
   contains(node){return node===this||this.children.some(child=>child.contains(node))}
   addEventListener(type,fn){if(!this.events.has(type))this.events.set(type,[]);this.events.get(type).push(fn)}
+  removeEventListener(type,fn){this.events.set(type,(this.events.get(type)||[]).filter(listener=>listener!==fn))}
   async emit(type){if(type==='click'&&this.disabled)return;const event={target:this,preventDefault(){}};await this['on'+type]?.(event);for(const fn of this.events.get(type)||[])await fn(event)}
   showModal(){this.open=true}
   close(value){if(value!==undefined)this.returnValue=value;this.open=false;return this.emit('close')}
@@ -72,7 +73,7 @@ if(typeof vm.SourceTextModule!=='function'){
   const runtime={present:true,version:1,mode:'repair',state:'running',reason:null};
   let response={requests:[{id:'b'.repeat(24),source:'recovery',title:'Synthetic movie',phase:'verifying',canRestore:false,statusUpdated:new Date().toISOString()}],recoveryRuntime:runtime,recoveryConfig:{restartRequired:true,valid:true}};
   const location=new URL('http://localhost/?lang='+language+'#recovery'),navigations=[];location.assign=value=>navigations.push(value);
-  const context=vm.createContext({document,location,URL,URLSearchParams,Option:class extends Element{constructor(label,value){super('option');this.textContent=label;this.value=value}},Date:BrowserDate,console,AbortController,NodeFilter:{SHOW_TEXT:4},localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)},sessionStorage:{getItem:key=>session.has(key)?session.get(key):null,removeItem:key=>session.delete(key),setItem:(key,value)=>session.set(key,String(value))},history:{replaceState(){}},addEventListener(type,fn){(windowListeners[type]||=[]).push(fn)},setInterval(fn,ms){timers.push({fn,ms});return timers.length},clearInterval(){},setTimeout,clearTimeout,fetch:async(route,options)=>{
+  const context=vm.createContext({document,location,URL,URLSearchParams,Option:class extends Element{constructor(label,value){super('option');this.textContent=label;this.value=value}},Date:BrowserDate,console,AbortController,NodeFilter:{SHOW_TEXT:4},requestAnimationFrame:fn=>setTimeout(fn,0),cancelAnimationFrame(){},localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)},sessionStorage:{getItem:key=>session.has(key)?session.get(key):null,removeItem:key=>session.delete(key),setItem:(key,value)=>session.set(key,String(value))},history:{replaceState(){}},addEventListener(type,fn){(windowListeners[type]||=[]).push(fn)},setInterval(fn,ms){timers.push({fn,ms});return timers.length},clearInterval(){},setTimeout,clearTimeout,fetch:async(route,options)=>{
    calls.push({route,method:options.method,body:options.body?JSON.parse(options.body):undefined});
    const configured=routes[route]||routes[route.split('?')[0]],fixture=typeof configured==='function'?await configured({route,body:options.body?JSON.parse(options.body):undefined}):configured;if(fixture)return {status:fixture.status||200,ok:!fixture.status||fixture.status<400,json:async()=>structuredClone(fixture.data)};if(route==='/api/radarr/requests'&&overviewError)return {status:overviewError.status,ok:false,json:async()=>({error:overviewError.message})};
    if(route==='/api/recovery/runtime'&&fallbackStatus!==200)return {status:fallbackStatus,ok:false,json:async()=>({error:'synthetic runtime unavailable'})};
@@ -291,7 +292,7 @@ if(typeof vm.SourceTextModule!=='function'){
  });
  for(const language of ['cs','en'])test('the checks panel and focus mode toggle the layout only, with focus moved deliberately, in '+language,async()=>{
   const en=language==='en',checks=Object.fromEntries(['preparation','image','audio','syncStart','syncMiddle','syncEnd'].map(key=>[key,false]));
-  const record={version:1,snapshot:reviewItem.snapshot,revision:2,requirements:{hdr:false},complete:false,observations:{},session:{method:'review',device:'',step:0,scope:{originalIndex:1,reviewIndex:2,seconds:10},checks:{...checks,preparation:true},note:'Draft note',deferred:false}};
+  const record={version:1,snapshot:reviewItem.snapshot,revision:2,requirements:{hdr:false},complete:false,observations:{},session:{method:'external',device:'TV',step:1,scope:{originalIndex:1,reviewIndex:2,seconds:10},checks:{...checks,preparation:true},note:'Draft note',deferred:false}};
   const f=await appFixture(language,{itemsData:{items:[reviewItem],reviewSessions:{[reviewItem.id]:record}},routes:{['/api/items/'+reviewItem.id+'/review-session']:{data:record},['/api/items/'+reviewItem.id+'/audio-compare']:{data:{original:[],review:[]}}}}),dom=f.document;
   const inspect=dom.querySelectorAll('button').find(n=>n.getAttribute('aria-label')===(en?'Review Fixture film':'Posoudit Fixture film'));await inspect.emit('click');for(let i=0;i<6;i++)await flush();
   const root=dom.querySelector('.review-workflow'),panel=dom.querySelector('.workflow-panel'),toggle=dom.querySelector('[data-panel-toggle]'),focus=dom.querySelector('[data-focus-toggle]');
@@ -306,26 +307,20 @@ if(typeof vm.SourceTextModule!=='function'){
   assert.equal(JSON.stringify([...dom.querySelectorAll('[data-check]')].map(n=>n.checked))+panel.querySelector('textarea').value,before,'toggles keep checks and the note');
   assert.equal(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,0,'toggles write nothing');
  });
- for(const language of ['cs','en'])test('a failed video and audio sample names its side and offers the external player without confirming anything in '+language,async()=>{
+ for(const language of ['cs','en'])test('external review does not prepare browser clips and keeps picture confirmation explicit in '+language,async()=>{
   const en=language==='en',checks=Object.fromEntries(['preparation','image','audio','syncStart','syncMiddle','syncEnd'].map(key=>[key,false]));
-  const record={version:1,snapshot:reviewItem.snapshot,revision:2,requirements:{hdr:false},complete:false,observations:{},session:{method:'review',device:'',step:1,scope:{originalIndex:1,reviewIndex:2,seconds:10},checks:{...checks,preparation:true},note:'Keep this note',deferred:false}};
-  const failure='Originál: Zvuk vybrané stopy nešlo po přetočení připravit ani s dřívějším začátkem dekódování (30 a 60 s). Posuď film ve vlastním přehrávači.';
-  const compare=({body})=>body?.mode==='av'&&body.cachedOnly!==true?{status:500,data:{error:failure}}:body?.cachedOnly===true?{status:202,data:{pending:true,preparation:{snapshot:reviewItem.snapshot,state:'waiting',jobs:[]}}}:{data:{original:[{index:1,label:'1: cze · dts · 6 kan. · '}],review:[{index:2,label:'2: cze · dts · 6 kan. · '}]}};
-  const f=await appFixture(language,{itemsData:{items:[reviewItem],reviewSessions:{[reviewItem.id]:record}},routes:{['/api/items/'+reviewItem.id+'/review-session']:{data:record},['/api/items/'+reviewItem.id+'/audio-compare']:compare,['/api/items/'+reviewItem.id+'/preview-status']:{data:{snapshot:reviewItem.snapshot,state:'waiting',jobs:[]}}}}),dom=f.document;
+  const record={version:1,snapshot:reviewItem.snapshot,revision:2,requirements:{hdr:false},complete:false,observations:{},session:{method:'external',device:'TV',step:1,scope:{originalIndex:1,reviewIndex:2,seconds:10},checks:{...checks,preparation:true},note:'Keep this note',deferred:false}};
+  const f=await appFixture(language,{itemsData:{items:[reviewItem],reviewSessions:{[reviewItem.id]:record}},routes:{['/api/items/'+reviewItem.id+'/review-session']:{data:record},['/api/items/'+reviewItem.id+'/audio-compare']:{data:{original:[{index:1,label:'1: cze · dts · 6 kan. · '}],review:[{index:2,label:'2: cze · dts · 6 kan. · '}]}}}}),dom=f.document;
   await dom.querySelectorAll('button').find(n=>n.getAttribute('aria-label')===(en?'Review Fixture film':'Posoudit Fixture film')).emit('click');for(let i=0;i<30;i++)await flush();
-  const avButton=dom.querySelectorAll('button').find(n=>n.textContent===(en?'Compare video and audio':'Porovnat video a zvuk'));assert.ok(avButton,'the AV comparison is mounted');
-  await avButton.emit('click');for(let i=0;i<30;i++)await flush();
-  assert.match(dom.querySelector('.comparison-status').textContent,en?/^Original: The selected audio track could not be prepared after seeking.*Review the film in your own player\.$/:/^Originál: Zvuk vybrané stopy.*vlastním přehrávači\.$/);
-  const external=dom.querySelectorAll('button').find(n=>n.textContent===(en?'Review in your own player':'Posoudit ve vlastním přehrávači'));assert.ok(external,'the external player is offered');
-  assert.deepEqual([...dom.querySelectorAll('[data-check]')].map(n=>[n.dataset.check,n.checked]),[['image',false]],'the failure confirms nothing');
-  assert.equal(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,0,'the failure writes nothing');
-  await external.emit('click');for(let i=0;i<6;i++)await flush();
-  const method=dom.querySelectorAll('select').find(n=>n.children.some(o=>o.value==='external'));assert.equal(method.value,'external','the existing external method is selected');
-  assert.ok(dom.querySelector('[data-check="preparation"]'),'the workflow returns to its first step');assert.equal(dom.querySelector('[data-check="preparation"]').checked,false,'switching the method resets the checks by the existing rule');
-  assert.ok(dom.querySelectorAll('textarea').some(n=>n.value==='Keep this note'),'the note stays');
+  assert.equal(dom.querySelectorAll('button').some(n=>/Compare video and audio|Porovnat video a zvuk/.test(n.textContent)),false,'external review has no browser preview control');
+  assert.deepEqual(f.calls.filter(c=>c.route.endsWith('/audio-compare')).map(c=>c.body?.mode),['tracks'],'external review reads tracks only');
+  const image=dom.querySelector('[data-check="image"]');assert.ok(image);assert.equal(image.checked,false,'opening external review does not confirm picture');
+  assert.equal(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,0,'opening review does not save review-session observations');
+  image.checked=true;await image.emit('change');assert.equal(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,0,'checking a box remains a draft');
+  await dom.querySelectorAll('button').find(n=>n.textContent===(en?'Save and continue':'Uložit a pokračovat')).emit('click');for(let i=0;i<8;i++)await flush();
+  const writes=f.calls.filter(c=>c.method==='POST'&&c.route.endsWith('/review-session'));assert.equal(writes.length,1);assert.equal(writes[0].body.session.checks.image,true,'only explicit save records the manual check');
   assert.equal(f.calls.filter(c=>c.method==='POST'&&/approve|approval/.test(c.route)).length,0,'nothing is approved');
- });
- for(const language of ['cs','en'])test('the decision step separates approve only from approve and replace in '+language,async()=>{
+ }); for(const language of ['cs','en'])test('the decision step separates approve only from approve and replace in '+language,async()=>{
   const en=language==='en',checks=Object.fromEntries(['preparation','image','audio','syncStart','syncMiddle','syncEnd'].map(key=>[key,true]));
   const record={version:1,snapshot:reviewItem.snapshot,revision:3,requirements:{hdr:false},complete:true,observations:{},session:{method:'review',device:'',step:4,scope:{originalIndex:1,reviewIndex:2,seconds:10},checks,note:'',deferred:false}};
   const f=await appFixture(language,{itemsData:{items:[reviewItem],reviewSessions:{[reviewItem.id]:record},approvals:{}},routes:{['/api/items/'+reviewItem.id+'/review-session']:{data:record},['/api/items/'+reviewItem.id+'/audio-compare']:{data:{original:[],review:[]}},['/api/items/'+reviewItem.id+'/approval']:{data:{ok:true,approval:{reviewRevision:3}}}}}),dom=f.document;
