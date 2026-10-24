@@ -118,6 +118,7 @@ export const ERROR_MESSAGES=Object.freeze({
  review_item_changed_during_save:Object.freeze({cs:"Položka se během ukládání změnila. Obnov přehled.",en:"The item changed while saving. Refresh the overview."}),
  review_defer_unconfirmed:Object.freeze({cs:"Odložení musí být ručně potvrzené.",en:"Deferral must be confirmed manually."}),
  review_time_invalid:Object.freeze({cs:"Neplatný čas kontrolovaného úseku.",en:"Invalid time of the reviewed section."}),
+ review_comparison_invalid:Object.freeze({cs:"Neplatné nastavení porovnání úseků.",en:"Invalid excerpt comparison settings."}),
  review_step_invalid:Object.freeze({cs:"Neplatný krok revize.",en:"Invalid review step."}),
  review_track_index_invalid:Object.freeze({cs:"Neplatný index zvukové stopy.",en:"Invalid audio track index."}),
  review_revision_invalid:Object.freeze({cs:"Neplatná verze revize.",en:"Invalid review revision."}),
