@@ -38,6 +38,42 @@ test('manual booleans and field bounds reject forged confirmations and omit unkn
  assert.equal(value.device.length,160);assert.equal(value.note.length,2000);assert.equal(value.checks.image,true);assert.equal(value.checks.audio,false);assert.equal(value.complete,undefined);assert.equal(value.observations,undefined);assert.equal(value.checks.diagnostic,undefined);
 });
 
+test('guided playback metadata is an allowlisted optional version-one field',()=>{
+ const comparison={mode:'guided-ears',swapEars:false,excerpts:[5,45,85]};
+ const clean=sanitizeReviewSession({...emptyReviewSession(),comparison,unexpected:'ignored'});
+ assert.deepEqual(clean.comparison,comparison);assert.equal(clean.unexpected,undefined);
+ assert.equal(sanitizeReviewSession(emptyReviewSession()).comparison,undefined);
+ for(const value of [null,{}, {mode:'automatic',swapEars:false,excerpts:[5,45,85]}, {mode:'guided-ears',swapEars:0,excerpts:[5,45,85]}, {mode:'guided-sequential',swapEars:false,excerpts:[5,50]}, {mode:'guided-sequential',swapEars:false,excerpts:[5,'50',85]}])assert.throws(()=>sanitizeReviewSession({...emptyReviewSession(),comparison:value}),invalid);
+});
+
+test('guided excerpt metadata is checked against the verified shortest duration',async()=>{
+ const {write,store,saved}=fixture();
+ const comparison={mode:'guided-sequential',swapEars:false,excerpts:[5,45,85]};
+ await assert.rejects(write({...emptyReviewSession(),comparison:{...comparison,excerpts:[5,45,89]}}),invalid);
+ assert.equal(saved.length,0);const accepted=await write({...emptyReviewSession(),comparison});
+ assert.deepEqual(accepted.session.comparison,comparison);assert.equal(store.get(ID,SNAPSHOT).revision,1);
+});
+
+test('guided playback context is copied only into newly explicit server-timed observations',async()=>{
+ const {write,store}=fixture();
+ const comparison={mode:'guided-ears',swapEars:true,excerpts:[5,45,85]};
+ let current=await write({...emptyReviewSession(),comparison,scope:{originalIndex:1,reviewIndex:2,seconds:5}});
+ current=await write({...current.session,step:3,checks:{preparation:true,image:true,audio:true,syncStart:true}});
+ const start=current.observations.syncStart;
+ assert.deepEqual(start.comparison,comparison);assert.equal(start.scope.seconds,5);
+ current=await write({...current.session,scope:{...current.session.scope,seconds:50},checks:{...current.session.checks,syncMiddle:true}});
+ assert.deepEqual(current.observations.syncStart,start);assert.deepEqual(current.observations.syncMiddle.comparison,comparison);assert.equal(current.observations.syncMiddle.scope.seconds,50);
+});
+
+test('changing guided excerpt context clears affected saved checks and observations',async()=>{
+ const {complete,write}=fixture();let current=await complete({comparison:{mode:'guided-ears',swapEars:false,excerpts:[5,45,85]}});
+ assert.equal(current.complete,true);const changed=await write({...current.session,comparison:{...current.session.comparison,excerpts:[6,50,86]}});
+ assert.equal(changed.session.step,1);assert.equal(changed.session.checks.preparation,true);
+ for(const key of ['image','audio','syncStart','syncMiddle','syncEnd'])assert.equal(changed.session.checks[key],false);
+ for(const key of ['image','audio','syncStart','syncMiddle','syncEnd'])assert.equal(changed.observations[key],undefined);
+ assert.equal(changed.complete,false);
+});
+
 test('advancement requires previous manual checks and clearing a prerequisite resets later progress',async()=>{
  const {write,store}=fixture();
  await assert.rejects(write({...emptyReviewSession(),step:1}),invalid);

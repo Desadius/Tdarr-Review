@@ -1,9 +1,15 @@
 import {errorText} from './public/error-messages.js';
-import {CHECKS,completedStep,deviceSatisfied,identityChanged,pairChanged,clearForIdentity,clearForPair} from './public/review-rules.js';
+import {CHECKS,completedStep,deviceSatisfied,identityChanged,pairChanged,comparisonChanged,clearForIdentity,clearForPair,clearForComparison} from './public/review-rules.js';
 const ID=/^[a-f0-9]{24}$/;
 const SNAPSHOT=/^[a-f0-9]{64}$/;
 const OBSERVATIONS=['image','hdr','audio','syncStart','syncMiddle','syncEnd'];
 const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
+function sanitizeComparison(value){
+ if(!object(value)||!['guided-ears','guided-sequential'].includes(value.mode)||typeof value.swapEars!=='boolean'||!Array.isArray(value.excerpts)||value.excerpts.length!==3)fail('review_comparison_invalid');
+ const excerpts=value.excerpts.map(seconds=>{if(typeof seconds!=='number'||!Number.isFinite(seconds)||seconds<0||seconds>604800)fail('review_comparison_invalid');return seconds});
+ if(!(excerpts[0]<excerpts[1]&&excerpts[1]<excerpts[2]))fail('review_comparison_invalid');
+ return {mode:value.mode,swapEars:value.swapEars,excerpts};
+}
 
 // Takes a code from public/error-messages.js; the message is its Czech text. Plain text
 // is still accepted and then travels without a code.
@@ -39,6 +45,7 @@ export function sanitizeReviewSession(input){
  session.note=cleanText(input.note,2000,'review_note_not_text');
  if(input.step!==undefined){if(!Number.isInteger(input.step)||input.step<0||input.step>4)fail('review_step_invalid');session.step=input.step}
  if(input.deferred!==undefined){if(typeof input.deferred!=='boolean')fail('review_defer_unconfirmed');session.deferred=input.deferred}
+ if(input.comparison!==undefined)session.comparison=sanitizeComparison(input.comparison);
  if(input.checks!==undefined){
   if(!object(input.checks))fail('review_checks_not_object');
   for(const name of CHECKS)if(input.checks[name]!==undefined){if(typeof input.checks[name]!=='boolean')fail('review_check_manual');session.checks[name]=input.checks[name]}
@@ -76,7 +83,7 @@ export function publicReviewSession(record,snapshot,requirements=record?.require
   for(const name of OBSERVATIONS){
    const observation=record.observations?.[name];
    if(!session.checks[name]||!object(observation)||typeof observation.at!=='string'||!Number.isFinite(Date.parse(observation.at)))continue;
-   try{const value=sanitizeReviewSession(observation);observations[name]={method:value.method,device:value.device,scope:value.scope,at:observation.at}}catch{}
+   try{const value=sanitizeReviewSession(observation);observations[name]={method:value.method,device:value.device,scope:value.scope,...(value.comparison?{comparison:value.comparison}:{}),at:observation.at}}catch{}
   }
   return {snapshot,revision:record.revision,version:1,requirements,session,observations,complete:reviewComplete(session,requirements),updated:record.updated};
  }catch{return empty}
@@ -86,11 +93,12 @@ export function updateReviewSession(previous,input,{duration,originalIndexes,rev
  const session=sanitizeReviewSession(input),old=previous.session;
  if(session.deferred&&!session.note)fail('review_defer_reason_required');
  if(duration!==undefined&&session.scope.seconds!==null&&(!Number.isFinite(duration)||session.scope.seconds>=duration))fail('review_time_out_of_range');
+ if(duration!==undefined&&session.comparison?.excerpts.some(seconds=>seconds+12>duration))fail('review_time_out_of_range');
  for(const [name,indexes] of [['originalIndex',originalIndexes],['reviewIndex',reviewIndexes]])if(session.scope[name]!==null&&indexes!==undefined&&!indexes.includes(session.scope[name]))fail('sample_tracks_invalid');
  // A changed method/device or track pair must be saved before any fresh
  // confirmation. Checks carried in the same change cannot describe both scopes.
- if(identityChanged(old,session))clearForIdentity(session);
- else if(pairChanged(old,session))clearForPair(session);
+  if(identityChanged(old,session))clearForIdentity(session);
+  else{if(pairChanged(old,session))clearForPair(session);if(comparisonChanged(old,session))clearForComparison(session)}
  const available=completedStep(session);
  if(session.step>available){
   if(session.step>old.step)fail('review_previous_checks_first');
@@ -137,7 +145,7 @@ export function createReviewSessionStore({getState,save,verify,now=()=>new Date(
     if(previous.revision===Number.MAX_SAFE_INTEGER)fail('review_revision_exhausted',409);
     const updated=now(),observations={};
     for(const name of OBSERVATIONS)if(session.checks[name]){
-     observations[name]=previous.session.checks[name]&&previous.observations[name]?structuredClone(previous.observations[name]):{method:session.method,device:session.device,scope:structuredClone(session.scope),at:updated};
+      observations[name]=previous.session.checks[name]&&previous.observations[name]?structuredClone(previous.observations[name]):{method:session.method,device:session.device,scope:structuredClone(session.scope),...(session.comparison?{comparison:structuredClone(session.comparison)}:{}),at:updated};
     }
     const record={snapshot:request.snapshot,revision:previous.revision+1,version:1,requirements:{hdr:limits?.requirements?.hdr!==false},session,observations,updated};
     state.reviewSessions ||= {};

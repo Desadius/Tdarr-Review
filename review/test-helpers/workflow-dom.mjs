@@ -21,18 +21,18 @@ class Element{
 class Option extends Element{constructor(label,value){super('option');this.textContent=label;this.value=value}}
 export const flush=async()=>{await new Promise(resolve=>setImmediate(resolve));await new Promise(resolve=>setImmediate(resolve))};
 const keys=['preparation','image','audio','syncStart','syncMiddle','syncEnd','hdr'];
-export async function workflowFixture(t,{language='en',hdr=false,step=0,checks={},device='',method='review',pair=true,prepared=false}={}){
+export async function workflowFixture(t,{language='en',hdr=false,step=0,checks={},device='',method='review',pair=true,prepared=false,openGuided=false,failWriteAt=0}={}){
  const previous={document:globalThis.document,Option:globalThis.Option,sessionStorage:globalThis.sessionStorage};
  globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=Option;globalThis.sessionStorage={getItem:()=>null,setItem(){}};
- const host=new Element('div'),writes=[],tools=[];let writable=true,pendingSave=null,pendingLoad=null;
+ const host=new Element('div'),writes=[],tools=[];let writable=true,pendingSave=null,pendingLoad=null,playerOptions=null;
  let record={snapshot:'snapshot',revision:0,requirements:{hdr},complete:false,session:{method,device,step,scope:{originalIndex:pair?1:null,reviewIndex:pair?2:null,seconds:10},checks:Object.fromEntries(keys.map(key=>[key,checks[key]===true])),note:'',deferred:false}};
  const workflow=mountReviewWorkflow(host,{id:'fixture',snapshot:'snapshot',durationA:100,durationB:100},{preparation:prepared?{snapshot:'snapshot',state:'ready',ready:22,total:22}:null,tr:createTranslator(language),canWrite:()=>writable,api:async(route,body)=>{
   if(route.endsWith('/audio-compare'))return {original:[{index:1,label:'Original'}],review:[{index:2,label:'Review'}]};
-  if(body){writes.push(structuredClone(body));if(pendingSave)await pendingSave;record={...record,revision:record.revision+1,session:structuredClone(body.session)}}
+  if(body){writes.push(structuredClone(body));if(pendingSave)await pendingSave;if(failWriteAt&&writes.length===failWriteAt){const error=Error('revision changed');error.status=409;throw error}record={...record,revision:record.revision+1,session:structuredClone(body.session)}}
   if(!body&&pendingLoad)await pendingLoad;return structuredClone(record);
- },openComparison:(_item,options)=>{tools.push(options);return ()=>{}},openAudioComparison:(_item,options)=>{tools.push(options);return ()=>{}}});
+ },openComparison:(_item,options)=>{tools.push(options);return ()=>{}},openAudioComparison:(_item,options)=>{tools.push(options);return ()=>{}},openGuidedComparison:openGuided?(_item,options)=>{playerOptions=options;return ()=>{}}:undefined});
  t.after(()=>{workflow.destroy();for(const [key,value]of Object.entries(previous)){if(value===undefined)delete globalThis[key];else globalThis[key]=value}});
  await flush();
- return {host,writes,workflow,tools,next:()=>host.querySelector('[data-step-save]'),warning:()=>host.querySelector('.workflow-warning'),check:key=>host.querySelectorAll('[data-check]').find(n=>n.dataset.check===key),async confirm(key){const n=this.check(key);n.checked=true;await n.emit('change')},busy(value){writable=!value;workflow.refreshGuard()},holdSave(promise){pendingSave=promise},holdLoad(promise){pendingLoad=promise},record:()=>structuredClone(record)};
+ return {host,writes,workflow,tools,playerOptions:()=>playerOptions,next:()=>host.querySelector('[data-step-save]'),warning:()=>host.querySelector('.workflow-warning'),check:key=>host.querySelectorAll('[data-check]').find(n=>n.dataset.check===key),async confirm(key){const n=this.check(key);n.checked=true;await n.emit('change')},busy(value){writable=!value;workflow.refreshGuard()},holdSave(promise){pendingSave=promise},holdLoad(promise){pendingLoad=promise},record:()=>structuredClone(record)};
 }
 

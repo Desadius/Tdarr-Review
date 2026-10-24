@@ -1,5 +1,6 @@
 // Frame and audio/AV comparison dialogs. The app context supplies api() and the latest item list.
 import {mountAVComparison} from '/av-player.js?v=__APP_VERSION__';
+import {mountGuidedComparison} from '/guided-comparison.js?v=__APP_VERSION__';
 import {preparationSummary,previewJobMatches,createCachedPreviewLoader} from '/review-workflow.js?v=__APP_VERSION__';
 import {tr,translateAudioTrackLabel as audioTrackLabel} from '/i18n.js?v=__APP_VERSION__';
 import {el,button,elapsedText} from '/ui-kit.js?v=__APP_VERSION__';
@@ -16,6 +17,10 @@ export function installComparisons(context){
  compareDialog.addEventListener('close',()=>{compareCleanup?.();compareCleanup=null;compareDialog.replaceChildren()});
  audioDialog=el('dialog','comparison');document.body.append(audioDialog);
  audioDialog.addEventListener('close',()=>{audioCleanup?.();audioCleanup=null;audioDialog.replaceChildren()});
+}
+export function openGuidedComparison(item,options={}){
+ if(!options.host)throw Error('Řízené porovnání vyžaduje otevřené posouzení.');
+ return mountGuidedComparison(options.host,item,{...options,api,tr,current:()=>options.host.isConnected&&app.latest?.items.some(value=>value.id===item.id&&value.snapshot===item.snapshot),onFrames:scope=>openComparison(item,{scope,beforePreview:options.beforePreview,canInteract:options.canInteract})});
 }
 export function openComparison(item,options={}){
  const host=options.host||compareDialog;let dead=false,request=0,cachedLoader=null;host.replaceChildren();
