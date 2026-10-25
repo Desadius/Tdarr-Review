@@ -11,7 +11,7 @@ test('every mutating route has an explicit concurrency policy',()=>{
  for(const action of ['approve','reject','replace','recheck'])routes[action]=[`/api/items/${id}/${action}`];
  routes.replace.push(`/api/recovery/cases/${id}/replace-source`);
  // The installed-result assessment (#230): its draft is review state, its approval publishes retention evidence.
- routes.replace.push(`/api/recovery/cases/${id}/installed/approve`,`/api/recovery/cases/${id}/handoff`);routes.reviewSession.push(`/api/recovery/cases/${id}/installed`);
+ routes.replace.push(`/api/recovery/cases/${id}/installed/approve`,`/api/recovery/cases/${id}/handoff`,`/api/recovery/cases/${id}/retry`);routes.reviewSession.push(`/api/recovery/cases/${id}/installed`);
  for(const [kind,paths] of Object.entries(routes))for(const route of paths){assert.equal(mutationKind('POST',route),kind);assert.ok(BUSY_POLICIES[kind]);assert.equal(mutationKind('GET',route),null)}
  assert.equal(mutationKind('POST','/api/login'),null);
  assert.equal(mutationKind('POST',`/api/items/${id}/frames`),null,'preview mutability is decided from the parsed body');

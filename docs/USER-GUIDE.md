@@ -190,6 +190,29 @@ After its own confirmation, Tdarr rescans exactly that file and queues it by its
 
 A case Recovery gave up on during its own handoff is a manual case for an administrator. Review does not hand it over, because an approval would not start its quarantine cleanup.
 
+### A failed or skipped transcode
+
+When Tdarr ends the transcode of an imported replacement as *Transcode error*, or skips it as *Not required*, the case under **Needs attention** says what Review found. Review reads the Tdarr job report of the newest error job for that exact file and shows only the cause category. For decode damage it also shows the recognized decoder message, with numbers and addresses masked. Paths and the full report are never shown.
+
+The cause category decides what you can do:
+- **Decode damage** (the file cannot be decoded): no retry is offered. Recovery's own scan of the library opens its own case for the damaged file.
+- **Operational problem** (permission, disk space, memory, I/O or network): a retry is offered.
+- **Cause not recognized**: a retry is offered, and the case says that the cause was not recognized.
+- **Report not readable**: the result is not verified and no retry is offered.
+
+**Retry the transcode** (**Zkusit převod znovu**) queues the same file in Tdarr again, once for each replacement. It is offered only when all of these hold:
+- the file in the library is exactly the recorded replacement, as a plain file with a single link;
+- Tdarr still shows *Transcode error* for it, and the newest job for the file is that error job and ended after the import;
+- no Tdarr worker is processing the file;
+- the Tdarr library ID is set, Recovery's status can be read and Recovery is not in Verify mode;
+- no other Review action is running.
+
+Review first records its intent, then queues the file and reads Tdarr back. Only a read-back *Queued* or *Transcoding* state confirms the retry. If Tdarr does not confirm it, the retry is shown as uncertain. A new attempt then asks you to confirm that you checked Tdarr.
+
+A retry does not count toward Recovery's daily repair limit. If the retried transcode fails too, no further retry is offered and the case says so; inspect the file in Tdarr. Nothing in the library moves and the quarantine is kept.
+
+**Not required** cases get no retry, because Tdarr would skip the file again by the same rules. When Tdarr reports *Not required* for that exact file, and its history has a *Not required* decision after the import, the case offers **Assess the installed copy** (**Posoudit nainstalovanou kopii**) for the replacement itself. The assessment says that the copy was not transcoded. Approving it starts quarantine retention like any other installed copy. Restoring the original over the current copy is never offered.
+
 ### Assess an installed copy
 
 Sometimes the transcoded result is already in the library, for example because it was approved before Review kept approval evidence, or because it was replaced outside Review. There is no Review pair to compare, so the quarantine never enters retention. When Review can verify all of the following, the case offers **Assess the installed copy** (**Posoudit nainstalovanou kopii**):
@@ -199,7 +222,7 @@ Sometimes the transcoded result is already in the library, for example because i
 - Tdarr reports *Transcode success* for that file and its history has a successful transcode of it after the import;
 - no Review result waits for it and no other action is running.
 
-If anything cannot be read, the action is not offered and the case says what blocks it.
+If anything cannot be read, the action is not offered and the case says what blocks it. The assessment is also offered for a replacement that Tdarr skipped as *Not required*; see [A failed or skipped transcode](#a-failed-or-skipped-transcode).
 
 The **Comparison** tab of the case then shows the assessment:
 - **Only the copy now in the library is assessed.** The full original is not available for comparison: the replacement's source is gone, and the faulty original in quarantine is not used for comparison.

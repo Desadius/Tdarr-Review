@@ -113,3 +113,17 @@ test('a condition that fails between assessment and approval refuses the approva
  await assert.rejects(f.assessment.approve(ID,{snapshot,confirm:true}),e=>e.code==='installed_not_eligible'&&e.blockers[0]==='installed-review-pending');
  await assert.rejects(fs.readdir(path.join(f.root,'media','.tdarr-approvals')),{code:'ENOENT'},'no evidence was written');
 });
+
+test('a replacement Tdarr skipped as Not required is assessed as it is, untranscoded, after a decision since the import',async t=>{
+ const f=await fixture(t,{transcode:false,row:{TranscodeDecisionMaker:'Not required'},jobs:[{file:TDARR,status:'Not required',end:Date.now()+1000}]});
+ const view=await f.assessment.view(ID);assert.equal(view.eligible,true,JSON.stringify(view));assert.equal(view.untranscoded,true);
+ await f.assessment.save(ID,{snapshot:view.snapshot,device:'TV',checks:done,note:'Plays well.'});
+ await f.assessment.approve(ID,{snapshot:view.snapshot,confirm:true});assert.equal(f.audit[0].untranscoded,true);
+});
+for(const [name,options,blocker]of [
+ ['no Not required decision since the import',{transcode:false,row:{TranscodeDecisionMaker:'Not required'},jobs:[{file:TDARR,status:'Not required',end:1}]},'installed-no-decision'],
+ ['a transcode error',{transcode:false,row:{TranscodeDecisionMaker:'Transcode error'}},'installed-not-transcoded'],
+ ['a transcoded copy reported Not required',{row:{TranscodeDecisionMaker:'Not required'},jobs:[{file:TDARR,status:'Not required',end:Date.now()+1000}]},'installed-tdarr-not-success'],
+])test('the untranscoded assessment names its blocker: '+name,async t=>{
+ const f=await fixture(t,options);assert.deepEqual((await f.assessment.view(ID)).blockers,[blocker]);
+});

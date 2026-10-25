@@ -7,6 +7,7 @@ import {createTdarrFileState} from '../recovery/tdarr-file-state.mjs';
 import {approvalEvidencePath,publishApproval} from '../recovery/quarantine-retention.mjs';
 import {deviceSatisfied} from './public/review-rules.js';
 import {reviewRequirements} from './review-session.mjs';
+import {caseLibraryRoot as libraryRoot,importTime} from './recovery-case-paths.mjs';
 
 // Assessment of an already installed transcoded result (#230). A Recovery case whose imported replacement was
 // transcoded and installed outside a Review pair has no approval evidence, so its quarantine never enters
@@ -37,8 +38,6 @@ export function createInstalledAssessment({data,getConfig,getItems,tdarr,readRow
  const directory=path.join(data,'recovery-assessments');
  const draftFile=id=>path.join(directory,id+'.json');
 
- // The library root Recovery uses for this case: its source minus its relative path.
- function libraryRoot(c){const suffix='/'+c.relative;return typeof c.source==='string'&&typeof c.relative==='string'&&c.source.endsWith(suffix)?c.source.slice(0,-suffix.length):null;}
  // The installed copy: the replacement path, or one file with the same name and another video extension.
  async function installedCopy(root,relative){
   const at=async rel=>{try{const st=await fs.lstat(path.join(root,rel));return st.isFile()&&!st.isSymbolicLink()&&st.nlink===1?{relative:rel,identity:identityOf(st)}:{relative:rel,unsafe:true};}catch(e){if(e.code==='ENOENT')return null;throw e;}};
@@ -47,8 +46,6 @@ export function createInstalledAssessment({data,getConfig,getItems,tdarr,readRow
   for(const ext of VIDEO)if(ext!==parsed.ext){const other=await at(path.posix.join(parsed.dir,parsed.name+ext));if(other)found.push(other);}
   return found.length===1?found[0]:found.length?{ambiguous:true}:null;
  }
- // When the replacement reached the library: the later of its recorded modification and change times.
- const importTime=fp=>{const parts=String(fp||'').split(':');return parts.length===5?Math.max(Number(parts[3]),Number(parts[4])):NaN;};
 
  /** Whether the case may be assessed now, from fresh reads. Blocker codes are value-free. */
  async function eligibility(caseId,{busy=false}={}){
@@ -62,16 +59,17 @@ export function createInstalledAssessment({data,getConfig,getItems,tdarr,readRow
   if(!copy)return fail('installed-file-missing');
   if(copy.ambiguous)return fail('installed-ambiguous');
   if(copy.unsafe)return fail('installed-file-unsafe');
-  if(SAME.has(compareIdentity(c.replacementSourceFP,copy.identity)))return fail('installed-not-transcoded');
+  // The imported replacement itself is assessed only when Tdarr's rules skipped it as Not required (#232).
+  const untranscoded=SAME.has(compareIdentity(c.replacementSourceFP,copy.identity));
   const tdarrPath=path.posix.join(path.posix.dirname(c.file),path.posix.basename(copy.relative));
   let row,jobs;
   try{row=await createTdarrFileState(tdarr,{libraryId:getConfig()?.libraryId}).read(tdarrPath);jobs=await readRows('jobsjsondb');}catch{return fail('installed-unverified');}
-  if(row?.TranscodeDecisionMaker!=='Transcode success')return fail('installed-tdarr-not-success');
-  const imported=importTime(c.replacementSourceFP);
-  if(!Number.isFinite(imported)||!jobs.some(j=>[c.file,tdarrPath].includes(j?.file)&&j?.status==='Transcode success'&&Number(j?.end)>imported))return fail('installed-no-success-job');
+  const imported=importTime(c.replacementSourceFP),decided=status=>Number.isFinite(imported)&&jobs.some(j=>[c.file,tdarrPath].includes(j?.file)&&status.test(String(j?.status||''))&&Number(j?.end)>imported);
+  if(untranscoded){if(row?.TranscodeDecisionMaker!=='Not required')return fail('installed-not-transcoded');if(!decided(/^not required$/i))return fail('installed-no-decision');}
+  else{if(row?.TranscodeDecisionMaker!=='Transcode success')return fail('installed-tdarr-not-success');if(!decided(/^Transcode success$/))return fail('installed-no-success-job');}
   if(Object.values(getItems()||{}).some(item=>item?.relative===copy.relative))return fail('installed-review-pending');
   if(busy)return fail('installed-busy');
-  return {eligible:true,blockers:[],c,root,copy,tdarrPath,snapshot:token(copy.identity)};
+  return {eligible:true,blockers:[],c,root,copy,tdarrPath,untranscoded,snapshot:token(copy.identity)};
  }
 
  async function readDraft(id){try{const value=JSON.parse(await fs.readFile(draftFile(id),'utf8'));return object(value)&&value.version===1?value:null;}catch(e){if(e.code==='ENOENT')return null;throw e;}}
@@ -83,7 +81,7 @@ export function createInstalledAssessment({data,getConfig,getItems,tdarr,readRow
   const e=await eligibility(caseId,options);if(!e.eligible)return {eligible:false,blockers:e.blockers};
   let hdr;try{({hdr}=await requirements(e));}catch{return {eligible:false,blockers:['installed-unverified']};}
   const draft=await readDraft(caseId),current=draft?.snapshot===e.snapshot&&!draft.approvedAt?draft:null;
-  return {eligible:true,blockers:[],snapshot:e.snapshot,requirements:{hdr},draft:current?{device:current.device,checks:current.checks,note:current.note,updated:current.updated,complete:complete(current,{hdr})}:null};
+  return {eligible:true,blockers:[],...(e.untranscoded?{untranscoded:true}:{}),snapshot:e.snapshot,requirements:{hdr},draft:current?{device:current.device,checks:current.checks,note:current.note,updated:current.updated,complete:complete(current,{hdr})}:null};
  }
  /** Saves the user's observations for the current copy. Only explicit booleans confirm a check. */
  async function save(caseId,input,options){
@@ -104,7 +102,7 @@ export function createInstalledAssessment({data,getConfig,getItems,tdarr,readRow
   const evidence=await publishApproval({mediaRoot:e.root,relative:e.c.replacementRelative,sourceFP:e.c.replacementSourceFP,installedRelative:e.copy.relative,atomic:atomicJSON});
   if(!SAME.has(compareIdentity(evidence.installedFP,e.copy.identity)))throw Object.assign(Error('installed_changed'),{code:'installed_changed'});
   const approvedAt=evidence.approvedAt;await atomicJSON(draftFile(caseId),{...draft,approvedAt});
-  await recordDecision({event:'installed-approval',id:caseId,title:e.c.relative?.split('/')[0]||'Film',device:draft.device,checks:draft.checks,hdr,note:draft.note,approvedAt});
+  await recordDecision({event:'installed-approval',...(e.untranscoded?{untranscoded:true}:{}),id:caseId,title:e.c.relative?.split('/')[0]||'Film',device:draft.device,checks:draft.checks,hdr,note:draft.note,approvedAt});
   return {approvedAt};
  }
  return {eligibility,view,save,approve};

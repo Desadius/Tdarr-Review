@@ -89,6 +89,7 @@ const LOCATION_DETAILS={present:'Soubor je na místě',changed:'Soubor se od zá
 export const ATTENTION_ACTIONS={refresh:['Obnovit stav','Jen znovu načte údaje z Radarru, Tdarru a knihovny; nic nemění.'],openRadarr:['Otevřít film v Radarru','Otevře Radarr; nic nemění.'],openQueue:['Otevřít frontu Radarru','Otevře obecnou frontu Radarru; nic nemění.'],
  openReview:['Posoudit výsledek v Review','Otevře posouzení; schválení je samostatný krok.'],replaceSource:['Vyžádat jinou kopii přes Radarr','Spustí vyžádání náhrady; originál zůstane zachovaný v karanténě.'],
  restore:['Vrátit originál i převod z karantény','Přesune zachované soubory zpět do knihovny.'],assessInstalled:['Posoudit nainstalovanou kopii','Otevře posouzení kopie, která je v knihovně; nic nemění.'],
+ retryTranscode:['Zkusit převod znovu','Tdarr soubor znovu zařadí do fronty a převede ho; v knihovně se nic nepřesouvá.'],
  handoffTdarr:['Předat náhradu Tdarru','Tdarr soubor znovu naskenuje a zařadí ho podle svých pravidel; v knihovně se nic nepřesouvá.']};
 const BLOCKERS={'source-not-confirmed':'Vada originálu není potvrzená dvěma kontrolami; náhradu nelze vyžádat.','inspect-case':'Správce musí zkontrolovat záznam případu a zachované kopie.',
  'diagnosis-needed':'Kontrola originálu skončila provozní nebo nejednoznačnou chybou; prověř ji v detailu.','verify-mode':'Recovery běží v režimu Verify; změny povolí až přepnutí na Repair.',
@@ -102,6 +103,14 @@ const BLOCKERS={'source-not-confirmed':'Vada originálu není potvrzená dvěma 
  'installed-tdarr-not-success':'Tdarr pro tuto kopii nehlásí Transcode success.','installed-no-success-job':'V historii Tdarru není úspěšný převod této kopie po importu náhrady.',
  'installed-review-pending':'K této kopii čeká výsledek v Review; posuď ho tam.','installed-busy':'Probíhá jiná akce; posouzení bude možné po jejím dokončení.',
  'restore-over-installed':'Zastaralý originál Review přes aktuální kopii nevrací.',
+ 'transcode-not-failed':'Tdarr už převod nehlásí jako chybný; obnov stav.',
+ 'transcode-report-unreadable':'Report převodu v Tdarru nelze přečíst; opakování Review nenabídne, dokud příčina není známá.',
+ 'transcode-decode-damage':'Převod selhal na poškozeném souboru náhrady; poškozením se zabývá Recovery ve vlastním případu. Opakování nepomůže.',
+ 'transcode-unverified':'Stav převodu nelze ověřit; obnov stav.',
+ 'transcode-retry-used':'Review už převod jednou zopakovalo; další opakování nenabízí.',
+ 'transcode-retry-failed-again':'Opakovaný převod také selhal; prověř Tdarr. Diagnostiku k exportu přinese další verze.',
+ 'transcode-not-required':'Tdarr náhradu podle svých pravidel nepotřebuje převádět; opakování by ji znovu vynechalo.',
+ 'installed-no-decision':'Tdarr pro tuto kopii po importu nerozhodl Not required; obnov stav.',
  'handoff-unverified':'Stav předání nelze ověřit; obnov stav.',
  'handoff-library-id':'Pro předání Tdarru vyplň v nastavení ID knihovny Tdarr.',
  'handoff-file-missing':'Soubor náhrady v knihovně chybí.',
@@ -179,10 +188,13 @@ export function attentionActionsView(attention,run,{recommendedOnly=false}={},tr
   const line=el('div','attention-action');line.append(node,el('small','details',changes));box.append(line);}
  return box;
 }
+// The cause category of a failed replacement transcode (#232); the decoder message is value-free.
+const DIAGNOSIS={operational:'Provozní chyba (oprávnění, disk, paměť nebo síť)',unrecognized:'Příčina není rozpoznaná','decode-damage':'Poškození při dekódování',unreadable:'Report nelze přečíst'};
 export function attentionView(attention,run,translate=tr){
  const box=el('section','attention-model');box.setAttribute('aria-label',translate('Co dál'));
  box.append(el('h4','','Kde je film teď'),attentionLocationView(attention.location,translate));const diagnosis=importDiagnosisView(attention.importDiagnosis,translate);if(diagnosis)box.append(diagnosis);const retention=retentionDiagnosisView(attention.retentionDiagnosis,translate);if(retention)box.append(retention);
  box.append(el('h4','','Co můžeš udělat'),attentionActionsView(attention,run,{},translate));
+ if(attention.diagnosis&&DIAGNOSIS[attention.diagnosis.cause]){box.append(el('h4','','Příčina selhání převodu'),el('p','',DIAGNOSIS[attention.diagnosis.cause]));if(attention.diagnosis.message)box.append(el('p','details',translate('Hláška dekodéru:')+' '+attention.diagnosis.message,true));}
  const blockers=(attention.blockers||[]).filter(code=>BLOCKERS[code]);
  if(blockers.length){const list=el('ul','attention-blockers');for(const code of blockers)list.append(el('li','',BLOCKERS[code]));box.append(el('h4','','Co brání dalšímu kroku'),list);}
  if(attention.recoveryPolledAt)box.append(el('p','details',translate('Recovery naposledy ověřila stav:')+' '+date(attention.recoveryPolledAt),true));

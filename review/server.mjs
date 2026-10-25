@@ -79,6 +79,7 @@ import {createRecoveryAttention} from './recovery-attention.mjs';
 import {createInstalledAssessment} from './installed-assessment.mjs';
 import {createTdarrHandoff} from './tdarr-handoff.mjs';
 import {createRecoverySafeRestore} from './recovery-safe-restore.mjs';
+import {createTranscodeRetry} from './transcode-retry.mjs';
 let state=JSON.parse(await fs.readFile(statefile,'utf8').catch(()=>'{"items":{},"history":[],"sessions":{},"pauses":[]}'));
 if(!state.reviewSessions||typeof state.reviewSessions!=='object'||Array.isArray(state.reviewSessions))state.reviewSessions={};
 // Confirmed replacements wait here while another replacement or batch runs (#155). After a restart
@@ -288,7 +289,10 @@ const replacements=createReplacement({data:DATA,getConfig:()=>config,getConnecti
 // Needs attention: server-computed reason, location and actions for Recovery cases (#229). Read-only.
 const installedAssessment=createInstalledAssessment({data:DATA,getConfig:()=>config,getItems:()=>state.items,tdarr,readRows:table=>dbRows(table),probe:file=>probe(FFPROBE,file),atomicJSON,recordDecision:entry=>recordDecision(DATA,entry)});
 const tdarrHandoff=createTdarrHandoff({data:DATA,getConfig:()=>config,tdarr,readRows:table=>dbRows(table),isWorkerBusy:async item=>workerBusy(await tdarr('/api/v2/get-nodes'),item),atomicJSON});
-const recoveryAttention=createRecoveryAttention({data:DATA,getConfig:()=>config,getItems:()=>state.items,tdarr,getConnection:activeConnection,mode:process.env.RECOVERY_MODE||'off',installed:installedAssessment,handoff:tdarrHandoff,isBusy:()=>!!busyFor('replace')});
+// The Tdarr job report of a job (the same bounded reader as the health check), for the retry diagnosis (#232).
+async function jobReport(job){const f=await safeFile(path.resolve(path.dirname(DB),'..','JobReports'),job.job.footprintId+'/'+job.job.fileId);if(f.stat.size>12*1024*1024)throw Object.assign(Error(),{code:'REPORT_TOO_LARGE'});return fs.readFile(f.path,'utf8');}
+const transcodeRetry=createTranscodeRetry({data:DATA,getConfig:()=>config,tdarr,readRows:table=>dbRows(table),readReport:jobReport,isWorkerBusy:async item=>workerBusy(await tdarr('/api/v2/get-nodes'),item),atomicJSON});
+const recoveryAttention=createRecoveryAttention({data:DATA,getConfig:()=>config,getItems:()=>state.items,tdarr,getConnection:activeConnection,mode:process.env.RECOVERY_MODE||'off',installed:installedAssessment,handoff:tdarrHandoff,retry:transcodeRetry,isBusy:()=>!!busyFor('replace')});
 const localOff={requestDrain:async()=>({state:'off'}),status:async()=>({state:'off'}),cancel:async()=>({state:'off'}),stopAfterDrain:async()=>({state:'stopped'}),restart:async()=>({state:'off'}),wait:async()=>({state:'off'})};
 const restoreControl=!process.connected&&(!process.env.RECOVERY_MODE||process.env.RECOVERY_MODE==='off')?localOff:createRecoveryControlClient();
 const recoverySafeRestore=createRecoverySafeRestore({data:DATA,mode:process.env.RECOVERY_MODE||'off',tdarr,control:restoreControl});
@@ -441,7 +445,7 @@ const authTimer=setInterval(()=>{pruneAuthAttempts(authAttempts);if(pruneSession
 // Getters/setters keep the module variables above authoritative, so the scan,
 // transaction and preview code shares exactly the state the routes change.
 const ctx={
- ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,recoveryAttention,recoverySafeRestore,installedAssessment,tdarrHandoff,artwork,reviewSessions,previewPairs,previewPlans,previewAttempts,sharedSettings,sonarrSourceInspection,
+ ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,recoveryAttention,recoverySafeRestore,installedAssessment,tdarrHandoff,transcodeRetry,artwork,reviewSessions,previewPairs,previewPlans,previewAttempts,sharedSettings,sonarrSourceInspection,
  get config(){return config},set config(value){config=value},
  get previewSettings(){return previewSettings},set previewSettings(value){previewSettings=value},
  get state(){return state},
