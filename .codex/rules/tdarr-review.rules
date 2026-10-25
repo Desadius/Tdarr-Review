@@ -67,6 +67,14 @@ prefix_rule(
     not_match = ["git push -u upstream codex/topic"],
 )
 
+prefix_rule(
+    pattern = ["git", "worktree", ["remove", "prune"]],
+    decision = "allow",
+    justification = "Remove the agent's own clean worktree after its PR is merged",
+    match = ["git worktree remove ../Tdarr-Review-topic", "git worktree prune --verbose"],
+    not_match = ["git worktree add ../x -b codex/x origin/main", "git worktree move a b"],
+)
+
 # A human always merges; force pushes, branch deletion and pushes to main are refused.
 prefix_rule(
     pattern = ["gh", "pr", "merge"],
@@ -96,6 +104,14 @@ prefix_rule(
     decision = "forbidden",
     justification = "No force pushes or remote branch deletion",
     match = ["git push --force origin codex/topic", "git push -d origin codex/topic"],
+)
+
+prefix_rule(
+    pattern = ["git", "worktree", "remove", ["--force", "-f"]],
+    decision = "forbidden",
+    justification = "Forced worktree removal can discard uncommitted work",
+    match = ["git worktree remove --force ../Tdarr-Review-topic", "git worktree remove -f ../x"],
+    not_match = ["git worktree remove ../Tdarr-Review-topic"],
 )
 
 # Always ask: closing issues, deleting files and remote access (production rules in AGENTS.md).
