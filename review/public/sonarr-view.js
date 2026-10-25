@@ -13,15 +13,16 @@ const numbering=episode=>{
 };
 const bindingStatus={mapped:'Přesně přiřazeno',unmapped:'Vazba nenalezena',ambiguous:'Nejednoznačná vazba',invalid:'Neplatná metadata'};
 const sourceStatus={present:'Metadata jednoho běžného souboru jsou dostupná; obsah a identita nejsou ověřené.',missing:'Soubor na odvozené cestě nebyl nalezen.',unsafe:'Soubor nebo cesta nesplňuje bezpečnostní omezení.',unsupported:'Typ souboru není podporován pro tuto kontrolu.',changed:'Cesta se během kontroly změnila.',busy:'Kontrola zdroje už probíhá.',unavailable:'Kontrola zdroje není dostupná.',unmapped:'Cestu Sonarru nelze přesně namapovat.',ambiguous:'Vazba epizody není jednoznačná.',invalid:'Metadata Sonarru nejsou platná.'};
+const resultStatus={matched:'Přiřazení výsledku Tdarru odpovídá vybranému souboru a podporovaným metadatům. Není to kontrola technického zdraví ani schválení.',unverified:'Přiřazení výsledku Tdarru nebylo ověřeno.','source-missing':'Zdrojový soubor nebyl nalezen.','result-missing':'Výsledek nebyl nalezen.','receipt-missing':'Chybí podporovaný záznam výsledku.','job-missing':'Chybí přesně uvedená úspěšná úloha Tdarru.','wrong-library':'Úloha patří do jiné knihovny Tdarru.','job-not-successful':'Úloha Tdarru není označena jako úspěšná.','job-path-mismatch':'Cesta úlohy neodpovídá nakonfigurovanému zdroji.','evidence-mismatch':'Velikosti úlohy neodpovídají aktuálním souborům.','ambiguous-result':'Více výsledků odpovídá vybranému souboru.','ambiguous-job':'ID úlohy není jednoznačné.','unsafe-path':'Cesta nebo soubor nesplňuje bezpečnostní omezení.','unsupported-layout':'Rozložení nebo nastavení není pro tuto kontrolu podporované.','unsupported-evidence':'Záznam nemá podporovaný formát nebo údaje.','file-changed':'Zdroj, výsledek nebo vazba se během kontroly změnily.','evidence-unavailable':'Důkazy nejsou dostupné.','busy':'Kontrola výsledku už probíhá.'};
 
-export function renderSonarrInspector({el,button,api,revision,configured,sourceConfigured=false,dirty}){
- let activeConfigured=configured,activeSourceConfigured=sourceConfigured,activeDirty=dirty;
+export function renderSonarrInspector({el,button,api,revision,configured,sourceConfigured=false,resultConfigured=false,dirty}){
+ let activeConfigured=configured,activeSourceConfigured=sourceConfigured,activeResultConfigured=resultConfigured,activeDirty=dirty;
  const panel=el('section','sonarr-inspector');panel.setAttribute('aria-label',tr('Ruční kontrola Sonarru'));
  panel.append(el('h3','','Ruční kontrola Sonarru'),el('p','details','Zdroj a odpovědi Sonarru jsou neověřené. Výsledek popisuje pouze metadata; nepotvrzuje existenci souboru ani povolení ke zpracování.'));
  const state=el('p','details','Načtení vyžaduje uložený návrh a ruční akci.');state.setAttribute('role','status');
  const select=el('select');select.setAttribute('aria-label',tr('Vybraná série'));select.disabled=true;
  const selectLabel=el('label','settings-field','Série');selectLabel.append(select);
- const results=el('div','sonarr-inspection-results'),sourceChecks=[];
+ const results=el('div','sonarr-inspection-results'),sourceChecks=[],resultChecks=[];
  let series=[];
  const load=button('Načíst série',async()=>{
   if(load.disabled)return;load.disabled=true;inspect.disabled=true;state.textContent=tr('Načítám série z uloženého Sonarru…');results.replaceChildren();
@@ -51,6 +52,20 @@ export function renderSonarrInspector({el,button,api,revision,configured,sourceC
       finally{check.disabled=activeDirty||!activeSourceConfigured;}
      });
      check.disabled=activeDirty||!activeSourceConfigured;sourceChecks.push(check);block.append(check,sourceResult);
+     const resultState=el('p','details','');resultState.setAttribute('role','status');
+     const inspectResult=button('Zkontrolovat výsledek Tdarru',async()=>{
+      if(inspectResult.disabled||activeDirty||!activeResultConfigured)return;inspectResult.disabled=true;resultState.textContent=tr('Kontrola přiřazení výsledku běží v odděleném procesu…');
+      try{
+       const query=new URLSearchParams({revision,seriesId:String(value.series.id),episodeFileId:String(item.file.id)});
+       const checked=await api('/api/sonarr/result?'+query.toString());
+       const explanation=tr(resultStatus[checked.status==='matched'?'matched':checked.reason]||resultStatus.unverified);
+       const sizes=Number.isSafeInteger(checked.source?.size)&&Number.isSafeInteger(checked.result?.size)?' '+tr('Zdroj')+': '+checked.source.size+' B · '+tr('Výsledek')+': '+checked.result.size+' B':'';
+       const timing=Number.isSafeInteger(checked.evidence?.startedAt)&&Number.isSafeInteger(checked.evidence?.endedAt)?' · '+tr('Úloha')+': '+checked.evidence.startedAt+'–'+checked.evidence.endedAt:'';
+       resultState.textContent=explanation+sizes+timing;
+      }catch(error){resultState.textContent=apiError(error);}
+      finally{inspectResult.disabled=activeDirty||!activeResultConfigured;}
+     });
+     inspectResult.disabled=activeDirty||!activeResultConfigured;resultChecks.push(inspectResult);block.append(inspectResult,resultState);
     }
     results.append(block);
    }
@@ -60,7 +75,7 @@ export function renderSonarrInspector({el,button,api,revision,configured,sourceC
  });
  select.onchange=()=>{inspect.disabled=activeDirty||!activeConfigured||!select.value};
  const buttons=el('div','dialog-actions');buttons.append(load,inspect);panel.append(selectLabel,buttons,state,results);
- panel.setAvailability=({isDirty,isConfigured,isSourceConfigured=activeSourceConfigured})=>{activeDirty=isDirty;activeConfigured=isConfigured;activeSourceConfigured=isSourceConfigured;load.disabled=isDirty||!isConfigured;inspect.disabled=isDirty||!isConfigured||!series.length||!select.value;select.disabled=isDirty||!series.length;for(const check of sourceChecks)check.disabled=isDirty||!isSourceConfigured;};
+ panel.setAvailability=({isDirty,isConfigured,isSourceConfigured=activeSourceConfigured,isResultConfigured=activeResultConfigured})=>{activeDirty=isDirty;activeConfigured=isConfigured;activeSourceConfigured=isSourceConfigured;activeResultConfigured=isResultConfigured;load.disabled=isDirty||!isConfigured;inspect.disabled=isDirty||!isConfigured||!series.length||!select.value;select.disabled=isDirty||!series.length;for(const check of sourceChecks)check.disabled=isDirty||!isSourceConfigured;for(const check of resultChecks)check.disabled=isDirty||!isResultConfigured;};
  panel.setAvailability({isDirty:dirty,isConfigured:configured});return panel;
 }
 

@@ -49,6 +49,7 @@ import {createRecoveryControlClient} from './recovery-control.mjs';
 import {sharedSettingsRoutes} from './routes/shared-settings.mjs';
 import {sonarrRoutes} from './routes/sonarr.mjs';
 import {createSonarrSourceInspection} from './sonarr-source-inspection.mjs';
+import {createSonarrResultInspection} from './sonarr-result-inspection.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 const DATA=process.env.DATA_ROOT||'/data',PORT=Number(process.env.PORT||8270),APP_VERSION=await appVersion();
@@ -60,6 +61,11 @@ const sonarrSourceInspection=createSonarrSourceInspection({getSnapshot:async rev
  const current=await sharedSettings.current();if(current.revision!==revision)throw Object.assign(Error('Settings changed'),{code:'settings_conflict'});
  const sonarr=await sharedSettings.sonarrConnection(revision);
  return {revision,sonarr,tv:current.draft.libraries?.tv??null};
+}});
+const sonarrResultInspection=createSonarrResultInspection({getSnapshot:async revision=>{
+ const current=await sharedSettings.current();if(current.revision!==revision)throw Object.assign(Error('Settings changed'),{code:'settings_conflict'});
+ const sonarr=await sharedSettings.sonarrConnection(revision);
+ return {revision,sonarr,tv:current.draft.libraries?.tv??null,review:{database:current.draft.review?.database??''}};
 }});
 const activeConnection=async()=>activeSettings?activeSettings.radarr:JSON.parse(await fs.readFile(path.join(DATA,'radarr.json'),'utf8'));
 let MEDIA,REVIEW,TDARR,DB,FFPROBE,HOST;
@@ -443,7 +449,7 @@ const authTimer=setInterval(()=>{pruneAuthAttempts(authAttempts);if(pruneSession
 // Getters/setters keep the module variables above authoritative, so the scan,
 // transaction and preview code shares exactly the state the routes change.
 const ctx={
- ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,recoveryAttention,recoverySafeRestore,installedAssessment,tdarrHandoff,artwork,reviewSessions,previewPairs,previewPlans,previewAttempts,sharedSettings,sonarrSourceInspection,
+ ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,recoveryAttention,recoverySafeRestore,installedAssessment,tdarrHandoff,artwork,reviewSessions,previewPairs,previewPlans,previewAttempts,sharedSettings,sonarrSourceInspection,sonarrResultInspection,
  get config(){return config},set config(value){config=value},
  get previewSettings(){return previewSettings},set previewSettings(value){previewSettings=value},
  get state(){return state},
@@ -520,5 +526,5 @@ let stopping=false;
 for(const signal of ['SIGTERM','SIGINT'])process.once(signal,()=>{
  if(stopping)return;stopping=true;clearInterval(previewTimer);clearTimeout(previewStart);clearInterval(replacementTimer);clearInterval(resumeRetryTimer);
  const drained=new Promise(resolve=>server.close(resolve));server.closeIdleConnections();
- void Promise.all([previews.close(),sonarrSourceInspection.close(),drained]).then(async()=>{while(active||batchRunning||reviewSessions.busy||settingsBusy||resumeTask)await new Promise(resolve=>setTimeout(resolve,50));await saveChain;process.exit(0)}).catch(error=>{console.error('Review shutdown: '+error.message);process.exit(1)});
+ void Promise.all([previews.close(),sonarrSourceInspection.close(),sonarrResultInspection.close(),drained]).then(async()=>{while(active||batchRunning||reviewSessions.busy||settingsBusy||resumeTask)await new Promise(resolve=>setTimeout(resolve,50));await saveChain;process.exit(0)}).catch(error=>{console.error('Review shutdown: '+error.message);process.exit(1)});
 });
