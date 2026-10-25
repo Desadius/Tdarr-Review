@@ -292,6 +292,7 @@ const installedAssessment=createInstalledAssessment({data:DATA,getConfig:()=>con
 const tdarrHandoff=createTdarrHandoff({data:DATA,getConfig:()=>config,tdarr,readRows:table=>dbRows(table),isWorkerBusy:async item=>workerBusy(await tdarr('/api/v2/get-nodes'),item),atomicJSON});
 // The Tdarr job report of a job (the same bounded reader as the health check), for the retry diagnosis (#232).
 async function jobReport(job){const f=await safeFile(path.resolve(path.dirname(DB),'..','JobReports'),job.job.footprintId+'/'+job.job.fileId);if(f.stat.size>12*1024*1024)throw Object.assign(Error(),{code:'REPORT_TOO_LARGE'});return fs.readFile(f.path,'utf8');}
+const transcodeRetry=createTranscodeRetry({data:DATA,getConfig:()=>config,tdarr,readRows:table=>dbRows(table),readReport:jobReport,isWorkerBusy:async item=>workerBusy(await tdarr('/api/v2/get-nodes'),item),atomicJSON});
 const recoveryDeferrals=createRecoveryDeferrals({data:DATA});
 const recoveryAttention=createRecoveryAttention({data:DATA,getConfig:()=>config,getItems:()=>state.items,tdarr,getConnection:activeConnection,mode:process.env.RECOVERY_MODE||'off',installed:installedAssessment,handoff:tdarrHandoff,retry:transcodeRetry,deferrals:recoveryDeferrals,getOverview:()=>replacements.overview(),isBusy:()=>!!busyFor('replace')});
 const localOff={requestDrain:async()=>({state:'off'}),status:async()=>({state:'off'}),cancel:async()=>({state:'off'}),stopAfterDrain:async()=>({state:'stopped'}),restart:async()=>({state:'off'}),wait:async()=>({state:'off'})};
