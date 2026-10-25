@@ -9,8 +9,9 @@ import {atomicJSON} from './core.mjs';
 
 // Diagnosis and the one Review retry of a failed replacement transcode (#232): synthetic files, reports and a fake Tdarr.
 const ID='a'.repeat(24),FILE='/tdarr/movies/Film/new.mkv',OLD=Date.now()-3600000;
-const REPORTS={operational:'ffmpeg: /mnt/media/Film/new.mkv: Permission denied\n',unrecognized:'Worker exited with code 1\n',damage:'[h264 @ 0x55d1] Invalid NAL unit size (4271 > 1022).\n'};
-async function fixture(t,{row='Transcode error',report=REPORTS.operational,jobs=null,working=false,mode='repair',afterQueue='Queued'}={}){
+const MPEG2='Error: Bitrate sampling failed: [mpeg2video @ 0x55d1] ignoring pic cod ext after 0\n';
+const REPORTS={mpeg2:MPEG2,operational:'ffmpeg: /mnt/media/Film/new.mkv: Permission denied\n',unrecognized:'Worker exited with code 1\n',damage:'[h264 @ 0x55d1] Invalid NAL unit size (4271 > 1022).\n'};
+async function fixture(t,{row='Transcode error',report=REPORTS.operational,jobs=null,working=false,mode='repair',afterQueue='Queued',now}={}){
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'transcode-retry-')),data=path.join(root,'data'),media=path.join(root,'media','movies');
  await fs.mkdir(path.join(data,'recovery'),{recursive:true});await fs.mkdir(path.join(media,'Film'),{recursive:true});
  const library=path.join(media,'Film','new.mkv');await fs.writeFile(library,'IMPORTED REPLACEMENT');await fs.utimes(library,new Date(OLD),new Date(OLD));
@@ -18,7 +19,7 @@ async function fixture(t,{row='Transcode error',report=REPORTS.operational,jobs=
  const cases={[ID]:c},writeCases=()=>fs.writeFile(path.join(data,'recovery','state.json'),JSON.stringify({version:1,jobs:{},cases}));await writeCases();
  await fs.writeFile(path.join(data,'recovery','runtime-state.json'),JSON.stringify({version:1,mode,state:'running',reason:null,restarts:0,lastExitCode:null,lastExitSignal:null,lastStartedAt:null,lastExitedAt:null,updated:new Date().toISOString()}));
  const calls=[],state={row,journalAtWrite:null,jobs:jobs||[{_id:'job-1',file:FILE,status:'Transcode error',end:Date.now()+1000}]};
- const retry=createTranscodeRetry({data,getConfig:()=>({libraryId:'library',mediaRoot:media}),atomicJSON,
+ const retry=createTranscodeRetry({...(now?{now}:{}),data,getConfig:()=>({libraryId:'library',mediaRoot:media}),atomicJSON,
   tdarr:async(route,body)=>{calls.push([route,body]);
    if(route==='/api/v2/cruddb'&&body.mode==='getById')return state.row&&{_id:body.docID,DB:'library',TranscodeDecisionMaker:state.row};
    if(route==='/api/v2/bulk-update-files'){state.journalAtWrite=await fs.readFile(path.join(data,'recovery-retries',ID+'.json'),'utf8').catch(()=>null);if(afterQueue instanceof Error)throw afterQueue;state.row=afterQueue;return 'OK';}
@@ -29,11 +30,11 @@ async function fixture(t,{row='Transcode error',report=REPORTS.operational,jobs=
 }
 const writes=f=>f.calls.filter(([route])=>route!=='/api/v2/cruddb');
 
-for(const [cause,report,eligible,blockers]of [['operational',REPORTS.operational,true,[]],['unrecognized',REPORTS.unrecognized,true,[]],['decode-damage',REPORTS.damage,false,['transcode-decode-damage']],['unreadable',Error('gone'),false,['transcode-report-unreadable']]])
- test('the newest error report is classified as '+cause,async t=>{
+for(const [cause,report,eligible,blockers]of [['operational',REPORTS.operational,true,[]],['unrecognized',REPORTS.unrecognized,true,[]],['decode-damage',REPORTS.damage,false,['transcode-decode-damage']],['decode-damage',REPORTS.mpeg2,false,['transcode-decode-damage']],['unreadable',Error('gone'),false,['transcode-report-unreadable']]])
+ test('the newest error report is classified as '+cause+(report===REPORTS.mpeg2?' (MPEG-2 preflight)':''),async t=>{
   const f=await fixture(t,{report});const view=await f.retry.view(ID);
   assert.equal(view.eligible,eligible);assert.equal(view.cause,cause);assert.deepEqual(view.blockers,blockers);
-  if(cause==='decode-damage')assert.equal(view.message,'Invalid NAL unit size (# > #).','a value-free decoder message');
+  if(report===REPORTS.damage)assert.equal(view.message,'Invalid NAL unit size (# > #).','a value-free decoder message');
   assert.ok(!JSON.stringify(view).includes('/mnt/media')&&!JSON.stringify(view).includes(f.root),'no path leaves the server');
  });
 
@@ -49,7 +50,7 @@ test('the retry journals its intent, re-queues exactly that row and is offered o
  assert.deepEqual((await f.retry.view(ID)).blockers,['transcode-retry-failed-again'],'no retry loop');
 });
 test('an unconfirmed retry is uncertain; a retry needs acknowledgement, and a later failure ends retries',async t=>{
- const f=await fixture(t,{afterQueue:'Transcode error',jobs:[{_id:'job-1',file:FILE,status:'Transcode error',end:Date.now()+2}]});await new Promise(r=>setTimeout(r,20));const {snapshot}=await f.retry.view(ID);
+ const f=await fixture(t,{afterQueue:'Transcode error',jobs:[{_id:'job-1',file:FILE,status:'Transcode error',end:Date.now()+1000}],now:()=>Date.now()+2000});const {snapshot}=await f.retry.view(ID);
  await assert.rejects(f.retry.retry(ID,{snapshot}),{code:'retry_pending'});
  const view=await f.retry.view(ID);assert.equal(view.uncertain,true);
  await assert.rejects(f.retry.retry(ID,{snapshot}),{code:'retry_uncertain'});assert.equal(writes(f).length,1);
@@ -59,7 +60,11 @@ test('an unconfirmed retry is uncertain; a retry needs acknowledgement, and a la
 for(const [name,options,setup,blocker]of [
  ['the row is no longer failed',{row:'Queued'},null,'transcode-not-failed'],
  ['a Hold',{row:'Hold'},null,'transcode-not-failed'],
- ['the newest job is not the error',{jobs:[{_id:'job-1',file:FILE,status:'Transcode error',end:Date.now()+1000},{_id:'job-2',file:FILE,status:'Transcode success',end:Date.now()+2000}]},null,'transcode-report-unreadable'],
+ ['the newest job is not the error',{jobs:[{_id:'job-1',file:FILE,status:'Transcode error',end:Date.now()+1000},{_id:'job-2',file:FILE,status:'Transcode success',end:Date.now()+2000}]},null,'transcode-newest-not-error'],
+ ['the newest job has no end time while an older error job has',{jobs:[{_id:'job-1',file:FILE,status:'Transcode error',end:Date.now()+1000},{_id:'job-2',file:FILE,status:'Transcode error',start:Date.now()+2000}]},null,'transcode-job-unfinished'],
+ ['an older error job but a newer one without an end time',{jobs:[{_id:'job-1',file:FILE,status:'Transcode error',end:Date.now()+1000},{_id:'job-2',file:FILE,status:'Queued',start:Date.now()+2000}]},null,'transcode-newest-not-error'],
+ ['an unrecognized journal version',{},async f=>{await fs.mkdir(path.join(f.data,'recovery-retries'));await fs.writeFile(path.join(f.data,'recovery-retries',ID+'.json'),JSON.stringify({version:2,file:FILE}));},'transcode-unverified'],
+ ['a corrupt journal',{},async f=>{await fs.mkdir(path.join(f.data,'recovery-retries'));await fs.writeFile(path.join(f.data,'recovery-retries',ID+'.json'),'{not json');},'transcode-unverified'],
  ['the error job is older than the import',{jobs:[{_id:'job-1',file:FILE,status:'Transcode error',end:1}]},null,'transcode-unverified'],
  ['the file changed',{},async f=>{await fs.appendFile(f.library,'x');},'handoff-file-changed'],
  ['a hard-linked file',{},f=>fs.link(f.library,path.join(f.root,'link.mkv')),'handoff-file-unsafe'],

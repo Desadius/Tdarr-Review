@@ -201,6 +201,8 @@ export default {
     "Tdarr už převod nehlásí jako chybný; obnov stav.": "Tdarr no longer reports the transcode as failed; refresh the status.",
     "Report převodu v Tdarru nelze přečíst; opakování Review nenabídne, dokud příčina není známá.": "The transcode report in Tdarr cannot be read; Review offers no retry until the cause is known.",
     "Převod selhal na poškozeném souboru náhrady; poškozením se zabývá Recovery ve vlastním případu. Opakování nepomůže.": "The transcode failed on a damaged replacement file; Recovery handles the damage in its own case. A retry would not help.",
+    "Nejnovější úloha tohoto souboru v Tdarru není ta chybná; obnov stav.": "The newest Tdarr job of this file is not the failed one; refresh the status.",
+    "Nejnovější úloha tohoto souboru v Tdarru nemá čas konce; opakování se nenabízí, obnov stav.": "The newest Tdarr job of this file has no end time; no retry is offered, refresh the status.",
     "Stav převodu nelze ověřit; obnov stav.": "The transcode state cannot be verified; refresh the status.",
     "Review už převod jednou zopakovalo; další opakování nenabízí.": "Review has already retried the transcode once; it offers no further retry.",
     "Opakovaný převod také selhal; prověř Tdarr. Diagnostiku k exportu přinese další verze.": "The retried transcode failed too; inspect Tdarr. An exportable diagnostic comes in a later version.",

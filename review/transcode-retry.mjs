@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import {readRecoveryCaseState,readRecoveryRuntime} from './recovery-snapshot.mjs';
 import {compareIdentity,identityOf} from '../recovery/file-identity.mjs';
 import {createTdarrFileState} from '../recovery/tdarr-file-state.mjs';
-import {classify} from '../recovery/policy.mjs';
+import {classify,originalFailureReport} from '../recovery/policy.mjs';
 import {caseLibraryRoot,replacementTdarrFile,importTime} from './recovery-case-paths.mjs';
 
 // A failed Tdarr transcode of a Recovery replacement (#232). The server reads the report of the newest
@@ -37,7 +37,7 @@ export function createTranscodeRetry({data,getConfig,tdarr,readRows,readReport,i
  const directory=path.join(data,'recovery-retries');
  const journalFile=id=>path.join(directory,id+'.json');
  const files=()=>createTdarrFileState(tdarr,{libraryId:getConfig()?.libraryId});
- async function readJournal(id){try{const value=JSON.parse(await fs.readFile(journalFile(id),'utf8'));return object(value)&&value.version===1?value:null;}catch(e){if(e.code==='ENOENT')return null;throw e;}}
+ async function readJournal(id){try{const value=JSON.parse(await fs.readFile(journalFile(id),'utf8'));if(!object(value)||value.version!==1)throw Object.assign(Error(),{code:'RETRY_JOURNAL'});return value;}catch(e){if(e.code==='ENOENT')return null;throw e;}}
  async function cases(){const read=await readRecoveryCaseState(path.join(data,'recovery','state.json'));return read.error?null:read.present?read.cases:{};}
 
  /** The cause of the replacement's failed transcode: decode-damage, operational, unrecognized or unreadable. */
@@ -47,13 +47,18 @@ export function createTranscodeRetry({data,getConfig,tdarr,readRows,readReport,i
   if(!c||c.status!=='replacement_imported'||!file)return {cause:'unreadable'};
   let row,jobs;try{row=await files().read(file);jobs=await readRows('jobsjsondb');}catch{return {cause:'unreadable'};}
   if(row?.TranscodeDecisionMaker!=='Transcode error')return {cause:'not-failed'};
-  const newest=jobs.filter(j=>j?.file===file&&Number.isFinite(Number(j?.end))).sort((a,b)=>Number(b.end)-Number(a.end))[0];
-  if(!newest||!/error/i.test(String(newest.status||'')))return {cause:'unreadable'};
+  // Every job of the file counts; a job without an end time is ordered by its start, or is treated as the newest when it has neither.
+  const when=j=>Number.isFinite(Number(j.end))&&j.end!==null&&j.end!==''?Number(j.end):Number.isFinite(Number(j.start))&&j.start!==null&&j.start!==''?Number(j.start):Infinity;
+  const newest=jobs.filter(j=>j?.file===file).sort((a,b)=>when(b)-when(a))[0];
+  if(!newest)return {cause:'unreadable'};
+  if(!/error/i.test(String(newest.status||'')))return {cause:'newer-job'};
+  if(!Number.isFinite(Number(newest.end))||newest.end===null||newest.end==='')return {cause:'job-unfinished'};
   let report;try{report=await readReport(newest);}catch{return {cause:'unreadable',job:newest};}
   if(typeof report!=='string')return {cause:'unreadable',job:newest};
+  // Recovery's own reading of a report: operational first, then every damage pattern its job scan opens a case for.
   const result=classify({code:1,stderr:report});
-  const cause=result.kind==='corrupt'?'decode-damage':result.kind==='operational'?'operational':'unrecognized';
-  return {cause,...(result.signature?{message:valueFree(result.signature)}:{}),job:newest,c,file,row,all};
+  const cause=result.kind==='operational'?'operational':originalFailureReport(report)?'decode-damage':'unrecognized';
+  return {cause,...(cause==='decode-damage'&&result.signature?{message:valueFree(result.signature)}:{}),job:newest,c,file,row,all};
  }
 
  /** Whether the one Review retry may run now, from fresh reads. */
@@ -61,6 +66,8 @@ export function createTranscodeRetry({data,getConfig,tdarr,readRows,readReport,i
   const d=await diagnose(caseId),no=(...blockers)=>({eligible:false,cause:d.cause,...(d.message?{message:d.message}:{}),blockers});
   if(d.cause==='not-failed')return no('transcode-not-failed');
   if(d.cause==='unreadable')return no('transcode-report-unreadable');
+  if(d.cause==='newer-job')return no('transcode-newest-not-error');
+  if(d.cause==='job-unfinished')return no('transcode-job-unfinished');
   if(d.cause==='decode-damage')return no('transcode-decode-damage');
   const {c,file,job}=d,cfg=getConfig()||{},root=caseLibraryRoot(c);
   if(!root||!cfg.mediaRoot||path.resolve(root)!==path.resolve(cfg.mediaRoot))return no('transcode-unverified');

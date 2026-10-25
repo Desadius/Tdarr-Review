@@ -127,3 +127,11 @@ for(const [name,options,blocker]of [
 ])test('the untranscoded assessment names its blocker: '+name,async t=>{
  const f=await fixture(t,options);assert.deepEqual((await f.assessment.view(ID)).blockers,[blocker]);
 });
+test('a Not required decision on the original path does not count for the untranscoded replacement',async t=>{
+ const f=await fixture(t,{transcode:false,row:{TranscodeDecisionMaker:'Not required'},jobs:[{file:'/tdarr/movies/Film/old.mkv',status:'Not required',end:Date.now()+1000}]});
+ await f.writeCase({...f.c,file:'/tdarr/movies/Film/old.mkv'});
+ assert.deepEqual((await f.assessment.view(ID)).blockers,['installed-no-decision']);
+ const own=await fixture(t,{transcode:false,row:{TranscodeDecisionMaker:'Not required'},jobs:[{file:TDARR,status:'Not required',end:Date.now()+1000}]});
+ await own.writeCase({...own.c,file:'/tdarr/movies/Film/old.mkv'});
+ assert.equal((await own.assessment.view(ID)).eligible,true,'the replacement\'s own decision counts');
+});

@@ -106,6 +106,8 @@ const BLOCKERS={'source-not-confirmed':'Vada originálu není potvrzená dvěma 
  'transcode-not-failed':'Tdarr už převod nehlásí jako chybný; obnov stav.',
  'transcode-report-unreadable':'Report převodu v Tdarru nelze přečíst; opakování Review nenabídne, dokud příčina není známá.',
  'transcode-decode-damage':'Převod selhal na poškozeném souboru náhrady; poškozením se zabývá Recovery ve vlastním případu. Opakování nepomůže.',
+ 'transcode-newest-not-error':'Nejnovější úloha tohoto souboru v Tdarru není ta chybná; obnov stav.',
+ 'transcode-job-unfinished':'Nejnovější úloha tohoto souboru v Tdarru nemá čas konce; opakování se nenabízí, obnov stav.',
  'transcode-unverified':'Stav převodu nelze ověřit; obnov stav.',
  'transcode-retry-used':'Review už převod jednou zopakovalo; další opakování nenabízí.',
  'transcode-retry-failed-again':'Opakovaný převod také selhal; prověř Tdarr. Diagnostiku k exportu přinese další verze.',

@@ -64,7 +64,7 @@ export function createInstalledAssessment({data,getConfig,getItems,tdarr,readRow
   const tdarrPath=path.posix.join(path.posix.dirname(c.file),path.posix.basename(copy.relative));
   let row,jobs;
   try{row=await createTdarrFileState(tdarr,{libraryId:getConfig()?.libraryId}).read(tdarrPath);jobs=await readRows('jobsjsondb');}catch{return fail('installed-unverified');}
-  const imported=importTime(c.replacementSourceFP),decided=status=>Number.isFinite(imported)&&jobs.some(j=>[c.file,tdarrPath].includes(j?.file)&&status.test(String(j?.status||''))&&Number(j?.end)>imported);
+  const imported=importTime(c.replacementSourceFP),decided=status=>Number.isFinite(imported)&&jobs.some(j=>(untranscoded?[tdarrPath]:[c.file,tdarrPath]).includes(j?.file)&&status.test(String(j?.status||''))&&Number(j?.end)>imported);
   if(untranscoded){if(row?.TranscodeDecisionMaker!=='Not required')return fail('installed-not-transcoded');if(!decided(/^not required$/i))return fail('installed-no-decision');}
   else{if(row?.TranscodeDecisionMaker!=='Transcode success')return fail('installed-tdarr-not-success');if(!decided(/^Transcode success$/))return fail('installed-no-success-job');}
   if(Object.values(getItems()||{}).some(item=>item?.relative===copy.relative))return fail('installed-review-pending');
