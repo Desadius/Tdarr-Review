@@ -41,6 +41,9 @@ export const BUSY_POLICIES=Object.freeze({
  // Forgetting a pending node restore is allowed during an action (that is when a
  // node paused by the user would be resumed) but never while a resume is running.
  keepPaused:Object.freeze(['foreground','resumeTask','recoveryRestore']),
+ // Deferral edits Review-only attention metadata; a scan is excluded so its
+ // freshly bound case cannot change while the CAS confirmation is accepted.
+ deferral:Object.freeze([...foreground,'scan']),
 });
 
 export function busyFor(kind,activities){
@@ -62,6 +65,7 @@ export function mutationKind(method,pathname){
  if(/^\/api\/radarr\/requests\/[a-f0-9]{24}\/restore$/.test(pathname))return 'restore';
  if(/^\/api\/recovery\/cases\/[a-f0-9]{24}\/restore-original$/.test(pathname))return 'restore';
  if(/^\/api\/recovery\/cases\/[a-f0-9]{24}\/restore-original\/reconcile$/.test(pathname))return 'restoreReconcile';
+ if(/^\/api\/recovery\/cases\/[a-f0-9]{24}\/defer(?:\/reopen)?$/.test(pathname))return 'deferral';
  // Manual replacement of a confirmed faulty original without a Review result (#153).
  if(/^\/api\/recovery\/cases\/[a-f0-9]{24}\/replace-source$/.test(pathname))return 'replace';
  // Assessment of an installed result (#230): the draft is review state; approval publishes retention evidence.

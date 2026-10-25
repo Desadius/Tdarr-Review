@@ -163,6 +163,8 @@ In **Verify**, an in-flight repair is paused and the Recovery detail says which 
 
 Each case under **Needs attention** (**Vyžaduje zásah**) says what happened, where the film is now and what you can do. The server works this out from fresh reads; the page only shows it.
 
+You can **Defer case** (**Odložit případ**) with a required note of at most 1,000 characters. The case moves to the separate **Deferred** list and count; it stays unresolved, unapproved and unverified. The note is plain text shared with everyone signed in to Review. Choose **Reopen case** (**Znovu otevřít případ**) to return it to active attention. A material phase, file identity or binding change also restores attention automatically; routine status updates do not. Review saves that invalidation so reverting the old phase later does not hide the case again. A safely verified missing copy may be deferred; symlinked, unreadable or otherwise unsafe files and case bindings cannot. Neither action changes Recovery state, files, quarantine, retention or approval.
+
 ### Return a preserved original
 
 A `manual` Recovery case can offer **Restore only the original** (**Vrátit pouze původní soubor**) when Review can prove that the exact recorded original is still in quarantine, its original library path is empty, the same Radarr movie has no file or queued download, and Tdarr is not processing that source. Review asks you to confirm the original alone. Recovery previously marked it faulty, so it may still be damaged; restoring it does not mark it healthy, approve it, release a Tdarr Hold, change a Radarr profile or extend the quarantine deadline. Any changed file, uncertain history, busy worker, unreadable service, or occupied path blocks the action.
