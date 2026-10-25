@@ -34,5 +34,15 @@ test('Not required recommends assessing the untranscoded copy, explains why ther
  assert.equal(x.recommended,'assessInstalled');assert.deepEqual(x.actions.map(v=>v.id),['refresh','assessInstalled']);
  assert.deepEqual(x.blockers,['transcode-not-required','restore-over-installed']);
  const b=await attention(t,{installed:{eligibility:async()=>({eligible:false,blockers:['installed-no-decision']})}});
- const p=skipped();await b.attach(p);assert.deepEqual(p.requests[0].attention.blockers,['transcode-not-required','installed-no-decision']);
+ const p=skipped();await b.attach(p);assert.deepEqual(p.requests[0].attention.blockers,['transcode-not-required','installed-no-decision','restore-over-installed']);
+});
+for(const [name,make,deps]of [['a failed transcode',failed,{retry:{eligibility:async()=>({eligible:true,blockers:[],cause:'operational'})}}],['a skipped transcode the copy cannot be assessed for',skipped,{installed:{eligibility:async()=>({eligible:false,blockers:['installed-no-decision']})}}]])
+ test('restore is never offered over the current copy of '+name,async t=>{
+  const a=await attention(t,deps),o=make();o.requests[0].canRestore=true;await a.attach(o);
+  assert.ok(!o.requests[0].attention.actions.some(v=>v.id==='restore'));assert.ok(o.requests[0].attention.blockers.includes('restore-over-installed'));
+ });
+test('a second failure shows the blocker and no retry action',async t=>{
+ const a=await attention(t,{retry:{eligibility:async()=>({eligible:false,blockers:['transcode-retry-failed-again'],cause:'operational'})}});
+ const o=failed();await a.attach(o);const x=o.requests[0].attention;
+ assert.ok(!x.actions.some(v=>v.id==='retryTranscode'));assert.deepEqual(x.blockers,['transcode-retry-failed-again']);
 });

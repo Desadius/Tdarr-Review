@@ -136,8 +136,10 @@ export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnec
   if(record.sourceReplacement)actions.push({id:'replaceSource',changes:'starts-work'});
   else if(record.sourceReplacementBlocked)blockers.push('replacement-blocked');
   // Never return the obsolete or faulty original over a current copy that can be assessed instead.
-  if(record.canRestore===true&&!installedResult?.eligible)actions.push({id:'restore',changes:'moves-files'});
-  else if(installedResult?.eligible)blockers.push('restore-over-installed');
+  // The imported replacement is the current copy of a failed or skipped transcode (#232): the original never goes back over it.
+  const currentCopy=reason==='transcode-error'||reason==='transcode-skipped';
+  if(record.canRestore===true&&!installedResult?.eligible&&!currentCopy)actions.push({id:'restore',changes:'moves-files'});
+  else if(installedResult?.eligible||currentCopy&&record.canRestore===true)blockers.push('restore-over-installed');
   const prefer=importDiagnosisReasons.has(reason)?[importDiagnosis?.status!=='verified'?'refresh':importDiagnosis?.movieUrl?'openRadarr':importDiagnosis?.queueUrl?'openQueue':'refresh']:
    ({'binding-failure':['replaceSource'],'awaiting-review':['openReview','assessInstalled'],'follow-up-complete':['openReview','assessInstalled'],'tdarr-missing':['handoffTdarr'],'transcode-error':['retryTranscode'],'transcode-skipped':['assessInstalled'],'queue-failed':['openRadarr'],'search-failed':['openRadarr'],'original-outside-library':['openRadarr']}[reason]||[]);
   const recommended=prefer.map(id=>actions.find(a=>a.id===id)).find(Boolean)||actions[0];
