@@ -50,6 +50,9 @@ function writeItem(item,action){
 function confirmSetup(label,title,text,commit,reason=false){
  confirmOrigin=document.activeElement;
  $('rejectReasonBox').hidden=!reason;$('rejectReason').required=reason;$('rejectReason').setCustomValidity(tr(''));
+ $('rejectReasonBox').querySelector('label').textContent=tr(pending?.action==='defer'?'Poznámka pro přihlášené uživatele Review':'Důvod rozhodnutí');
+ $('rejectReasonBox').querySelector('p').textContent=tr(pending?.action==='defer'?'Poznámka se uloží pouze do Review a uvidí ji všichni přihlášení uživatelé.':'Důvod se uloží do historie.');
+ $('rejectReason').maxLength=1000;$('rejectReason').placeholder=tr(pending?.action==='defer'?'Napiš, co má další člověk vědět.':'Co je potřeba ověřit nebo opravit?');
  $('confirm').returnValue='';$('dialogLabel').textContent=tr(label);$('dialogTitle').textContent=pending?.action==='batch'?tr(title):title;$('dialogText').textContent=tr(text);$('commit').textContent=tr(commit);$('commit').disabled=false;
 }
 const drafts=new Map();
@@ -115,9 +118,14 @@ function runAttentionAction(record,action){
  if(action.id==='openReview'){const item=latest?.items.find(x=>x.id===action.itemId);if(item)return openDetail('review',item.id);return error(Error(tr('Výsledek už v Review není. Obnov stav.')));}
  if(action.id==='replaceSource')return askSourceReplacement(record);
  if(action.id==='restore')return askRestore(record);
+ if(action.id==='defer'){
+  pending={record,action:'defer',revision:action.revision};confirmSetup('ODLOŽIT PŘÍPAD',record.title,'Případ zmizí z aktivní pozornosti, dokud se nezmění jeho důležitá fáze nebo vazba. Odložení nic neschvaluje a nemění karanténu. Poznámka bude viditelná všem přihlášeným uživatelům Review.','Odložit případ',true);
+  $('rejectReason').value='';$('rejectReason').maxLength=1000;$('rejectReason').placeholder=tr('Napiš, co má další člověk vědět.');$('confirm').showModal();return;
+ }
+ if(action.id==='reopen')return (async()=>{try{await api('/api/recovery/cases/'+record.id+'/defer/reopen',{confirm:true,revision:action.revision});await loadRequests(true)}catch(e){error(e)}})();
 }
 $('rejectReason').addEventListener('input',()=>{$('rejectReason').setCustomValidity(tr(''));if(pending?.item)drafts.set(pending.item.id+':'+pending.action,$('rejectReason').value)});
-$('commit').addEventListener('click',e=>{if(['reject','replace','replaceSource'].includes(pending?.action)&&!$('rejectReason').value.trim()){e.preventDefault();$('rejectReason').setCustomValidity(tr('Uveď důvod rozhodnutí.'));$('rejectReason').reportValidity();}});
+$('commit').addEventListener('click',e=>{if(['reject','replace','replaceSource','defer'].includes(pending?.action)&&!$('rejectReason').value.trim()){e.preventDefault();$('rejectReason').setCustomValidity(tr(pending?.action==='defer'?'Uveď poznámku k odložení.':'Uveď důvod rozhodnutí.'));$('rejectReason').reportValidity();}});
 $('confirm').addEventListener('cancel',()=>{$('confirm').returnValue='cancel'});
 $('confirm').addEventListener('close',async()=>{
  const request=pending,confirmed=$('confirm').returnValue==='confirm',reason=$('rejectReason').value.trim();pending=null;$('confirm').returnValue='';if(!confirmed||!request){if(confirmOrigin?.isConnected&&!confirmOrigin.disabled)confirmOrigin.focus({preventScroll:true});else if($('filmDetail').open)$('detailClose').focus();return;}
@@ -131,6 +139,7 @@ $('confirm').addEventListener('close',async()=>{
   else if(request.action==='handoff'){const current=requests.find(r=>r.id===request.record.id&&r.source==='recovery');if(!current?.attention?.actions?.some(a=>a.id==='handoffTdarr'))throw Error('Stav případu se změnil. Obnov údaje.');}
   else if(request.action==='installedApprove'){const current=requests.find(r=>r.id===request.record.id&&r.source==='recovery');if(!current?.attention?.actions?.some(a=>a.id==='assessInstalled'))throw Error('Stav případu se změnil. Obnov údaje.');}
   else if(request.action==='replaceSource'){const current=requests.find(r=>r.id===request.record.id&&r.source==='recovery');if(!current||!caps(current).replaceSource||current.sourceReplacement.snapshot!==request.record.sourceReplacement.snapshot)throw Error('Stav případu se změnil. Obnov údaje.');}
+  else if(request.action==='defer'){const current=requests.find(r=>r.id===request.record.id&&r.source==='recovery');if(!current?.attention?.actions?.some(a=>a.id==='defer'&&a.revision===request.revision))throw Error('Vazba případu se změnila. Obnov údaje.');}
   else writeItem(request.item,request.action);
   if(request.action==='approve'&&latest?.reviewSessions?.[request.item.id]?.revision!==request.reviewRevision)throw Error('Posouzení se od otevření potvrzení změnilo. Znovu ověř uložené kontroly.');
   if(request.action==='batch'&&request.items.some(item=>latest?.reviewSessions?.[item.id]?.revision!==request.reviewRevisions[item.id]))throw Error('Posouzení vybraných filmů se změnilo. Znovu ověř uložené kontroly.');
@@ -143,6 +152,7 @@ $('confirm').addEventListener('close',async()=>{
   else if(request.action==='handoff')await api('/api/recovery/cases/'+request.record.id+'/handoff',{snapshot:request.snapshot,confirm:true,...(request.uncertain?{acknowledgeUncertain:true}:{})});
   else if(request.action==='installedApprove')await api('/api/recovery/cases/'+request.record.id+'/installed/approve',{snapshot:request.snapshot,confirm:true});
   else if(request.action==='replaceSource')await api('/api/recovery/cases/'+request.record.id+'/replace-source',{snapshot:request.record.sourceReplacement.snapshot,reason});
+  else if(request.action==='defer')await api('/api/recovery/cases/'+request.record.id+'/defer',{confirm:true,revision:request.revision,note:reason});
   else await api(`/api/items/${request.item.id}/${request.action}`,{snapshot:request.item.snapshot,reviewRevision:request.action==='approve'?request.reviewRevision:undefined,acceptDuration:request.acceptDuration===true,reason:['reject','replace'].includes(request.action)?reason:undefined});
   if(request.item)drafts.delete(request.item.id+':'+request.action);
   $('filmDetail').close();lastRender='';await load();await loadRequests(true);
@@ -207,7 +217,7 @@ function renderAttention(){
  $('saving').textContent=tr(fmt((latest?.items||[]).filter(x=>x.status==='ready').reduce((s,x)=>s+x.originalBytes-x.reviewBytes,0)));
  $('list').classList.toggle('gallery',ui.layout==='gallery');keyed($('list'),items.map(item=>{const preparation=latest?.previews?.[item.id];return {...item,reviewSession:latest?.reviewSessions?.[item.id],preparation:preparation?{...preparation,updated:undefined}:preparation}}),x=>x.id,reviewRow);$('reviewEmpty').hidden=!!items.length;$('reviewEmpty').textContent=tr(latest?.items.length?'Tomuto hledání neodpovídá žádný výsledek.':'Všechny výsledky jsou vyřízené. Nové se objeví automaticky po dokončení převodu.');
  for(const radio of document.querySelectorAll('input[name=layout]'))radio.checked=radio.value===ui.layout;
- const warnings=historyWarnings(latest?.history||[]),attention=projectRequests(requests,latest?.items||[],Date.now()).filter(x=>x.classification.category==='attention');
+ const warnings=historyWarnings(latest?.history||[]),attention=projectRequests(requests,latest?.items||[],Date.now()).filter(x=>x.classification.category==='attention'&&x.displayCategory!=='deferred');
  $('events').hidden=!warnings.length&&!attention.length;
  const events=[];if(warnings.length)events.push({kind:'history',count:warnings.length});if(attention.length)events.push({kind:'recovery',count:attention.length});
  keyed($('events'),events,x=>x.kind,x=>{const row=el('div'),b=button(x.kind==='history'?'Historie':'Obnovy',()=>navigate(x.kind,{filter:x.kind==='history'?'warning':'attention'}));b.dataset.focus='event:'+x.kind;row.append(el('span','',x.kind==='history'?`${x.count} upozornění v historii`:`${x.count} obnov k ověření`),b);return row});
@@ -215,19 +225,22 @@ function renderAttention(){
 }
 function recoveryRow(projected){
  const r=projected.record||projected.raw||projected,cl=projected.classification||classifyRecovery(r,Date.now()),row=el('article','recovery-row'),info=el('div','row-info');
- info.append(badge(cl.label,cl.category==='attention'?'warning':cl.category==='done'?'ready':''),el('h2','',r.title,true),el('p','details',cl.nextStep));
+ const deferred=r.deferral?.state==='deferred';info.append(badge(deferred?'Odloženo':cl.label,deferred?'':cl.category==='attention'?'warning':cl.category==='done'?'ready':''),el('h2','',r.title,true),el('p','details',deferred?'Případ zůstává nevyřešený; odložení není schválení ani potvrzení zdravého stavu.':cl.nextStep));
+ if(deferred&&r.deferral.note){const note=el('p','details');note.append(el('span','','Poznámka k odložení: '),el('span','',r.deferral.note,true));info.append(note)}
  const importDiagnosis=importDiagnosisView(r.attention?.importDiagnosis);if(importDiagnosis)info.append(importDiagnosis);
- if(r.attention)info.append(attentionActionsView(r.attention,action=>runAttentionAction(r,action),{recommendedOnly:true}));
+ if(deferred){const action=r.attention?.actions?.find(a=>a.id==='reopen');if(action)info.append(button('Znovu otevřít případ',()=>runAttentionAction(r,action)));}
+ else if(r.attention)info.append(attentionActionsView(r.attention,action=>runAttentionAction(r,action),{recommendedOnly:true}));
  const progress=recoveryProgress(r);if(progress)info.append(decodeProgressView(progress,false));const hashProgress=fullHashProgress(r);if(hashProgress)info.append(fullHashProgressView(hashProgress,false));for(const download of downloadProgress(r).slice(0,1))info.append(downloadProgressView(download,false));
  const meta=el('div','row-metric');meta.append(el('span','details',r.source==='recovery'?'Recovery · Radarr · Tdarr':'Náhrada přes Radarr'),el('small',cl.stale?'failure':'details',cl.stale?'Stav starší než 12 minut':date(r.statusUpdated||r.updated)));
  const b=button('Prohlédnout',()=>openDetail('request',projected.key));b.setAttribute('aria-label',tr('Prohlédnout obnovu '+r.title));b.dataset.focus='recovery:'+projected.key;
  row.append(poster('request',r.id,r.title),info,meta,b);return row;
 }
 function renderRecovery(){
- const projects=projectRequests(requests,latest?.items||[],Date.now()),categories=[['running','Probíhá'],['waiting','Čeká'],['attention','Vyžaduje zásah'],['unverified','Stav nelze ověřit'],['done','Dokončeno']];
- makeTabs($('recoveryFilters'),categories.map(([key,title])=>[key,`${title} (${projects.filter(p=>p.classification.category===key).length})`]),ui.filter,id=>navigate('recovery',{filter:id}));
+ const projects=projectRequests(requests,latest?.items||[],Date.now()),categories=[['running','Probíhá'],['waiting','Čeká'],['attention','Vyžaduje zásah'],['unverified','Stav nelze ověřit'],['deferred','Odloženo'],['done','Dokončeno']];
+ makeTabs($('recoveryFilters'),categories.map(([key,title])=>[key,`${title} (${projects.filter(p=>p.displayCategory===key).length})`]),ui.filter,id=>navigate('recovery',{filter:id}));
  $('recoveryPanel').setAttribute('aria-labelledby','recoveryFilters-'+ui.filter);
- const query=$('recoverySearch').value.trim().toLocaleLowerCase(),visible=projects.filter(p=>p.classification.category===ui.filter&&(p.record||p.raw||p).title.toLocaleLowerCase().includes(query));
+ const query=$('recoverySearch').value.trim().toLocaleLowerCase(),visible=projects.filter(p=>p.displayCategory===ui.filter&&(p.record||p.raw||p).title.toLocaleLowerCase().includes(query));
+ $('recoveryCount').textContent=tr(projects.filter(p=>p.displayCategory!=='done'&&p.displayCategory!=='deferred').length);$('deferredCount').textContent=tr(projects.filter(p=>p.displayCategory==='deferred').length);
  $('recoveryRuntime').replaceChildren(recoveryRuntimeView(recoveryRuntime));
  const restartWarning=recoveryRestartWarningView(requests,recoveryRuntime);$('recoveryRestartWarning').hidden=!restartWarning;$('recoveryRestartWarning').replaceChildren(...(restartWarning?[restartWarning]:[]));
  const configNotice=recoveryConfigNoticeView(recoveryConfig);$('recoveryConfig').hidden=!configNotice;$('recoveryConfig').replaceChildren(...(configNotice?[configNotice]:[]));$('recoveryError').hidden=!requestsError;$('recoveryError').textContent=tr(requestsError?'Stav obnov není dostupný. Poslední údaje zůstávají zobrazené: '+requestsError:'');
@@ -334,7 +347,7 @@ function originalRestorePanel(r){
 }
 function detailRequest(r,tab){
  const box=$('detailBody'),cl=classifyRecovery(r,Date.now());box.replaceChildren();
- if(tab==='overview'){box.append(el('h3','',cl.label),el('p','',cl.nextStep));if(r.attention)box.append(attentionView(r.attention,action=>runAttentionAction(r,action)));for(const warning of cl.warnings||[])box.append(el('p','alert inline-warning',warning));const progress=recoveryProgress(r);if(progress)box.append(decodeProgressView(progress));const hashProgress=fullHashProgress(r);if(hashProgress)box.append(fullHashProgressView(hashProgress));box.append(detailsFacts([['Poslední potvrzený stav',date(r.statusUpdated||r.updated)],['Původní kopie',r.quarantineRetained?'Zachovaná v karanténě':r.sourceRetained||r.phase==='waiting_source_kept'?'Zůstává v Plexu; vydání vyloučeno z převodů':'Viz aktuální protokol obnovy'],['Další hledání',r.nextSearchAt?date(r.nextSearchAt):'Termín není doložen'],['Další pokus obnovy',r.nextRetryAt?date(r.nextRetryAt):'Termín není doložen']]));if(r.message&&!['import-blocked','queue-failed'].includes(r.attention?.reason))box.append(el('p','details',r.message));
+ if(tab==='overview'){box.append(el('h3','',cl.label),el('p','',cl.nextStep));if(r.deferral?.note){const note=el('p','details');note.append(el('span','','Poznámka k odložení: '),el('span','',r.deferral.note,true));box.append(note)}if(r.attention)box.append(attentionView(r.attention,action=>runAttentionAction(r,action)));for(const warning of cl.warnings||[])box.append(el('p','alert inline-warning',warning));const progress=recoveryProgress(r);if(progress)box.append(decodeProgressView(progress));const hashProgress=fullHashProgress(r);if(hashProgress)box.append(fullHashProgressView(hashProgress));box.append(detailsFacts([['Poslední potvrzený stav',date(r.statusUpdated||r.updated)],['Původní kopie',r.quarantineRetained?'Zachovaná v karanténě':r.sourceRetained||r.phase==='waiting_source_kept'?'Zůstává v Plexu; vydání vyloučeno z převodů':'Viz aktuální protokol obnovy'],['Další hledání',r.nextSearchAt?date(r.nextSearchAt):'Termín není doložen'],['Další pokus obnovy',r.nextRetryAt?date(r.nextRetryAt):'Termín není doložen']]));if(r.message&&!['import-blocked','queue-failed'].includes(r.attention?.reason))box.append(el('p','details',r.message));
   if(r.legacyReplacementBinding===true)box.append(el('p','details','Stav Tdarru je dohledán podle přesné historické cesty náhrady. Tato vazba nepotvrzuje schválení filmu ani neopravňuje k úklidu karantény.'));
   if(r.error==='Approved replacement metadata timestamp changed; content identity is not reverified; quarantine preserved')box.append(el('p','details','Změnil se pouze čas změny metadat schválené kopie. Není to potvrzené poškození filmu. Karanténa zůstává zachovaná, protože chybí nový důkaz shody obsahu; další převod ani stažení nejsou tímto hlášením vyžádány.'));
   const next=recoveryFollowup(r,requests);
@@ -411,7 +424,7 @@ function render(d){
  latest=d;authenticated=true;document.querySelector('.server').textContent=d.label||'Tdarr Review';$('login').hidden=true;$('workspace').hidden=false;
  if(ui.detail?.kind==='review')reviewWorkspace?.observePreparation(d.previews?.[ui.detail.id],{authoritative:true});
  for(const id of selected)if(!d.items.some(x=>x.id===id&&caps(x).select))selected.delete(id);
- $('attentionCount').textContent=tr(d.items.length);$('recoveryCount').textContent=tr(projectRequests(requests,d.items,Date.now()).filter(x=>x.classification.category!=='done').length);
+ $('attentionCount').textContent=tr(d.items.length);const recoveryProjects=projectRequests(requests,d.items,Date.now());$('recoveryCount').textContent=tr(recoveryProjects.filter(x=>x.displayCategory!=='done'&&x.displayCategory!=='deferred').length);$('deferredCount').textContent=tr(recoveryProjects.filter(x=>x.displayCategory==='deferred').length);
  const warningCount=historyWarnings(d.history||[]).length;$('historyCount').hidden=!warningCount;$('historyCount').textContent=tr(warningCount);
  renderNodeRestores(Array.isArray(d.pendingRestores)?d.pendingRestores:[]);$('notice').hidden=!(d.recovery?.length||d.restorePending);$('notice').textContent=tr(d.recovery?.length?'Nedokončená výměna vyžaduje kontrolu. Další změny jsou zablokované; soubory nepřesouvej ručně.':d.restorePending?'Obnova stavu nodů v Tdarru není dokončená. Změny jsou zablokované; ověř jejich pozastavení.':'');
  renderAttention();renderRecovery();renderHistory();renderBatch();paintProgress();updateGuards();handleHash();
@@ -419,14 +432,14 @@ function render(d){
 function renderBatch(){const b=latest?.batch;$('batch').hidden=!b||b.status!=='running';$('batch').replaceChildren();if(b?.status==='running'){const p=el('progress','batch-meter');p.max=b.total;p.value=b.finished;p.setAttribute('aria-label',tr('Dokončené filmy dávky'));$('batch').append(el('strong','',`Hromadné schválení · ${b.finished} z ${b.total}`),p,el('span','details',`Chyby: ${b.failed}${b.message?' · '+b.message:''}`))}}
 async function load(){if(loading)return;loading=true;try{const d=await api('/api/items');receivedAt=Date.now();serverAt=d.serverTime||receivedAt;authenticated=true;dataError='';$('lastUpdate').textContent=tr(date(receivedAt));$('lastUpdate').dateTime=new Date(receivedAt).toISOString();const sig=previewRenderSignature(d);if(sig!==lastRender||$('workspace').hidden||!$('login').hidden){render(d);lastRender=sig}else{if(latest)latest.previews=d.previews||{};updateGuards()}}catch(e){dataError=e.message;updateGuards();if(!latest)error(e)}finally{loading=false}}
 // refreshKeys: a read-only refresh of Recovery attention (#229), of the named cases or, when empty, of all of them.
-async function loadRequests(force=false,refreshKeys){if(requestsLoading||!authenticated||(!force&&Date.now()-requestsReceived<30000))return;requestsLoading=true;try{const d=refreshKeys?await api('/api/recovery/refresh',refreshKeys.length?{keys:refreshKeys}:{}):await api('/api/radarr/requests');requests=d.requests;recoveryConfig=d.recoveryConfig||null;recoveryRuntime=d.recoveryRuntime||null;requestsReceived=Date.now();requestsError='';if(latest){renderAttention();renderRecovery();$('recoveryCount').textContent=tr(projectRequests(requests,latest.items,Date.now()).filter(x=>x.classification.category!=='done').length);const live=ui.detail?.kind==='request'?liveRecoveryRecord(ui.detail.record,requests)||(refreshKeys?requests.find(x=>x.id===ui.detail.record.id&&x.source===ui.detail.record.source):null):null;if(live){ui.detail.record=live;$('detailSubtitle').textContent=tr(classifyRecovery(live).label);renderDetailTab();}updateGuards();handleHash()}}catch(e){requestsError=e.message;if(authenticated){try{recoveryRuntime=await api('/api/recovery/runtime')}catch{}}renderRecovery();updateGuards()}finally{requestsLoading=false}}
+async function loadRequests(force=false,refreshKeys){if(requestsLoading||!authenticated||(!force&&Date.now()-requestsReceived<30000))return;requestsLoading=true;try{const d=refreshKeys?await api('/api/recovery/refresh',refreshKeys.length?{keys:refreshKeys}:{}):await api('/api/radarr/requests');requests=d.requests;recoveryConfig=d.recoveryConfig||null;recoveryRuntime=d.recoveryRuntime||null;requestsReceived=Date.now();requestsError='';if(latest){renderAttention();renderRecovery();const projects=projectRequests(requests,latest.items,Date.now());$('recoveryCount').textContent=tr(projects.filter(x=>x.displayCategory!=='done'&&x.displayCategory!=='deferred').length);$('deferredCount').textContent=tr(projects.filter(x=>x.displayCategory==='deferred').length);const live=ui.detail?.kind==='request'?liveRecoveryRecord(ui.detail.record,requests)||(refreshKeys?requests.find(x=>x.id===ui.detail.record.id&&x.source===ui.detail.record.source):null):null;if(live){ui.detail.record=live;$('detailSubtitle').textContent=tr(classifyRecovery(live).label);renderDetailTab();}updateGuards();handleHash()}}catch(e){requestsError=e.message;if(authenticated){try{recoveryRuntime=await api('/api/recovery/runtime')}catch{}}renderRecovery();updateGuards()}finally{requestsLoading=false}}
 function parseHash(){const [view,query='']=location.hash.slice(1).split('?');return {view:['attention','recovery','history','savings','settings'].includes(view)?view:'attention',params:new URLSearchParams(query)}}
 function navigate(view,params={}){if(view==='recovery'&&!params.filter)params.filter=ui.filter;const query=new URLSearchParams(params).toString(),hash='#'+view+(query?'?'+query:'');if(location.hash===hash)handleHash();else location.hash=hash}
 function handleHash(){
  const {view,params}=parseHash(),oldView=ui.view,focusWasInContent=$('content').contains(document.activeElement);ui.view=view;
  for(const section of document.querySelectorAll('.view'))section.hidden=section.id!=='view-'+view;
  for(const link of document.querySelectorAll('[data-view]')){if(link.dataset.view===view)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current')}
- if(view==='recovery'){const filter=params.get('filter');if(['running','waiting','attention','unverified','done'].includes(filter)&&filter!==ui.filter){ui.filter=filter;renderRecovery()}}
+ if(view==='recovery'){const filter=params.get('filter');if(['running','waiting','attention','unverified','deferred','done'].includes(filter)&&filter!==ui.filter){ui.filter=filter;renderRecovery()}}
  if(view==='history'&&params.get('filter')==='warning'&&$('historyFilter').value!=='warning'){$('historyFilter').value='warning';ui.historyPage=0;renderHistory()}
  if(view==='savings'&&Date.now()-statisticsLoadedAt()>15000)loadStatistics();
  const tab=params.get('tab');if(['review','overview','comparison','recovery','technical'].includes(tab))ui.tab=params.has('film')&&tab==='comparison'?'review':tab;

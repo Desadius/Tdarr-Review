@@ -1,18 +1,20 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import {classifyRecovery,recoveryFollowup,RECOVERY_STALE_MS} from './public/review-model.js';
 import {readRecoveryCaseState} from './recovery-snapshot.mjs';
 import {compareIdentity,identityOf} from '../recovery/file-identity.mjs';
 import {createTdarrFileState} from '../recovery/tdarr-file-state.mjs';
-import {readRecoveryConfiguration} from '../recovery/recovery-authority.mjs';
+import {readRecoveryConfiguration,readRecoveryRestoreBinding} from '../recovery/recovery-authority.mjs';
 import {inspectRadarrImport,radarrQueueUrl} from './recovery-import-diagnostics.mjs';
 import {diagnoseRetentionEvidence,hasMatchingReviewRetentionError} from './recovery-retention-diagnosis.mjs';
 
 // Recovery attention (#225, #229): for every case in Needs attention the server says why, where the movie
 // verifiably is, which action it recommends, which other actions are valid and what blocks the rest. The UI
 // renders buttons only from these actions, and each action is revalidated when it is submitted.
-// Everything here only reads: Review never writes Recovery's files, and neither viewing nor refreshing a case
-// changes a file, Tdarr, Radarr or a retention deadline. Locations carry state codes, never paths or values.
+// The attention projection only reads: Review never writes Recovery's files, and viewing or refreshing a case
+// never changes media, Tdarr, Radarr or retention. Separate deferral code may write Review-only metadata.
+// Locations carry state codes, never paths or values.
 
 const SAME=new Set(['same','ctime-changed']);
 const UNRESOLVED=new Set(['running','waiting','attention','unverified']);
@@ -73,7 +75,7 @@ function libraryTarget(c){
  * @param {()=>boolean} [deps.isBusy] Whether running work excludes a mutation now.
  * @param {()=>number} [deps.now]
  */
-export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnection,mode='off',installed=null,handoff=null,isBusy=()=>false,now=Date.now}){
+export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnection,mode='off',installed=null,handoff=null,deferrals=null,getOverview=async()=>({requests:[]}),isBusy=()=>false,now=Date.now}){
  /** @type {Map<string,{at:string,tdarr?:string|null,tdarrError?:boolean,radarr?:string|null,radarrError?:boolean}>} */
  const refreshed=new Map();
  const caseFile=()=>path.join(data,'recovery','state.json');
@@ -98,7 +100,7 @@ export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnec
   const key=record.source+':'+record.id,update=refreshed.get(key),reported=fresh(record.statusUpdated||record.updated);
   const target=record.source==='recovery'?libraryTarget(c):null;
   const {identity,...library}=target?await fileState(target.file,target.fp):{status:'not-used'};
-  const {identity:_,...quarantine}=record.source==='recovery'&&c?.quarantine?await fileState(c.quarantine,c.preservedSourceFP||c.fp):record.quarantineRetained?{status:'unverified',detail:'retained'}:{status:'not-used'};
+  const {identity:quarantineIdentity,...quarantine}=record.source==='recovery'&&c?.quarantine?await fileState(c.quarantine,c.preservedSourceFP||c.fp):record.quarantineRetained?{status:'unverified',detail:'retained'}:{status:'not-used'};
   const item=record.source==='recovery'?reviewItem(target,library.detail==='present'?identity:null):(typeof record.itemId==='string'&&getItems()?.[record.itemId]?record.itemId:null);
   const review=item?{status:'verified',detail:'pending'}:{status:'not-used'};
   const tdarrState=update&&'tdarr' in update?(update.tdarrError?{status:'unverified',at:update.at}:{status:'verified',detail:update.tdarr?String(update.tdarr).toLowerCase():'missing',at:update.at,by:'review'})
@@ -109,7 +111,7 @@ export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnec
   // A transcoded result already installed in place of the imported replacement can be assessed as it is (#230).
   let installedResult=null;
   if(installed&&record.source==='recovery'&&!item&&library.detail==='changed'){try{installedResult=await installed.eligibility(record.id,{busy:isBusy()});}catch{installedResult={eligible:false,blockers:['installed-unverified']};}}
-  return {location:{library,quarantine,review,tdarr:tdarrState,radarr:radarrState},reviewItemId:item,installedResult};
+  return {location:{library,quarantine,review,tdarr:tdarrState,radarr:radarrState},reviewItemId:item,installedResult,libraryIdentity:identity,quarantineIdentity};
  }
  function decide(record,classification,{reviewItemId,installedResult,handoffResult,importDiagnosis}){
   const reason=classification.reason,actions=[{id:'refresh',changes:'information'}],blockers=[...(BLOCKERS[reason]||['inspect-case'])];
@@ -137,6 +139,47 @@ export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnec
   // An offered replacement is the confirmed-source case: nothing blocks it.
   const open=record.sourceReplacement?blockers.filter(b=>b!=='source-not-confirmed'):blockers;
   return {recommended:recommended.id,actions,blockers:[...new Set(open)]};
+ }
+
+ async function safePathSnapshot(file,root=null){
+  if(typeof file!=='string'||!path.isAbsolute(file)||file.includes('\\')||file.split(path.sep).some(part=>part==='..'))return null;
+  if(root){if(path.resolve(root)!==path.resolve(file)&&!file.startsWith(path.resolve(root)+path.sep))return null;try{const st=await fs.lstat(root);if(!st.isDirectory()||st.isSymbolicLink()||await fs.realpath(root)!==path.resolve(root))return null;}catch{return null;}}
+  let current=path.parse(file).root;const parts=file.slice(current.length).split(path.sep).filter(Boolean);
+  try{for(let i=0;i<parts.length;i++){current=path.join(current,parts[i]);let st;try{st=await fs.lstat(current)}catch(error){if(error.code==='ENOENT')return {state:'missing',identity:null};return null;}
+    if(st.isSymbolicLink())return null;if(i<parts.length-1){if(!st.isDirectory())return null;continue;}if(!st.isFile()||st.nlink!==1)return null;return {state:'present',identity:identityOf(st)};
+   }}catch{return null;}return null;
+ }
+
+ async function deferralFingerprint(record,c,found){
+  if(!deferrals||record.source!=='recovery'||!object(c)||c.id!==record.id||found.location.library.status==='unverified'||c.quarantine&&found.location.quarantine.status==='unverified')return null;
+  const cfg=getConfig(),relative=c.relative;if(typeof relative!=='string'||relative.startsWith('/')||relative.split('/').some(part=>!part||part==='.'||part==='..'||part.includes('\\')))return null;
+  const source=path.resolve(cfg.mediaRoot,relative.split('/').join(path.sep));if(path.resolve(c.source)!==source)return null;
+  const target=libraryTarget(c);if(!target||!target.relative||path.resolve(target.file)!==path.resolve(cfg.mediaRoot,target.relative.split('/').join(path.sep)))return null;
+  const library=await safePathSnapshot(target.file,cfg.mediaRoot);if(!library)return null;
+  const quarantine=c.quarantine?safePathSnapshot(c.quarantine):{state:'not-recorded',identity:null};if(!quarantine)return null;
+  let authority;try{const resolved=await readRecoveryRestoreBinding({data:path.join(data,'recovery'),mode});if(!object(resolved.binding)||!resolved.binding.mediaRoot||!resolved.binding.reviewRoot||!resolved.binding.sourceRoot||!resolved.binding.radarrRoot||!resolved.binding.libraryId)return null;authority={mode:resolved.mode,managed:resolved.managed,generation:resolved.generation,binding:resolved.binding};}catch{return null;}
+  const material={source:record.source,id:record.id,phase:record.phase,attention:classifyRecovery(record,now()).reason,reviewConfig:{mediaRoot:cfg.mediaRoot,reviewRoot:cfg.reviewRoot,sourceRoots:cfg.sourceRoots||[],reviewPrefixes:cfg.reviewPrefixes||[],libraryId:cfg.libraryId||null},authority,case:{status:c.status,source:c.source,relative:c.relative,fp:c.fp,replacementRelative:c.replacementRelative||null,replacementSourceFP:c.replacementSourceFP||null,preservedSourceFP:c.preservedSourceFP||null,quarantine:c.quarantine||null,sourceConfirmed:c.sourceConfirmed===true,movieId:c.movieId||null,tmdbId:c.tmdbId||null,binding:c.binding||null},library,quarantine};
+  return crypto.createHash('sha256').update(JSON.stringify(material)).digest('hex');
+ }
+ async function bindingFor(id){
+  const overview=await getOverview(),record=(Array.isArray(overview?.requests)?overview.requests:[]).find(r=>r?.source==='recovery'&&r.id===id);
+  if(!record||classifyRecovery(record,now()).category!=='attention')return null;
+  const state=await cases().catch(()=>null),found=await locate(record,state?.[id]);return await deferralFingerprint(record,state?.[id],found);
+ }
+ async function defer(id,{revision,note}){
+  const overview=await getOverview(),record=(Array.isArray(overview?.requests)?overview.requests:[]).find(r=>r?.source==='recovery'&&r.id===id);
+  if(!record||classifyRecovery(record,now()).category!=='attention')throw Object.assign(new Error('deferral_unavailable'),{code:'deferral_unavailable'});
+  const state=await cases().catch(()=>null),c=state?.[id],found=await locate(record,c),fingerprint=await deferralFingerprint(record,c,found);
+  if(!fingerprint||c?.status!==record.phase)throw Object.assign(new Error('deferral_unavailable'),{code:'deferral_unavailable'});
+  const saved=await deferrals.view('recovery',id,fingerprint);if(saved?.state==='deferred')throw Object.assign(new Error('deferral_conflict'),{code:'deferral_conflict'});
+  return deferrals.defer({source:'recovery',id,fingerprint,revision,note,recheck:()=>bindingFor(id)});
+ }
+ async function reopen(id,{revision}){
+  const overview=await getOverview(),record=(Array.isArray(overview?.requests)?overview.requests:[]).find(r=>r?.source==='recovery'&&r.id===id),state=await cases().catch(()=>null),c=state?.[id];
+  if(!record||!c||c.status!==record.phase)throw Object.assign(new Error('deferral_unavailable'),{code:'deferral_unavailable'});
+  const found=await locate(record,c),fingerprint=await deferralFingerprint(record,c,found);
+  if(!fingerprint)throw Object.assign(new Error('deferral_unavailable'),{code:'deferral_unavailable'});
+  return deferrals.reopen({source:'recovery',id,fingerprint,revision,recheck:()=>bindingFor(id)});
  }
 
  /** The overview with a server-computed attention object on every Needs attention case. */
@@ -228,6 +271,12 @@ export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnec
    }
    if(handoff&&classification.reason==='tdarr-missing'){try{found.handoffResult=await handoff.eligibility(r.id,{busy:isBusy()});}catch{found.handoffResult={eligible:false,blockers:['handoff-unverified']};}}
    r.attention={reason:classification.reason,location:found.location,...(importDiagnosis?{importDiagnosis:Object.fromEntries(['status','category','movieUrl','queueUrl','checkedAt'].map(key=>[key,importDiagnosis[key]??null]))}:{}),...(retentionDiagnosis?{retentionDiagnosis}:{}),...decide(r,classification,{...found,importDiagnosis}),recoveryPolledAt:at(r.statusUpdated)};
+   if(r.source==='recovery'){
+    let fingerprint=null,saved=null,metadataUnavailable=false;try{fingerprint=await deferralFingerprint(r,c,found);if(fingerprint)saved=await deferrals?.view('recovery',r.id,fingerprint);}catch{metadataUnavailable=true;}
+    const active=!!fingerprint&&saved?.state==='deferred'&&saved.fingerprint===fingerprint;
+    r.deferral={state:!fingerprint||metadataUnavailable||saved?.invalid?'unavailable':active?'deferred':saved?.state||'active',...(fingerprint&&!metadataUnavailable&&saved?.note?{note:saved.note}:{}),revision:fingerprint&&!metadataUnavailable?deferrals?.revision('recovery',r.id,fingerprint,saved)||null:null};
+    if(fingerprint&&!metadataUnavailable&&c?.status===r.phase&&!saved?.invalid)r.attention.actions.push({id:active?'reopen':'defer',revision:r.deferral.revision,changes:'review-only'});
+   }
   }
   return overview;
  }
@@ -266,5 +315,5 @@ export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnec
   }
   return attach(overview,importDiagnoses,importDiagnosisBindings);
  }
- return {attach,refresh};
+ return {attach,refresh,defer,reopen};
 }
