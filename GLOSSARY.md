@@ -28,6 +28,10 @@ _Avoid_: safe step
 Completing or rolling back an interrupted replacement after a restart, from its durable journal. A different concept from Recovery; never shorten it to "recovery".
 _Avoid_: recovery
 
+**Diagnostic export**:
+An explicitly downloaded report of one Review case's known and unverified state at a point in time, with private information omitted. It is separate from service refresh, publication, human approval and quarantine management.
+_Avoid_: log dump, approval evidence, health certificate
+
 **Review binding**:
 The settings that decide which Tdarr library, files and technical data a saved review refers to: the media, review and source roots, review subfolders, Tdarr review root, Tdarr library, Tdarr address and database, and FFprobe. Changing any of them invalidates saved reviews and Approve decisions.
 _Avoid_: identity (that is file identity)
