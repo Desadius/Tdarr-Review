@@ -341,7 +341,8 @@ export function projectRequests(requests, items = [], now = Date.now()) {
     const record = r && typeof r === 'object' ? r : {};
     const linkedItem = typeof record.itemId === 'string' ? byId.get(record.itemId) || null : null;
     const classification = classifyRecovery(record, now);
-    return {...record, key: `${record.source === 'recovery' ? 'recovery' : 'radarr'}:${record.id || `unknown-${index}`}`, reviewItemId: linkedItem?.id || null, linkedItem, classification, ...classification};
+    const displayCategory=record.deferral?.state==='deferred'?'deferred':classification.category;
+    return {...record, key: `${record.source === 'recovery' ? 'recovery' : 'radarr'}:${record.id || `unknown-${index}`}`, reviewItemId: linkedItem?.id || null, linkedItem, classification, displayCategory, ...classification};
   });
 }
 

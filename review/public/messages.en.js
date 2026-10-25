@@ -3,6 +3,23 @@ import guidedMessages from './guided-messages.js?v=__APP_VERSION__';
 import {ERROR_MESSAGES} from './error-messages.js?v=__APP_VERSION__';
 export default {
   "exact": {...Object.fromEntries(Object.values(ERROR_MESSAGES).map(message=>[message.cs,message.en])),...sharedSettingsMessages,...guidedMessages,
+    "Odložené": "Deferred",
+    "Odloženo": "Deferred",
+    "Probíhá": "Running",
+    "Čeká": "Waiting",
+    "Vyžaduje zásah": "Needs attention",
+    "Stav nelze ověřit": "Unverified",
+    "Dokončeno": "Done",
+    "Odložit případ": "Defer case",
+    "Znovu otevřít případ": "Reopen case",
+    "ODLOŽIT PŘÍPAD": "DEFER CASE",
+    "Poznámka pro přihlášené uživatele Review": "Note for signed-in Review users",
+    "Poznámka se uloží pouze do Review a uvidí ji všichni přihlášení uživatelé.": "The note is stored only in Review and is visible to all signed-in users.",
+    "Případ zmizí z aktivní pozornosti, dokud se nezmění jeho důležitá fáze nebo vazba. Odložení nic neschvaluje a nemění karanténu. Poznámka bude viditelná všem přihlášeným uživatelům Review.": "The case leaves active attention until its material phase or binding changes. Deferral does not approve anything or change quarantine. The note is visible to all signed-in Review users.",
+    "Napiš, co má další člověk vědět.": "Write what the next person should know.",
+    "Uveď poznámku k odložení.": "Enter a deferral note.",
+    "Případ zůstává nevyřešený; odložení není schválení ani potvrzení zdravého stavu.": "The case remains unresolved; deferral is not approval or proof of health.",
+    "Poznámka k odložení:": "Deferral note:",
     "Nastavení právě používá jiná operace. Zkus to za chvíli.": "Another operation is using settings. Try again shortly.",
     "Diagnóza importu": "Import diagnosis",
     "Nesoulad jazyka nebo kvality; podrobnosti ověř v Radarru.": "Language or quality mismatch; check Radarr for details.",
@@ -1380,6 +1397,9 @@ export default {
     "Velikost": "Size"
   },
   "patterns": [
+    ["Odloženo ({0})", "Deferred ({0})"],
+    ["Poznámka k odložení: {0}", "Deferral note: {0}", {"raw": [0]}],
+    ["Znovu otevřít případ ({0})", "Reopen case ({0})"],
     ["Originál: {0} Posuď film ve vlastním přehrávači.", "Original: {0} Review the film in your own player."],
     ["Výsledek Review: {0} Posuď film ve vlastním přehrávači.", "Review result: {0} Review the film in your own player."],
     ["Výběr slouží k hromadnému nahrazení schválených filmů. Lze vybrat: {0} z {1}.", "Selection is for batch replacement of approved films. Selectable: {0} of {1}."],

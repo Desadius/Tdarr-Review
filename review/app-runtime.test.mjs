@@ -593,6 +593,19 @@ test('a mapped Sonarr file cannot be source-checked without an explicit saved ro
   const replace=dom.querySelector('[data-workflow-approve]');assert.equal(replace.disabled,false,'approve and replace stays available');
   await replace.emit('click');assert.equal(dom.getElementById('confirm').open,true);assert.match(dom.getElementById('dialogText').textContent,/zařadí do fronty/);
  });
+ for(const language of ['cs','en'])test('real Review app renders and reopens a deferred case safely in '+language,async()=>{
+  const en=language==='en',id='d'.repeat(24),revision='a'.repeat(64),note='<img src=x onerror=alert(1)> shared note',record={id,source:'recovery',title:'Synthetic deferred movie',phase:'manual',statusUpdated:new Date().toISOString(),deferral:{state:'deferred',note,revision},attention:{reason:'manual',recommended:'refresh',actions:[{id:'refresh',changes:'information'},{id:'reopen',revision,changes:'review-only'}]}};
+  const route='/api/recovery/cases/'+id+'/defer/reopen',fixture=await appFixture(language,{routes:{[route]:{data:{ok:true,state:'reopened'}}}}),dom=fixture.document;
+  await fixture.update({requests:[record],recoveryRuntime:{present:true,mode:'off',state:'off',reason:null}});await fixture.hash('#recovery?filter=deferred');
+  const row=dom.getElementById('recoveryList').querySelector('.recovery-row');assert.ok(row);assert.match(row.textContent,en?/Deferred/:/Odloženo/);assert.match(row.textContent,en?/Deferral note:/:/Poznámka k odložení:/);assert.match(row.textContent,/&lt;img|<img/);assert.equal(row.querySelectorAll('img').length,1,'note is inserted as text, not parsed HTML');assert.equal(row.querySelector('[onerror]'),null);
+  assert.equal(dom.getElementById('deferredCount').textContent,'1');const reopen=row.querySelector('button');assert.equal(reopen.textContent,en?'Reopen case':'Znovu otevřít případ');await reopen.emit('click');for(let i=0;i<8;i++)await flush();
+  assert.deepEqual(fixture.calls.filter(call=>call.method==='POST').map(call=>[call.route,call.body]),[[route,{confirm:true,revision}]],'reopening uses the displayed opaque revision');
+ });
+ for(const language of ['cs','en'])test('real Review app localizes a deferral API conflict in '+language,async()=>{
+  const id='c'.repeat(24),route='/api/recovery/cases/'+id+'/defer/reopen',record={id,source:'recovery',title:'Synthetic deferred movie',phase:'manual',statusUpdated:new Date().toISOString(),deferral:{state:'deferred',note:'synthetic note',revision:'a'.repeat(64)},attention:{reason:'manual',recommended:'refresh',actions:[{id:'reopen',revision:'a'.repeat(64),changes:'review-only'}]}};
+  const fixture=await appFixture(language,{routes:{[route]:{status:409,data:{code:'deferral_conflict'}}}}),dom=fixture.document;await fixture.update({requests:[record],recoveryRuntime:{present:true,mode:'off',state:'off',reason:null}});await fixture.hash('#recovery?filter=deferred');
+  const row=dom.getElementById('recoveryList').querySelector('.recovery-row');await row.querySelector('button').emit('click');for(let i=0;i<8;i++)await flush();assert.equal(dom.getElementById('error').textContent,language==='en'?'The deferral state changed. Refresh the overview.':'Stav odložení se změnil. Obnov přehled.');
+ });
  for(const language of ['cs','en'])test('real Review app shows API runtime and interruption changes in '+language,async()=>{
   const fixture=await appFixture(language),dom=fixture.document,runtime=dom.getElementById('recoveryRuntime'),warning=dom.getElementById('recoveryRestartWarning');
   assert.equal(dom.documentElement.lang,language);assert.equal(dom.getElementById('error').hidden,true,dom.getElementById('error').textContent);

@@ -8,6 +8,8 @@ import {reviewFixture} from './test-helpers/review-fixture.mjs';
 import {linuxServer as linux} from './test-helpers/server.mjs';
 import {identityOf} from '../recovery/file-identity.mjs';
 import {approvalEvidencePath} from '../recovery/quarantine-retention.mjs';
+import {createRecoveryDeferrals} from './recovery-deferrals.mjs';
+import {readRecoveryRestoreBinding} from '../recovery/recovery-authority.mjs';
 
 const run=promisify(execFile);
 
@@ -89,4 +91,57 @@ test('HTTP retention diagnosis is bound to fresh Recovery and Review cases and p
  for(const item of expected.extra){assert.doesNotMatch(JSON.stringify(extraRecords[item.kind]),/private .* evidence reason|synthetic-private-key|synthetic-radarr-key|\\media\\|\/media\//);assert.deepEqual(await fs.readFile(item.caseQuarantine),item.expectedQuarantine);}
  assert.deepEqual(await fs.readFile(expected.quarantine),expected.expectedQuarantine);assert.deepEqual(await fs.readFile(expected.staleQuarantine),expected.expectedStaleQuarantine);assert.deepEqual(await fs.readFile(expected.fifoQuarantine),expected.expectedFifoQuarantine);assert.deepEqual(await fs.readFile(expected.reviewQuarantine),expected.expectedReviewQuarantine);assert.deepEqual(await fs.readFile(expected.original),expected.expectedOriginal);
  assert.equal(record.deleteAfter??null,null);assert.equal(record.approvedAt,undefined);
+});
+
+test('a verified attention case can be deferred with a note and reopened over the authenticated HTTP API',linux,async t=>{
+ const id='f'.repeat(24);let expected;
+ const f=await reviewFixture({beforeStart:async({data,media,mockBase})=>{
+  const file=path.join(media,'A','A.mkv'),identity=identityOf(await fs.stat(file)),now=new Date().toISOString();
+  const c={id,status:'manual',source:file,relative:'A/A.mkv',fp:identity,created:now,updated:now};
+  await fs.mkdir(path.join(data,'recovery'),{recursive:true});
+  await fs.writeFile(path.join(data,'recovery','state.json'),JSON.stringify({version:1,cases:{[id]:c}}));
+  const recoveryConfig={enabled:false,tdarrUrl:mockBase,radarrUrl:mockBase,radarrApiKey:'synthetic-key',libraryId:'fixture-library',sourceRoot:'/fixture-library',radarrRoot:'/fixture-library',mediaRoot:media,reviewRoot:path.join(data,'review'),quarantineRoot:path.join(data,'quarantine'),reports:path.join(data,'reports'),database:path.join(data,'tdarr.db'),ffmpeg:'/usr/bin/ffmpeg',ffprobe:'/usr/bin/ffprobe',stableMinutes:0,decodeTimeoutHours:1,confirmDelaySeconds:30,maxRepairsPerDay:3,movieCooldownDays:30,pollSeconds:300,since:0,reviewPrefixes:['PROD-Movies']};
+  const configFile=path.join(data,'recovery','config.json');await fs.writeFile(configFile,JSON.stringify(recoveryConfig));
+  await fs.writeFile(path.join(data,'radarr.json'),JSON.stringify({url:mockBase,apiKey:'synthetic-key',mediaRoot:'/fixture-library',quarantineRoot:path.join(data,'quarantine'),preferCzechEnglish:true}));
+  await fs.mkdir(path.join(data,'radarr-replacements'),{recursive:true});await fs.writeFile(path.join(data,'radarr-replacements',id+'.json'),JSON.stringify({id,phase:'manual',title:'Synthetic Review-owned case',created:now,updated:now,retentionError:'synthetic review metadata warning'}));
+  await fs.writeFile(path.join(path.dirname(media),'.tdarr-recovery-status.json'),JSON.stringify({version:1,updated:now,cases:[{id,phase:'manual',title:'Synthetic deferred film',statusUpdated:now,source:'recovery',canRestore:false}]}));
+  const statusFile=path.join(path.dirname(media),'.tdarr-recovery-status.json');expected={stateFile:path.join(data,'recovery','state.json'),before:await fs.readFile(path.join(data,'recovery','state.json')),statusFile,statusBefore:await fs.readFile(statusFile),configFile,configBefore:await fs.readFile(configFile)};
+ }});t.after(()=>f.close());
+ const initial=await f.get('/api/radarr/requests'),record=initial.requests.find(r=>r.id===id&&r.source==='recovery');assert.ok(record?.attention,JSON.stringify(initial.requests));assert.equal(initial.requests.filter(r=>r.id===id).length,2,'synthetic Review and Recovery IDs collide');
+ const canonical=await readRecoveryRestoreBinding({data:path.join(f.data,'recovery'),mode:'off'});
+ const defer=record.attention.actions.find(a=>a.id==='defer');assert.ok(defer?.revision,'defer requires the server-issued exact-binding revision');
+ await fs.writeFile(expected.configFile,'{broken');const unknownAuthority=await f.get('/api/radarr/requests'),unknownRecord=unknownAuthority.requests.find(r=>r.id===id&&r.source==='recovery');assert.equal(unknownAuthority.error,undefined,'an invalid canonical authority does not fail the overview');assert.ok(unknownRecord.attention);assert.equal(unknownRecord.attention.actions.some(a=>a.id==='defer'),false,'unknown Recovery binding cannot authorize deferral');
+ await fs.writeFile(expected.configFile,expected.configBefore);
+ const blank=await f.post('/api/recovery/cases/'+id+'/defer',{confirm:true,revision:defer.revision,note:'   '});assert.equal(blank.status,400);
+ const tooLong=await f.post('/api/recovery/cases/'+id+'/defer',{confirm:true,revision:defer.revision,note:'n'.repeat(1001)});assert.equal(tooLong.status,400);
+ const notes=['Check the retained copy after Radarr finishes.','Wait for the second reviewer before continuing.'];
+ const saves=await Promise.all(notes.map(note=>f.post('/api/recovery/cases/'+id+'/defer',{confirm:true,revision:defer.revision,note}))),winner=saves.findIndex(response=>response.status===200);assert.notEqual(winner,-1,'one concurrent compare-and-write succeeds');assert.equal(saves.filter(response=>response.status===200).length,1);assert.ok(saves.every(response=>[200,409].includes(response.status)));const note=notes[winner];
+ const after=await f.get('/api/radarr/requests'),deferred=after.requests.find(r=>r.id===id&&r.source==='recovery'),collision=after.requests.find(r=>r.id===id&&!r.source);assert.equal(deferred.deferral?.state,'deferred');assert.equal(deferred.deferral.note,note);assert.equal(collision.deferral,undefined,'same-ID Review case never reads or leaks Recovery note');assert.equal(JSON.stringify(collision).includes(note),false);
+ await fs.writeFile(expected.configFile,'{temporarily unavailable');const unknownFile=await f.get('/api/radarr/requests'),unknownFileRecord=unknownFile.requests.find(r=>r.id===id&&r.source==='recovery');assert.equal(unknownFile.error,undefined,'transient unknown binding does not fail the overview');assert.equal(unknownFileRecord.attention?.reason,'manual');assert.equal(unknownFileRecord.deferral?.state,'unavailable');assert.equal(unknownFileRecord.deferral?.note,undefined,'unknown binding does not expose an active deferral note');await fs.writeFile(expected.configFile,expected.configBefore);
+ const sameFile=await f.get('/api/radarr/requests'),sameFileRecord=sameFile.requests.find(r=>r.id===id&&r.source==='recovery');assert.equal(sameFileRecord.deferral?.state,'deferred','an unknown fingerprint suspends hiding without a permanent tombstone');assert.equal(sameFileRecord.deferral.note,note);
+ const stale=await f.post('/api/recovery/cases/'+id+'/defer',{confirm:true,revision:defer.revision,note:'stale overwrite'});assert.equal(stale.status,409);
+ await f.restart();const restarted=await f.get('/api/radarr/requests'),persisted=restarted.requests.find(r=>r.id===id&&r.source==='recovery');assert.equal(persisted.deferral?.state,'deferred');assert.equal(persisted.deferral.note,note,'Review-owned note survives restart');
+ const reopenRevision=persisted.deferral.revision;assert.ok(reopenRevision);
+ const reopened=await f.post('/api/recovery/cases/'+id+'/defer/reopen',{confirm:true,revision:reopenRevision});assert.equal(reopened.status,200,await reopened.clone().text());
+ const activeList=await f.get('/api/radarr/requests'),active=activeList.requests.find(r=>r.id===id&&r.source==='recovery');assert.equal(active.deferral?.state,'reopened');assert.equal(active.attention?.reason,'manual');
+ const again=active.attention.actions.find(a=>a.id==='defer');assert.ok(again,'reopened case can be deferred again with a fresh revision');
+ const deferredAgain=await f.post('/api/recovery/cases/'+id+'/defer',{confirm:true,revision:again.revision,note});assert.equal(deferredAgain.status,200,await deferredAgain.clone().text());
+ const changed=JSON.parse(await fs.readFile(expected.stateFile,'utf8'));changed.cases[id].status='waiting';await fs.writeFile(expected.stateFile,JSON.stringify(changed));
+ const deferralDirectory=path.join(f.data,'recovery-deferrals');await fs.chmod(deferralDirectory,0o500);const duringChange=await f.get('/api/radarr/requests'),visibleDuringChange=duringChange.requests.find(r=>r.id===id&&r.source==='recovery');assert.equal(duringChange.error,undefined,'failed durable invalidation does not break the overview');assert.equal(visibleDuringChange.attention?.reason,'manual');assert.equal(visibleDuringChange.deferral?.state,'unavailable','failed invalidation is explicit and does not expose the note');assert.equal(visibleDuringChange.attention.actions.some(a=>a.id==='defer'||a.id==='reopen'),false,'failed invalidation cannot authorize a deferral mutation');
+ await fs.chmod(deferralDirectory,0o700);const invalidated=await f.get('/api/radarr/requests'),invalidatedRecord=invalidated.requests.find(r=>r.id===id&&r.source==='recovery');assert.equal(invalidatedRecord.deferral?.state,'invalidated','a proven phase change durably invalidates once storage is available');
+ changed.cases[id].status='manual';await fs.writeFile(expected.stateFile,JSON.stringify(changed));
+ const reverted=await f.get('/api/radarr/requests'),visibleAgain=reverted.requests.find(r=>r.id===id&&r.source==='recovery');assert.notEqual(visibleAgain.deferral?.state,'deferred','observed invalidation stays visible if old phase returns');assert.ok(visibleAgain.attention?.actions.some(a=>a.id==='defer'));
+ const mediaFile=f.files.get('A').original;await fs.unlink(mediaFile);const missing=await f.get('/api/radarr/requests'),missingRecord=missing.requests.find(r=>r.id===id&&r.source==='recovery');assert.equal(missingRecord.attention.location.library.detail,'missing');assert.ok(missingRecord.attention.actions.some(a=>a.id==='defer'),'a safely verified missing copy can still be deferred');
+ const outside=path.join(f.root,'outside.mkv');await fs.writeFile(outside,'synthetic external');await fs.symlink(outside,mediaFile);const unsafe=await f.get('/api/radarr/requests'),unsafeRecord=unsafe.requests.find(r=>r.id===id&&r.source==='recovery');assert.ok(unsafeRecord.attention,'unsafe copy does not hide underlying attention');assert.equal(unsafeRecord.attention.actions.some(a=>a.id==='defer'),false,'symlinked media cannot be deferred');
+ assert.deepEqual(await fs.readFile(expected.stateFile),expected.before,'deferral never writes Recovery state');
+ assert.deepEqual(await fs.readFile(expected.statusFile),expected.statusBefore,'deferral never writes Recovery public status');
+ assert.doesNotMatch(f.output(),/Check the retained copy after Radarr finishes\.|stale overwrite/,'note text is not logged');
+ const stored=path.join(f.data,'recovery-deferrals','recovery-'+id+'.json'),outsideRecord=path.join(f.root,'outside-record.json');await fs.writeFile(outsideRecord,JSON.stringify({version:1,source:'recovery',id,state:'deferred',note:'untrusted external note',fingerprint:'e'.repeat(64),revision:'f'.repeat(64)}));await fs.unlink(stored);await fs.symlink(outsideRecord,stored);
+ const corrupt=await f.get('/api/radarr/requests'),corruptRecord=corrupt.requests.find(r=>r.id===id&&r.source==='recovery');assert.ok(corruptRecord.attention,'untrusted Review metadata cannot hide attention');assert.equal(corruptRecord.deferral?.state,'unavailable');assert.equal(corruptRecord.deferral?.note,undefined);assert.equal(corruptRecord.attention.actions.some(a=>['defer','reopen'].includes(a.id)),false,'unsafe persisted record cannot authorize or overwrite');assert.doesNotMatch(JSON.stringify(corrupt),/untrusted external note/);
+ await fs.unlink(stored);await fs.writeFile(stored,JSON.stringify({version:1,source:'recovery',id,state:'deferred',note:'',fingerprint:'e'.repeat(64),revision:'f'.repeat(64)}),{mode:0o600});const emptyNote=await f.get('/api/radarr/requests'),emptyNoteRecord=emptyNote.requests.find(r=>r.id===id&&r.source==='recovery');assert.equal(emptyNote.error,undefined);assert.equal(emptyNoteRecord.deferral?.state,'unavailable','a corrupted empty required note cannot hide attention');assert.equal(emptyNoteRecord.deferral?.note,undefined);
+});
+
+test('deferral storage rejects a symlinked DATA root before writing outside it',linux,async t=>{
+ const f=await reviewFixture();t.after(()=>f.close());const root=path.join(f.root,'deferral-root'),outside=path.join(f.root,'outside-data');await fs.mkdir(root);await fs.mkdir(outside);const deferrals=createRecoveryDeferrals({data:root}),id='9'.repeat(24),fingerprint='a'.repeat(64),revision=deferrals.revision('recovery',id,fingerprint,null);await fs.rename(root,root+'.real');await fs.symlink(outside,root,'dir');
+ await assert.rejects(deferrals.defer({source:'recovery',id,fingerprint,revision,note:'synthetic note',recheck:async()=>fingerprint}),{code:'deferral_unavailable'});await assert.rejects(fs.lstat(path.join(outside,'recovery-deferrals')),{code:'ENOENT'});
 });

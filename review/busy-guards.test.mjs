@@ -9,6 +9,7 @@ test('every mutating route has an explicit concurrency policy',()=>{
  const id='a'.repeat(24);
  const routes={settings:['/api/settings','/api/settings/test'],radarrSettings:['/api/radarr/settings','/api/radarr/settings/test'],previewSettings:['/api/preview-settings'],batch:['/api/approve-batch'],restore:[`/api/radarr/requests/${id}/restore`],reviewSession:[`/api/items/${id}/review-session`,`/api/items/${id}/approval`]};
  for(const action of ['approve','reject','replace','recheck'])routes[action]=[`/api/items/${id}/${action}`];
+ routes.deferral=[`/api/recovery/cases/${id}/defer`,`/api/recovery/cases/${id}/defer/reopen`];
  routes.replace.push(`/api/recovery/cases/${id}/replace-source`);
  // The installed-result assessment (#230): its draft is review state, its approval publishes retention evidence.
  routes.replace.push(`/api/recovery/cases/${id}/installed/approve`,`/api/recovery/cases/${id}/handoff`,`/api/recovery/cases/${id}/retry`);routes.reviewSession.push(`/api/recovery/cases/${id}/installed`);
@@ -43,6 +44,7 @@ test('intentional scan, recovery and review CAS differences are bounded',()=>{
  }
  for(const kind of ['restore','recheck','settings','reviewSession'])for(const flag of ['scan','recovery','pauses'])assert.equal(busyFor(kind,{[flag]:true}),flag);
  assert.equal(busyFor('reviewSession',{reviewSessions:true}),null,'CAS writes retain their queue');
+ assert.equal(busyFor('deferral',{scan:true}),'scan','binding reads cannot race a Review scan');assert.equal(busyFor('deferral',{recovery:true}),null,'Review-only note changes do not pause or wait for Recovery');
  assert.equal(busyFor('resume',{pauses:true}),null,'the retry owns these pending pauses');
  assert.equal(busyFor('settings',{statistics:true}),'statistics');
  assert.equal(busyFor('background',{previewHolds:true}),'previewHolds');

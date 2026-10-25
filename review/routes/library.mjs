@@ -68,6 +68,18 @@ export async function libraryRoutes(ctx,req,res,url,request){
  if(url.pathname==='/api/radarr/requests'&&req.method==='GET')return reply(res,200,await ctx.recoveryAttention.attach(await ctx.replacements.overview()));
  // Read-only first-stage check for an explicit return of one exact Recovery original (#234).
  const originalRestore=/^\/api\/recovery\/cases\/([a-f0-9]{24})\/restore-original$/.exec(url.pathname);
+ const deferral=/^\/api\/recovery\/cases\/([a-f0-9]{24})\/defer(\/reopen)?$/.exec(url.pathname);
+ if(deferral&&req.method==='POST'){
+  const input=await body(req);if(input.confirm!==true)return reply(res,400,apiError('deferral_confirm_required'));
+  try{
+   const result=deferral[2]?await ctx.recoveryAttention.reopen(deferral[1],{revision:input.revision}):await ctx.recoveryAttention.defer(deferral[1],{revision:input.revision,note:input.note});
+   return reply(res,200,{ok:true,...result});
+  }catch(error){
+   if(['deferral_note_invalid','deferral_confirm_required'].includes(error.code))return reply(res,400,apiError(error.code));
+   if(['deferral_stale','deferral_conflict','deferral_unavailable'].includes(error.code))return reply(res,409,apiError(error.code));
+   throw error;
+  }
+ }
  if(originalRestore&&req.method==='GET')return reply(res,200,await ctx.recoverySafeRestore.inspect(originalRestore[1],{busy:!!ctx.busyFor('restore')}));
  const originalRestoreStatus=/^\/api\/recovery\/cases\/([a-f0-9]{24})\/restore-original\/status$/.exec(url.pathname);
  if(originalRestoreStatus&&req.method==='GET')return reply(res,200,await ctx.recoverySafeRestore.status(originalRestoreStatus[1]));
