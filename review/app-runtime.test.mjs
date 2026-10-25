@@ -6,10 +6,11 @@ import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 
 // The child enables Node's browser-module VM loader; npm test needs no extra flags.
+// Its budget leaves room for CI runners, where the child already took 26-29 s of a former 30 s limit.
 if(typeof vm.SourceTextModule!=='function'){
  test('real Review app consumes Recovery runtime and renders both interface languages',()=>{
   const environment={...process.env};delete environment.NODE_TEST_CONTEXT;
-  const child=spawnSync(process.execPath,['--experimental-vm-modules','--test',fileURLToPath(import.meta.url)],{encoding:'utf8',env:environment,timeout:30000});
+  const child=spawnSync(process.execPath,['--experimental-vm-modules','--test',fileURLToPath(import.meta.url)],{encoding:'utf8',env:environment,timeout:120000});
   assert.equal(child.status,0,child.stdout+child.stderr);
   assert.match(child.stdout,/real Review app shows API runtime and interruption changes in cs/,'the flagged child must execute the consumer tests');
  });
