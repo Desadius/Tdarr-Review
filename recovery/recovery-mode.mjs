@@ -50,6 +50,15 @@ export function resolveRecoveryConfig({mode,text}){
  return {mode,cfg:withMode(parse(text),mode)};
 }
 
+// A Review-only, metadata-only binding read may need the recorded Recovery roots while
+// RECOVERY_MODE is Off. It validates the same complete legacy schema and Off/enabled
+// agreement, but deliberately returns no runtime configuration or enabled flag.
+export function resolveRecoveryRestoreBinding({mode,text}){
+ if(!['off',...MODES].includes(mode))throw new RecoveryRefusal('invalid-mode');
+ const cfg=withMode(parse(text),mode);
+ return Object.fromEntries(['tdarrUrl','radarrUrl','radarrApiKey','libraryId','sourceRoot','radarrRoot','mediaRoot','reviewRoot','reviewPrefixes','quarantineRoot','database'].map(key=>[key,cfg[key]]));
+}
+
 export async function readRecoveryConfig({file,mode}){
  mode=resolveMode(mode);
  let text;

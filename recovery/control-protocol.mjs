@@ -29,7 +29,7 @@ export const MAX_REQUEST_IDS=1024;
  * @returns {{control:Control|null,reply?:'snapshot'|{error:string},commands:Command[],resumeCrash?:boolean,intentional?:boolean}}
  */
 export function controlTransition(context,event){
- const {control,mode,worker}=context,next=control&&{...control};
+ const {control,mode,worker}=context;let next=control&&{...control};
  const reply=(result,commands=[],extra={})=>({control:next,reply:result,commands,...extra});
  const refuse=error=>({control,reply:{error},commands:[]});
  if(event.type==='worker'){
@@ -45,6 +45,15 @@ export function controlTransition(context,event){
  }
  if(event.session!==null&&event.session!==context.session)return refuse('recovery_control_session_expired');
  if(context.stopping)return refuse('recovery_control_stopping');
+ // A replacement Review process can inspect the same durable operation using its
+ // request id and then adopt the current supervisor session from the reply.
+ if(event.action==='restoreStatus'&&event.session===null&&context.restoreBlocked&&context.restoreFenceValid&&context.restoreOperationId===event.id){
+  if(control&&control.id!==event.id)return refuse('recovery_control_restore_fence_mismatch');
+  // With a matching durable fence and no current in-memory request, startup
+  // admission is already blocked, so Recovery cannot be running.
+  if(!next)next={id:event.id,state:mode==='off'?'off':'stopped',reason:null};
+  return reply('snapshot');
+ }
  if(event.action==='requestDrain'){
   if(control&&control.id===event.id)return reply('snapshot');
   if(control&&PENDING_STATES.includes(control.state))return refuse('recovery_control_pending');
@@ -58,7 +67,7 @@ export function controlTransition(context,event){
   return {control:fresh,reply:'snapshot',commands,resumeCrash:context.restarting};
  }
  if(event.session!==context.session||!control||control.id!==event.id)return refuse('recovery_control_request_expired');
- if(event.action==='status')return reply('snapshot');
+ if(event.action==='status'||event.action==='restoreStatus')return reply('snapshot');
  if(event.action==='cancel'){
   if(control.state==='cancelled')return reply('snapshot');
   if(!['draining','ready','off'].includes(control.state))return refuse('recovery_control_cannot_cancel');
@@ -76,6 +85,7 @@ export function controlTransition(context,event){
   return reply('snapshot',[{type:'send',action:'stop',onFail:{control:{state:'failed'},error:'recovery_control_worker_unavailable'}},{type:'awaitExit'}]);
  }
  if(event.action==='restart'){
+  if(context.restoreBlocked&&!(context.restoreRestartAuthorized&&context.restoreOperationId===event.id))return refuse('recovery_control_restore_fenced');
   if(['starting','running','off'].includes(control.state))return reply('snapshot');
   if(control.state!=='stopped')return refuse('recovery_control_not_stopped');
   if(mode==='off'){next.state='off';return reply('snapshot');}
@@ -96,7 +106,7 @@ export async function runControlCommands(step,effects){
  for(const command of step.commands){
   if(command.type==='markUsed')effects.markUsed(command.id);
   else if(command.type==='clearRestart')effects.clearRestart();
-  else if(command.type==='start')effects.start();
+  else if(command.type==='start')await effects.start();
   else if(command.type==='awaitExit')await effects.awaitExit();
   else if(command.type==='send'&&!effects.send(command.action)){
    if(command.onFail.control)effects.setControl({.../** @type {Control} */(step.control),...command.onFail.control});
