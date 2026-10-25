@@ -21,7 +21,9 @@
       "Bash(git fetch origin *)",
       "Bash(git push origin *)",
       "Bash(git push -u origin *)",
-      "Bash(git push --set-upstream origin *)"
+      "Bash(git push --set-upstream origin *)",
+      "Bash(git worktree remove *)",
+      "Bash(git worktree prune *)"
     ],
     "ask": [
       "Bash(gh * --repo *)",
@@ -42,7 +44,11 @@
       "Bash(git push * -f *)",
       "Bash(git push * -f)",
       "Bash(git push * --mirror*)",
-      "Bash(git push * --prune*)"
+      "Bash(git push * --prune*)",
+      "Bash(git worktree remove *--force*)",
+      "Bash(git worktree remove -f *)",
+      "Bash(git worktree remove * -f)",
+      "Bash(git worktree remove * -f *)"
     ]
   }
 }

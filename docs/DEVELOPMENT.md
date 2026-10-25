@@ -17,7 +17,7 @@ Supervisor fixtures share `review/test-supervisor-helpers.mjs`. Register `t.afte
 
 Agents capturing red → green or mutation evidence, locally or in CI, follow [the verification procedure](agents/verification.md). Publish the evidence in a comment on the relevant PR; keep reusable procedures in repository documentation. For literal text replacements and multiline GitHub bodies, see [editing safely](agents/editing.md).
 
-When delegating repository work to Codex subagents, follow the [Codex subagent orchestration protocol](agents/codex-orchestration.md) for task boundaries, review, and concise reports.
+Agents working through open issues follow the [agent issue cycle and subagent orchestration protocol](agents/orchestration.md) for cycle order, task boundaries, review, concise reports and post-merge cleanup.
 
 Frontend wiring tests in `review/app-runtime.test.mjs` execute the unmodified app and its browser import graph inside Node's module VM with a minimal DOM. They open real settings/quarantine/rejection dialogs, supply synthetic API responses, inspect both languages and record explicit action requests. They cover dynamic retention, known versus missing node metadata, coded errors with server-text fallback and verbatim rejection history/reasons without implicit review confirmation. The fixture models native dialog close and validation events; it is not a browser or assistive-technology audit. Error-module delivery is tested separately through the actual static route over loopback HTTP. Prepared comparison source reads remain only to execute code, with their reason documented beside the ratchet entry.
 
@@ -72,15 +72,16 @@ Claude Code and Codex run the same set of commands without asking:
 - `gh run view`, `list`
 - `git add`, `git commit`
 - `git fetch origin`, `git push origin` (also with `-u`/`--set-upstream`)
+- `git worktree remove`, `git worktree prune` (post-merge cleanup of an agent's own clean worktree)
 
-Everything else keeps the normal approval prompt. `gh pr merge`, pushes to `main`, force pushes and remote branch deletion are refused outright: a human always merges. `gh issue close`, `rm`, `ssh`, `scp` and `rsync` always ask, even if broader approval was granted earlier in a session.
+Everything else keeps the normal approval prompt. `gh pr merge`, pushes to `main`, force pushes, remote branch deletion and `git worktree remove --force`/`-f` are refused outright: a human always merges, and GitHub deletes merged head branches itself. `gh issue close`, `rm`, `ssh`, `scp` and `rsync` always ask, even if broader approval was granted earlier in a session.
 
 The lists live in two files that must change together:
 
 - Claude Code: `permissions` in `.claude/settings.json` (project settings, read automatically). `gh` commands with `--repo`/`-R` always ask, so the allowlist cannot reach another repository. Personal additions belong in the ignored `.claude/settings.local.json`.
 - Codex: `.codex/rules/tdarr-review.rules`. Codex loads project rules only when the project is trusted; trust each worktree path when Codex asks, or add `[projects."<path>"] trust_level = "trusted"` to `~/.codex/config.toml`. Rules you approve during a session go to `~/.codex/rules/default.rules`, not to the repository.
 
-Codex's `prefix_rule` matches command prefixes only, so a forbidden option placed later in the command (`git push origin topic --force`) is not caught by the rules and relies on the normal sandbox prompt and on branch protection for `main`. `tools/agent-allowlist.test.mjs` compares the allowed command prefixes in both files and checks that label listing does not authorize label writes. Verify the rules after every change; the file's `match`/`not_match` examples are checked when the rules load:
+Codex's `prefix_rule` matches command prefixes only, so a forbidden option placed later in the command (`git push origin topic --force`) is not caught by the rules and relies on the normal sandbox prompt and on branch protection for `main`. `tools/agent-allowlist.test.mjs` compares the allowed command prefixes in both files checks that label listing does not authorize label writes, and that both files refuse forced worktree removal. Verify the rules after every change; the file's `match`/`not_match` examples are checked when the rules load:
 
 ```bash
 codex execpolicy check --pretty --rules .codex/rules/tdarr-review.rules -- gh pr view 1        # allow
