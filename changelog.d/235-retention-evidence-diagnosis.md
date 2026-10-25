@@ -1,0 +1,1 @@
+- Review now explains approval and quarantine-retention evidence mismatches with a fresh, read-only diagnosis and a safe next step; unreadable or changed evidence remains unavailable and preserved.

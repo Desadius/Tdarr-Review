@@ -271,9 +271,9 @@ export function classifyRecovery(record, now = Date.now()) {
   }
   if(verifyPaused(r)){category='waiting';label='Pozastaveno režimem Verify';nextStep='Po přepnutí na Repair Recovery znovu ověří aktuální stav a automaticky pokračuje.';unknown=false;}
   if(verifyPaused(r)&&!stale&&!unknownTime&&originalOutsideTooLong(r,clock)){category='attention';reason='original-outside-library';label='Originál je déle než 24 hodin mimo knihovnu';nextStep='Pokud stahování v Radarru visí, odstraň ho v Radarru; Recovery při příští kontrole vrátí originál do knihovny.';}
-  if (warnings.some(w => w !== 'Stav je starší než 12 minut; obnov aktuální údaje.' && w !== 'Čas posledního ověření stavu není dostupný.')) {
+  if (r.retentionErrorPresent===true||warnings.some(w => w !== 'Stav je starší než 12 minut; obnov aktuální údaje.' && w !== 'Čas posledního ověření stavu není dostupný.')) {
     category = 'attention'; nextStep = 'Zkontroluj upozornění v detailu případu.';
-    reason = blockedImport ? 'import-blocked' : failedQueue ? 'queue-failed' : failedSearch ? 'search-failed' : r.retentionError ? 'retention-error' : 'case-error';
+    reason = blockedImport ? 'import-blocked' : failedQueue ? 'queue-failed' : failedSearch ? 'search-failed' : r.retentionError||r.retentionErrorPresent===true ? 'retention-error' : 'case-error';
     if(blockedImport){label='Staženo; Radarr blokuje import';nextStep='Otevři frontu Radarru a přiřaď stažený soubor správnému filmu přes ruční import. Nové stahování není potřeba.';}
     else if(freshImportUnconfirmed){label=freshImportDiagnosis.category==='download-pending'?'Radarr stahuje; blokovaný import není potvrzen':'Radarr nepotvrdil blokovaný import';nextStep='Zkontroluj aktuální diagnózu a frontu Radarru; stav případu zůstává k vyřízení.';}
   } else if (r.tdarrMissing === true && r.phase === 'replacement_imported' && !approvalEvidence) {

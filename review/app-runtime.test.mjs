@@ -398,6 +398,38 @@ test('a mapped Sonarr file cannot be source-checked without an explicit saved ro
   const sent=f.calls.slice(before).find(c=>c.route==='/api/recovery/refresh');assert.equal(sent.method,'POST');assert.deepEqual(sent.body,{keys:['recovery:'+id]});
   assert.equal(f.calls.slice(before).some(c=>c.method==='POST'&&c.route!=='/api/recovery/refresh'),false,'refresh only reads');
  });
+ for(const language of ['cs','en'])test('real Recovery attention explains missing approval evidence without offering approval or retention changes in '+language,async()=>{
+  const id='d'.repeat(24),attention={reason:'retention-error',recommended:'refresh',blockers:['retention-evidence'],retentionDiagnosis:{status:'verified',reason:'approval-evidence-missing'},location:{},actions:[{id:'refresh',changes:'information'}]};
+  const record={id,source:'recovery',title:'Synthetic retention film',phase:'replacement_imported',tdarrStatus:'Queued',retentionErrorPresent:true,statusUpdated:new Date().toISOString(),attention};
+  const f=await appFixture(language,{routes:{'/api/recovery/refresh':{data:{requests:[record],recoveryConfig:null,recoveryRuntime:{present:false}}}}}),dom=f.document;
+  await f.update({requests:[record],recoveryRuntime:{present:false}});await f.hash('#recovery?filter=attention');
+  await dom.querySelectorAll('button').find(n=>/Synthetic retention film/.test(n.getAttribute('aria-label')||'')).emit('click');for(let i=0;i<6;i++)await flush();
+  const body=dom.getElementById('detailBody');assert.match(body.textContent,language==='en'?/Approval evidence was not found in the verified location/:/Schválení nebylo v ověřeném umístění nalezeno/);
+  assert.match(body.textContent,language==='en'?/Do not approve again or change the deadline/:/schválení neopakuj ani neměň lhůtu/);
+  assert.doesNotMatch(body.textContent,/private retention sentinel|secret|\/private\//i);assert.equal(body.querySelector('[data-attention-action="assessInstalled"]'),null);
+ });
+ for(const language of ['cs','en'])test('real Review-owned retention attention stays visible after raw error redaction in '+language,async()=>{
+  const id='c'.repeat(24),attention={reason:'retention-error',recommended:'refresh',blockers:['retention-evidence'],retentionDiagnosis:{status:'verified',reason:'approval-evidence-missing'},location:{},actions:[{id:'refresh',changes:'information'}]};
+  const record={id,source:'radarr',title:'Synthetic Review retention film',phase:'imported',tdarrStatus:'Queued',retentionErrorPresent:true,statusUpdated:new Date().toISOString(),attention};
+  const f=await appFixture(language,{routes:{'/api/recovery/refresh':{data:{requests:[record],recoveryConfig:null,recoveryRuntime:{present:false}}}}}),dom=f.document;
+  await f.update({requests:[record],recoveryRuntime:{present:false}});await f.hash('#recovery?filter=attention');
+  const card=dom.getElementById('recoveryList');assert.match(card.textContent,/Synthetic Review retention film/);
+  await card.querySelectorAll('button').find(n=>/Synthetic Review retention film/.test(n.getAttribute('aria-label')||'')).emit('click');for(let i=0;i<6;i++)await flush();
+  const body=dom.getElementById('detailBody');assert.match(body.textContent,language==='en'?/Approval evidence was not found in the verified location/:/Schválení nebylo v ověřeném umístění nalezeno/);
+  assert.match(body.textContent,language==='en'?/Do not approve again or change the deadline/:/schválení neopakuj ani neměň lhůtu/);assert.doesNotMatch(body.textContent,/private retention sentinel|secret|\/private\//i);
+  assert.deepEqual(body.querySelectorAll('[data-attention-action]').map(n=>n.dataset.attentionAction),['refresh']);
+ });
+ for(const language of ['cs','en'])test('real Review-owned attention remains visible when approval evidence is unreadable in '+language,async()=>{
+  const id='b'.repeat(24),attention={reason:'retention-error',recommended:'refresh',blockers:['retention-evidence'],retentionDiagnosis:{status:'unavailable',reason:'approval-evidence-unavailable'},location:{},actions:[{id:'refresh',changes:'information'}]};
+  const record={id,source:'radarr',title:'Synthetic unreadable Review retention film',phase:'imported',tdarrStatus:'Queued',retentionErrorPresent:true,statusUpdated:new Date().toISOString(),attention};
+  const f=await appFixture(language,{routes:{'/api/recovery/refresh':{data:{requests:[record],recoveryConfig:null,recoveryRuntime:{present:false}}}}}),dom=f.document;
+  await f.update({requests:[record],recoveryRuntime:{present:false}});await f.hash('#recovery?filter=attention');
+  const card=dom.getElementById('recoveryList');assert.match(card.textContent,/Synthetic unreadable Review retention film/);
+  await card.querySelectorAll('button').find(n=>/Synthetic unreadable Review retention film/.test(n.getAttribute('aria-label')||'')).emit('click');for(let i=0;i<6;i++)await flush();
+  const body=dom.getElementById('detailBody');assert.match(body.textContent,language==='en'?/Approval evidence could not be read safely/:/Schvalovací evidenci nelze bezpečně přečíst/);
+  assert.match(body.textContent,language==='en'?/The quarantine stays preserved/:/Karanténa zůstává zachovaná/);assert.doesNotMatch(body.textContent,/private retention sentinel|secret|\/private\//i);
+  assert.deepEqual(body.querySelectorAll('[data-attention-action]').map(n=>n.dataset.attentionAction),['refresh']);
+ });
  for(const language of ['cs','en'])test('manual import diagnosis is clearly unverified until refresh and links only to the exact movie or general queue in '+language,async()=>{
   const en=language==='en',id='a'.repeat(24),runtime={present:true,version:1,mode:'repair',state:'running',reason:null};
   const base={reason:'import-blocked',recommended:'refresh',blockers:[],location:{},actions:[{id:'refresh',changes:'information'},{id:'openQueue',changes:'nothing',href:'http://radarr.invalid/activity/queue'}]};

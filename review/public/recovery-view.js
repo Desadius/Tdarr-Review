@@ -123,6 +123,35 @@ const IMPORT_DIAGNOSIS={
  unverified:'Diagnóza importu zatím není ověřena. Obnov stav ručně.',
  unavailable:'Diagnózu importu se nepodařilo ověřit. Obnov stav ručně.'
 };
+const RETENTION_DIAGNOSIS={
+ 'approval-evidence-missing':'Schválení nebylo v ověřeném umístění nalezeno. Karanténa zůstává zachovaná; správce musí zkontrolovat vazbu případu a schvalovací evidenci. Zde schválení neopakuj ani neměň lhůtu.',
+ 'approval-evidence-unavailable':'Schvalovací evidenci nelze bezpečně přečíst. Karanténa zůstává zachovaná; správce musí ověřit přístup a vazbu evidence.',
+ 'approval-evidence-invalid':'Schvalovací evidence nemá očekávanou strukturu. Karanténa zůstává zachovaná; správce musí zkontrolovat evidenci.',
+ 'approval-evidence-mismatch':'Schvalovací evidence patří jiné kopii. Karanténa zůstává zachovaná; správce musí zkontrolovat vazbu.',
+ 'approval-time-invalid':'Čas schválení nelze ověřit. Karanténa zůstává zachovaná; správce musí zkontrolovat evidenci.',
+ 'approved-copy-missing':'Schválená kopie v knihovně chybí. Karanténa zůstává zachovaná; správce musí ověřit její umístění.',
+ 'approved-copy-unavailable':'Schválenou kopii nelze bezpečně přečíst. Karanténa zůstává zachovaná; správce musí zkontrolovat soubor.',
+ 'approved-copy-metadata-changed':'Změnila se pouze metadata schválené kopie; obsah ani schválení tím nejsou znovu ověřené. Karanténa zůstává zachovaná; správce musí ověřit kopii.',
+ 'approved-copy-changed':'Schválená kopie se změnila. Karanténa zůstává zachovaná; správce musí ověřit aktuální soubor.',
+ 'approved-identity-unavailable':'Identitu schválené kopie nelze ověřit. Karanténa zůstává zachovaná; správce musí zkontrolovat evidenci.',
+ 'quarantine-file-missing':'Zaznamenaná kopie v karanténě chybí. Karanténa se nemaže; správce musí ověřit stav případu.',
+ 'quarantine-file-changed':'Kopie v karanténě se změnila. Karanténa zůstává zachovaná; správce musí ověřit soubor.',
+ 'quarantine-file-unavailable':'Kopii v karanténě nelze bezpečně přečíst. Karanténa zůstává zachovaná; správce musí zkontrolovat umístění.',
+ 'quarantine-identity-unavailable':'Zaznamenanou identitu kopie v karanténě nelze ověřit. Karanténa zůstává zachovaná.',
+ 'quarantine-binding-unavailable':'Vazbu kopie v karanténě nelze ověřit. Karanténa zůstává zachovaná; správce musí zkontrolovat cestu a záznam.',
+ 'configuration-unavailable':'Nastavení Recovery nelze ověřit. Karanténa zůstává zachovaná; správce musí zkontrolovat konfiguraci.',
+ 'configuration-binding-changed':'Nastavení nebo vazba případu se změnily. Karanténa zůstává zachovaná; správce musí ověřit propojení.',
+ 'case-binding-unavailable':'Záznam případu nelze ověřit. Karanténa zůstává zachovaná; správce musí zkontrolovat Recovery data.',
+ 'case-binding-changed':'Záznam případu neodpovídá aktuálnímu stavu. Karanténa zůstává zachovaná; správce musí zkontrolovat vazbu.',
+ 'replacement-binding-unavailable':'Vazbu náhrady nelze ověřit. Karanténa zůstává zachovaná; správce musí zkontrolovat případ.',
+ 'approval-binding-unavailable':'Cestu ke schvalovací evidenci nelze ověřit. Karanténa zůstává zachovaná; správce musí zkontrolovat konfiguraci.',
+ 'retention-error-unresolved':'Čtení neodhalilo příčinu chyby úklidu. Karanténa zůstává zachovaná; správce musí zkontrolovat případ a zachované kopie.'
+};
+export function retentionDiagnosisView(diagnosis,translate=tr){
+ const message=diagnosis&&RETENTION_DIAGNOSIS[diagnosis.reason];if(!message)return null;
+ const box=el('section','retention-diagnosis');box.setAttribute('aria-label',translate('Diagnóza úklidu karantény'));
+ box.append(el('p','details',translate(message),true));return box;
+}
 export function importDiagnosisView(diagnosis,translate=tr){
  if(!diagnosis||!IMPORT_DIAGNOSIS[diagnosis.status==='verified'?diagnosis.category:diagnosis.status])return null;
  const box=el('section','import-diagnosis'),status=diagnosis.status==='verified'?diagnosis.category:diagnosis.status;
@@ -152,7 +181,7 @@ export function attentionActionsView(attention,run,{recommendedOnly=false}={},tr
 }
 export function attentionView(attention,run,translate=tr){
  const box=el('section','attention-model');box.setAttribute('aria-label',translate('Co dál'));
- box.append(el('h4','','Kde je film teď'),attentionLocationView(attention.location,translate));const diagnosis=importDiagnosisView(attention.importDiagnosis,translate);if(diagnosis)box.append(diagnosis);
+ box.append(el('h4','','Kde je film teď'),attentionLocationView(attention.location,translate));const diagnosis=importDiagnosisView(attention.importDiagnosis,translate);if(diagnosis)box.append(diagnosis);const retention=retentionDiagnosisView(attention.retentionDiagnosis,translate);if(retention)box.append(retention);
  box.append(el('h4','','Co můžeš udělat'),attentionActionsView(attention,run,{},translate));
  const blockers=(attention.blockers||[]).filter(code=>BLOCKERS[code]);
  if(blockers.length){const list=el('ul','attention-blockers');for(const code of blockers)list.append(el('li','',BLOCKERS[code]));box.append(el('h4','','Co brání dalšímu kroku'),list);}

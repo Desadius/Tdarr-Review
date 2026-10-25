@@ -7,6 +7,7 @@ import http from 'node:http';
 import {createRecoveryAttention} from './recovery-attention.mjs';
 import {classifyRecovery} from './public/review-model.js';
 import {identityOf} from '../recovery/file-identity.mjs';
+import {approvalEvidencePath} from '../recovery/quarantine-retention.mjs';
 import {ATTENTION_PATHS,now} from './test-helpers/attention-paths.mjs';
 
 // The server-computed attention model (#229) over synthetic files, a fake Tdarr and a loopback Radarr.
@@ -29,7 +30,7 @@ async function fixture(t,{radarr=async()=>({records:[]}),tdarrRow=null}={}){
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  t.after(async()=>{await new Promise(r=>server.close(r));await fs.rm(root,{recursive:true,force:true});});
  const writeCases=cases=>fs.writeFile(path.join(data,'recovery','state.json'),JSON.stringify({version:1,jobs:{},cases}));
- const attention=createRecoveryAttention({data,getConfig:()=>({libraryId:'library'}),getItems:()=>items,now:()=>now,
+ const attention=createRecoveryAttention({data,getConfig:()=>({libraryId:'library',mediaRoot:media,reviewRoot:path.join(root,'review')}),getItems:()=>items,now:()=>now,
   tdarr:async(route,body)=>{calls.tdarr.push(route+' '+JSON.stringify(body));if(route!=='/api/v2/cruddb')throw Error('read only');return tdarrRow;},
   getConnection:async()=>({url:'http://127.0.0.1:'+server.address().port,apiKey:'synthetic'})});
  return {root,data,media,original,replacement,replacementFP,quarantined,quarantineFP,items,calls,writeCases,attention};
@@ -39,6 +40,7 @@ const caseFor=f=>({id:'a'.repeat(24),file:'/tdarr/movies/Film/new.mkv',source:f.
 
 test('every path into Needs attention gets its reason, a recommended action among its actions, and blockers when no action resolves it',async t=>{
  const f=await fixture(t);
+ const retention=ATTENTION_PATHS['retention error'];await f.writeCases({[retention.id]:{...caseFor(f),id:retention.id,status:retention.phase,retentionError:retention.retentionError}});
  const overview={requests:Object.values(ATTENTION_PATHS).map(r=>structuredClone(r))};
  await f.attention.attach(overview);
  Object.keys(ATTENTION_PATHS).forEach((name,i)=>{
@@ -123,4 +125,37 @@ test('a failed refresh read is unverified, not evidence',async t=>{
  await f.attention.refresh(overview);const a=overview.requests[0].attention;
  assert.equal(a.location.radarr.status,'unverified');
  assert.equal(a.location.tdarr.detail,'missing','no Tdarr row is reported as missing, not as a transcode state');
+});
+
+test('retention attention explains missing approval evidence without changing approval, quarantine or deadline',async t=>{
+ const f=await fixture(t),id='a'.repeat(24),c={...caseFor(f),status:'replacement_imported',replacementSourceFP:f.replacementFP,retentionError:'private synthetic retention failure'};
+ const config={enabled:false,tdarrUrl:'http://127.0.0.1:1',radarrUrl:'http://127.0.0.1:1',radarrApiKey:'synthetic-private-key',libraryId:'library',sourceRoot:'/tdarr/movies',radarrRoot:'/radarr/movies',mediaRoot:f.media,reviewRoot:path.join(f.root,'review'),quarantineRoot:path.dirname(f.quarantined),reports:path.join(f.root,'reports'),database:path.join(f.root,'tdarr.db'),ffmpeg:'/usr/bin/ffmpeg',stableMinutes:0,decodeTimeoutHours:1,confirmDelaySeconds:1,maxRepairsPerDay:1,movieCooldownDays:0,pollSeconds:1,since:0,reviewPrefixes:['review']};
+ await fs.writeFile(path.join(f.data,'recovery','config.json'),JSON.stringify(config));await f.writeCases({[id]:c});
+ const stateFile=path.join(f.data,'recovery','state.json'),beforeState=await fs.readFile(stateFile),beforeQuarantine=await fs.readFile(f.quarantined);
+ const overview={requests:[{...ATTENTION_PATHS['retention error'],id,phase:'replacement_imported',error:c.retentionError,retentionErrorPresent:true}]};
+ await f.attention.attach(overview);const attention=overview.requests[0].attention;
+ assert.deepEqual(attention.retentionDiagnosis,{status:'verified',reason:'approval-evidence-missing'});
+ assert.equal(attention.recommended,'refresh');assert.ok(attention.blockers.includes('retention-evidence'));
+ assert.doesNotMatch(JSON.stringify(overview),/private synthetic retention failure|synthetic-private-key|\\media\\|\/media\//);
+ assert.deepEqual(await fs.readFile(stateFile),beforeState);assert.deepEqual(await fs.readFile(f.quarantined),beforeQuarantine);
+ assert.equal(c.cleanup,undefined,'diagnosis does not create or reset a deadline');
+});
+
+test('retention diagnosis distinguishes invalid evidence, mismatched approval, installed identity and missing quarantine',async t=>{
+ const f=await fixture(t),id='a'.repeat(24),c={...caseFor(f),status:'replacement_imported',replacementSourceFP:f.replacementFP,retentionError:'private retention failure'};
+ c.quarantine=path.join(path.dirname(f.quarantined),id,'old.mkv');await fs.mkdir(path.dirname(c.quarantine),{recursive:true});await fs.writeFile(c.quarantine,'SYNTHETIC ORIGINAL');c.fp=identityOf(await fs.stat(c.quarantine));
+ const config={enabled:false,tdarrUrl:'http://127.0.0.1:1',radarrUrl:'http://127.0.0.1:1',radarrApiKey:'synthetic-private-key',libraryId:'library',sourceRoot:'/tdarr/movies',radarrRoot:'/radarr/movies',mediaRoot:f.media,reviewRoot:path.join(f.root,'review'),quarantineRoot:path.dirname(f.quarantined),reports:path.join(f.root,'reports'),database:path.join(f.root,'tdarr.db'),ffmpeg:'/usr/bin/ffmpeg',stableMinutes:0,decodeTimeoutHours:1,confirmDelaySeconds:1,maxRepairsPerDay:1,movieCooldownDays:0,pollSeconds:1,since:0,reviewPrefixes:['review']};
+ await fs.writeFile(path.join(f.data,'recovery','config.json'),JSON.stringify(config));await f.writeCases({[id]:c});
+ const evidenceFile=await approvalEvidencePath(f.media,c.replacementRelative,c.replacementSourceFP);await fs.mkdir(path.dirname(evidenceFile),{recursive:true});
+ const diagnose=async()=>{const overview={requests:[{...ATTENTION_PATHS['retention error'],id,phase:'replacement_imported',error:c.retentionError,retentionErrorPresent:true}]};await f.attention.attach(overview);return overview.requests[0].attention.retentionDiagnosis;};
+ await fs.writeFile(evidenceFile,JSON.stringify({version:1}));assert.deepEqual(await diagnose(),{status:'verified',reason:'approval-evidence-invalid'});
+ const wrong={version:1,relative:'Film/other.mkv',sourceFP:c.replacementSourceFP,installedRelative:'Film/installed.mkv',installedFP:f.replacementFP,approvedAt:new Date().toISOString()};
+ await fs.writeFile(evidenceFile,JSON.stringify(wrong));assert.deepEqual(await diagnose(),{status:'verified',reason:'approval-evidence-mismatch'});
+ const installed=path.join(f.media,'Film','installed.mkv');await fs.writeFile(installed,'approved synthetic copy');
+ const valid={version:1,relative:c.replacementRelative,sourceFP:c.replacementSourceFP,installedRelative:'Film/installed.mkv',installedFP:identityOf(await fs.stat(installed)),approvedAt:new Date().toISOString()};
+ await fs.writeFile(evidenceFile,JSON.stringify(valid));await fs.appendFile(installed,' changed');assert.deepEqual(await diagnose(),{status:'verified',reason:'approved-copy-changed'});
+ await fs.writeFile(installed,'approved synthetic copy');valid.installedFP=identityOf(await fs.stat(installed));await fs.writeFile(evidenceFile,JSON.stringify(valid));
+ await fs.chmod(installed,0o600);assert.deepEqual(await diagnose(),{status:'verified',reason:'approved-copy-metadata-changed'});
+ await fs.writeFile(installed,'approved synthetic copy');valid.installedFP=identityOf(await fs.stat(installed));await fs.writeFile(evidenceFile,JSON.stringify(valid));await fs.rm(c.quarantine);
+ assert.deepEqual(await diagnose(),{status:'verified',reason:'quarantine-file-missing'});
 });

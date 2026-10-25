@@ -42,6 +42,12 @@ test('decode heartbeats remain fresh while cached imported Tdarr observations ag
  await f.live.refresh();assert.equal(f.reads,2);assert.equal(f.last('imported').tdarrStatusUpdated,new Date(f.now).toISOString());await f.live.close();
 });
 
+test('the public status exposes only whether retention needs attention, not a second raw error field',async()=>{
+ const f=fixture();f.imported.retentionError='private retention reason';await f.live.refresh();
+ const record=f.last('imported');assert.equal(record.retentionErrorPresent,true);assert.equal(Object.hasOwn(record,'retentionError'),false);
+ await f.live.close();
+});
+
 test('progress estimates belong to each pass and never imply approval or 100 percent',async()=>{
  const f=fixture();await f.live.startDecode(f.c,{pass:1,durationSeconds:100});f.now+=10000;
  f.live.updateDecode(f.c,{seconds:20,speed:2,fps:24,frame:480,ended:false},1);await f.live.flush();

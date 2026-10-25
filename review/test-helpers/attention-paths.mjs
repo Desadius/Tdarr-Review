@@ -21,6 +21,6 @@ export const ATTENTION_PATHS={
  'download queue failed':recovery({phase:'waiting_replacement',queue:[{status:'failed',title:'Release'}]}),
  'import blocked':recovery({phase:'waiting_replacement',queue:[{status:'completed',trackedDownloadState:'importBlocked',title:'Release'}]}),
  'case error':recovery({phase:'waiting_replacement',search:{status:'completed'},error:'Replacement file size does not match Radarr'}),
- 'retention error':recovery({phase:'replacement_imported',tdarrStatus:'Queued',retentionError:'Retention identity changed'}),
+ 'retention error':recovery({id:'f'.repeat(24),phase:'replacement_imported',tdarrStatus:'Queued',retentionError:'Retention identity changed'}),
  'stale status, not attention':recovery({phase:'waiting_replacement',search:{status:'completed'},statusUpdated:old}),
 };
