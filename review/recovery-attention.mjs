@@ -6,6 +6,7 @@ import {compareIdentity,identityOf} from '../recovery/file-identity.mjs';
 import {createTdarrFileState} from '../recovery/tdarr-file-state.mjs';
 import {readRecoveryConfiguration} from '../recovery/recovery-authority.mjs';
 import {inspectRadarrImport,radarrQueueUrl} from './recovery-import-diagnostics.mjs';
+import {diagnoseRetentionEvidence,hasMatchingReviewRetentionError} from './recovery-retention-diagnosis.mjs';
 
 // Recovery attention (#225, #229): for every case in Needs attention the server says why, where the movie
 // verifiably is, which action it recommends, which other actions are valid and what blocks the rest. The UI
@@ -190,10 +191,34 @@ export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnec
   for(const r of requests){const child=recoveryFollowup(r,requests);delete r.supersededBy;if(child&&UNRESOLVED.has(classifiedChild.get(child.id)?.category)&&!r.error)r.supersededBy=child.id;}
   for(const r of requests){
    const freshDiagnosis=importDiagnoses.get(r.id);
-   const classification=classifyRecovery(freshDiagnosis?{...r,attention:{importDiagnosis:freshDiagnosis}}:r,now());delete r.attention;
+   const c=r.source==='recovery'?caseState?.[r.id]:null;
+   const hasCurrentRetentionError=r.source==='recovery'&&object(c)&&c.id===r.id&&c.status===r.phase&&!!c.retentionError;
+    let hasCurrentReviewRetentionError=false,reviewConfig=null,activeRadarr=null;
+    if(r.source!=='recovery'&&(r.error||r.retentionError||r.retentionErrorPresent===true)){
+     reviewConfig=getConfig();try{activeRadarr=await getConnection();}catch{}
+     hasCurrentReviewRetentionError=await hasMatchingReviewRetentionError({data,record:r,reviewConfig:{...reviewConfig,radarrUrl:activeRadarr?.url,radarrRoot:activeRadarr?.mediaRoot,radarr:{quarantineRoot:activeRadarr?.quarantineRoot}}});
+    }
+    const retentionSignal=r.retentionErrorPresent===true||!!r.retentionError;
+    const unboundRetentionSignal=retentionSignal&&(r.source==='recovery'?!hasCurrentRetentionError:!hasCurrentReviewRetentionError);
+    if(r.retentionErrorPresent!==undefined||hasCurrentRetentionError||hasCurrentReviewRetentionError)r.retentionErrorPresent=r.source==='recovery'?hasCurrentRetentionError:hasCurrentReviewRetentionError;
+    const currentRecord=r.source==='recovery'?{...r,retentionErrorPresent:hasCurrentRetentionError}:{...r,retentionErrorPresent:hasCurrentReviewRetentionError};
+    if(unboundRetentionSignal){currentRecord.error='Vazbu případu nelze ověřit.';delete currentRecord.retentionError;}
+    else if(r.source!=='recovery'&&!hasCurrentReviewRetentionError)delete currentRecord.retentionError;
+   const classification=classifyRecovery(freshDiagnosis?{...currentRecord,attention:{importDiagnosis:freshDiagnosis}}:currentRecord,now());delete r.attention;
    if(classification.category!=='attention')continue;
+    let retentionDiagnosis=unboundRetentionSignal?{status:'unavailable',reason:'case-binding-unavailable'}:null;
+   if(classification.reason==='retention-error'){
+     if(hasCurrentRetentionError||hasCurrentReviewRetentionError)r.retentionErrorPresent=true;
+     reviewConfig||=getConfig();if(!activeRadarr)try{activeRadarr=await getConnection();}catch{}
+    retentionDiagnosis=await diagnoseRetentionEvidence({data,mode,record:r,reviewConfig:{...reviewConfig,radarrUrl:activeRadarr?.url,radarrRoot:activeRadarr?.mediaRoot,radarr:{quarantineRoot:activeRadarr?.quarantineRoot}}});
+    const currentConfig=getConfig();let currentRadarr=null;try{currentRadarr=await getConnection();}catch{}
+    if(currentConfig?.mediaRoot!==reviewConfig?.mediaRoot||currentConfig?.reviewRoot!==reviewConfig?.reviewRoot||currentConfig?.libraryId!==reviewConfig?.libraryId||currentConfig?.tdarrUrl!==reviewConfig?.tdarrUrl||JSON.stringify(currentConfig?.sourceRoots)!==JSON.stringify(reviewConfig?.sourceRoots)||currentRadarr?.url!==activeRadarr?.url||currentRadarr?.apiKey!==activeRadarr?.apiKey||currentRadarr?.mediaRoot!==activeRadarr?.mediaRoot||currentRadarr?.quarantineRoot!==activeRadarr?.quarantineRoot)retentionDiagnosis={status:'unavailable',reason:'configuration-binding-changed'};
+    // The saved raw error is neither evidence nor safe UI copy. Diagnosis exposes only a bounded reason code.
+     for(const key of ['error','retentionError','observationError','warning','message','reason','queue','search'])delete r[key];
+   }
+    if(unboundRetentionSignal){for(const key of ['retentionError','observationError','warning','message','reason','queue','search'])delete r[key];r.error='Vazbu případu nelze ověřit.';}
    if(importDiagnosisReasons.has(classification.reason))redactQueueDiagnosis(r,classification);
-   const c=r.source==='recovery'?caseState?.[r.id]:null,found=await locate(r,c);
+   const found=await locate(r,c);
    let importDiagnosis;
    if(importDiagnosisReasons.has(classification.reason)){
     const connection=await getConnection().catch(()=>null);
@@ -202,7 +227,7 @@ export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnec
     if(importDiagnosis.movieUrl)r.radarrMovieUrl=importDiagnosis.movieUrl;
    }
    if(handoff&&classification.reason==='tdarr-missing'){try{found.handoffResult=await handoff.eligibility(r.id,{busy:isBusy()});}catch{found.handoffResult={eligible:false,blockers:['handoff-unverified']};}}
-   r.attention={reason:classification.reason,location:found.location,...(importDiagnosis?{importDiagnosis:Object.fromEntries(['status','category','movieUrl','queueUrl','checkedAt'].map(key=>[key,importDiagnosis[key]??null]))}:{}),...decide(r,classification,{...found,importDiagnosis}),recoveryPolledAt:at(r.statusUpdated)};
+   r.attention={reason:classification.reason,location:found.location,...(importDiagnosis?{importDiagnosis:Object.fromEntries(['status','category','movieUrl','queueUrl','checkedAt'].map(key=>[key,importDiagnosis[key]??null]))}:{}),...(retentionDiagnosis?{retentionDiagnosis}:{}),...decide(r,classification,{...found,importDiagnosis}),recoveryPolledAt:at(r.statusUpdated)};
   }
   return overview;
  }
