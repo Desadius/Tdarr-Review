@@ -292,7 +292,7 @@ const installedAssessment=createInstalledAssessment({data:DATA,getConfig:()=>con
 const tdarrHandoff=createTdarrHandoff({data:DATA,getConfig:()=>config,tdarr,readRows:table=>dbRows(table),isWorkerBusy:async item=>workerBusy(await tdarr('/api/v2/get-nodes'),item),atomicJSON});
 const recoveryDeferrals=createRecoveryDeferrals({data:DATA});
 const recoveryAttention=createRecoveryAttention({data:DATA,getConfig:()=>config,getItems:()=>state.items,tdarr,getConnection:activeConnection,mode:process.env.RECOVERY_MODE||'off',installed:installedAssessment,handoff:tdarrHandoff,deferrals:recoveryDeferrals,getOverview:()=>replacements.overview(),isBusy:()=>!!busyFor('replace')});
-const diagnosticExport=createDiagnosticExport({data:DATA,getOverview:()=>replacements.overview(),deferrals:recoveryDeferrals,version:()=>APP_VERSION});
+const diagnosticExport=createDiagnosticExport({data:DATA,getOverview:()=>replacements.overview(),deferrals:recoveryDeferrals,version:()=>APP_VERSION,getConfig:()=>config,getConnection:activeConnection});
 const localOff={requestDrain:async()=>({state:'off'}),status:async()=>({state:'off'}),cancel:async()=>({state:'off'}),stopAfterDrain:async()=>({state:'stopped'}),restart:async()=>({state:'off'}),wait:async()=>({state:'off'})};
 const restoreControl=!process.connected&&(!process.env.RECOVERY_MODE||process.env.RECOVERY_MODE==='off')?localOff:createRecoveryControlClient();
 const recoverySafeRestore=createRecoverySafeRestore({data:DATA,mode:process.env.RECOVERY_MODE||'off',tdarr,control:restoreControl});

@@ -10,7 +10,7 @@ import {identityOf} from '../recovery/file-identity.mjs';
 // The Diagnostic export (#237) through the real server: an authenticated, read-only, redacted single-case download.
 const SECRETS=['SENTINEL-TITLE-RECOVERY','SENTINEL-TITLE-REVIEW','SENTINEL-ERROR','SENTINEL-RELEASE','SENTINEL-NOTE','SENTINEL-KEY','SENTINEL-URL','SENTINEL-TOKEN','9876543','/fixture-library','SENTINEL-PATH'];
 const ALLOWED_TOP=['format','formatVersion','scope','generatedAt','reviewVersion','case','completeness','verification','state','deferral','caseRecord','observations','blockers','unknown'];
-const recoveryId='a'.repeat(24),staleId='b'.repeat(24),otherId='c'.repeat(24),absentId='d'.repeat(24);
+const recoveryId='a'.repeat(24),staleId='b'.repeat(24),otherId='c'.repeat(24),absentId='d'.repeat(24),missingRowId='1'.repeat(24),unboundId='2'.repeat(24);
 const snapshot=async roots=>{
  const out=[];
  const walk=async dir=>{for(const entry of await fs.readdir(dir,{withFileTypes:true}).catch(()=>[])){const file=path.join(dir,entry.name);
@@ -24,7 +24,11 @@ async function seeded(t){
   const file=path.join(media,'A','A.mkv'),identity=identityOf(await fs.stat(file));
   const base={source:file,relative:'A/A.mkv',fp:identity,created:now,updated:now,movieId:9876543,tmdbId:9876543,error:'SENTINEL-ERROR /fixture-library/x'};
   await fs.mkdir(path.join(data,'recovery'),{recursive:true});
-  await fs.writeFile(path.join(data,'recovery','state.json'),JSON.stringify({version:1,cases:{[recoveryId]:{...base,id:recoveryId,status:'manual',note:'SENTINEL-NOTE',url:'SENTINEL-URL'},[staleId]:{...base,id:staleId,status:'no_action'},[otherId]:{...base,id:otherId,status:'manual'}}}));
+  await fs.writeFile(path.join(data,'recovery','state.json'),JSON.stringify({version:1,cases:{[recoveryId]:{...base,id:recoveryId,status:'manual',note:'SENTINEL-NOTE',url:'SENTINEL-URL'},[staleId]:{...base,id:staleId,status:'no_action'},[otherId]:{...base,id:otherId,status:'manual'},
+   // Scenario A: imported replacement whose Tdarr row is missing (the mock Tdarr has no rows).
+   [missingRowId]:{...base,id:missingRowId,status:'replacement_imported',file:'/fixture-library/A/A.mkv',replacementRelative:'A/A.mkv',replacementSourceFP:identity},
+   // Scenario B: the status file carries a retention error the case record does not confirm.
+   [unboundId]:{...base,id:unboundId,status:'replacement_imported'}}}));
   await fs.writeFile(path.join(data,'recovery','config.json'),JSON.stringify({enabled:false,tdarrUrl:mockBase,radarrUrl:mockBase,radarrApiKey:'SENTINEL-KEY',libraryId:'fixture-library',sourceRoot:'/fixture-library',radarrRoot:'/fixture-library',mediaRoot:media,reviewRoot:path.join(data,'review'),quarantineRoot:path.join(data,'quarantine'),reports:path.join(data,'reports'),database:path.join(data,'tdarr.db'),ffmpeg:'/usr/bin/ffmpeg',ffprobe:'/usr/bin/ffprobe',stableMinutes:0,decodeTimeoutHours:1,confirmDelaySeconds:30,maxRepairsPerDay:3,movieCooldownDays:30,pollSeconds:300,since:0,reviewPrefixes:['PROD-Movies']}));
   await fs.writeFile(path.join(data,'radarr.json'),JSON.stringify({url:mockBase,apiKey:'SENTINEL-KEY',mediaRoot:'/fixture-library',preferCzechEnglish:true}));
   // The same local ID belongs to a Review-owned case too: sources must never mix.
@@ -34,6 +38,8 @@ async function seeded(t){
    {id:recoveryId,phase:'manual',title:'SENTINEL-TITLE-RECOVERY',statusUpdated:now,source:'recovery',canRestore:false,error:'SENTINEL-ERROR',queue:[{title:'SENTINEL-RELEASE',status:'failed',error:'SENTINEL-ERROR'}],titleSlug:'SENTINEL-URL',tmdbId:9876543,apiKey:'SENTINEL-KEY',cookie:'SENTINEL-TOKEN',stack:'at SENTINEL-PATH'},
    {id:staleId,phase:'no_action',originalCheckKind:'unconfirmed',title:'SENTINEL-TITLE-RECOVERY',statusUpdated:old,source:'recovery',canRestore:false},
    {id:otherId,phase:'manual',title:'SENTINEL-TITLE-RECOVERY',statusUpdated:now,source:'recovery',canRestore:false},
+   {id:missingRowId,phase:'replacement_imported',title:'SENTINEL-TITLE-RECOVERY',statusUpdated:now,source:'recovery',canRestore:false},
+   {id:unboundId,phase:'replacement_imported',tdarrStatus:'Queued',title:'SENTINEL-TITLE-RECOVERY',statusUpdated:now,source:'recovery',canRestore:false,retentionError:'SENTINEL-ERROR'},
   ];
   await fs.writeFile(path.join(path.dirname(media),'.tdarr-recovery-status.json'),JSON.stringify({version:1,updated:now,cases}));
   roots=[data,media,path.dirname(media)];
@@ -104,8 +110,28 @@ test('a deferred case exports its state without the note and deferral and approv
  if(saved.status!==200){const failed=await saved.text();assert.fail(failed);}
  const before=await snap(),calls=f.calls.length;
  const text=await (await f.request(route('recovery',recoveryId))).text(),report=JSON.parse(text);
- assert.equal(report.deferral.recorded,'deferred');assert.equal(report.deferral.bindingVerified,false);assert.equal(text.includes('SENTINEL-NOTE'),false);
+ assert.equal(report.deferral.recorded,'deferred');assert.equal(report.deferral.bindingVerified,false);assert.equal(report.deferral.fingerprintChecked,false);assert.equal(text.includes('SENTINEL-NOTE'),false);
  assert.equal(JSON.parse(await (await f.request(route('radarr',recoveryId))).text()).deferral.recorded,'not-deferred','the other source has no deferral');
  assert.equal(f.calls.length,calls);assert.equal(await snap(),before,'deferral record and revision are untouched');
  const after=(await f.get('/api/radarr/requests')).requests.find(r=>r.id===recoveryId&&r.source==='recovery');assert.equal(after.deferral.state,'deferred');assert.equal(after.deferral.note,'SENTINEL-NOTE keep');
+});
+
+test('the export classifies exactly what the attention overview shows, including a missing Tdarr row and an unbound retention error',linux,async t=>{
+ const {f,snap}=await seeded(t);
+ const overview=await f.get('/api/radarr/requests'),before=await snap();
+ const A=overview.requests.find(r=>r.id===missingRowId&&r.source==='recovery'),B=overview.requests.find(r=>r.id===unboundId&&r.source==='recovery');
+ assert.equal(A.attention.reason,'tdarr-missing','scenario A as the UI shows it');assert.equal(B.attention.reason,'case-error','scenario B as the UI shows it');
+ let compared=0;
+ for(const record of overview.requests){
+  const source=record.source==='recovery'?'recovery':'radarr',answer=await f.request(route(source,record.id));
+  if(record.attention){
+   assert.equal(answer.status,200,source+' '+record.id);const report=await answer.json();
+   assert.equal(report.state.category,'attention');assert.equal(report.state.reason,record.attention.reason,source+' '+record.id);compared++;
+   assert.ok(record.attention.actions.some(a=>a.id==='exportDiagnostic'),'the action is offered exactly where the export exists');
+  }else assert.equal(answer.status,404,'no action and no export outside attention: '+source+' '+record.id);
+ }
+ assert.ok(compared>=5);
+ const reportA=await (await f.request(route('recovery',missingRowId))).json();assert.equal(reportA.state.reason,'tdarr-missing');assert.equal(reportA.unknown.includes('tdarr-row'),true);assert.equal(reportA.verification,'not-verified');
+ const reportB=await (await f.request(route('recovery',unboundId))).text();assert.equal(JSON.parse(reportB).state.reason,'case-error');assert.equal(reportB.includes('SENTINEL'),false);
+ assert.equal(await snap(),before,'exports write nothing');
 });

@@ -7,6 +7,7 @@ import {compareIdentity,identityOf} from '../recovery/file-identity.mjs';
 import {createTdarrFileState} from '../recovery/tdarr-file-state.mjs';
 import {readRecoveryConfiguration,readRecoveryRestoreBinding} from '../recovery/recovery-authority.mjs';
 import {inspectRadarrImport,radarrQueueUrl} from './recovery-import-diagnostics.mjs';
+import {currentAttentionRecord} from './attention-record.mjs';
 import {diagnoseRetentionEvidence,hasMatchingReviewRetentionError} from './recovery-retention-diagnosis.mjs';
 
 // Recovery attention (#225, #229): for every case in Needs attention the server says why, where the movie
@@ -241,12 +242,8 @@ export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnec
      reviewConfig=getConfig();try{activeRadarr=await getConnection();}catch{}
      hasCurrentReviewRetentionError=await hasMatchingReviewRetentionError({data,record:r,reviewConfig:{...reviewConfig,radarrUrl:activeRadarr?.url,radarrRoot:activeRadarr?.mediaRoot,radarr:{quarantineRoot:activeRadarr?.quarantineRoot}}});
     }
-    const retentionSignal=r.retentionErrorPresent===true||!!r.retentionError;
-    const unboundRetentionSignal=retentionSignal&&(r.source==='recovery'?!hasCurrentRetentionError:!hasCurrentReviewRetentionError);
+    const {currentRecord,unboundRetentionSignal}=currentAttentionRecord(r,{hasCurrentRetentionError,hasCurrentReviewRetentionError});
     if(r.retentionErrorPresent!==undefined||hasCurrentRetentionError||hasCurrentReviewRetentionError)r.retentionErrorPresent=r.source==='recovery'?hasCurrentRetentionError:hasCurrentReviewRetentionError;
-    const currentRecord=r.source==='recovery'?{...r,retentionErrorPresent:hasCurrentRetentionError}:{...r,retentionErrorPresent:hasCurrentReviewRetentionError};
-    if(unboundRetentionSignal){currentRecord.error='Vazbu případu nelze ověřit.';delete currentRecord.retentionError;}
-    else if(r.source!=='recovery'&&!hasCurrentReviewRetentionError)delete currentRecord.retentionError;
    const classification=classifyRecovery(freshDiagnosis?{...currentRecord,attention:{importDiagnosis:freshDiagnosis}}:currentRecord,now());delete r.attention;
    if(classification.category!=='attention')continue;
     let retentionDiagnosis=unboundRetentionSignal?{status:'unavailable',reason:'case-binding-unavailable'}:null;

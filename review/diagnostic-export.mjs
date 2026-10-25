@@ -1,6 +1,8 @@
 import path from 'node:path';
 import {classifyRecovery,RECOVERY_STALE_MS} from './public/review-model.js';
 import {readRecoveryCaseState} from './recovery-snapshot.mjs';
+import {currentAttentionRecord,supersedingFollowup} from './attention-record.mjs';
+import {hasMatchingReviewRetentionError} from './recovery-retention-diagnosis.mjs';
 
 // Diagnostic export (#237): an explicitly downloaded, redacted report of one Needs attention or Deferred case.
 // The report is a point-in-time description built from current local observations only. It never contacts
@@ -35,9 +37,11 @@ export function diagnosticExportHeaders(source,id){
  * @param {()=>Promise<{requests?:any[]}>} deps.getOverview Local overview of Review and Recovery cases.
  * @param {{view:(source:string,id:string)=>Promise<any>}|null} [deps.deferrals] Read-only view of the saved deferral (called without a fingerprint).
  * @param {()=>string} deps.version Review version.
+ * @param {()=>any} [deps.getConfig] Review configuration, for the local Review retention-binding check.
+ * @param {()=>Promise<any>} [deps.getConnection] Saved Radarr settings (read locally, never contacted).
  * @param {()=>number} [deps.now]
  */
-export function createDiagnosticExport({data,getOverview,deferrals=null,version,now=Date.now}){
+export function createDiagnosticExport({data,getOverview,deferrals=null,version,getConfig=()=>({}),getConnection=async()=>null,now=Date.now}){
  const sourceOf=record=>record?.source==='recovery'?'recovery':'radarr';
  const find=(overview,source,id)=>(Array.isArray(overview?.requests)?overview.requests:[]).find(r=>object(r)&&sourceOf(r)===source&&r.id===id)||null;
  const material=record=>JSON.stringify([record.phase,record.statusUpdated,record.updated,record.tdarrStatus,Array.isArray(record.queue)?record.queue.length:null,record.search?.status]);
@@ -56,7 +60,7 @@ export function createDiagnosticExport({data,getOverview,deferrals=null,version,
  const unknownReport=(source,id,why)=>({
   format:'tdarr-review-diagnostic-export',formatVersion:1,scope:'single-case',generatedAt:new Date(now()).toISOString(),reviewVersion:version(),
   case:{source,id},completeness:'minimal',verification:'not-verified',
-  state:{category:'unknown',reason:'unknown',phase:'unknown'},deferral:{recorded:'unknown',bindingVerified:false},caseRecord:why,
+  state:{category:'unknown',reason:'unknown',phase:'unknown'},deferral:{recorded:'unknown',bindingVerified:false,fingerprintChecked:false},caseRecord:why,
   observations:{record:{observedAt:null,age:'unknown'},tdarr:{state:'unknown',observedAt:null,age:'unknown'},radarr:{state:'unknown',observedAt:null,age:'unknown'}},
   blockers:[],unknown:['case-state','file-locations','service-state-now','case-binding'],
  });
@@ -68,14 +72,26 @@ export function createDiagnosticExport({data,getOverview,deferrals=null,version,
   if(!SOURCES.has(source)||typeof id!=='string'||!ID.test(id))return null;
   let first;try{first=await getOverview();}catch{return unknownReport(source,id,'unreadable');}
   const record=find(first,source,id);if(!record)return null;
-  const classification=classifyRecovery(record,now());if(classification.category!=='attention')return null;
-  // The Recovery case record must still describe the phase the overview reports; anything else stays unverified.
-  let caseRecord='not-applicable';
+  // The same record the attention projection classifies, from local facts only (no Tdarr or Radarr read).
+  let c=null,caseRecord='not-applicable';
   if(source==='recovery'){
-   try{const read=await readRecoveryCaseState(path.join(data,'recovery','state.json'));const c=read.present&&!read.error?read.cases?.[id]:null;
+   try{const read=await readRecoveryCaseState(path.join(data,'recovery','state.json'));c=read.present&&!read.error?read.cases?.[id]:null;
     caseRecord=!read.present||read.error?'unreadable':!object(c)?'missing':c.id===id&&c.status===record.phase?'consistent':'inconsistent';}
    catch{caseRecord='unreadable';}
   }
+  const hasCurrentRetentionError=source==='recovery'&&object(c)&&c.id===id&&c.status===record.phase&&!!c.retentionError;
+  let hasCurrentReviewRetentionError=false;
+  if(source!=='recovery'&&(record.error||record.retentionError||record.retentionErrorPresent===true)){
+   try{const reviewConfig=getConfig(),radarr=await getConnection().catch(()=>null);
+    hasCurrentReviewRetentionError=await hasMatchingReviewRetentionError({data,record,reviewConfig:{...reviewConfig,radarrUrl:radarr?.url,radarrRoot:radarr?.mediaRoot,radarr:{quarantineRoot:radarr?.quarantineRoot}}});}catch{}
+  }
+  // Whether Tdarr lacks the row is a remote read the export never makes; the case is classified as the overview does when it is possible.
+  const tdarrRowUnverified=source==='recovery'&&record.phase==='replacement_imported'&&!record.tdarrStatus&&object(c)&&c.status==='replacement_imported'&&!!c.replacementRelative&&!!c.replacementSourceFP&&!c.cleanup&&typeof c.file==='string'&&typeof c.relative==='string'&&c.file.endsWith('/'+c.relative);
+  const requests=Array.isArray(first?.requests)?first.requests:[];
+  const superseded=supersedingFollowup(record,requests,now());
+  const candidate={...record,...(superseded?{supersededBy:superseded}:{}),...(tdarrRowUnverified?{tdarrMissing:true}:{})};
+  const {currentRecord}=currentAttentionRecord(candidate,{hasCurrentRetentionError,hasCurrentReviewRetentionError});
+  const classification=classifyRecovery(currentRecord,now());if(classification.category!=='attention')return null;
   let recorded='unknown';
   if(deferrals){try{const saved=await deferrals.view(source,id);recorded=saved?.invalid?'unknown':saved?.state==='deferred'?'deferred':'not-deferred';}catch{recorded='unknown';}}
   // A material change while the report was read is reported as such, never as a verified state.
@@ -90,9 +106,9 @@ export function createDiagnosticExport({data,getOverview,deferrals=null,version,
   return {
    format:'tdarr-review-diagnostic-export',formatVersion:1,scope:'single-case',generatedAt:new Date(now()).toISOString(),reviewVersion:version(),
    case:{source,id},completeness:changed||caseRecord==='unreadable'||caseRecord==='missing'||caseRecord==='inconsistent'?'partial':'standard',verification:'not-verified',
-   state:{category:'attention',reason,phase:token(record.phase,PHASES)},deferral:{recorded,bindingVerified:false},caseRecord,
+   state:{category:'attention',reason,phase:token(record.phase,PHASES)},deferral:{recorded,bindingVerified:false,fingerprintChecked:false},caseRecord,
    observations:{record:{observedAt:changed?null:observedAt,age:reported},tdarr:observation(token(tdarrStatus,TDARR_STATES),!!tdarrStatus),radarr:observation(radarrState(record),!!record.queue?.length||!!record.search?.status)},
-   blockers:[...(DIAGNOSTIC_BLOCKERS[reason]||[])],unknown:['file-locations','service-state-now','case-binding'],
+   blockers:[...(DIAGNOSTIC_BLOCKERS[reason]||[])],unknown:['file-locations','service-state-now','case-binding',...(tdarrRowUnverified?['tdarr-row']:[])],
   };
  }
  return {report};
