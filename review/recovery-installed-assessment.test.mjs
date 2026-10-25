@@ -31,7 +31,7 @@ test('characterization: an installed transcoded result is attention without an a
  assert.equal(a.reason,'awaiting-review');
  assert.deepEqual(a.location.library,{status:'verified',detail:'changed'});
  assert.deepEqual(a.location.review,{status:'not-used'});
- assert.deepEqual(a.actions.map(x=>x.id),['refresh','openRadarr']);
+ assert.deepEqual(a.actions.map(x=>x.id),['refresh','openRadarr','exportDiagnostic']);
  assert.equal(a.recommended,'refresh');
  assert.ok(a.blockers.includes('review-result-missing'));
 });
@@ -43,7 +43,7 @@ test('with the installed result eligible, it is the recommended action and resto
  const overview={requests:[{...ATTENTION_PATHS['replacement transcoded, awaiting review'],radarrMovieUrl:'http://radarr.invalid/movie/x',canRestore:true}]};
  await attention.attach(overview);const a=overview.requests[0].attention;
  assert.deepEqual(asked,[f.c.id,{busy:false}]);
- assert.deepEqual(a.actions.map(x=>x.id),['refresh','openRadarr','assessInstalled']);
+ assert.deepEqual(a.actions.map(x=>x.id),['refresh','openRadarr','assessInstalled','exportDiagnostic']);
  assert.equal(a.recommended,'assessInstalled');
  assert.deepEqual(a.blockers,['restore-over-installed']);
 });

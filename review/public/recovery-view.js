@@ -90,7 +90,7 @@ export const ATTENTION_ACTIONS={refresh:['Obnovit stav','Jen znovu načte údaje
  openReview:['Posoudit výsledek v Review','Otevře posouzení; schválení je samostatný krok.'],replaceSource:['Vyžádat jinou kopii přes Radarr','Spustí vyžádání náhrady; originál zůstane zachovaný v karanténě.'],
  restore:['Vrátit originál i převod z karantény','Přesune zachované soubory zpět do knihovny.'],assessInstalled:['Posoudit nainstalovanou kopii','Otevře posouzení kopie, která je v knihovně; nic nemění.'],
  handoffTdarr:['Předat náhradu Tdarru','Tdarr soubor znovu naskenuje a zařadí ho podle svých pravidel; v knihovně se nic nepřesouvá.'],
- defer:['Odložit případ','Přesune případ do samostatného seznamu; nic neschvaluje ani nemění média.'],reopen:['Znovu otevřít případ','Vrátí případ do aktivní pozornosti; poznámka zůstane uložená.']};
+ defer:['Odložit případ','Přesune případ do samostatného seznamu; nic neschvaluje ani nemění média.'],exportDiagnostic:['Stáhnout diagnostický export','Stáhne jeden případ jako redigovaný soubor JSON bez cest, jmen a poznámek; nic neodešle ani nezmění.'],reopen:['Znovu otevřít případ','Vrátí případ do aktivní pozornosti; poznámka zůstane uložená.']};
 const BLOCKERS={'source-not-confirmed':'Vada originálu není potvrzená dvěma kontrolami; náhradu nelze vyžádat.','inspect-case':'Správce musí zkontrolovat záznam případu a zachované kopie.',
  'diagnosis-needed':'Kontrola originálu skončila provozní nebo nejednoznačnou chybou; prověř ji v detailu.','verify-mode':'Recovery běží v režimu Verify; změny povolí až přepnutí na Repair.',
  'transcode-retry-unavailable':'Opakovaný převod Review zatím nenabízí; důvod zkontroluj v Tdarru.','hold-not-released':'Hold v Tdarru Review neuvolňuje; zkontroluj navazující případ a důvod pozastavení.',

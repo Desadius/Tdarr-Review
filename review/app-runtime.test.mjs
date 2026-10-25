@@ -6,10 +6,11 @@ import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 
 // The child enables Node's browser-module VM loader; npm test needs no extra flags.
+// Its budget leaves room for CI runners, where the child already took 26-29 s of a former 30 s limit.
 if(typeof vm.SourceTextModule!=='function'){
  test('real Review app consumes Recovery runtime and renders both interface languages',()=>{
   const environment={...process.env};delete environment.NODE_TEST_CONTEXT;
-  const child=spawnSync(process.execPath,['--experimental-vm-modules','--test',fileURLToPath(import.meta.url)],{encoding:'utf8',env:environment,timeout:30000});
+  const child=spawnSync(process.execPath,['--experimental-vm-modules','--test',fileURLToPath(import.meta.url)],{encoding:'utf8',env:environment,timeout:120000});
   assert.equal(child.status,0,child.stdout+child.stderr);
   assert.match(child.stdout,/real Review app shows API runtime and interruption changes in cs/,'the flagged child must execute the consumer tests');
  });
@@ -45,6 +46,8 @@ if(typeof vm.SourceTextModule!=='function'){
   addEventListener(type,fn){if(!this.events.has(type))this.events.set(type,[]);this.events.get(type).push(fn)}
   removeEventListener(type,fn){this.events.set(type,(this.events.get(type)||[]).filter(listener=>listener!==fn))}
   async emit(type){if(type==='click'&&this.disabled)return;const event={target:this,preventDefault(){}};await this['on'+type]?.(event);for(const fn of this.events.get(type)||[])await fn(event)}
+  // A download link records the saved file name and the blob it points to, like a browser would save it.
+  click(){if(this.tagName==='A'&&this.download)downloads.push({name:this.download,href:this.href});return this.emit('click')}
   showModal(){this.open=true}
   close(value){if(value!==undefined)this.returnValue=value;this.open=false;return this.emit('close')}
   setCustomValidity(value){this.validationMessage=value}
@@ -52,7 +55,8 @@ if(typeof vm.SourceTextModule!=='function'){
   // Like the DOM, focusing an element makes it the document's active element.
   focus(){if(activeDocument)activeDocument.activeElement=this}
  }
- let activeDocument=null;
+ let activeDocument=null;const downloads=[],blobs=new Map();
+ class DownloadURL extends URL{static createObjectURL(blob){const href='blob:synthetic/'+blobs.size;blobs.set(href,blob);return href}static revokeObjectURL(){}}
  class TextNode extends Element{constructor(value){super('');this.tagName=null;this.nodeValue=value}get textContent(){return this.nodeValue}set textContent(value){this.nodeValue=value}}
  function browserDocument(html){
   const root=new Element('document'),stack=[root],voids=new Set(['meta','link','input','img','br','hr','source']);
@@ -68,12 +72,13 @@ if(typeof vm.SourceTextModule!=='function'){
  const flush=()=>new Promise(resolve=>setImmediate(resolve));
  async function appFixture(language,{itemsData={},routes={}}={}){
   const windowListeners={};
+  downloads.length=0;blobs.clear();
   const html=await fs.readFile(new URL('./public/index.html',import.meta.url),'utf8'),document=browserDocument(html),calls=[],timers=[],storage=new Map(),session=new Map();let now=Date.now(),overviewError=null,fallbackRuntime=null,fallbackStatus=200;
   class BrowserDate extends Date{constructor(...args){super(...(args.length?args:[now]))}static now(){return now}}
   const runtime={present:true,version:1,mode:'repair',state:'running',reason:null};
   let response={requests:[{id:'b'.repeat(24),source:'recovery',title:'Synthetic movie',phase:'verifying',canRestore:false,statusUpdated:new Date().toISOString()}],recoveryRuntime:runtime,recoveryConfig:{restartRequired:true,valid:true}};
   const location=new URL('http://localhost/?lang='+language+'#recovery'),navigations=[];location.assign=value=>navigations.push(value);
-  const context=vm.createContext({document,location,URL,URLSearchParams,Option:class extends Element{constructor(label,value){super('option');this.textContent=label;this.value=value}},Date:BrowserDate,console,AbortController,NodeFilter:{SHOW_TEXT:4},requestAnimationFrame:fn=>setTimeout(fn,0),cancelAnimationFrame(){},localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)},sessionStorage:{getItem:key=>session.has(key)?session.get(key):null,removeItem:key=>session.delete(key),setItem:(key,value)=>session.set(key,String(value))},history:{replaceState(){}},addEventListener(type,fn){(windowListeners[type]||=[]).push(fn)},setInterval(fn,ms){timers.push({fn,ms});return timers.length},clearInterval(){},setTimeout,clearTimeout,fetch:async(route,options)=>{
+  const context=vm.createContext({document,location,URL:DownloadURL,Blob,URLSearchParams,Option:class extends Element{constructor(label,value){super('option');this.textContent=label;this.value=value}},Date:BrowserDate,console,AbortController,NodeFilter:{SHOW_TEXT:4},requestAnimationFrame:fn=>setTimeout(fn,0),cancelAnimationFrame(){},localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)},sessionStorage:{getItem:key=>session.has(key)?session.get(key):null,removeItem:key=>session.delete(key),setItem:(key,value)=>session.set(key,String(value))},history:{replaceState(){}},addEventListener(type,fn){(windowListeners[type]||=[]).push(fn)},setInterval(fn,ms){timers.push({fn,ms});return timers.length},clearInterval(){},setTimeout,clearTimeout,fetch:async(route,options)=>{
    calls.push({route,method:options.method,body:options.body?JSON.parse(options.body):undefined});
    const configured=routes[route]||routes[route.split('?')[0]],fixture=typeof configured==='function'?await configured({route,body:options.body?JSON.parse(options.body):undefined}):configured;if(fixture)return {status:fixture.status||200,ok:!fixture.status||fixture.status<400,json:async()=>structuredClone(fixture.data)};if(route==='/api/radarr/requests'&&overviewError)return {status:overviewError.status,ok:false,json:async()=>({error:overviewError.message})};
    if(route==='/api/recovery/runtime'&&fallbackStatus!==200)return {status:fallbackStatus,ok:false,json:async()=>({error:'synthetic runtime unavailable'})};
@@ -88,7 +93,7 @@ if(typeof vm.SourceTextModule!=='function'){
   await app.link((specifier,referencing)=>moduleFor(specifier.startsWith('/')?new URL(specifier.slice(1),publicRoot):new URL(specifier,referencing.identifier)));
   await app.evaluate();for(let i=0;i<10;i++)await flush();
   const refresh=async()=>{await document.getElementById('recoveryRefresh').emit('click');for(let i=0;i<10;i++)await flush()};
-  return {document,calls,timers,storage,navigations,async hash(value){location.hash=value;for(const fn of windowListeners.hashchange||[])fn();for(let i=0;i<6;i++)await flush()},async tick(){for(const timer of timers.filter(t=>t.ms===1000))timer.fn();for(let i=0;i<15;i++)await flush()},async update(value){response=value;await refresh()},async failOverview(runtime,status=500,runtimeStatus=200){overviewError={status,message:'synthetic shared case status invalid'};fallbackRuntime=runtime;fallbackStatus=runtimeStatus;now+=60000;await refresh()}};
+  return {document,calls,timers,storage,navigations,downloads,blobs,async hash(value){location.hash=value;for(const fn of windowListeners.hashchange||[])fn();for(let i=0;i<6;i++)await flush()},async tick(){for(const timer of timers.filter(t=>t.ms===1000))timer.fn();for(let i=0;i<15;i++)await flush()},async update(value){response=value;await refresh()},async failOverview(runtime,status=500,runtimeStatus=200){overviewError={status,message:'synthetic shared case status invalid'};fallbackRuntime=runtime;fallbackStatus=runtimeStatus;now+=60000;await refresh()}};
  }
  const sharedFixture={revision:'fixture-revision',managed:false,generation:0,active:null,historyUsesSetupTime:true,conflicts:[],migrationChoices:[],history:[],apply:{state:'idle'},draft:{review:{label:'Fixture',publicOrigin:'http://localhost',tdarrUrl:'http://127.0.0.1:8266',libraryId:'fixture',sourceRoots:['/tdarr-films','/alias'],tdarrReviewRoot:'/tdarr-review',mediaRoot:'/media',reviewRoot:'/review',reviewPrefixes:[],database:'/db',ffmpeg:'/ffmpeg',ffprobe:'/ffprobe'},radarr:{url:'http://127.0.0.1:7878',mediaRoot:'/radarr-films',quarantineRoot:'/radarr-quarantine',preferCzechEnglish:true,hasApiKey:true},sonarr:{url:'http://127.0.0.1:8989',hasApiKey:true},recovery:{sourceRoot:'/tdarr-films',quarantineRoot:'/recovery-quarantine',reports:'/reports',stableMinutes:10,confirmDelaySeconds:30,pollSeconds:300,decodeTimeoutHours:12,maxRepairsPerDay:3,movieCooldownDays:30,fullSourceHash:false,detectTerminalHeaders:true,since:1700000000000}}};
  test('both legacy settings entry points open one guided shared draft without applying',async()=>{
@@ -373,7 +378,29 @@ test('a mapped Sonarr file cannot be source-checked without an explicit saved ro
   assert.equal(await open('Fixture film'),null,'the film being replaced shows no checklist');assert.match(dom.getElementById('detailBody').textContent,/Tento film se právě nahrazuje nebo čeká v dávce/);
   assert.equal(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,0);
  });
- for(const language of ['cs','en'])test('Needs attention shows the server reason, location and only the server-listed actions, recommended first, in '+language,async()=>{
+ for(const language of ['cs','en'])test('a Needs attention or Deferred case downloads its Diagnostic export without any other effect, and failures are understandable, in '+language,async()=>{
+ const id='d'.repeat(24),runtime={present:true,version:1,mode:'repair',state:'running',reason:null},report={format:'tdarr-review-diagnostic-export',case:{source:'recovery',id}};
+ const attention={reason:'manual',recommended:'refresh',blockers:['inspect-case'],location:{},actions:[{id:'refresh',changes:'information'},{id:'exportDiagnostic',changes:'nothing'},{id:'reopen',changes:'review-only',revision:'r'.repeat(64)}]};
+ const record={id,source:'recovery',title:'Synthetic attention film',phase:'manual',canRestore:false,statusUpdated:new Date().toISOString(),attention,deferral:{state:'deferred',note:'private note',revision:'r'.repeat(64)}};
+ let answer={data:report};
+ const f=await appFixture(language,{routes:{['/api/cases/recovery/'+id+'/diagnostic-export']:()=>answer}}),dom=f.document;
+ await f.update({requests:[record],recoveryRuntime:runtime});await f.hash('#recovery?filter=deferred');
+ const list=dom.getElementById('recoveryList'),label=language==='en'?/Download diagnostic export/:/Stáhnout diagnostický export/;
+ const deferredButton=list.querySelectorAll('button').find(n=>label.test(n.textContent));assert.ok(deferredButton,'a Deferred case offers the export');
+ const before=f.calls.length;await deferredButton.emit('click');for(let i=0;i<8;i++)await flush();
+ const sent=f.calls.slice(before);assert.deepEqual(sent.map(c=>c.method+' '+c.route),['GET /api/cases/recovery/'+id+'/diagnostic-export'],'one read-only request, nothing else');
+ assert.equal(f.downloads.length,1);assert.equal(f.downloads[0].name,'tdarr-review-diagnostic-recovery-'+id+'.json');
+ assert.deepEqual(JSON.parse(await f.blobs.get(f.downloads[0].href).text()),report);
+ // The detail view offers the same action for an active case.
+ await f.update({requests:[{...record,deferral:undefined,attention:{...attention,actions:attention.actions.filter(a=>a.id!=='reopen')}}],recoveryRuntime:runtime});await f.hash('#recovery?filter=attention');
+ await dom.querySelectorAll('button').find(n=>/Synthetic attention film/.test(n.getAttribute('aria-label')||'')).emit('click');for(let i=0;i<6;i++)await flush();
+ const action=dom.getElementById('detailBody').querySelector('[data-attention-action="exportDiagnostic"]');assert.ok(action,'the detail view lists the export');
+ answer={status:404,data:{code:'diagnostic_case_unavailable',error:'x'}};const failed=f.downloads.length;await action.emit('click');for(let i=0;i<8;i++)await flush();
+ assert.equal(f.downloads.length,failed,'a failed export saves nothing');
+ assert.match(dom.getElementById('error').textContent,language==='en'?/diagnostic export cannot be created for this case/:/diagnostický export vytvořit/);
+ assert.equal(f.calls.some(c=>c.method==='POST'),false,'no approval, note, quarantine or deadline request');
+});
+for(const language of ['cs','en'])test('Needs attention shows the server reason, location and only the server-listed actions, recommended first, in '+language,async()=>{
   const id='d'.repeat(24),itemId='e'.repeat(24),runtime={present:true,version:1,mode:'repair',state:'running',reason:null};
   const attention={reason:'awaiting-review',recommended:'openReview',recoveryPolledAt:new Date().toISOString(),blockers:['transcode-retry-unavailable'],
    location:{library:{status:'verified',detail:'present'},quarantine:{status:'verified',detail:'present'},review:{status:'verified',detail:'pending'},tdarr:{status:'unverified',detail:'transcode success',by:'recovery'},radarr:{status:'not-used'}},

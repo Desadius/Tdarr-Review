@@ -135,6 +135,7 @@ export const ERROR_MESSAGES=Object.freeze({
  deferral_note_invalid:Object.freeze({cs:'Napiš poznámku do 1 000 znaků.',en:'Write a note of up to 1,000 characters.'}),
  deferral_stale:Object.freeze({cs:'Případ se změnil. Obnov přehled a zkus to znovu.',en:'The case changed. Refresh the overview and try again.'}),
  deferral_conflict:Object.freeze({cs:'Stav odložení se změnil. Obnov přehled.',en:'The deferral state changed. Refresh the overview.'}),
+ diagnostic_case_unavailable:Object.freeze({cs:'Pro tento případ nelze diagnostický export vytvořit. Obnov přehled.',en:'A diagnostic export cannot be created for this case. Refresh the overview.'}),
  deferral_unavailable:Object.freeze({cs:'Případ nelze bezpečně odložit. Pozornost zůstává viditelná.',en:'This case cannot be deferred safely. Its attention remains visible.'}),
  restore_confirm_required:Object.freeze({cs:"Potvrď obnovení zachovaných kopií.",en:"Confirm restoration of the retained copies."}),
  sample_mode_invalid:Object.freeze({cs:"Neplatný typ ukázky.",en:"Invalid sample type."}),

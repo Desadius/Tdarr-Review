@@ -110,8 +110,19 @@ async function askHandoff(record){
  }catch(e){error(e)}
 }
 // A server-listed attention action (#229). Mutating ones go through their existing confirmation and capability checks.
+// Explicit Diagnostic export (#237): one authenticated GET, saved by the browser; nothing is sent anywhere else.
+async function downloadDiagnostic(record){
+ const source=record.source==='recovery'?'recovery':'radarr';
+ try{
+  if(!/^[a-f0-9]{24}$/.test(String(record.id)))throw Error('Diagnostický export se nepodařilo stáhnout.');
+  const report=await api('/api/cases/'+source+'/'+record.id+'/diagnostic-export');
+  const url=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)+'\n'],{type:'application/json'})),link=document.createElement('a');
+  link.href=url;link.download='tdarr-review-diagnostic-'+source+'-'+record.id+'.json';link.hidden=true;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),0);
+ }catch(e){error(e)}
+}
 function runAttentionAction(record,action){
  const key=(record.source==='recovery'?'recovery:':'radarr:')+record.id;
+ if(action.id==='exportDiagnostic')return downloadDiagnostic(record);
  if(action.id==='handoffTdarr')return askHandoff(record);
  if(action.id==='assessInstalled'){if(!$('filmDetail').open||ui.detail?.id!==key)openDetail('request',key);return changeDetailTab('comparison');}
  if(action.id==='refresh')return loadRequests(true,[key]);
@@ -228,7 +239,7 @@ function recoveryRow(projected){
  const deferred=r.deferral?.state==='deferred';info.append(badge(deferred?'Odloženo':cl.label,deferred?'':cl.category==='attention'?'warning':cl.category==='done'?'ready':''),el('h2','',r.title,true),el('p','details',deferred?'Případ zůstává nevyřešený; odložení není schválení ani potvrzení zdravého stavu.':cl.nextStep));
  if(deferred&&r.deferral.note){const note=el('p','details');note.append(el('span','','Poznámka k odložení: '),el('span','',r.deferral.note,true));info.append(note)}
  const importDiagnosis=importDiagnosisView(r.attention?.importDiagnosis);if(importDiagnosis)info.append(importDiagnosis);
- if(deferred){const action=r.attention?.actions?.find(a=>a.id==='reopen');if(action)info.append(button('Znovu otevřít případ',()=>runAttentionAction(r,action)));}
+ if(deferred){const action=r.attention?.actions?.find(a=>a.id==='reopen');if(action)info.append(button('Znovu otevřít případ',()=>runAttentionAction(r,action)));const exportAction=r.attention?.actions?.find(a=>a.id==='exportDiagnostic');if(exportAction)info.append(button('Stáhnout diagnostický export',()=>runAttentionAction(r,exportAction)));}
  else if(r.attention)info.append(attentionActionsView(r.attention,action=>runAttentionAction(r,action),{recommendedOnly:true}));
  const progress=recoveryProgress(r);if(progress)info.append(decodeProgressView(progress,false));const hashProgress=fullHashProgress(r);if(hashProgress)info.append(fullHashProgressView(hashProgress,false));for(const download of downloadProgress(r).slice(0,1))info.append(downloadProgressView(download,false));
  const meta=el('div','row-metric');meta.append(el('span','details',r.source==='recovery'?'Recovery · Radarr · Tdarr':'Náhrada přes Radarr'),el('small',cl.stale?'failure':'details',cl.stale?'Stav starší než 12 minut':date(r.statusUpdated||r.updated)));

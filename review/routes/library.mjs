@@ -7,6 +7,7 @@ import {body,reply,apiError} from './http.mjs';
 import {logEvent} from '../log.mjs';
 import {readRecoveryRuntime} from '../recovery-snapshot.mjs';
 import {settingsRequest} from './shared-settings.mjs';
+import {diagnosticExportHeaders} from '../diagnostic-export.mjs';
 
 const RESTORE_RECONCILE_ERRORS=new Set(['restore_reconcile_confirm_required','restore_busy','restore_case_invalid','restore_reconcile_unavailable',
  'restore_fence_owner_changed','restore_case_unavailable','restore_binding_unavailable','restore_binding_changed','restore_case_snapshot_changed','restore_reconcile_confirmation_changed',
@@ -66,6 +67,13 @@ export async function libraryRoutes(ctx,req,res,url,request){
   });
  }
  if(url.pathname==='/api/radarr/requests'&&req.method==='GET')return reply(res,200,await ctx.recoveryAttention.attach(await ctx.replacements.overview()));
+ // Explicit single-case Diagnostic export (#237): local reads only, a redacted JSON attachment.
+ const diagnostic=/^\/api\/cases\/(recovery|radarr)\/([a-f0-9]{24})\/diagnostic-export$/.exec(url.pathname);
+ if(diagnostic&&req.method==='GET'){
+  const report=await ctx.diagnosticExport.report(diagnostic[1],diagnostic[2]);
+  if(!report)return reply(res,404,apiError('diagnostic_case_unavailable'));
+  res.writeHead(200,diagnosticExportHeaders(diagnostic[1],diagnostic[2]));res.end(JSON.stringify(report,null,2)+'\n');return true;
+ }
  // Read-only first-stage check for an explicit return of one exact Recovery original (#234).
  const originalRestore=/^\/api\/recovery\/cases\/([a-f0-9]{24})\/restore-original$/.exec(url.pathname);
  const deferral=/^\/api\/recovery\/cases\/([a-f0-9]{24})\/defer(\/reopen)?$/.exec(url.pathname);

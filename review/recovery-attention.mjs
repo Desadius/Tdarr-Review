@@ -271,6 +271,7 @@ export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnec
    }
    if(handoff&&classification.reason==='tdarr-missing'){try{found.handoffResult=await handoff.eligibility(r.id,{busy:isBusy()});}catch{found.handoffResult={eligible:false,blockers:['handoff-unverified']};}}
    r.attention={reason:classification.reason,location:found.location,...(importDiagnosis?{importDiagnosis:Object.fromEntries(['status','category','movieUrl','queueUrl','checkedAt'].map(key=>[key,importDiagnosis[key]??null]))}:{}),...(retentionDiagnosis?{retentionDiagnosis}:{}),...decide(r,classification,{...found,importDiagnosis}),recoveryPolledAt:at(r.statusUpdated)};
+   r.attention.actions.push({id:'exportDiagnostic',changes:'nothing'});
    if(r.source==='recovery'){
     let fingerprint=null,saved=null,metadataUnavailable=false;try{fingerprint=await deferralFingerprint(r,c,found);if(fingerprint)saved=await deferrals?.view('recovery',r.id,fingerprint);}catch{metadataUnavailable=true;}
     const active=!!fingerprint&&saved?.state==='deferred'&&saved.fingerprint===fingerprint;
