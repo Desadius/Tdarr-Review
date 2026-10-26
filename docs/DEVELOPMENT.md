@@ -138,6 +138,18 @@ FFMPEG=/path/to/ffmpeg FFPROBE=/path/to/ffprobe npm run test:integration
 
 It must never point at real media or a real Tdarr/Radarr endpoint. The test server uses localhost port 18270. The approval subprocess deliberately receives an invalid decoder path so the test proves ordinary approval does not perform another complete decode.
 
+FFmpeg is not part of the WSL2 development environment. The Review image ships the Jellyfin FFmpeg that production uses (under `/usr/lib/jellyfin-ffmpeg/`), so build it from the branch being tested and run the integration test inside it. The container has no network (the mock Tdarr stays on loopback), a read-only root and checkout, scratch space only in `/tmp` and no capabilities:
+
+```bash
+docker build --platform linux/amd64 -t tdarr-review:integration .
+docker run --rm --platform linux/amd64 --network none --read-only --tmpfs /tmp:exec,size=1g \
+  --cap-drop ALL -v "$PWD":/src:ro -w /src -e HOME=/tmp \
+  -e FFMPEG=/usr/lib/jellyfin-ffmpeg/ffmpeg -e FFPROBE=/usr/lib/jellyfin-ffmpeg/ffprobe \
+  --entrypoint sh tdarr-review:integration -c 'npm run test:integration'
+```
+
+A missing host FFmpeg is therefore no reason to skip this test for an approval-flow change. Record the image's FFmpeg version (`ffmpeg -version`) with the result.
+
 The seek-induced DTS audio regression (#183) runs the real extractor on media generated from a pinned public-domain dcadec test vector. Download it once, explicitly, into a temporary directory (the only network step; the vector is never committed), then run offline:
 
 ```bash

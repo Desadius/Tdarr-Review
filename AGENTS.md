@@ -27,7 +27,7 @@ docker build --platform linux/amd64 -t tdarr-review:smoke .   # local Review ima
 bash tools/docker-smoke.sh   # smoke test of that image with disposable containers and volumes
 ```
 
-Approval-flow changes also need the isolated integration test, which generates short synthetic media and uses a local mock Tdarr API on port 18270:
+Approval-flow changes also need the isolated integration test, which generates short synthetic media and uses a local mock Tdarr API on port 18270. WSL2 has no FFmpeg; run it inside the Review image with its bundled FFmpeg as described in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md):
 
 ```bash
 FFMPEG=/path/to/ffmpeg FFPROBE=/path/to/ffprobe npm run test:integration
