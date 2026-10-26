@@ -83,6 +83,7 @@ import { rejectionReason, recordRejection } from './rejection-audit.mjs';
 import {createReplacement} from './radarr-replacement.mjs';
 import {createRecoveryAttention} from './recovery-attention.mjs';
 import {createRecoveryDeferrals} from './recovery-deferrals.mjs';
+import {createDiagnosticExport} from './diagnostic-export.mjs';
 import {createInstalledAssessment} from './installed-assessment.mjs';
 import {createTdarrHandoff} from './tdarr-handoff.mjs';
 import {createRecoverySafeRestore} from './recovery-safe-restore.mjs';
@@ -301,6 +302,7 @@ async function jobReport(job){const f=await safeFile(path.resolve(path.dirname(D
 const transcodeRetry=createTranscodeRetry({data:DATA,getConfig:()=>config,tdarr,readRows:table=>dbRows(table),readReport:jobReport,isWorkerBusy:async item=>workerBusy(await tdarr('/api/v2/get-nodes'),item),atomicJSON});
 const recoveryDeferrals=createRecoveryDeferrals({data:DATA});
 const recoveryAttention=createRecoveryAttention({data:DATA,getConfig:()=>config,getItems:()=>state.items,tdarr,getConnection:activeConnection,mode:process.env.RECOVERY_MODE||'off',installed:installedAssessment,handoff:tdarrHandoff,retry:transcodeRetry,deferrals:recoveryDeferrals,getOverview:()=>replacements.overview(),isBusy:()=>!!busyFor('replace')});
+const diagnosticExport=createDiagnosticExport({data:DATA,getOverview:()=>replacements.overview(),deferrals:recoveryDeferrals,version:()=>APP_VERSION,getConfig:()=>config,getConnection:activeConnection});
 const localOff={requestDrain:async()=>({state:'off'}),status:async()=>({state:'off'}),cancel:async()=>({state:'off'}),stopAfterDrain:async()=>({state:'stopped'}),restart:async()=>({state:'off'}),wait:async()=>({state:'off'})};
 const restoreControl=!process.connected&&(!process.env.RECOVERY_MODE||process.env.RECOVERY_MODE==='off')?localOff:createRecoveryControlClient();
 const recoverySafeRestore=createRecoverySafeRestore({data:DATA,mode:process.env.RECOVERY_MODE||'off',tdarr,control:restoreControl});
@@ -453,7 +455,7 @@ const authTimer=setInterval(()=>{pruneAuthAttempts(authAttempts);if(pruneSession
 // Getters/setters keep the module variables above authoritative, so the scan,
 // transaction and preview code shares exactly the state the routes change.
 const ctx={
- ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,recoveryAttention,recoverySafeRestore,installedAssessment,tdarrHandoff,transcodeRetry,artwork,reviewSessions,previewPairs,previewPlans,previewAttempts,sharedSettings,sonarrSourceInspection,sonarrResultInspection,
+ ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,recoveryAttention,diagnosticExport,recoverySafeRestore,installedAssessment,tdarrHandoff,transcodeRetry,artwork,reviewSessions,previewPairs,previewPlans,previewAttempts,sharedSettings,sonarrSourceInspection,sonarrResultInspection,
  get config(){return config},set config(value){config=value},
  get previewSettings(){return previewSettings},set previewSettings(value){previewSettings=value},
  get state(){return state},

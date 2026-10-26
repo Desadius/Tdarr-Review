@@ -22,7 +22,7 @@ test('a missing Tdarr row makes the handoff the recommended action, flagged when
 test('an ineligible handoff names its blockers; a reported Tdarr state or a present row is never flagged',async t=>{
  const a=await attention(t,{rowMissing:async()=>true,eligibility:async()=>({eligible:false,blockers:['handoff-hold']})});
  const overview={requests:[{...record}]};await a.attach(overview);
- assert.deepEqual(overview.requests[0].attention.actions.map(x=>x.id),['refresh']);assert.deepEqual(overview.requests[0].attention.blockers,['handoff-hold']);
+ assert.deepEqual(overview.requests[0].attention.actions.map(x=>x.id),['refresh','exportDiagnostic']);assert.deepEqual(overview.requests[0].attention.blockers,['handoff-hold']);
  const reported={requests:[{...record,tdarrStatus:'Queued'}]};await a.attach(reported);assert.equal(reported.requests[0].tdarrMissing,undefined);
  const present=await attention(t,{rowMissing:async()=>false,eligibility:async()=>{throw Error('not asked')}});
  const again={requests:[{...record}]};await present.attach(again);assert.equal(again.requests[0].tdarrMissing,undefined);assert.equal(again.requests[0].attention,undefined);

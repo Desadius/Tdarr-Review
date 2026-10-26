@@ -19,7 +19,7 @@ test('characterization: a failed or skipped transcode of the replacement is atte
   const overview={requests:[{...ATTENTION_PATHS[key],radarrMovieUrl:'http://radarr.invalid/movie/x'}]};
   await attention.attach(overview);const a=overview.requests[0].attention;
   assert.equal(a.reason,reason);
-  assert.deepEqual(a.actions.map(x=>x.id),['refresh','openRadarr']);
+  assert.deepEqual(a.actions.map(x=>x.id),['refresh','openRadarr','exportDiagnostic']);
   assert.equal(a.recommended,'refresh');
   assert.deepEqual(a.blockers,['transcode-retry-unavailable']);
  }

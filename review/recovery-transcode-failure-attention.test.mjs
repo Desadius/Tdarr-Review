@@ -22,7 +22,7 @@ test('an operational failure recommends the retry and shows its cause',async t=>
 test('decode damage offers no retry and names why, with the value-free decoder message',async t=>{
  const a=await attention(t,{retry:{eligibility:async()=>({eligible:false,blockers:['transcode-decode-damage'],cause:'decode-damage',message:'Invalid NAL unit size (# > #).'})}});
  const o=failed();await a.attach(o);const x=o.requests[0].attention;
- assert.deepEqual(x.actions.map(v=>v.id),['refresh']);assert.deepEqual(x.blockers,['transcode-decode-damage']);assert.deepEqual(x.diagnosis,{cause:'decode-damage',message:'Invalid NAL unit size (# > #).'});
+ assert.deepEqual(x.actions.map(v=>v.id),['refresh','exportDiagnostic']);assert.deepEqual(x.blockers,['transcode-decode-damage']);assert.deepEqual(x.diagnosis,{cause:'decode-damage',message:'Invalid NAL unit size (# > #).'});
 });
 test('a failing retry check is unverified, never a retry',async t=>{
  const a=await attention(t,{retry:{eligibility:async()=>{throw Error('broken')}}});
@@ -31,7 +31,7 @@ test('a failing retry check is unverified, never a retry',async t=>{
 test('Not required recommends assessing the untranscoded copy, explains why there is no retry and never offers restore',async t=>{
  const a=await attention(t,{installed:{eligibility:async()=>({eligible:true,blockers:[]})}});
  const o=skipped();await a.attach(o);const x=o.requests[0].attention;
- assert.equal(x.recommended,'assessInstalled');assert.deepEqual(x.actions.map(v=>v.id),['refresh','assessInstalled']);
+ assert.equal(x.recommended,'assessInstalled');assert.deepEqual(x.actions.map(v=>v.id),['refresh','assessInstalled','exportDiagnostic']);
  assert.deepEqual(x.blockers,['transcode-not-required','restore-over-installed']);
  const b=await attention(t,{installed:{eligibility:async()=>({eligible:false,blockers:['installed-no-decision']})}});
  const p=skipped();await b.attach(p);assert.deepEqual(p.requests[0].attention.blockers,['transcode-not-required','installed-no-decision','restore-over-installed']);
