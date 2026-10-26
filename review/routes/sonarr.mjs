@@ -1,10 +1,17 @@
-import {reply,apiError} from './http.mjs';
+import {body,reply,apiError} from './http.mjs';
 import {createSonarrInspection} from '../sonarr-inspection.mjs';
 import {logEvent} from '../log.mjs';
 
 const revisionPattern=/^[a-f0-9]{64}$/;
 
-export function sonarrRoutes(ctx,req,res,url){
+export async function sonarrRoutes(ctx,req,res,url){
+ if(url.pathname==='/api/sonarr/technical-facts'&&req.method==='POST'){
+  const input=await body(req),keys=['revision','seriesId','episodeFileId'];
+  if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(key=>!keys.includes(key))||Object.keys(input).length!==keys.length||!revisionPattern.test(input.revision||'')||!Number.isSafeInteger(input.seriesId)||input.seriesId<=0||!Number.isSafeInteger(input.episodeFileId)||input.episodeFileId<=0)return reply(res,400,apiError('sonarr_invalid_request'));
+  let result;try{result=await ctx.sonarrResultInspection.inspectTechnical(input.revision,input.seriesId,input.episodeFileId);}catch(error){if(error?.code==='settings_conflict')return reply(res,409,apiError('settings_conflict'));return reply(res,503,apiError('sonarr_unavailable'));}
+  logEvent('sonarr.inspection',{kind:'technical-facts',seriesId:input.seriesId,result:result.status});
+  return reply(res,200,result);
+ }
  if(req.method!=='GET'||!['/api/sonarr/series','/api/sonarr/inspect','/api/sonarr/source','/api/sonarr/result'].includes(url.pathname))return false;
  const revision=url.searchParams.get('revision');
  if(!revisionPattern.test(revision||''))return reply(res,400,apiError('sonarr_invalid_request'));

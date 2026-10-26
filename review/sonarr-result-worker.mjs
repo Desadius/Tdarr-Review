@@ -1,11 +1,16 @@
 import crypto from 'node:crypto';
+import {spawn} from 'node:child_process';
 import fs from 'node:fs/promises';
 import {constants as fsConstants} from 'node:fs';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {identityOf,compareIdentity} from '../recovery/file-identity.mjs';
+import {projectTechnicalFacts} from './sonarr-technical-facts.mjs';
 
-const maxReceipt=65536,sampleBytes=1024*1024,maxOutput=256*1024;
+const maxReceipt=65536,sampleBytes=1024*1024,maxOutput=256*1024,maxProbeOutput=128*1024,maxProbeError=16*1024,probeTimeoutMs=12000;
+const probeFormats='matroska,webm,mov,avi,mpegts,mpeg,asf,flv,ogg';
+const activeProbes=new Set();let shuttingDown=false;
+process.on('SIGTERM',()=>{shuttingDown=true;for(const probe of activeProbes)probe.stop();});
 const plain=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const sameDirectory=(a,b)=>a.isDirectory()&&b.isDirectory()&&a.dev===b.dev&&a.ino===b.ino&&a.mode===b.mode;
 const sameIdentity=(a,b)=>a.dev===b.dev&&a.ino===b.ino&&a.size===b.size&&a.mtimeMs===b.mtimeMs&&a.ctimeMs===b.ctimeMs;
@@ -13,8 +18,9 @@ const fault=code=>Object.assign(Error(),{code});
 const sameFile=(a,b)=>compareIdentity(a,b)==='same';
 
 function validInput(value){
- if(!plain(value)||Object.keys(value).some(key=>!['mediaRoot','reviewRoot','database','relative','outputRelatives'].includes(key))||
+ if(!plain(value)||Object.keys(value).some(key=>!['mediaRoot','reviewRoot','database','relative','outputRelatives','probeFacts','ffprobe'].includes(key))||
   typeof value.mediaRoot!=='string'||typeof value.reviewRoot!=='string'||typeof value.database!=='string'||!Array.isArray(value.outputRelatives)||value.outputRelatives.length<1||value.outputRelatives.length>40)return false;
+ if(Object.hasOwn(value,'probeFacts')&&value.probeFacts!==true||value.probeFacts===true&&(typeof value.ffprobe!=='string'||!value.ffprobe.startsWith('/')||value.ffprobe.length>2048||value.ffprobe.includes('\0')||path.posix.normalize(value.ffprobe)!==value.ffprobe)||value.probeFacts!==true&&Object.hasOwn(value,'ffprobe'))return false;
  for(const root of [value.mediaRoot,value.reviewRoot,value.database])if(!root.startsWith('/')||root==='/'||root.length>2048||root.includes('\\')||root.includes('\0')||path.posix.normalize(root)!==root)return false;
  const relative=value=>typeof value==='string'&&value.length>0&&value.length<=4096&&!value.startsWith('/')&&!value.includes('\\')&&!value.includes('\0')&&value.split('/').every(part=>part&&part!=='.'&&part!=='..'&&part.length<=255);
  return relative(value.relative)&&value.outputRelatives.every(relative)&&new Set(value.outputRelatives).size===value.outputRelatives.length;
@@ -81,6 +87,44 @@ async function exactJobs(database,receipt){
  }catch{return {status:'unavailable'};}finally{db?.close();}
 }
 
+function probeFile(executable,handle){
+ return new Promise(resolve=>{
+  if(shuttingDown)return resolve({status:'unverified',reason:'evidence-unavailable'});
+  const args=['-v','error','-protocol_whitelist','file','-format_whitelist',probeFormats,'-enable_drefs','0','-use_absolute_path','0','-probesize','5000000','-analyzeduration','5000000','-max_alloc','33554432','-show_streams','-show_format','-of','json','/proc/self/fd/3'];
+  let child;try{child=spawn(executable,args,{shell:false,windowsHide:true,stdio:['ignore','pipe','pipe',handle.fd],env:{PATH:process.env.PATH||''}})}catch{return resolve({status:'unverified',reason:'evidence-unavailable'});}
+  const chunks=[];let outputBytes=0,errorBytes=0,overflow=false,timedOut=false,stopping=false,killTimer=null;
+  const stop=()=>{if(stopping)return;stopping=true;try{child.kill('SIGTERM')}catch{}killTimer=setTimeout(()=>{if(child.exitCode===null&&child.signalCode===null)try{child.kill('SIGKILL')}catch{}},250);killTimer.unref?.();};
+  const activeProbe={stop};activeProbes.add(activeProbe);
+  const deadline=setTimeout(()=>{timedOut=true;stop()},probeTimeoutMs);deadline.unref?.();
+  child.once('error',()=>{overflow=true});
+  child.stdout.on('data',chunk=>{const data=Buffer.from(chunk);outputBytes+=data.length;if(outputBytes>maxProbeOutput){overflow=true;stop();return;}chunks.push(data);});
+  child.stderr.on('data',chunk=>{errorBytes+=chunk.length;if(errorBytes>maxProbeError&&!overflow){overflow=true;stop();}});
+  child.once('close',code=>{
+   activeProbes.delete(activeProbe);clearTimeout(deadline);clearTimeout(killTimer);
+   if(timedOut||shuttingDown)return resolve({status:'unverified',reason:'evidence-unavailable'});
+   if(overflow||code!==0)return resolve({status:'unverified',reason:'unsupported-evidence'});
+   let parsed;try{parsed=JSON.parse(Buffer.concat(chunks,outputBytes).toString('utf8'));}catch{return resolve({status:'unverified',reason:'unsupported-evidence'});}
+   const facts=projectTechnicalFacts(parsed);return resolve(facts?{status:'present',facts}:{status:'unverified',reason:'unsupported-evidence'});
+  });
+ });
+}
+
+async function probePair(input,source,result,jobs){
+ const [sourceFile,resultFile]=await Promise.all([openBounded(input.mediaRoot,input.relative),openBounded(input.reviewRoot,result.relative)]);
+ try{
+  if(!sameFile(source.fileFingerprint,sourceFile.fingerprint)||!sameFile(result.fileFingerprint,resultFile.fingerprint))return {status:'unverified',reason:'file-changed'};
+  const sourceFacts=await probeFile(input.ffprobe,sourceFile.handle);if(sourceFacts.status!=='present')return sourceFacts;
+  const resultFacts=await probeFile(input.ffprobe,resultFile.handle);if(resultFacts.status!=='present')return resultFacts;
+  const [currentSource,currentResult]=await Promise.all([one(input.mediaRoot,input.relative),one(input.reviewRoot,result.relative,result.relative+'.tdarr-receipt.json')]);
+  const currentJobs=await exactJobs(input.database,result.receipt);
+  if(!sameRecorded(source.identity,currentSource.identity)||!sameFile(source.fileFingerprint,currentSource.fileFingerprint)||
+   !sameRecorded(result.identity,currentResult.identity)||!sameFile(result.fileFingerprint,currentResult.fileFingerprint)||
+   !sameFile(result.receiptFingerprint,currentResult.receiptFingerprint)||JSON.stringify(result.receipt)!==JSON.stringify(currentResult.receipt)||
+   currentJobs.status!=='ok'||!sameFile(jobs.fileFingerprint,currentJobs.fileFingerprint)||JSON.stringify(jobs.rows)!==JSON.stringify(currentJobs.rows))return {status:'unverified',reason:'file-changed'};
+  return {status:'present',technicalFacts:{source:sourceFacts.facts,result:resultFacts.facts}};
+ }finally{await Promise.all([close(sourceFile),close(resultFile)]);}
+}
+
 export async function inspectSonarrResultFiles(input){
  if(process.platform!=='linux'||!validInput(input))return {status:'unverified',reason:'unsupported-layout'};
  try{
@@ -104,7 +148,9 @@ export async function inspectSonarrResultFiles(input){
    !sameFile(result.receiptFingerprint,currentResult.receiptFingerprint)||JSON.stringify(result.receipt)!==JSON.stringify(currentResult.receipt))return {status:'unverified',reason:'file-changed'};
   const currentJobs=await exactJobs(input.database,result.receipt);
   if(currentJobs.status!=='ok'||!sameFile(jobs.fileFingerprint,currentJobs.fileFingerprint)||JSON.stringify(jobs.rows)!==JSON.stringify(currentJobs.rows))return {status:'unverified',reason:'file-changed'};
-  return {status:'present',source:currentSource.identity,result:currentResult.identity,receipt:currentResult.receipt,outputRelative:result.relative,jobs:jobs.rows,
+  let technicalFacts;
+  if(input.probeFacts){const probed=await probePair(input,currentSource,{...currentResult,relative:result.relative},currentJobs);if(probed.status!=='present')return probed;technicalFacts=probed.technicalFacts;}
+  return {status:'present',source:currentSource.identity,result:currentResult.identity,receipt:currentResult.receipt,outputRelative:result.relative,jobs:currentJobs.rows,...(technicalFacts?{technicalFacts}:{}),
    fileProofs:{source:currentSource.fileFingerprint,result:currentResult.fileFingerprint,receipt:currentResult.receiptFingerprint,database:currentJobs.fileFingerprint}};
  }catch(error){
   return {status:'unverified',reason:error.code==='changed'?'file-changed':error.code==='unsafe'?'unsafe-path':error.code==='ENOENT'?'source-missing':'evidence-unavailable'};

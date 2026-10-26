@@ -1,0 +1,1 @@
+- Add a manual, selected-file TV technical-facts inspection after the current Sonarr binding and supported Tdarr receipt/job are verified. The bounded probe reports allowlisted source and result metadata only; it does not establish health, approval or eligibility.
