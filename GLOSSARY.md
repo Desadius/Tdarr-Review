@@ -39,3 +39,20 @@ _Avoid_: identity (that is file identity)
 **File identity**:
 The device, inode, size and modification times that show a file on disk is still the exact file that was checked, reviewed or recorded as evidence. A file whose identity no longer matches is never treated as the one that was checked; an unreadable recorded identity matches nothing.
 _Avoid_: fingerprint, stamp, Recovery case ID (a different value derived from the path and the file identity by `caseId()` in `recovery/policy.mjs`)
+
+**TV library**:
+The optional second library Review knows about, with its own media, result and quarantine paths, Tdarr library and Sonarr root. It never shares a movie id or movie record, and nothing is approved or replaced in it yet.
+_Avoid_: TV plan (that is only its saved settings), series library
+
+**Discovery mode**:
+The `libraries.tv.mode` value `discovery` (the other value is `off`, the default). Review then scans and shows TV results read-only; it never approves, rejects, replaces or retains one and never writes to Tdarr or Sonarr.
+_Avoid_: enabled, TV processing (`enabled: true` stays refused)
+
+**Bound TV result**:
+A TV result whose receipt names a successful Tdarr job in the TV library, whose source maps exactly through the TV source paths, whose files still match the receipt and for which Sonarr has exactly one episode file with its episodes. Nothing is guessed from names.
+_Avoid_: matched, linked, approved
+
+**Unbound TV result**:
+A TV result missing any of that, shown with a fixed reason and eligible for nothing. When Sonarr could not verify the binding, the result is shown as binding not verified and is not treated as bound either.
+_Avoid_: failed, rejected, orphan
+

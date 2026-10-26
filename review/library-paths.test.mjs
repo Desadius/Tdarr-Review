@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import {emptyTvLibrary,validateLibraryPlans,diagnoseLibraryPaths} from './library-paths.mjs';
+import {emptyTvLibrary,validateLibraryPlans,diagnoseLibraryPaths,tvMode} from './library-paths.mjs';
 
 const defaults={enabled:false,mediaRoot:'',reviewRoot:'',libraryId:'',sourceRoots:[],tdarrReviewRoot:'',reviewPrefixes:[],sonarrRoot:'',quarantineRoot:'',reports:''};
 const plan=(overrides={})=>({...defaults,...overrides});
@@ -278,4 +278,20 @@ test('quarantine on a different mount is incompatible even when the device is th
  const result=await diagnoseLibraryPaths({review:{mediaRoot:media,reviewRoot:review,database:path.join(root,'db')},radarr:{quarantineRoot:quarantine}},{data:path.join(root,'data'),readMountInfo:async()=>mountinfo});
  assert.ok(result.libraries[0].issues.some(issue=>issue.code==='quarantine_mount_incompatible'&&issue.roles.includes('source')&&issue.roles.includes('quarantine')));
  assert.equal(JSON.stringify(result).includes('/dev/test'),false);
+});
+
+test('the TV library mode is off or discovery, optional, and never turns processing on',()=>{
+ // Absent stays absent: a settings generation written before the mode existed keeps validating unchanged.
+ assert.deepEqual(validateLibraryPlans({tv:{libraryId:'tv'}}),{tv:plan({libraryId:'tv'})});assert.equal(Object.hasOwn(validateLibraryPlans({tv:{}}).tv,'mode'),false);
+ assert.equal(validateLibraryPlans({tv:{mode:'off'}}).tv.mode,'off');
+ const complete={mediaRoot:'/media/tv',reviewRoot:'/review',libraryId:'tv-library',sourceRoots:['Z:\\Tdarr\\TV'],sonarrRoot:'Z:\\Sonarr\\TV',reviewPrefixes:['TV']};
+ assert.equal(validateLibraryPlans({tv:{...complete,mode:'discovery'}}).tv.mode,'discovery');assert.equal(validateLibraryPlans({tv:{...complete,mode:'discovery'}}).tv.enabled,false);
+ for(const mode of ['on','Discovery','',null,true,1,'approve'])assert.throws(()=>validateLibraryPlans({tv:{...complete,mode}}),e=>e.code==='settings_invalid'&&e.field==='libraries.tv',String(mode));
+ for(const missing of ['mediaRoot','reviewRoot','libraryId','sourceRoots','sonarrRoot']){
+  const incomplete={...complete,mode:'discovery'};delete incomplete[missing];
+  assert.throws(()=>validateLibraryPlans({tv:incomplete}),e=>e.code==='settings_invalid'&&e.field==='libraries.tv','discovery needs '+missing);
+ }
+ assert.throws(()=>validateLibraryPlans({tv:{...complete,mode:'discovery',enabled:true}}),e=>e.code==='settings_tv_processing_unavailable','enabled:true stays rejected in every mode');
+ assert.throws(()=>validateLibraryPlans({tv:{...complete,mode:'off',enabled:true}}),e=>e.code==='settings_tv_processing_unavailable');
+ assert.equal(tvMode({mode:'discovery'}),'discovery');for(const value of [undefined,null,{},{mode:'off'},{mode:'on'},{mode:'DISCOVERY'}])assert.equal(tvMode(value),'off');
 });

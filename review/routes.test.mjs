@@ -8,13 +8,15 @@ import {settingsRoutes} from './routes/settings.mjs';
 import {staticRoutes} from './routes/static.mjs';
 import {nodeRoutes} from './routes/nodes.mjs';
 import {sharedSettingsRoutes} from './routes/shared-settings.mjs';
+import {tvRoutes} from './routes/tv.mjs';
 
-const modules={libraryRoutes,itemRoutes,previewRoutes,settingsRoutes,nodeRoutes,staticRoutes,sharedSettingsRoutes};
+const modules={libraryRoutes,itemRoutes,previewRoutes,settingsRoutes,nodeRoutes,staticRoutes,sharedSettingsRoutes,tvRoutes};
 const ID='a'.repeat(24);
 // Every authenticated route served before the split of server.mjs (#12).
 const ROUTES=[
  ...['','/status','/audit','/paths'].map(p=>['GET','/api/shared-settings'+p,'sharedSettingsRoutes']),
- ['GET','/library-paths-view.js','staticRoutes'],
+ ['GET','/library-paths-view.js','staticRoutes'],['GET','/tv-view.js','staticRoutes'],['GET','/tv-messages.js','staticRoutes'],
+ ['GET','/api/tv','tvRoutes'],['GET','/api/tv/status','tvRoutes'],
  ...['draft','test','apply','cancel'].map(p=>['POST','/api/shared-settings/'+p,'sharedSettingsRoutes']),
  ['GET','/api/artwork/review/'+ID,'libraryRoutes'],['GET','/api/artwork/request/'+ID,'libraryRoutes'],
  ['GET','/api/statistics','libraryRoutes'],['GET','/api/quarantine','libraryRoutes'],
@@ -50,7 +52,7 @@ test('every route that server.mjs served is claimed by exactly one route module'
 });
 
 test('unknown paths and wrong methods fall through without touching server state',async()=>{
- for(const [method,pathname] of [['GET','/nope'],['POST','/'],['DELETE','/api/items'],['GET','/api/items/'+ID+'/approve'],['GET','/api/login'],['GET','/public/app.js']])
+ for(const [method,pathname] of [['GET','/nope'],['POST','/'],['DELETE','/api/items'],['GET','/api/items/'+ID+'/approve'],['GET','/api/login'],['GET','/public/app.js'],['POST','/api/tv'],['POST','/api/tv/status'],['DELETE','/api/tv'],['GET','/api/tv/'+ID],['POST','/api/tv/'+ID+'/approve']])
   for(const [name,route] of Object.entries(modules))assert.equal(await claims(route,method,pathname),false,name+' '+method+' '+pathname);
 });
 

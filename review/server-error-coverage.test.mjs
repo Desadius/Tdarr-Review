@@ -39,6 +39,8 @@ test('authored server error literals have an English translation',async()=>{
     'Unrecognized Tdarr state; handoff requires inspection.',
     'Queue acknowledgement pending; handoff will be checked again.',
     'Unknown busy policy: ',
+    // Internal sentinel codes of TV discovery (#271); they are mapped to fixed reason codes, never shown.
+    'sonarr_inconsistent','changed',
     // Health-log diagnostics for operators (review/recovery-snapshot.mjs), not UI text.
     'invalid status file',
     'missing update time',

@@ -257,6 +257,18 @@ Before restarting or updating, wait for an original decode or a mutating Recover
 
 Transaction recovery handles Review's unfinished file-exchange transactions separately from Recovery. Those transactions still require inspection and block further changes. Recovery warnings also appear in the container health log without making Review unhealthy; see [Container health](OPERATIONS.md#container-health).
 
+## TV series (discovery mode)
+
+The optional TV library has a mode, set under the TV paths in the shared settings: **Off** (the default) or **Discovery (read-only)**. Like every setting it is saved as a draft, tested and then applied; see [Add TV paths](ADD-TV-PATHS.md). In Off mode Review does not scan TV results and never contacts Sonarr for them, and no **TV series** entry appears in the navigation.
+
+In Discovery mode the **TV series** section lists the TV results Tdarr has written, as series, then season, then episode, with the number of files and episodes and the sizes of originals and results. It is read-only: **there is no approve, reject, replace or retain action for a TV result**, and nothing here changes a library, Tdarr or Sonarr. Approval of TV results comes later.
+
+A result is **bound** only when all of these hold: a conversion receipt with a Tdarr job ID lies next to it; that job is "Transcode success" in the TV library; the source maps exactly through the TV source paths; the receipt still matches both files; and Sonarr has exactly one episode file for that source path, with its episodes. Multi-episode files, specials (season 0), anime (absolute numbers) and daily shows (air dates) show the numbering Sonarr holds, without mixing them up. Names of folders and files are never used to guess a match.
+
+Anything else is **unbound**, listed apart from the series with one of these reasons: the receipt is missing or has no job ID; the job is unknown, in another library, not successful or does not match the file sizes; the source does not map through the TV source paths; the files changed since the receipt; the result is still being written; two results claim the same source or job; Sonarr has no series, no episode file, several episode files, or an episode file without episodes. If Sonarr is not configured, unavailable, too slow or answers inconsistently, the affected results are shown as **binding not verified** and are not treated as bound. Review asks Sonarr only about the series the found results belong to, with read-only requests and a time limit, and keeps the answer in memory with its time of observation.
+
+Turning the mode back to Off stops scanning and Sonarr reads. While Discovery is on, the movie overview no longer lists the files under the TV result subfolders; every movie, review, approval and history record is left as it was.
+
 ## Statistics
 
 Savings are logical byte differences supported by completed jobs/transactions and current matching file sizes. The Review-approved figure is a subset of the library figure. Pending savings are potential savings, not already reclaimed space. Tdarr's global reported figure is separate and must not be added to overlapping Review/library totals.
