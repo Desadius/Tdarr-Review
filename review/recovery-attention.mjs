@@ -73,10 +73,11 @@ function libraryTarget(c){
  * @param {()=>Promise<{url:string,apiKey:string}>} deps.getConnection Radarr connection.
  * @param {{eligibility:(id:string,options?:{busy?:boolean})=>Promise<{eligible:boolean,blockers:string[]}>}} [deps.installed] Assessment of an installed result (#230).
  * @param {{rowMissing:(c:any)=>Promise<boolean>,eligibility:(id:string,options?:{busy?:boolean})=>Promise<{eligible:boolean,blockers:string[],uncertain?:boolean}>}} [deps.handoff] Review's Tdarr handoff (#231).
+ * @param {{eligibility:(id:string,options?:{busy?:boolean})=>Promise<{eligible:boolean,blockers:string[],cause?:string,message?:string,uncertain?:boolean}>}} [deps.retry] The one Review retry of a failed transcode (#232).
  * @param {()=>boolean} [deps.isBusy] Whether running work excludes a mutation now.
  * @param {()=>number} [deps.now]
  */
-export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnection,mode='off',installed=null,handoff=null,deferrals=null,getOverview=async()=>({requests:[]}),isBusy=()=>false,now=Date.now}){
+export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnection,mode='off',installed=null,handoff=null,retry=null,deferrals=null,getOverview=async()=>({requests:[]}),isBusy=()=>false,now=Date.now}){
  /** @type {Map<string,{at:string,tdarr?:string|null,tdarrError?:boolean,radarr?:string|null,radarrError?:boolean}>} */
  const refreshed=new Map();
  const caseFile=()=>path.join(data,'recovery','state.json');
@@ -111,11 +112,16 @@ export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnec
    :radarrReported?{status:reported?'verified':'unverified',detail:radarrReported,at:at(record.statusUpdated||record.updated),by:record.source==='recovery'?'recovery':'review'}:{status:'not-used'};
   // A transcoded result already installed in place of the imported replacement can be assessed as it is (#230).
   let installedResult=null;
-  if(installed&&record.source==='recovery'&&!item&&library.detail==='changed'){try{installedResult=await installed.eligibility(record.id,{busy:isBusy()});}catch{installedResult={eligible:false,blockers:['installed-unverified']};}}
+  // So can an untranscoded replacement that Tdarr's rules skipped as Not required (#232).
+  if(installed&&record.source==='recovery'&&!item&&(library.detail==='changed'||String(record.tdarrStatus||'').toLowerCase()==='not required')){try{installedResult=await installed.eligibility(record.id,{busy:isBusy()});}catch{installedResult={eligible:false,blockers:['installed-unverified']};}}
   return {location:{library,quarantine,review,tdarr:tdarrState,radarr:radarrState},reviewItemId:item,installedResult,libraryIdentity:identity,quarantineIdentity};
  }
- function decide(record,classification,{reviewItemId,installedResult,handoffResult,importDiagnosis}){
-  const reason=classification.reason,actions=[{id:'refresh',changes:'information'}],blockers=[...(BLOCKERS[reason]||['inspect-case'])];
+ function decide(record,classification,{reviewItemId,installedResult,handoffResult,retryResult,importDiagnosis}){
+  const reason=classification.reason,actions=[{id:'refresh',changes:'information'}],blockers=[...(BLOCKERS[reason]||['inspect-case'])].filter(b=>!(b==='transcode-retry-unavailable'&&(retryResult||reason==='transcode-skipped'&&installedResult)));
+  // With the cause read or the skipped copy assessable, the general "no retry" blocker gives way to the specific ones (#232).
+  if(retryResult?.eligible)actions.push({id:'retryTranscode',changes:'starts-work',...(retryResult.uncertain?{uncertain:true}:{})});
+  else if(retryResult)blockers.push(...retryResult.blockers);
+  if(reason==='transcode-skipped'&&installedResult)blockers.push('transcode-not-required');
   if(importDiagnosisReasons.has(reason)){
    if(importDiagnosis?.movieUrl)actions.push({id:'openRadarr',changes:'nothing',href:importDiagnosis.movieUrl});
    if(importDiagnosis?.queueUrl)actions.push({id:'openQueue',changes:'nothing',href:importDiagnosis.queueUrl});
@@ -125,6 +131,7 @@ export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnec
   if(reviewItemId)actions.push({id:'openReview',changes:'nothing',itemId:reviewItemId});
   else if(installedResult?.eligible)actions.push({id:'assessInstalled',changes:'nothing'});
   else if(reason==='awaiting-review'||reason==='follow-up-complete'){blockers.push('review-result-missing');for(const b of installedResult?.blockers||[])if(b!=='installed-not-applicable')blockers.push(b);}
+  else if(reason==='transcode-skipped')for(const b of installedResult?.blockers||[])if(b!=='installed-not-applicable')blockers.push(b);
   if(handoffResult?.eligible)actions.push({id:'handoffTdarr',changes:'starts-work',...(handoffResult.uncertain?{uncertain:true}:{})});
   else if(handoffResult)blockers.push(...handoffResult.blockers.filter(b=>b!=='handoff-not-applicable'));
   // A handoff Recovery gave up on is an administrator step: approval could not start its retention (#231).
@@ -132,10 +139,12 @@ export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnec
   if(record.sourceReplacement)actions.push({id:'replaceSource',changes:'starts-work'});
   else if(record.sourceReplacementBlocked)blockers.push('replacement-blocked');
   // Never return the obsolete or faulty original over a current copy that can be assessed instead.
-  if(record.canRestore===true&&!installedResult?.eligible)actions.push({id:'restore',changes:'moves-files'});
-  else if(installedResult?.eligible)blockers.push('restore-over-installed');
+  // The imported replacement is the current copy of a failed or skipped transcode (#232): the original never goes back over it.
+  const currentCopy=reason==='transcode-error'||reason==='transcode-skipped';
+  if(record.canRestore===true&&!installedResult?.eligible&&!currentCopy)actions.push({id:'restore',changes:'moves-files'});
+  else if(installedResult?.eligible||currentCopy&&record.canRestore===true)blockers.push('restore-over-installed');
   const prefer=importDiagnosisReasons.has(reason)?[importDiagnosis?.status!=='verified'?'refresh':importDiagnosis?.movieUrl?'openRadarr':importDiagnosis?.queueUrl?'openQueue':'refresh']:
-   ({'binding-failure':['replaceSource'],'awaiting-review':['openReview','assessInstalled'],'follow-up-complete':['openReview','assessInstalled'],'tdarr-missing':['handoffTdarr'],'queue-failed':['openRadarr'],'search-failed':['openRadarr'],'original-outside-library':['openRadarr']}[reason]||[]);
+   ({'binding-failure':['replaceSource'],'awaiting-review':['openReview','assessInstalled'],'follow-up-complete':['openReview','assessInstalled'],'tdarr-missing':['handoffTdarr'],'transcode-error':['retryTranscode'],'transcode-skipped':['assessInstalled'],'queue-failed':['openRadarr'],'search-failed':['openRadarr'],'original-outside-library':['openRadarr']}[reason]||[]);
   const recommended=prefer.map(id=>actions.find(a=>a.id===id)).find(Boolean)||actions[0];
   // An offered replacement is the confirmed-source case: nothing blocks it.
   const open=record.sourceReplacement?blockers.filter(b=>b!=='source-not-confirmed'):blockers;
@@ -267,7 +276,9 @@ export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnec
     if(importDiagnosis.movieUrl)r.radarrMovieUrl=importDiagnosis.movieUrl;
    }
    if(handoff&&classification.reason==='tdarr-missing'){try{found.handoffResult=await handoff.eligibility(r.id,{busy:isBusy()});}catch{found.handoffResult={eligible:false,blockers:['handoff-unverified']};}}
-   r.attention={reason:classification.reason,location:found.location,...(importDiagnosis?{importDiagnosis:Object.fromEntries(['status','category','movieUrl','queueUrl','checkedAt'].map(key=>[key,importDiagnosis[key]??null]))}:{}),...(retentionDiagnosis?{retentionDiagnosis}:{}),...decide(r,classification,{...found,importDiagnosis}),recoveryPolledAt:at(r.statusUpdated)};
+   if(retry&&r.source==='recovery'&&classification.reason==='transcode-error'){try{found.retryResult=await retry.eligibility(r.id,{busy:isBusy()});}catch{found.retryResult={eligible:false,cause:'unreadable',blockers:['transcode-report-unreadable']};}}
+   const diagnosis=found.retryResult?.cause?{diagnosis:{cause:found.retryResult.cause,...(found.retryResult.message?{message:found.retryResult.message}:{})}}:{};
+   r.attention={reason:classification.reason,location:found.location,...(importDiagnosis?{importDiagnosis:Object.fromEntries(['status','category','movieUrl','queueUrl','checkedAt'].map(key=>[key,importDiagnosis[key]??null]))}:{}),...(retentionDiagnosis?{retentionDiagnosis}:{}),...decide(r,classification,{...found,importDiagnosis}),...diagnosis,recoveryPolledAt:at(r.statusUpdated)};
    r.attention.actions.push({id:'exportDiagnostic',changes:'nothing'});
    if(r.source==='recovery'){
     let fingerprint=null,saved=null,metadataUnavailable=false;try{fingerprint=await deferralFingerprint(r,c,found);if(fingerprint)saved=await deferrals?.view('recovery',r.id,fingerprint);}catch{metadataUnavailable=true;}

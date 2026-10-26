@@ -51,3 +51,11 @@ test('blockers follow the attention model and every attention reason is allowlis
 test('attachment headers are private and carry a safe name',()=>{
  const h=diagnosticExportHeaders('recovery',id);assert.equal(h['cache-control'],'no-store');assert.match(h['content-disposition'],/^attachment; filename="[a-z0-9.-]+"$/);
 });
+
+test('a failed or skipped transcode claims no retry verdict: its follow-up is listed as unknown (#232)',async()=>{
+ for(const name of ['replacement transcode error','replacement skipped as not required']){
+  const record=ATTENTION_PATHS[name],report=await make({requests:[record]}).report('recovery',record.id);
+  assert.ok(report,name);assert.ok(!report.blockers.includes('transcode-retry-unavailable'),name);assert.ok(report.unknown.includes('transcode-follow-up'),name);
+ }
+ const other=ATTENTION_PATHS['manual recovery case'];assert.ok(!(await make({requests:[other]}).report('recovery',other.id)).unknown.includes('transcode-follow-up'));
+});

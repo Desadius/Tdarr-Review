@@ -16,7 +16,10 @@ export function installedAssessmentView(view,actions,translate=tr){
  const box=el('section','installed-assessment');box.setAttribute('aria-label',translate('Posouzení nainstalované kopie'));
  box.append(el('h3','','Posouzení nainstalované kopie'));
  if(!view?.eligible){box.append(el('p','details','Nainstalovanou kopii teď nelze posoudit. Důvod je uvedený v přehledu případu.'));return box;}
- const disclosure=el('div','alert');for(const text of INSTALLED_DISCLOSURE)disclosure.append(el('p','',text));box.append(disclosure);
+ const disclosure=el('div','alert');for(const text of INSTALLED_DISCLOSURE)disclosure.append(el('p','',text));
+ // A replacement Tdarr skipped as Not required is assessed untranscoded (#232).
+ if(view.untranscoded)disclosure.append(el('p','','Tato kopie nebyla převedena: Tdarr ji podle svých pravidel nepotřeboval převádět. Posuzuješ importovanou náhradu tak, jak ji stáhl Radarr.'));
+ box.append(disclosure);
  box.append(el('p','details','Přehraj soubor ve vlastním přehrávači. Otevření ani přehrání nic nepotvrzuje.'));
  const draft=view.draft||{},checks=[...CHECKS,...(view.requirements?.hdr?[['hdr','HDR se zobrazuje správně']]:[])];
  const device=Object.assign(el('input'),{type:'text',value:draft.device||'',maxLength:160,id:'installedDevice'});

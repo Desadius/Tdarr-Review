@@ -16,7 +16,7 @@ export const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=
 export async function reviewFixture({pauses=false,recovery=false,clock=false,nodesVisible=!pauses,beforeStart,supervisor=false,env={}}={}){
  const harness=await serverHarness(),{root}=harness;
  const data=path.join(root,'data'),media=path.join(root,'media'),review=path.join(root,'review');
- const gates=[],calls=[],changes=[],tdarrRows=new Map(),afterRescan=new Map(),nodes={fixture:{_id:'fixture',nodeName:'fixture-node',nodePaused:false,workers:{}}};
+ const gates=[],calls=[],changes=[],tdarrRows=new Map(),afterRescan=new Map(),afterBulk=new Map(),nodes={fixture:{_id:'fixture',nodeName:'fixture-node',nodePaused:false,workers:{}}};
  let cookie,base=harness.base,addFilm,probeAdjust=null;
  let restoreRadarrMovie=movieId=>({id:Number(movieId),tmdbId:9001,path:'/fixture-library/A',movieFileId:null}),restoreRadarrQueue={page:1,pageSize:100,totalRecords:0,records:[]};
  function hold(route,predicate=()=>true){
@@ -34,6 +34,7 @@ export async function reviewFixture({pauses=false,recovery=false,clock=false,nod
    else if(/^\/api\/v3\/command\/\d+$/.test(req.url))output={id:84,name:'MoviesSearch',body:{movieIds:[71]},status:'completed',queued:'2026-10-24T10:01:00.000Z',ended:'2026-10-24T10:02:00.000Z'};
    else if(req.url==='/api/v2/get-nodes')output=nodesVisible?nodes:{};
    else if(req.url==='/api/v2/update-node'){const update=input.data;nodes.fixture.nodePaused=update.nodeUpdates.nodePaused;changes.push(update.nodeUpdates.nodePaused);res.end('OK');return}
+   else if(req.url==='/api/v2/bulk-update-files'){const d=input?.data??input;for(const id of d?.fileIds??[])tdarrRows.set(id,afterBulk.has(id)?afterBulk.get(id):{...tdarrRows.get(id),...d.updatedObj});res.end('OK');return}
    else if(req.url==='/api/v2/rescan-file'){const id=input?.data?._id;if(afterRescan.has(id))tdarrRows.set(id,afterRescan.get(id));res.end('OK');return}
    // Tdarr file rows by path, only read (getById); set by tests through tdarrRows.
    else if(req.url==='/api/v2/cruddb'&&input?.data?.mode==='getById'||req.url==='/api/v2/cruddb'&&input?.mode==='getById')output=tdarrRows.get(input?.data?.docID??input?.docID)??null;
@@ -65,7 +66,9 @@ export async function reviewFixture({pauses=false,recovery=false,clock=false,nod
   // replacing any production decoder, file operation or server behavior.
   const preload=path.join(root,'preload.cjs');
   await fs.writeFile(preload,`const cp=require('node:child_process'),original=cp.spawn;cp.spawn=(exe,args,options)=>${JSON.stringify([ffprobe,ffmpeg])}.includes(exe)?original(process.execPath,[exe,...args],options):original(exe,args,options);require('node:module').syncBuiltinESMExports();`);
-  const dbpath=path.join(root,'tdarr.db'),db=new DatabaseSync(dbpath),files=new Map();
+  await fs.mkdir(path.join(root,'tdarr','DB'),{recursive:true});
+  // Tdarr's layout: job reports live in JobReports beside the DB directory, inside the disposable root.
+  const dbpath=path.join(root,'tdarr','DB','tdarr.db'),db=new DatabaseSync(dbpath),files=new Map();
   db.exec('CREATE TABLE jobsjsondb (json_data TEXT); CREATE TABLE librarysettingsjsondb (json_data TEXT)');
   db.prepare('INSERT INTO librarysettingsjsondb VALUES (?)').run(JSON.stringify({_id:'fixture-library',folder:'/fixture-library'}));
   // A film is an original, an older review result and a successful Tdarr job for it.
@@ -126,7 +129,7 @@ export async function reviewFixture({pauses=false,recovery=false,clock=false,nod
    return events(name);
   };
   const restart=async()=>{await harness.stop();await harness.start({settings:JSON.parse(await fs.readFile(path.join(data,'settings.json'),'utf8')),preload,clock,supervisor,env});cookie=await harness.login();};
-  return {request:(route,options={})=>harness.request(route,{...options,headers:{cookie,...options.headers}}),setProbe:adjust=>{probeAdjust=adjust},setRadarrMovie:movie=>{restoreRadarrMovie=()=>movie},setRadarrQueue:queue=>{restoreRadarrQueue=queue},tdarrRows,afterRescan,root,data,files,mockBase,nodes,hold,calls,changes,post,get,items,confirm,approve,allMutations,journals,settled,preserved,close,restart,showNodes,addFilm,events,eventually,tick:harness.tick,state:harness.state,output:harness.output,diagnostics:harness.diagnostics};
+  return {request:(route,options={})=>harness.request(route,{...options,headers:{cookie,...options.headers}}),setProbe:adjust=>{probeAdjust=adjust},setRadarrMovie:movie=>{restoreRadarrMovie=()=>movie},setRadarrQueue:queue=>{restoreRadarrQueue=queue},tdarrRows,afterRescan,afterBulk,root,data,files,mockBase,nodes,hold,calls,changes,post,get,items,confirm,approve,allMutations,journals,settled,preserved,close,restart,showNodes,addFilm,events,eventually,tick:harness.tick,state:harness.state,output:harness.output,diagnostics:harness.diagnostics};
  }catch(error){await close();throw error}
 }
 

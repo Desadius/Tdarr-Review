@@ -139,6 +139,14 @@ export async function libraryRoutes(ctx,req,res,url,request){
   try{const result=await ctx.tdarrHandoff.handoff(handoff[1],b);logEvent('tdarr.handoff',{requestId:handoff[1],state:result.state});return reply(res,200,{ok:true,...result});}
   catch(e){if(['handoff_not_eligible','handoff_changed','handoff_uncertain','handoff_pending'].includes(e.code))return reply(res,409,{...apiError(e.code),blockers:e.blockers||[]});throw e;}
  }
+ // The one Review retry of a failed replacement transcode (#232): a diagnosis read, or a confirmed re-queue of that row.
+ const retryRequest=/^\/api\/recovery\/cases\/([a-f0-9]{24})\/retry$/.exec(url.pathname);
+ if(retryRequest&&req.method==='GET')return reply(res,200,await ctx.transcodeRetry.view(retryRequest[1],{busy:!!ctx.busyFor('replace')}));
+ if(retryRequest&&req.method==='POST'){
+  const b=await body(req);if(b.confirm!==true)return reply(res,400,apiError('retry_confirm_required'));
+  try{const result=await ctx.transcodeRetry.retry(retryRequest[1],b);logEvent('tdarr.retry',{requestId:retryRequest[1],state:result.state});return reply(res,200,{ok:true,...result});}
+  catch(e){if(['retry_not_eligible','retry_changed','retry_uncertain','retry_pending'].includes(e.code))return reply(res,409,{...apiError(e.code),blockers:e.blockers||[]});throw e;}
+ }
  // Runtime diagnostics remain readable even when the separate case snapshot fails.
  if(url.pathname==='/api/recovery/runtime'&&req.method==='GET')return reply(res,200,await readRecoveryRuntime(path.join(ctx.DATA,'recovery','runtime-state.json')));
  const restoreRequest=/^\/api\/radarr\/requests\/([a-f0-9]{24})\/restore$/.exec(url.pathname);

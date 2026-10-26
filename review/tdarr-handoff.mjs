@@ -5,6 +5,7 @@ import {readRecoveryCaseState,readRecoveryRuntime} from './recovery-snapshot.mjs
 import {compareIdentity,identityOf} from '../recovery/file-identity.mjs';
 import {createTdarrFileState} from '../recovery/tdarr-file-state.mjs';
 import {preservesHold} from '../recovery/replacement-handoff.mjs';
+import {caseLibraryRoot as libraryRoot,replacementTdarrFile as tdarrFile,importTime} from './recovery-case-paths.mjs';
 
 // Review's handoff of an imported replacement that never got a Tdarr entry (#231). Recovery marks a case
 // replacement_imported once its own handoff returns and never retries it, so a replacement whose Tdarr row
@@ -33,10 +34,6 @@ export function createTdarrHandoff({data,getConfig,tdarr,readRows,isWorkerBusy,a
  const directory=path.join(data,'recovery-handoffs');
  const journalFile=id=>path.join(directory,id+'.json');
  const files=()=>createTdarrFileState(tdarr,{libraryId:getConfig()?.libraryId});
- // Recovery's Tdarr path of the replacement: its Tdarr source root (the case file minus its relative path) plus the replacement.
- function tdarrFile(c){const suffix='/'+c.relative;return typeof c.file==='string'&&typeof c.relative==='string'&&c.file.endsWith(suffix)?c.file.slice(0,-suffix.length)+'/'+c.replacementRelative:null;}
- function libraryRoot(c){const suffix='/'+c.relative;return typeof c.source==='string'&&typeof c.relative==='string'&&c.source.endsWith(suffix)?c.source.slice(0,-suffix.length):null;}
- const importTime=fp=>{const parts=String(fp||'').split(':');return parts.length===5?Math.max(Number(parts[3]),Number(parts[4])):NaN;};
  async function readJournal(id){try{const value=JSON.parse(await fs.readFile(journalFile(id),'utf8'));return object(value)&&value.version===1?value:null;}catch(e){if(e.code==='ENOENT')return null;throw e;}}
  async function cases(){const read=await readRecoveryCaseState(path.join(data,'recovery','state.json'));return read.error?null:read.present?read.cases:{};}
 

@@ -16,9 +16,11 @@ const REASONS=new Set(['binding-failure','manual','fault-not-confirmed','verify-
 const PHASES=new Set(['candidate','confirmed','waiting','waiting_replacement','waiting_source_kept','deferred_limit','deferred_cooldown','replacement_imported','imported','manual','no_action','dry_run','restored','preparing','verifying']);
 const TDARR_STATES=new Set(['transcode success','transcode error','not required','hold','queued','transcoding']);
 // Administrator or later steps per attention reason; kept in step with BLOCKERS in recovery-attention.mjs (tested).
+// A failed or skipped transcode has none here: whether a retry or an assessment is possible needs the Tdarr job report
+// and Review's retry journal (#232), which the export does not read, so it lists that as unknown instead.
 export const DIAGNOSTIC_BLOCKERS={
  'binding-failure':['source-not-confirmed'],manual:['inspect-case'],'fault-not-confirmed':['diagnosis-needed'],'verify-mode':['verify-mode'],'awaiting-review':[],
- 'transcode-error':['transcode-retry-unavailable'],'transcode-skipped':['transcode-retry-unavailable'],'tdarr-hold':['hold-not-released'],'follow-up-complete':[],'tdarr-missing':[],
+ 'transcode-error':[],'transcode-skipped':[],'tdarr-hold':['hold-not-released'],'follow-up-complete':[],'tdarr-missing':[],
  'original-outside-library':['radarr-download-stuck'],'search-failed':[],'queue-failed':[],'import-blocked':['manual-import-in-radarr'],'case-error':['inspect-case'],'retention-error':['retention-evidence'],unverified:['status-unverified'],
 };
 const object=value=>!!value&&typeof value==='object'&&!Array.isArray(value);
@@ -108,7 +110,7 @@ export function createDiagnosticExport({data,getOverview,deferrals=null,version,
    case:{source,id},completeness:changed||caseRecord==='unreadable'||caseRecord==='missing'||caseRecord==='inconsistent'?'partial':'standard',verification:'not-verified',
    state:{category:'attention',reason,phase:token(record.phase,PHASES)},deferral:{recorded,bindingVerified:false,fingerprintChecked:false},caseRecord,
    observations:{record:{observedAt:changed?null:observedAt,age:reported},tdarr:observation(token(tdarrStatus,TDARR_STATES),!!tdarrStatus),radarr:observation(radarrState(record),!!record.queue?.length||!!record.search?.status)},
-   blockers:[...(DIAGNOSTIC_BLOCKERS[reason]||[])],unknown:['file-locations','service-state-now','case-binding',...(tdarrRowUnverified?['tdarr-row']:[])],
+   blockers:[...(DIAGNOSTIC_BLOCKERS[reason]||[])],unknown:['file-locations','service-state-now','case-binding',...(tdarrRowUnverified?['tdarr-row']:[]),...(reason==='transcode-error'||reason==='transcode-skipped'?['transcode-follow-up']:[])],
   };
  }
  return {report};

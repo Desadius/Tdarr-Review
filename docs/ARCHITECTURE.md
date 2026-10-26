@@ -231,6 +231,35 @@ A Hold, protected (`preservesHold`) or not, is a blocker; Review never queues or
 
 An intent without confirmation is `uncertain`, and a retry needs `acknowledgeUncertain: true`. A `manual` case after a failed Recovery handoff gets the `handoff-manual` blocker only, because Recovery runs retention only for `replacement_imported` cases.
 
+### Retry of a failed transcode
+
+`review/transcode-retry.mjs` (#232) handles a `replacement_imported` case whose Tdarr row is `Transcode error` or `Not required`. Path and file-identity helpers shared with the other Recovery readers are in `review/recovery-case-paths.mjs`. The Tdarr writes go through `recovery/tdarr-file-state.mjs`.
+
+Cause classification reads the Tdarr job report of the newest error job for exactly the replacement's Tdarr file and classifies it with Recovery's rules in `recovery/policy.mjs` (`classify`):
+- decode damage: no retry; Recovery's own job scan opens its own case for the damaged file;
+- operational (permission, I/O, disk space, memory, network): retry offered;
+- unrecognized: retry offered, labelled "cause not recognized";
+- unreadable report: unverified, no retry.
+
+The view carries only the cause category and, for decode damage, the recognized decoder message with numbers and addresses masked. It carries no paths and no full report; export is a later issue (#237).
+
+The retry is eligible only when all of these hold:
+- file identity is the recorded replacement, a plain single-link file;
+- the row is still `Transcode error`;
+- the newest job for the file is that error job and ended after the import;
+- no Tdarr worker processes the file;
+- the Tdarr library ID is set, Recovery's runtime is readable and not `verify`;
+- no other Review action is running.
+
+`POST /api/recovery/cases/<id>/retry` runs under the `replace` busy policy and needs `confirm: true` and the view's snapshot (`GET` returns the view). It runs in this order:
+1. it writes the intent to `data/recovery-retries/<case>.json` with a directory fsync, once per replacement identity;
+2. it calls Tdarr `bulk-update-files` to set `TranscodeDecisionMaker` to `Queued`, and reads the row back through `queue()`;
+3. only a read-back `Queued` or `Transcoding` confirms the retry. Otherwise the intent is `uncertain`, and a further attempt needs the user to confirm that Tdarr was checked.
+
+If the retried transcode fails again, no further retry is offered and the view says to inspect Tdarr. Retries do not count toward `maxRepairsPerDay`. Nothing in the library moves and the quarantine is kept.
+
+For `Not required` there is no retry, since Tdarr would skip the file again by the same rules. The case instead offers the installed-copy assessment for the untranscoded replacement (see below), when the Tdarr row is `Not required` for that exact file and the job history has a `Not required` decision after the import. The view sets `untranscoded` so that the disclosure says the copy was not transcoded.
+
 ### Assessment of an installed result
 
 `review/installed-assessment.mjs` handles a `replacement_imported` case without approval evidence whose transcoded result already replaced the imported replacement in the library (#230). Eligibility is computed from fresh reads:
@@ -242,6 +271,8 @@ An intent without confirmation is `uncertain`, and a retry needs `acknowledgeUnc
 - no Review item for the same path, and no running mutation.
 
 Any read failure is `installed-unverified`. The attention model offers `assessInstalled` and then never `restore`.
+
+In the `Not required` mode (#232), the same assessment covers the untranscoded imported replacement itself: the file must be the replacement's own identity, the Tdarr row must be `Not required` with a `Not required` decision after the import instead of the success row and job, and the view carries `untranscoded: true` so that the disclosure says the copy was not transcoded.
 
 The assessment is Review-owned:
 - the draft lives in `data/recovery-assessments/<case>.json` (device, explicit boolean checks, note), bound to a token of the current file identity; a changed file voids it;
