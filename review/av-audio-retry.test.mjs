@@ -61,14 +61,17 @@ test('exhausted, unrelated, invalid, cancelled or impossible retries stop withou
 });
 
 // A fake FFmpeg on PATH-free absolute path: it logs each run and fails with the cascade after a delay.
+// Each attempt also records when it finished on its own (a killed attempt never does), for the
+// timeline a failing deadline test prints (#255).
 async function fakeFfmpeg(root,{delayMs}){
- const log=path.join(root,'runs.jsonl'),exe=path.join(root,'ffmpeg');
+ const log=path.join(root,'runs.jsonl'),done=path.join(root,'done.jsonl'),exe=path.join(root,'ffmpeg');
  await fs.writeFile(exe,`#!${process.execPath}
 const fs=require('node:fs');const args=process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(log)},JSON.stringify({pid:process.pid,ss:args[args.indexOf('-ss')+1],file:args[args.indexOf('-i')+1],at:Date.now()})+'\\n');
-setTimeout(()=>{process.stderr.write(${JSON.stringify(cascade(1))});process.exit(234)},${delayMs});
+setTimeout(()=>{fs.appendFileSync(${JSON.stringify(done)},JSON.stringify({pid:process.pid,at:Date.now()})+'\\n');process.stderr.write(${JSON.stringify(cascade(1))});process.exit(234)},${delayMs});
 `,{mode:0o755});
- return {exe,runs:async()=>(await fs.readFile(log,'utf8').catch(()=>'')).trim().split('\n').filter(Boolean).map(line=>JSON.parse(line))};
+ const lines=async file=>(await fs.readFile(file,'utf8').catch(()=>'')).trim().split('\n').filter(Boolean).map(line=>JSON.parse(line));
+ return {exe,runs:()=>lines(log),done:()=>lines(done)};
 }
 // A fake FFmpeg with a plan per input: extraction attempts fail with the cascade or emit an MP4
 // stand-in; validation runs (input pipe:0) report a complete 12-second sample.
@@ -104,11 +107,27 @@ test('both sides share one AV pair deadline; exhausted recovery names its side a
 test('the pair deadline spans both sides and their attempts; a timed-out attempt is killed and drained',posix,async t=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'av-audio-deadline-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
  const fake=await fakeFfmpeg(root,{delayMs:600});
- const render=createPreviewRenderer({getPair:async()=>({...pair(),pa:{...probe('h264'),streams:probe('h264').streams}}),getConfig:()=>({ffmpeg:fake.exe}),pairMs:1500});
- const started=Date.now();await assert.rejects(render(request),error=>{assert.match(error.message,/^Originál: Zvuk vybrané stopy nešlo po přetočení připravit v časovém limitu 180 sekund\. Posuď film ve vlastním přehrávači\.$/);return true});const elapsed=Date.now()-started;
- assert.ok(elapsed<1500+800,`the pair stopped near its deadline (${elapsed} ms)`);
- const runs=await fake.runs();assert.ok(runs.length<=3,'no attempt starts after the deadline: '+runs.length);
- for(const run of runs)assert.equal(alive(run.pid),false,'every FFmpeg child is gone');
+ // The deadline is set right after getPair resolves; the timeline below is relative to the test start.
+ let pairAt=null;
+ const render=createPreviewRenderer({getPair:async()=>{pairAt=Date.now();return {...pair(),pa:{...probe('h264'),streams:probe('h264').streams}}},getConfig:()=>({ffmpeg:fake.exe}),pairMs:1500});
+ const started=Date.now();let outcome;
+ try{await render(request);outcome={settledAt:Date.now(),resolved:true}}catch(error){outcome={settledAt:Date.now(),message:String(error?.message)}}
+ try{
+  assert.ok(!outcome.resolved,'the pair must not succeed');
+  assert.match(outcome.message,/^Originál: Zvuk vybrané stopy nešlo po přetočení připravit v časovém limitu 180 sekund\. Posuď film ve vlastním přehrávači\.$/);
+  const elapsed=outcome.settledAt-started;
+  assert.ok(elapsed<1500+800,`the pair stopped near its deadline (${elapsed} ms)`);
+  const runs=await fake.runs();assert.ok(runs.length<=3,'no attempt starts after the deadline: '+runs.length);
+  for(const run of runs)assert.equal(alive(run.pid),false,'every FFmpeg child is gone');
+ }catch(error){
+  // Intermittent in the full suite only (#255): attach the observed timeline to the failure.
+  const at=time=>time==null?'-':`+${time-started} ms`,done=new Map((await fake.done()).map(entry=>[entry.pid,entry.at]));
+  const attempts=(await fake.runs()).map(run=>`  ss ${run.ss}: started ${at(run.at)}, ${done.has(run.pid)?'finished on its own '+at(done.get(run.pid)):'did not finish on its own (killed)'}`);
+  const timeline=['','#255 timeline (relative to the test start):',`  getPair resolved (deadline set, due 1500 ms later): ${at(pairAt)}`,...attempts,`  render settled: ${at(outcome.settledAt)}`,`  outcome: ${outcome.resolved?'resolved':JSON.stringify(outcome.message)}`].join('\n');
+  // The reporter prints the stack, captured when the error was created, so extend both.
+  error.message+=timeline;error.stack=String(error.stack)+timeline;
+  throw error;
+ }
 });
 
 test('cancelling the pair stops the running attempt and starts no further one',posix,async t=>{
