@@ -1,0 +1,1 @@
+- Add an offline v1 TV Review flow template and guide with conservative source checks, full decode, non-overwriting Review staging, and exact-job receipts; the TV library remains inactive until configured and separately approved.
