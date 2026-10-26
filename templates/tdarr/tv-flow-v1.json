@@ -1,0 +1,257 @@
+{
+  "_id": "tv-review-staging-v1-template",
+  "name": "TV Review staging v1 (paused setup only)",
+  "priority": 0,
+  "flowPlugins": [
+    {
+      "sourceRepo": "Community",
+      "fpEnabled": true,
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "id": "tv-input",
+      "name": "TV source file",
+      "pluginName": "inputFile",
+      "version": "1.0.0"
+    },
+    {
+      "sourceRepo": "Community",
+      "fpEnabled": true,
+      "position": {
+        "x": 250,
+        "y": 0
+      },
+      "id": "tv-preflight",
+      "name": "TV source and exception preflight",
+      "pluginName": "customFunction",
+      "version": "1.0.0",
+      "inputsDB": {
+        "code": "const crypto=require('node:crypto');\nconst fs=require('node:fs/promises');\nconst constants=require('node:fs').constants;\nconst path=require('node:path').posix;\nconst spawn=require('node:child_process').spawn;\n\nconst stateKey='tvReviewProofV1';\nconst sampleSize=1024*1024;\nconst maxDecodeMs=6*60*60*1000;\nconst maxDecodeError=128*1024;\nconst supportedVideo=new Set(['h264','hevc','mpeg2video','mpeg4','av1','vp9']);\nconst supportedAudio=new Set(['aac','ac3','eac3','flac','mp2','mp3','opus','truehd','vorbis','dts','dts_hd','pcm_s16le','pcm_s24le']);\nconst supportedSubtitles=new Set(['ass','ssa','subrip','srt','mov_text','webvtt','hdmv_pgs_subtitle','dvd_subtitle']);\nconst plain=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);\nconst blocked=args=>({outputFileObj:args?.inputFileObj,outputNumber:2,variables:args?.variables});\nconst continued=(args,filePath,variables=args.variables)=>({outputFileObj:{_id:filePath},outputNumber:1,variables});\nconst under=(root,file)=>{const relative=path.relative(root,file);return relative!==''&&!path.isAbsolute(relative)&&relative!=='..'&&!relative.startsWith('../');};\nconst validAbsolute=value=>typeof value==='string'&&value.length<=4096&&path.isAbsolute(value)&&!value.includes('\\0')&&path.normalize(value)===value;\nconst validRelative=value=>typeof value==='string'&&value.length>0&&value.length<=4096&&!value.startsWith('/')&&!value.includes('\\\\')&&!value.includes('\\0')&&value.split('/').every(part=>part&&part!=='.'&&part!=='..'&&part.length<=255);\nconst sameStat=(a,b)=>a.dev===b.dev&&a.ino===b.ino&&a.size===b.size&&a.mtimeMs===b.mtimeMs&&a.ctimeMs===b.ctimeMs&&a.mode===b.mode;\nconst sameDirectory=(a,b)=>a.dev===b.dev&&a.ino===b.ino&&a.mode===b.mode&&a.isDirectory()&&b.isDirectory();\nconst sameIdentity=(a,b)=>a.size===b.size&&a.mtime===b.mtime&&a.sample===b.sample&&a.dev===b.dev&&a.ino===b.ino&&a.ctime===b.ctime;\nconst fileFlags=constants.O_RDONLY|(constants.O_NOFOLLOW||0)|(constants.O_NONBLOCK||0);\nconst directoryFlags=constants.O_RDONLY|(constants.O_DIRECTORY||0)|(constants.O_NOFOLLOW||0)|(constants.O_NONBLOCK||0);\nconst createFlags=constants.O_RDWR|constants.O_CREAT|constants.O_EXCL|(constants.O_NOFOLLOW||0)|(constants.O_NONBLOCK||0);\nfunction ratio(value){\n if(typeof value!=='string'||value.length>32)return null;\n const match=/^(\\d{1,8})[:/](\\d{1,8})$/.exec(value);if(!match)return null;\n const numerator=Number(match[1]),denominator=Number(match[2]);\n return numerator>0&&denominator>0&&numerator/denominator<=100?numerator/denominator:null;\n}\n\nfunction rootsFrom(args){\n const values=args?.userVariables?.library;\n const sourceRoot=values?.tvSourceRoot,reviewRoot=values?.tvReviewRoot,cacheRoot=values?.tvCacheRoot;\n if(process.platform!=='linux'||![sourceRoot,reviewRoot,cacheRoot].every(validAbsolute))throw Error('unsupported-root-binding');\n if(sourceRoot===reviewRoot||under(sourceRoot,reviewRoot)||under(reviewRoot,sourceRoot)||sourceRoot===cacheRoot||under(sourceRoot,cacheRoot)||!(under(reviewRoot,cacheRoot)))throw Error('overlapping-root-binding');\n return {sourceRoot,reviewRoot,cacheRoot};\n}\nasync function identity(record){\n const length=Math.min(record.stat.size,sampleSize),buffer=Buffer.alloc(length),hash=crypto.createHash('sha256');\n for(const offset of [0,Math.max(0,record.stat.size-length)]){\n  let read=0;while(read<length){const result=await record.handle.read(buffer,read,length-read,offset+read);if(!result.bytesRead)throw Error('changed-file');read+=result.bytesRead;}hash.update(buffer);\n }\n await verifyOpenFile(record);\n return {size:record.stat.size,mtime:Math.round(record.stat.mtimeMs),sample:hash.digest('hex'),dev:record.stat.dev,ino:record.stat.ino,ctime:record.stat.ctimeMs};\n}\nfunction trackFacts(media){\n const streams=media?.streams,chapters=media?.chapters;\n if(!Array.isArray(streams)||streams.length<1||streams.length>64||!Array.isArray(chapters)||chapters.length>256)throw Error('missing-stream-metadata');\n const videos=streams.filter(stream=>stream?.codec_type==='video');\n if(videos.length!==1)throw Error('video-stream-layout');\n const video=videos[0],format=media.format;\n if(!supportedVideo.has(video.codec_name)||video.field_order!=='progressive'||!Number.isSafeInteger(video.width)||!Number.isSafeInteger(video.height)||video.width<1||video.height<1||video.pix_fmt!=='yuv420p')throw Error('unsupported-video');\n const sampleAspectRatio=ratio(video.sample_aspect_ratio),displayAspectRatio=ratio(video.display_aspect_ratio);\n const bitDepth=video.bits_per_raw_sample===undefined||video.bits_per_raw_sample===null?(video.pix_fmt==='yuv420p'?8:null):Number(video.bits_per_raw_sample);\n if(sampleAspectRatio===null||displayAspectRatio===null||bitDepth!==8)throw Error('unsupported-video-format');\n if(String(format?.format_name||'').split(',')[0]!=='matroska')throw Error('unsupported-container');\n const duration=Number(format.duration),rate=video.avg_frame_rate||video.r_frame_rate;\n if(!Number.isFinite(duration)||duration<1||duration>14400||typeof rate!=='string'||!/^\\d+(?:\\/\\d+)?$/.test(rate))throw Error('unsupported-timing');\n const [num,den=1]=rate.split('/').map(Number),fps=num/den;if(!Number.isFinite(fps)||fps<10||fps>60)throw Error('unsupported-timing');\n if(Array.isArray(video.side_data_list)&&video.side_data_list.length)throw Error('special-video-metadata');\n const sdrTransfer=new Set(['bt709','smpte170m','smpte240m','gamma22','gamma28','iec61966-2-1']);\n const sdrPrimaries=new Set(['bt709','smpte170m','smpte240m','bt470bg','bt470m']);\n const sdrSpace=new Set(['bt709','smpte170m','smpte240m','fcc','bt470bg']);\n if(!sdrTransfer.has(video.color_transfer)||!sdrPrimaries.has(video.color_primaries)||!sdrSpace.has(video.color_space)||!['tv','pc'].includes(video.color_range))throw Error('hdr-or-unknown-color-metadata');\n const facts=[];\n for(const stream of streams){\n  if(!plain(stream)||!['video','audio','subtitle'].includes(stream.codec_type))throw Error('unsupported-stream');\n  const disposition=stream.disposition;\n  if(!plain(disposition)||![0,1,true,false].includes(disposition.default)||![0,1,true,false].includes(disposition.forced))throw Error('missing-track-flags');\n  const tags=plain(stream.tags)?stream.tags:{};\n  const language=typeof tags.language==='string'&&/^[a-zA-Z]{2,3}(?:-[a-zA-Z0-9]{2,8})*$/.test(tags.language)?tags.language.toLowerCase():null;\n  if((stream.codec_type==='audio'&&!supportedAudio.has(stream.codec_name))||(stream.codec_type==='subtitle'&&!supportedSubtitles.has(stream.codec_name)))throw Error('unsupported-track');\n  if(stream.codec_type==='audio'&&(!Number.isSafeInteger(stream.channels)||stream.channels<1||typeof stream.channel_layout!=='string'||!stream.channel_layout))throw Error('unknown-audio-layout');\n  if(Array.isArray(stream.side_data_list)&&stream.side_data_list.length)throw Error('special-track-metadata');\n  facts.push({type:stream.codec_type,codec:stream.codec_name,language,default:Boolean(disposition.default),forced:Boolean(disposition.forced),channels:stream.channels??null,channelLayout:stream.channel_layout??null,width:stream.width??null,height:stream.height??null,fieldOrder:stream.field_order??null,frameRate:stream.avg_frame_rate||stream.r_frame_rate||null,pixelFormat:stream.pix_fmt??null,bitsPerRawSample:stream.codec_type==='video'?bitDepth:(stream.bits_per_raw_sample??null),sampleAspectRatio:stream.sample_aspect_ratio??null,displayAspectRatio:stream.display_aspect_ratio??null,primaries:stream.color_primaries??null,transfer:stream.color_transfer??null,colorSpace:stream.color_space??null,colorRange:stream.color_range??null});\n }\n const chapterFacts=chapters.map(chapter=>{\n  const start=Number(chapter?.start_time),end=Number(chapter?.end_time);\n  if(!Number.isFinite(start)||!Number.isFinite(end)||start<0||end<=start)throw Error('unsupported-chapter');\n  return {start,end,titleHash:typeof chapter?.tags?.title==='string'?crypto.createHash('sha256').update(chapter.tags.title).digest('hex'):null};\n });\n return {duration,videoCount:videos.length,tracks:facts,chapters:chapterFacts};\n}\nfunction preserved(before,after){\n if(!plain(before)||!plain(after)||before.videoCount!==after.videoCount||before.tracks.length!==after.tracks.length||before.chapters.length!==after.chapters.length)return false;\n for(let index=0;index<before.tracks.length;index++){\n  const left=before.tracks[index],right=after.tracks[index];\n  if(left.type!==right.type||left.default!==right.default||left.forced!==right.forced)return false;\n  if(left.type!=='video'&&(left.codec!==right.codec||left.language!==right.language||left.channels!==right.channels||left.channelLayout!==right.channelLayout))return false;\n  if(left.type==='video'&&(right.codec!=='hevc'||left.width!==right.width||left.height!==right.height||left.frameRate!==right.frameRate||left.pixelFormat!==right.pixelFormat||left.bitsPerRawSample!==right.bitsPerRawSample||left.sampleAspectRatio!==right.sampleAspectRatio||left.displayAspectRatio!==right.displayAspectRatio||left.primaries!==right.primaries||left.transfer!==right.transfer||left.colorSpace!==right.colorSpace||left.colorRange!==right.colorRange))return false;\n }\n for(let index=0;index<before.chapters.length;index++){\n  const left=before.chapters[index],right=after.chapters[index];\n  if(Math.abs(left.start-right.start)>0.05||Math.abs(left.end-right.end)>0.05||left.titleHash!==right.titleHash)return false;\n }\n return Math.abs(before.duration-after.duration)<=Math.max(0.5,before.duration*0.005);\n}\nfunction safeRootPath(rootPath,relative){if(!validRelative(relative)||!under(rootPath,path.join(rootPath,relative)))throw Error('unsafe-path');return path.join(rootPath,relative);}\nasync function decodeCompletely(file,ffmpegPath,spawnChild=spawn){\n if(!validAbsolute(ffmpegPath))throw Error('missing-decoder');\n return new Promise((resolve,reject)=>{\n  const argv=['-nostdin','-v','error','-xerror','-err_detect','explode','-threads','1','-filter_threads','1','-protocol_whitelist','file','-format_whitelist','matroska','-probesize','5000000','-analyzeduration','5000000','-max_alloc','33554432','-f','matroska','-i','/proc/self/fd/3','-map','0:v?','-map','0:a?','-f','null','-'];\n  let child;try{child=spawnChild(ffmpegPath,argv,{shell:false,detached:true,windowsHide:true,stdio:['ignore','ignore','pipe',file.handle.fd],env:{PATH:process.env.PATH||''}});}catch{return reject(Error('decoder-start-failed'));}\n  let stderrBytes=0,overflow=false,timedOut=false,closed=false,killTimer=null;\n  const kill=(signal)=>{try{if(child.pid)process.kill(-child.pid,signal);else child.kill(signal);}catch{try{child.kill(signal);}catch{}}};\n  const terminate=()=>{kill('SIGTERM');killTimer=setTimeout(()=>{if(!closed)kill('SIGKILL');},1500);killTimer.unref?.();};\n  const deadline=setTimeout(()=>{timedOut=true;terminate();},maxDecodeMs);deadline.unref?.();\n  child.stderr.on('data',chunk=>{stderrBytes+=chunk.length;if(stderrBytes>maxDecodeError&&!overflow){overflow=true;terminate();}});\n  child.once('error',()=>{overflow=true;});\n  child.once('close',code=>{closed=true;clearTimeout(deadline);clearTimeout(killTimer);if(code===0&&!timedOut&&!overflow&&stderrBytes===0)resolve();else reject(Error('decoder-did-not-complete'));});\n });\n}\nasync function syncDirectoryChain(record){\n for(const directory of [...record.chain.handles].reverse())await directory.handle.sync();\n await record.root.handle.sync();\n}\nasync function copyFile(source,destination){\n const buffer=Buffer.alloc(4*1024*1024);let position=0;\n while(position<source.stat.size){\n  const amount=Math.min(buffer.length,source.stat.size-position),read=await source.handle.read(buffer,0,amount,position);\n  if(read.bytesRead!==amount)throw Error('source-changed');\n  let written=0;while(written<amount){const result=await destination.handle.write(buffer,written,amount-written,position+written);if(!result.bytesWritten)throw Error('destination-write-failed');written+=result.bytesWritten;}\n  position+=amount;\n }\n await destination.handle.sync();\n if((await source.handle.stat()).size!==source.stat.size)throw Error('source-changed');\n}\nasync function preflight(args){\n const {sourceRoot,reviewRoot,cacheRoot}=rootsFrom(args);\n const sourcePath=args.originalLibraryFile?._id,workDir=args.workDir;\n if(!validAbsolute(sourcePath)||sourcePath!==args.inputFileObj?._id||!validAbsolute(workDir)||!under(sourceRoot,sourcePath)||!(workDir===cacheRoot||under(cacheRoot,workDir)))throw Error('source-or-cache-outside-binding');\n const relative=path.relative(sourceRoot,sourcePath);\n if(!validRelative(relative)||!relative.toLowerCase().endsWith('.mkv'))throw Error('unsupported-relative-path');\n const workRelative=path.relative(cacheRoot,workDir);\n const source=await openFileUnder(sourceRoot,relative);\n let cache,review,workDirectory;\n try{\n  cache=await openRoot(cacheRoot);\n  review=await openRoot(reviewRoot);\n  workDirectory=await openDirectories(cache,workRelative==='.'?[]:workRelative.split('/'));\n  const sourceIdentity=await identity(source),profile=trackFacts(args.inputFileObj?.ffProbeData);\n  if(profile.tracks.some(track=>track.type==='video'&&track.codec==='hevc'))throw Error('already-target-codec');\n  if(profile.tracks.some(track=>track.type==='video'&&track.codec==='hevc'))throw Error('already-target-codec');\n  const destination=safeRootPath(reviewRoot,relative);\n  for(const candidate of [destination,`${destination}.tdarr-receipt.json`])try{await fs.lstat(candidate);throw Error('result-already-exists');}catch(error){if(error.code!=='ENOENT')throw error;}\n  const proof={version:1,source:sourceIdentity,sourceRelativeHash:crypto.createHash('sha256').update(relative).digest('hex'),profile,roots:{source:{dev:source.root.stat.dev,ino:source.root.stat.ino},review:{dev:review.stat.dev,ino:review.stat.ino},cache:{dev:cache.stat.dev,ino:cache.stat.ino}}};\n  const variables={...(plain(args.variables)?args.variables:{}),inFlow:{...(plain(args.variables?.inFlow)?args.variables.inFlow:{}),[stateKey]:JSON.stringify(proof)}};\n  return continued(args,sourcePath,variables);\n }finally{for(const directory of workDirectory?.handles.reverse()||[])await directory.handle.close().catch(()=>{});await closeFile(source);await review?.handle.close().catch(()=>{});await cache?.handle.close().catch(()=>{});}\n}\nasync function finish(args,spawnChild=spawn){\n const {sourceRoot,reviewRoot,cacheRoot}=rootsFrom(args);\n const serialized=args.variables?.inFlow?.[stateKey];if(typeof serialized!=='string'||serialized.length>65536)throw Error('missing-source-proof');\n const proof=JSON.parse(serialized);if(!plain(proof)||proof.version!==1||!plain(proof.source)||!/^([a-f0-9]{64})$/.test(proof.sourceRelativeHash))throw Error('invalid-source-proof');\n const currentSourcePath=args.originalLibraryFile?._id,workingPath=args.inputFileObj?._id;\n if(!validAbsolute(currentSourcePath)||!under(sourceRoot,currentSourcePath)||!validAbsolute(workingPath)||!under(cacheRoot,workingPath))throw Error('path-binding-changed');\n const relative=path.relative(sourceRoot,currentSourcePath);if(!validRelative(relative)||!relative.toLowerCase().endsWith('.mkv')||crypto.createHash('sha256').update(relative).digest('hex')!==proof.sourceRelativeHash)throw Error('source-path-changed');\n const workRelative=path.relative(cacheRoot,workingPath);if(!validRelative(workRelative))throw Error('unsafe-cache-file');\n const cachePath=args.workDir;if(!validAbsolute(cachePath)||!(cachePath===cacheRoot||under(cacheRoot,cachePath)))throw Error('cache-binding-changed');\n const source=await openFileUnder(sourceRoot,relative),working=await openFileUnder(cacheRoot,workRelative);\n if(!plain(proof.roots)||proof.roots.source?.dev!==source.root.stat.dev||proof.roots.source?.ino!==source.root.stat.ino||proof.roots.cache?.dev!==working.root.stat.dev||proof.roots.cache?.ino!==working.root.stat.ino){await Promise.all([closeFile(source),closeFile(working)]);throw Error('root-binding-changed');}\n let staged,receiptFile;\n try{\n  const sourceIdentity=await identity(source),workingIdentity=await identity(working);\n  if(!sameIdentity(sourceIdentity,proof.source))throw Error('source-changed');\n  const jobId=args.job?.jobId;if(typeof jobId!=='string'||!jobId.trim()||jobId!==jobId.trim()||jobId.length>512)throw Error('missing-current-job-id');\n  const outputFacts=trackFacts(args.inputFileObj?.ffProbeData);if(!preserved(proof.profile,outputFacts))throw Error('preservation-check-failed');\n  await decodeCompletely(working,args.ffmpegPath,spawnChild);\n  await verifyOpenFile(source);await verifyOpenFile(working);\n  if(!sameIdentity(await identity(source),proof.source)||!sameIdentity(await identity(working),workingIdentity))throw Error('input-changed-during-decode');\n  const destination=safeRootPath(reviewRoot,relative);\n  staged=await openFileUnder(reviewRoot,relative,{create:true,mode:0o640});\n  if(proof.roots.review?.dev!==staged.root.stat.dev||proof.roots.review?.ino!==staged.root.stat.ino)throw Error('review-root-changed');\n  await copyFile(working,staged);\n  staged.stat=await staged.handle.stat();\n  const stagedIdentity=await identity(staged);\n  if(stagedIdentity.size!==workingIdentity.size||stagedIdentity.sample!==workingIdentity.sample)throw Error('staged-copy-mismatch');\n  await verifyOpenFile(source);await verifyOpenFile(working);await verifyOpenFile(staged);\n  if(!sameIdentity(await identity(source),proof.source)||!sameIdentity(await identity(working),workingIdentity))throw Error('input-changed-during-stage');\n  const outputRelative=path.relative(reviewRoot,destination);\n  if(!validRelative(outputRelative)||outputRelative!==relative)throw Error('output-path-mismatch');\n  const receipt={version:1,relative,outputRelative,source:{size:sourceIdentity.size,mtime:sourceIdentity.mtime,sample:sourceIdentity.sample},output:{size:stagedIdentity.size,mtime:stagedIdentity.mtime,sample:stagedIdentity.sample},jobId,createdAt:Date.now()};\n  await syncDirectoryChain(staged);\n  receiptFile=await openFileUnder(reviewRoot,`${outputRelative}.tdarr-receipt.json`,{create:true,mode:0o600});\n  await receiptFile.handle.writeFile(JSON.stringify(receipt));await receiptFile.handle.sync();\n  receiptFile.stat=await receiptFile.handle.stat();\n  await verifyOpenFile(staged);await verifyOpenFile(receiptFile);await syncDirectoryChain(receiptFile);\n  return continued(args,destination);\n }finally{\n  await Promise.all([closeFile(source),closeFile(working),...(staged?[closeFile(staged)]:[]),...(receiptFile?[closeFile(receiptFile)]:[])]);\n }\n}\nasync function root(pathname){\n const stat=await fs.lstat(pathname);\n if(stat.isSymbolicLink()||!stat.isDirectory()||await fs.realpath(pathname)!==pathname)throw Error('unsafe-root');\n return stat;\n}\nasync function openFileUnder(rootPath,relative,{create=false,mode=0o640}={}){\n if(!validRelative(relative))throw Error('unsafe-relative');\n const rootRecord=await openRoot(rootPath),parts=relative.split('/'),leaf=parts.pop();let chain;\n try{\n  chain=await openDirectories(rootRecord,parts,{create});const parent=chain.parent;\n  const actual=path.join(parent.path,leaf),via=`/proc/self/fd/${parent.handle.fd}/${leaf}`;\n  const handle=await fs.open(via,create?createFlags:fileFlags,mode),stat=await handle.stat(),named=await fs.lstat(actual);\n  if(!stat.isFile()||named.isSymbolicLink()||!sameStat(stat,named)||stat.nlink!==1||await fs.realpath(actual)!==actual){await handle.close();throw Error('unsafe-file');}\n  return {root:rootRecord,chain,handle,path:actual,stat};\n }catch(error){for(const directory of chain?.handles?.reverse()||[])await directory.handle.close().catch(()=>{});await rootRecord.handle.close().catch(()=>{});throw error;}\n}\nasync function openRoot(rootPath){\n const before=await root(rootPath);\n const handle=await fs.open(rootPath,directoryFlags),stat=await handle.stat();\n if(!sameStat(before,stat)){await handle.close();throw Error('changed-root');}\n return {handle,path:rootPath,stat,root:true};\n}\nasync function openDirectories(rootRecord,parts,{create=false}={}){\n const handles=[];let parent=rootRecord;\n try{\n  for(const part of parts){\n   const actual=path.join(parent.path,part),via=`/proc/self/fd/${parent.handle.fd}/${part}`;\n   let handle;\n   try{handle=await fs.open(via,directoryFlags);}\n   catch(error){if(!create||error.code!=='ENOENT')throw error;try{await fs.mkdir(via,{mode:0o750});}catch(mkdirError){if(mkdirError.code!=='EEXIST')throw mkdirError;}handle=await fs.open(via,directoryFlags);}\n   const stat=await handle.stat(),named=await fs.lstat(actual);\n   if(!stat.isDirectory()||named.isSymbolicLink()||!sameStat(stat,named)||await fs.realpath(actual)!==actual){await handle.close();throw Error('unsafe-parent');}\n   const record={handle,path:actual,stat};handles.push(record);parent=record;\n  }\n  return {handles,parent};\n }catch(error){for(const record of handles.reverse())await record.handle.close().catch(()=>{});throw error;}\n}\nasync function verifyOpenFile(record){\n const stat=await record.handle.stat(),named=await fs.lstat(record.path);\n if(!sameStat(record.stat,stat)||named.isSymbolicLink()||!sameStat(record.stat,named)||await fs.realpath(record.path)!==record.path)throw Error('changed-file');\n for(const directory of [record.root,...record.chain.handles]){\n  const current=await fs.lstat(directory.path);if(current.isSymbolicLink()||!sameDirectory(directory.stat,current)||await fs.realpath(directory.path)!==directory.path)throw Error('changed-parent');\n }\n}\nasync function closeFile(record){await record.handle.close().catch(()=>{});for(const directory of record.chain.handles.reverse())await directory.handle.close().catch(()=>{});await record.root.handle.close().catch(()=>{});}\nmodule.exports=async function tvFlowHelper(args,testDependencies={}){\n try{return args?.variables?.inFlow?.[stateKey]?await finish(args,testDependencies.spawnChild||spawn):await preflight(args);}\n catch{return blocked(args);}\n};\r\n"
+      }
+    },
+    {
+      "sourceRepo": "Community",
+      "fpEnabled": true,
+      "position": {
+        "x": 500,
+        "y": 0
+      },
+      "id": "tv-start",
+      "name": "Begin transcode",
+      "pluginName": "ffmpegCommandStart",
+      "version": "1.0.0"
+    },
+    {
+      "sourceRepo": "Community",
+      "fpEnabled": true,
+      "position": {
+        "x": 750,
+        "y": 0
+      },
+      "id": "tv-encoder",
+      "name": "Software HEVC encode",
+      "pluginName": "ffmpegCommandSetVideoEncoder",
+      "version": "1.0.0",
+      "inputsDB": {
+        "outputCodec": "hevc",
+        "enableFFmpegPreset": "true",
+        "ffmpegPreset": "slow",
+        "enableFFmpegQuality": "true",
+        "ffmpegQuality": "22",
+        "hardwareEncoding": "false",
+        "hardwareType": "auto",
+        "hardwareDecoding": "false",
+        "forceEncoding": "false"
+      }
+    },
+    {
+      "sourceRepo": "Community",
+      "fpEnabled": true,
+      "position": {
+        "x": 1000,
+        "y": 0
+      },
+      "id": "tv-container",
+      "name": "Matroska output without forced stream removal",
+      "pluginName": "ffmpegCommandSetContainer",
+      "version": "1.0.0",
+      "inputsDB": {
+        "container": "mkv",
+        "forceConform": "false"
+      }
+    },
+    {
+      "sourceRepo": "Community",
+      "fpEnabled": true,
+      "position": {
+        "x": 1250,
+        "y": 0
+      },
+      "id": "tv-execute",
+      "name": "Execute transcode",
+      "pluginName": "ffmpegCommandExecute",
+      "version": "1.0.0"
+    },
+    {
+      "sourceRepo": "Community",
+      "fpEnabled": true,
+      "position": {
+        "x": 1500,
+        "y": 0
+      },
+      "id": "tv-duration",
+      "name": "Duration sanity gate",
+      "pluginName": "compareFileDurationRatio",
+      "version": "1.0.0",
+      "inputsDB": {
+        "greaterThan": "99.5",
+        "lessThan": "100.5"
+      }
+    },
+    {
+      "sourceRepo": "Community",
+      "fpEnabled": true,
+      "position": {
+        "x": 1750,
+        "y": 0
+      },
+      "id": "tv-size",
+      "name": "Output size sanity gate",
+      "pluginName": "compareFileSizeRatio",
+      "version": "2.0.0",
+      "inputsDB": {
+        "greaterThan": "25",
+        "lessThan": "150"
+      }
+    },
+    {
+      "sourceRepo": "Community",
+      "fpEnabled": true,
+      "position": {
+        "x": 2000,
+        "y": 0
+      },
+      "id": "tv-receipt",
+      "name": "Strict decode, exclusive TV Review stage, exact-job receipt",
+      "pluginName": "customFunction",
+      "version": "1.0.0",
+      "inputsDB": {
+        "code": "const crypto=require('node:crypto');\nconst fs=require('node:fs/promises');\nconst constants=require('node:fs').constants;\nconst path=require('node:path').posix;\nconst spawn=require('node:child_process').spawn;\n\nconst stateKey='tvReviewProofV1';\nconst sampleSize=1024*1024;\nconst maxDecodeMs=6*60*60*1000;\nconst maxDecodeError=128*1024;\nconst supportedVideo=new Set(['h264','hevc','mpeg2video','mpeg4','av1','vp9']);\nconst supportedAudio=new Set(['aac','ac3','eac3','flac','mp2','mp3','opus','truehd','vorbis','dts','dts_hd','pcm_s16le','pcm_s24le']);\nconst supportedSubtitles=new Set(['ass','ssa','subrip','srt','mov_text','webvtt','hdmv_pgs_subtitle','dvd_subtitle']);\nconst plain=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);\nconst blocked=args=>({outputFileObj:args?.inputFileObj,outputNumber:2,variables:args?.variables});\nconst continued=(args,filePath,variables=args.variables)=>({outputFileObj:{_id:filePath},outputNumber:1,variables});\nconst under=(root,file)=>{const relative=path.relative(root,file);return relative!==''&&!path.isAbsolute(relative)&&relative!=='..'&&!relative.startsWith('../');};\nconst validAbsolute=value=>typeof value==='string'&&value.length<=4096&&path.isAbsolute(value)&&!value.includes('\\0')&&path.normalize(value)===value;\nconst validRelative=value=>typeof value==='string'&&value.length>0&&value.length<=4096&&!value.startsWith('/')&&!value.includes('\\\\')&&!value.includes('\\0')&&value.split('/').every(part=>part&&part!=='.'&&part!=='..'&&part.length<=255);\nconst sameStat=(a,b)=>a.dev===b.dev&&a.ino===b.ino&&a.size===b.size&&a.mtimeMs===b.mtimeMs&&a.ctimeMs===b.ctimeMs&&a.mode===b.mode;\nconst sameDirectory=(a,b)=>a.dev===b.dev&&a.ino===b.ino&&a.mode===b.mode&&a.isDirectory()&&b.isDirectory();\nconst sameIdentity=(a,b)=>a.size===b.size&&a.mtime===b.mtime&&a.sample===b.sample&&a.dev===b.dev&&a.ino===b.ino&&a.ctime===b.ctime;\nconst fileFlags=constants.O_RDONLY|(constants.O_NOFOLLOW||0)|(constants.O_NONBLOCK||0);\nconst directoryFlags=constants.O_RDONLY|(constants.O_DIRECTORY||0)|(constants.O_NOFOLLOW||0)|(constants.O_NONBLOCK||0);\nconst createFlags=constants.O_RDWR|constants.O_CREAT|constants.O_EXCL|(constants.O_NOFOLLOW||0)|(constants.O_NONBLOCK||0);\nfunction ratio(value){\n if(typeof value!=='string'||value.length>32)return null;\n const match=/^(\\d{1,8})[:/](\\d{1,8})$/.exec(value);if(!match)return null;\n const numerator=Number(match[1]),denominator=Number(match[2]);\n return numerator>0&&denominator>0&&numerator/denominator<=100?numerator/denominator:null;\n}\n\nfunction rootsFrom(args){\n const values=args?.userVariables?.library;\n const sourceRoot=values?.tvSourceRoot,reviewRoot=values?.tvReviewRoot,cacheRoot=values?.tvCacheRoot;\n if(process.platform!=='linux'||![sourceRoot,reviewRoot,cacheRoot].every(validAbsolute))throw Error('unsupported-root-binding');\n if(sourceRoot===reviewRoot||under(sourceRoot,reviewRoot)||under(reviewRoot,sourceRoot)||sourceRoot===cacheRoot||under(sourceRoot,cacheRoot)||!(under(reviewRoot,cacheRoot)))throw Error('overlapping-root-binding');\n return {sourceRoot,reviewRoot,cacheRoot};\n}\nasync function identity(record){\n const length=Math.min(record.stat.size,sampleSize),buffer=Buffer.alloc(length),hash=crypto.createHash('sha256');\n for(const offset of [0,Math.max(0,record.stat.size-length)]){\n  let read=0;while(read<length){const result=await record.handle.read(buffer,read,length-read,offset+read);if(!result.bytesRead)throw Error('changed-file');read+=result.bytesRead;}hash.update(buffer);\n }\n await verifyOpenFile(record);\n return {size:record.stat.size,mtime:Math.round(record.stat.mtimeMs),sample:hash.digest('hex'),dev:record.stat.dev,ino:record.stat.ino,ctime:record.stat.ctimeMs};\n}\nfunction trackFacts(media){\n const streams=media?.streams,chapters=media?.chapters;\n if(!Array.isArray(streams)||streams.length<1||streams.length>64||!Array.isArray(chapters)||chapters.length>256)throw Error('missing-stream-metadata');\n const videos=streams.filter(stream=>stream?.codec_type==='video');\n if(videos.length!==1)throw Error('video-stream-layout');\n const video=videos[0],format=media.format;\n if(!supportedVideo.has(video.codec_name)||video.field_order!=='progressive'||!Number.isSafeInteger(video.width)||!Number.isSafeInteger(video.height)||video.width<1||video.height<1||video.pix_fmt!=='yuv420p')throw Error('unsupported-video');\n const sampleAspectRatio=ratio(video.sample_aspect_ratio),displayAspectRatio=ratio(video.display_aspect_ratio);\n const bitDepth=video.bits_per_raw_sample===undefined||video.bits_per_raw_sample===null?(video.pix_fmt==='yuv420p'?8:null):Number(video.bits_per_raw_sample);\n if(sampleAspectRatio===null||displayAspectRatio===null||bitDepth!==8)throw Error('unsupported-video-format');\n if(String(format?.format_name||'').split(',')[0]!=='matroska')throw Error('unsupported-container');\n const duration=Number(format.duration),rate=video.avg_frame_rate||video.r_frame_rate;\n if(!Number.isFinite(duration)||duration<1||duration>14400||typeof rate!=='string'||!/^\\d+(?:\\/\\d+)?$/.test(rate))throw Error('unsupported-timing');\n const [num,den=1]=rate.split('/').map(Number),fps=num/den;if(!Number.isFinite(fps)||fps<10||fps>60)throw Error('unsupported-timing');\n if(Array.isArray(video.side_data_list)&&video.side_data_list.length)throw Error('special-video-metadata');\n const sdrTransfer=new Set(['bt709','smpte170m','smpte240m','gamma22','gamma28','iec61966-2-1']);\n const sdrPrimaries=new Set(['bt709','smpte170m','smpte240m','bt470bg','bt470m']);\n const sdrSpace=new Set(['bt709','smpte170m','smpte240m','fcc','bt470bg']);\n if(!sdrTransfer.has(video.color_transfer)||!sdrPrimaries.has(video.color_primaries)||!sdrSpace.has(video.color_space)||!['tv','pc'].includes(video.color_range))throw Error('hdr-or-unknown-color-metadata');\n const facts=[];\n for(const stream of streams){\n  if(!plain(stream)||!['video','audio','subtitle'].includes(stream.codec_type))throw Error('unsupported-stream');\n  const disposition=stream.disposition;\n  if(!plain(disposition)||![0,1,true,false].includes(disposition.default)||![0,1,true,false].includes(disposition.forced))throw Error('missing-track-flags');\n  const tags=plain(stream.tags)?stream.tags:{};\n  const language=typeof tags.language==='string'&&/^[a-zA-Z]{2,3}(?:-[a-zA-Z0-9]{2,8})*$/.test(tags.language)?tags.language.toLowerCase():null;\n  if((stream.codec_type==='audio'&&!supportedAudio.has(stream.codec_name))||(stream.codec_type==='subtitle'&&!supportedSubtitles.has(stream.codec_name)))throw Error('unsupported-track');\n  if(stream.codec_type==='audio'&&(!Number.isSafeInteger(stream.channels)||stream.channels<1||typeof stream.channel_layout!=='string'||!stream.channel_layout))throw Error('unknown-audio-layout');\n  if(Array.isArray(stream.side_data_list)&&stream.side_data_list.length)throw Error('special-track-metadata');\n  facts.push({type:stream.codec_type,codec:stream.codec_name,language,default:Boolean(disposition.default),forced:Boolean(disposition.forced),channels:stream.channels??null,channelLayout:stream.channel_layout??null,width:stream.width??null,height:stream.height??null,fieldOrder:stream.field_order??null,frameRate:stream.avg_frame_rate||stream.r_frame_rate||null,pixelFormat:stream.pix_fmt??null,bitsPerRawSample:stream.codec_type==='video'?bitDepth:(stream.bits_per_raw_sample??null),sampleAspectRatio:stream.sample_aspect_ratio??null,displayAspectRatio:stream.display_aspect_ratio??null,primaries:stream.color_primaries??null,transfer:stream.color_transfer??null,colorSpace:stream.color_space??null,colorRange:stream.color_range??null});\n }\n const chapterFacts=chapters.map(chapter=>{\n  const start=Number(chapter?.start_time),end=Number(chapter?.end_time);\n  if(!Number.isFinite(start)||!Number.isFinite(end)||start<0||end<=start)throw Error('unsupported-chapter');\n  return {start,end,titleHash:typeof chapter?.tags?.title==='string'?crypto.createHash('sha256').update(chapter.tags.title).digest('hex'):null};\n });\n return {duration,videoCount:videos.length,tracks:facts,chapters:chapterFacts};\n}\nfunction preserved(before,after){\n if(!plain(before)||!plain(after)||before.videoCount!==after.videoCount||before.tracks.length!==after.tracks.length||before.chapters.length!==after.chapters.length)return false;\n for(let index=0;index<before.tracks.length;index++){\n  const left=before.tracks[index],right=after.tracks[index];\n  if(left.type!==right.type||left.default!==right.default||left.forced!==right.forced)return false;\n  if(left.type!=='video'&&(left.codec!==right.codec||left.language!==right.language||left.channels!==right.channels||left.channelLayout!==right.channelLayout))return false;\n  if(left.type==='video'&&(right.codec!=='hevc'||left.width!==right.width||left.height!==right.height||left.frameRate!==right.frameRate||left.pixelFormat!==right.pixelFormat||left.bitsPerRawSample!==right.bitsPerRawSample||left.sampleAspectRatio!==right.sampleAspectRatio||left.displayAspectRatio!==right.displayAspectRatio||left.primaries!==right.primaries||left.transfer!==right.transfer||left.colorSpace!==right.colorSpace||left.colorRange!==right.colorRange))return false;\n }\n for(let index=0;index<before.chapters.length;index++){\n  const left=before.chapters[index],right=after.chapters[index];\n  if(Math.abs(left.start-right.start)>0.05||Math.abs(left.end-right.end)>0.05||left.titleHash!==right.titleHash)return false;\n }\n return Math.abs(before.duration-after.duration)<=Math.max(0.5,before.duration*0.005);\n}\nfunction safeRootPath(rootPath,relative){if(!validRelative(relative)||!under(rootPath,path.join(rootPath,relative)))throw Error('unsafe-path');return path.join(rootPath,relative);}\nasync function decodeCompletely(file,ffmpegPath,spawnChild=spawn){\n if(!validAbsolute(ffmpegPath))throw Error('missing-decoder');\n return new Promise((resolve,reject)=>{\n  const argv=['-nostdin','-v','error','-xerror','-err_detect','explode','-threads','1','-filter_threads','1','-protocol_whitelist','file','-format_whitelist','matroska','-probesize','5000000','-analyzeduration','5000000','-max_alloc','33554432','-f','matroska','-i','/proc/self/fd/3','-map','0:v?','-map','0:a?','-f','null','-'];\n  let child;try{child=spawnChild(ffmpegPath,argv,{shell:false,detached:true,windowsHide:true,stdio:['ignore','ignore','pipe',file.handle.fd],env:{PATH:process.env.PATH||''}});}catch{return reject(Error('decoder-start-failed'));}\n  let stderrBytes=0,overflow=false,timedOut=false,closed=false,killTimer=null;\n  const kill=(signal)=>{try{if(child.pid)process.kill(-child.pid,signal);else child.kill(signal);}catch{try{child.kill(signal);}catch{}}};\n  const terminate=()=>{kill('SIGTERM');killTimer=setTimeout(()=>{if(!closed)kill('SIGKILL');},1500);killTimer.unref?.();};\n  const deadline=setTimeout(()=>{timedOut=true;terminate();},maxDecodeMs);deadline.unref?.();\n  child.stderr.on('data',chunk=>{stderrBytes+=chunk.length;if(stderrBytes>maxDecodeError&&!overflow){overflow=true;terminate();}});\n  child.once('error',()=>{overflow=true;});\n  child.once('close',code=>{closed=true;clearTimeout(deadline);clearTimeout(killTimer);if(code===0&&!timedOut&&!overflow&&stderrBytes===0)resolve();else reject(Error('decoder-did-not-complete'));});\n });\n}\nasync function syncDirectoryChain(record){\n for(const directory of [...record.chain.handles].reverse())await directory.handle.sync();\n await record.root.handle.sync();\n}\nasync function copyFile(source,destination){\n const buffer=Buffer.alloc(4*1024*1024);let position=0;\n while(position<source.stat.size){\n  const amount=Math.min(buffer.length,source.stat.size-position),read=await source.handle.read(buffer,0,amount,position);\n  if(read.bytesRead!==amount)throw Error('source-changed');\n  let written=0;while(written<amount){const result=await destination.handle.write(buffer,written,amount-written,position+written);if(!result.bytesWritten)throw Error('destination-write-failed');written+=result.bytesWritten;}\n  position+=amount;\n }\n await destination.handle.sync();\n if((await source.handle.stat()).size!==source.stat.size)throw Error('source-changed');\n}\nasync function preflight(args){\n const {sourceRoot,reviewRoot,cacheRoot}=rootsFrom(args);\n const sourcePath=args.originalLibraryFile?._id,workDir=args.workDir;\n if(!validAbsolute(sourcePath)||sourcePath!==args.inputFileObj?._id||!validAbsolute(workDir)||!under(sourceRoot,sourcePath)||!(workDir===cacheRoot||under(cacheRoot,workDir)))throw Error('source-or-cache-outside-binding');\n const relative=path.relative(sourceRoot,sourcePath);\n if(!validRelative(relative)||!relative.toLowerCase().endsWith('.mkv'))throw Error('unsupported-relative-path');\n const workRelative=path.relative(cacheRoot,workDir);\n const source=await openFileUnder(sourceRoot,relative);\n let cache,review,workDirectory;\n try{\n  cache=await openRoot(cacheRoot);\n  review=await openRoot(reviewRoot);\n  workDirectory=await openDirectories(cache,workRelative==='.'?[]:workRelative.split('/'));\n  const sourceIdentity=await identity(source),profile=trackFacts(args.inputFileObj?.ffProbeData);\n  if(profile.tracks.some(track=>track.type==='video'&&track.codec==='hevc'))throw Error('already-target-codec');\n  if(profile.tracks.some(track=>track.type==='video'&&track.codec==='hevc'))throw Error('already-target-codec');\n  const destination=safeRootPath(reviewRoot,relative);\n  for(const candidate of [destination,`${destination}.tdarr-receipt.json`])try{await fs.lstat(candidate);throw Error('result-already-exists');}catch(error){if(error.code!=='ENOENT')throw error;}\n  const proof={version:1,source:sourceIdentity,sourceRelativeHash:crypto.createHash('sha256').update(relative).digest('hex'),profile,roots:{source:{dev:source.root.stat.dev,ino:source.root.stat.ino},review:{dev:review.stat.dev,ino:review.stat.ino},cache:{dev:cache.stat.dev,ino:cache.stat.ino}}};\n  const variables={...(plain(args.variables)?args.variables:{}),inFlow:{...(plain(args.variables?.inFlow)?args.variables.inFlow:{}),[stateKey]:JSON.stringify(proof)}};\n  return continued(args,sourcePath,variables);\n }finally{for(const directory of workDirectory?.handles.reverse()||[])await directory.handle.close().catch(()=>{});await closeFile(source);await review?.handle.close().catch(()=>{});await cache?.handle.close().catch(()=>{});}\n}\nasync function finish(args,spawnChild=spawn){\n const {sourceRoot,reviewRoot,cacheRoot}=rootsFrom(args);\n const serialized=args.variables?.inFlow?.[stateKey];if(typeof serialized!=='string'||serialized.length>65536)throw Error('missing-source-proof');\n const proof=JSON.parse(serialized);if(!plain(proof)||proof.version!==1||!plain(proof.source)||!/^([a-f0-9]{64})$/.test(proof.sourceRelativeHash))throw Error('invalid-source-proof');\n const currentSourcePath=args.originalLibraryFile?._id,workingPath=args.inputFileObj?._id;\n if(!validAbsolute(currentSourcePath)||!under(sourceRoot,currentSourcePath)||!validAbsolute(workingPath)||!under(cacheRoot,workingPath))throw Error('path-binding-changed');\n const relative=path.relative(sourceRoot,currentSourcePath);if(!validRelative(relative)||!relative.toLowerCase().endsWith('.mkv')||crypto.createHash('sha256').update(relative).digest('hex')!==proof.sourceRelativeHash)throw Error('source-path-changed');\n const workRelative=path.relative(cacheRoot,workingPath);if(!validRelative(workRelative))throw Error('unsafe-cache-file');\n const cachePath=args.workDir;if(!validAbsolute(cachePath)||!(cachePath===cacheRoot||under(cacheRoot,cachePath)))throw Error('cache-binding-changed');\n const source=await openFileUnder(sourceRoot,relative),working=await openFileUnder(cacheRoot,workRelative);\n if(!plain(proof.roots)||proof.roots.source?.dev!==source.root.stat.dev||proof.roots.source?.ino!==source.root.stat.ino||proof.roots.cache?.dev!==working.root.stat.dev||proof.roots.cache?.ino!==working.root.stat.ino){await Promise.all([closeFile(source),closeFile(working)]);throw Error('root-binding-changed');}\n let staged,receiptFile;\n try{\n  const sourceIdentity=await identity(source),workingIdentity=await identity(working);\n  if(!sameIdentity(sourceIdentity,proof.source))throw Error('source-changed');\n  const jobId=args.job?.jobId;if(typeof jobId!=='string'||!jobId.trim()||jobId!==jobId.trim()||jobId.length>512)throw Error('missing-current-job-id');\n  const outputFacts=trackFacts(args.inputFileObj?.ffProbeData);if(!preserved(proof.profile,outputFacts))throw Error('preservation-check-failed');\n  await decodeCompletely(working,args.ffmpegPath,spawnChild);\n  await verifyOpenFile(source);await verifyOpenFile(working);\n  if(!sameIdentity(await identity(source),proof.source)||!sameIdentity(await identity(working),workingIdentity))throw Error('input-changed-during-decode');\n  const destination=safeRootPath(reviewRoot,relative);\n  staged=await openFileUnder(reviewRoot,relative,{create:true,mode:0o640});\n  if(proof.roots.review?.dev!==staged.root.stat.dev||proof.roots.review?.ino!==staged.root.stat.ino)throw Error('review-root-changed');\n  await copyFile(working,staged);\n  staged.stat=await staged.handle.stat();\n  const stagedIdentity=await identity(staged);\n  if(stagedIdentity.size!==workingIdentity.size||stagedIdentity.sample!==workingIdentity.sample)throw Error('staged-copy-mismatch');\n  await verifyOpenFile(source);await verifyOpenFile(working);await verifyOpenFile(staged);\n  if(!sameIdentity(await identity(source),proof.source)||!sameIdentity(await identity(working),workingIdentity))throw Error('input-changed-during-stage');\n  const outputRelative=path.relative(reviewRoot,destination);\n  if(!validRelative(outputRelative)||outputRelative!==relative)throw Error('output-path-mismatch');\n  const receipt={version:1,relative,outputRelative,source:{size:sourceIdentity.size,mtime:sourceIdentity.mtime,sample:sourceIdentity.sample},output:{size:stagedIdentity.size,mtime:stagedIdentity.mtime,sample:stagedIdentity.sample},jobId,createdAt:Date.now()};\n  await syncDirectoryChain(staged);\n  receiptFile=await openFileUnder(reviewRoot,`${outputRelative}.tdarr-receipt.json`,{create:true,mode:0o600});\n  await receiptFile.handle.writeFile(JSON.stringify(receipt));await receiptFile.handle.sync();\n  receiptFile.stat=await receiptFile.handle.stat();\n  await verifyOpenFile(staged);await verifyOpenFile(receiptFile);await syncDirectoryChain(receiptFile);\n  return continued(args,destination);\n }finally{\n  await Promise.all([closeFile(source),closeFile(working),...(staged?[closeFile(staged)]:[]),...(receiptFile?[closeFile(receiptFile)]:[])]);\n }\n}\nasync function root(pathname){\n const stat=await fs.lstat(pathname);\n if(stat.isSymbolicLink()||!stat.isDirectory()||await fs.realpath(pathname)!==pathname)throw Error('unsafe-root');\n return stat;\n}\nasync function openFileUnder(rootPath,relative,{create=false,mode=0o640}={}){\n if(!validRelative(relative))throw Error('unsafe-relative');\n const rootRecord=await openRoot(rootPath),parts=relative.split('/'),leaf=parts.pop();let chain;\n try{\n  chain=await openDirectories(rootRecord,parts,{create});const parent=chain.parent;\n  const actual=path.join(parent.path,leaf),via=`/proc/self/fd/${parent.handle.fd}/${leaf}`;\n  const handle=await fs.open(via,create?createFlags:fileFlags,mode),stat=await handle.stat(),named=await fs.lstat(actual);\n  if(!stat.isFile()||named.isSymbolicLink()||!sameStat(stat,named)||stat.nlink!==1||await fs.realpath(actual)!==actual){await handle.close();throw Error('unsafe-file');}\n  return {root:rootRecord,chain,handle,path:actual,stat};\n }catch(error){for(const directory of chain?.handles?.reverse()||[])await directory.handle.close().catch(()=>{});await rootRecord.handle.close().catch(()=>{});throw error;}\n}\nasync function openRoot(rootPath){\n const before=await root(rootPath);\n const handle=await fs.open(rootPath,directoryFlags),stat=await handle.stat();\n if(!sameStat(before,stat)){await handle.close();throw Error('changed-root');}\n return {handle,path:rootPath,stat,root:true};\n}\nasync function openDirectories(rootRecord,parts,{create=false}={}){\n const handles=[];let parent=rootRecord;\n try{\n  for(const part of parts){\n   const actual=path.join(parent.path,part),via=`/proc/self/fd/${parent.handle.fd}/${part}`;\n   let handle;\n   try{handle=await fs.open(via,directoryFlags);}\n   catch(error){if(!create||error.code!=='ENOENT')throw error;try{await fs.mkdir(via,{mode:0o750});}catch(mkdirError){if(mkdirError.code!=='EEXIST')throw mkdirError;}handle=await fs.open(via,directoryFlags);}\n   const stat=await handle.stat(),named=await fs.lstat(actual);\n   if(!stat.isDirectory()||named.isSymbolicLink()||!sameStat(stat,named)||await fs.realpath(actual)!==actual){await handle.close();throw Error('unsafe-parent');}\n   const record={handle,path:actual,stat};handles.push(record);parent=record;\n  }\n  return {handles,parent};\n }catch(error){for(const record of handles.reverse())await record.handle.close().catch(()=>{});throw error;}\n}\nasync function verifyOpenFile(record){\n const stat=await record.handle.stat(),named=await fs.lstat(record.path);\n if(!sameStat(record.stat,stat)||named.isSymbolicLink()||!sameStat(record.stat,named)||await fs.realpath(record.path)!==record.path)throw Error('changed-file');\n for(const directory of [record.root,...record.chain.handles]){\n  const current=await fs.lstat(directory.path);if(current.isSymbolicLink()||!sameDirectory(directory.stat,current)||await fs.realpath(directory.path)!==directory.path)throw Error('changed-parent');\n }\n}\nasync function closeFile(record){await record.handle.close().catch(()=>{});for(const directory of record.chain.handles.reverse())await directory.handle.close().catch(()=>{});await record.root.handle.close().catch(()=>{});}\nmodule.exports=async function tvFlowHelper(args,testDependencies={}){\n try{return args?.variables?.inFlow?.[stateKey]?await finish(args,testDependencies.spawnChild||spawn):await preflight(args);}\n catch{return blocked(args);}\n};\r\n"
+      }
+    },
+    {
+      "sourceRepo": "Community",
+      "fpEnabled": true,
+      "position": {
+        "x": 2250,
+        "y": 0
+      },
+      "id": "tv-fail",
+      "name": "Fail closed for manual review",
+      "pluginName": "failFlow",
+      "version": "1.0.0"
+    }
+  ],
+  "flowEdges": [
+    {
+      "id": "tv-edge-1",
+      "source": "tv-input",
+      "target": "tv-preflight",
+      "sourceHandle": "1",
+      "targetHandle": null
+    },
+    {
+      "id": "tv-edge-2",
+      "source": "tv-preflight",
+      "target": "tv-start",
+      "sourceHandle": "1",
+      "targetHandle": null
+    },
+    {
+      "id": "tv-edge-3",
+      "source": "tv-preflight",
+      "target": "tv-fail",
+      "sourceHandle": "2",
+      "targetHandle": null
+    },
+    {
+      "id": "tv-edge-4",
+      "source": "tv-start",
+      "target": "tv-encoder",
+      "sourceHandle": "1",
+      "targetHandle": null
+    },
+    {
+      "id": "tv-edge-5",
+      "source": "tv-encoder",
+      "target": "tv-container",
+      "sourceHandle": "1",
+      "targetHandle": null
+    },
+    {
+      "id": "tv-edge-6",
+      "source": "tv-container",
+      "target": "tv-execute",
+      "sourceHandle": "1",
+      "targetHandle": null
+    },
+    {
+      "id": "tv-edge-7",
+      "source": "tv-execute",
+      "target": "tv-duration",
+      "sourceHandle": "1",
+      "targetHandle": null
+    },
+    {
+      "id": "tv-edge-8",
+      "source": "tv-duration",
+      "target": "tv-size",
+      "sourceHandle": "1",
+      "targetHandle": null
+    },
+    {
+      "id": "tv-edge-9",
+      "source": "tv-duration",
+      "target": "tv-fail",
+      "sourceHandle": "2",
+      "targetHandle": null
+    },
+    {
+      "id": "tv-edge-10",
+      "source": "tv-duration",
+      "target": "tv-fail",
+      "sourceHandle": "3",
+      "targetHandle": null
+    },
+    {
+      "id": "tv-edge-11",
+      "source": "tv-size",
+      "target": "tv-receipt",
+      "sourceHandle": "1",
+      "targetHandle": null
+    },
+    {
+      "id": "tv-edge-12",
+      "source": "tv-size",
+      "target": "tv-fail",
+      "sourceHandle": "2",
+      "targetHandle": null
+    },
+    {
+      "id": "tv-edge-13",
+      "source": "tv-size",
+      "target": "tv-fail",
+      "sourceHandle": "3",
+      "targetHandle": null
+    },
+    {
+      "id": "tv-edge-14",
+      "source": "tv-receipt",
+      "target": "tv-fail",
+      "sourceHandle": "2",
+      "targetHandle": null
+    }
+  ],
+  "isUiLocked": false
+}

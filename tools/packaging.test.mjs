@@ -53,9 +53,13 @@ test('Compose has one review service with RECOVERY_MODE and the same limits',asy
 
 test('build, CI, version checks and templates name no separate Recovery image or Dockerfile',async()=>{
  await assert.rejects(fs.access(new URL('../Dockerfile.recovery',import.meta.url)),{code:'ENOENT'});
- const list=async directory=>(await fs.readdir(new URL('../'+directory+'/',import.meta.url))).map(name=>directory+'/'+name);
+ const list=async(directory,recursive=false)=>{
+  const entries=await fs.readdir(new URL('../'+directory+'/',import.meta.url),{withFileTypes:true}),files=[];
+  for(const entry of entries){const name=directory+'/'+entry.name;if(entry.isDirectory()&&recursive)files.push(...await list(name,true));else files.push(name);}
+  return files.sort();
+ };
  const files=['Dockerfile','.dockerignore','compose.yaml','.env.example','package.json','tsconfig.typecheck.json',
-  ...await list('templates'),...await list('.github/workflows'),
+  ...await list('templates',true),...await list('.github/workflows'),
   // The pattern's own definition necessarily contains the old names.
   ...(await list('tools')).filter(file=>/\.(mjs|sh)$/.test(file)&&!file.endsWith('.test.mjs')&&file!=='tools/old-recovery-image.mjs')];
  for(const file of files)assert.doesNotMatch(await read(file),OLD_RECOVERY_IMAGE,file);
