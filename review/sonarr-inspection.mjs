@@ -115,9 +115,10 @@ export function createSonarrInspection({getConnection,fetchFn=globalThis.fetch,r
  * snapshot of one series. Only GET requests, each bounded by `requestTimeoutMs`. Nothing is cached or stored here;
  * a snapshot that contradicts the requested series throws `sonarr_inconsistent`, every other failure `sonarr_unavailable`.
  */
-export function createSonarrDiscoveryReader({connection,fetchFn=globalThis.fetch,requestTimeoutMs=timeoutMs}){
+export function createSonarrDiscoveryReader({connection,fetchFn=globalThis.fetch,requestTimeoutMs=timeoutMs,remainingMs=()=>Infinity}){
  const {base,apiKey}=safeConnection(connection);
- const get=(route,limit)=>responseJson(fetchFn,routeUrl(base,route),apiKey,limit,requestTimeoutMs);
+ // Each request is also bounded by what is left of the caller's overall budget.
+ const get=(route,limit)=>{const left=remainingMs();if(!(left>0))return Promise.reject(Error('sonarr_unavailable'));return responseJson(fetchFn,routeUrl(base,route),apiKey,limit,Math.min(requestTimeoutMs,left));};
  async function seriesList(){
   const items=array(await get('/api/v3/series',seriesLimit),maxSeries);
   if(items.some(item=>!record(item)||!positive(item.id)||typeof item.title!=='string'||item.title.length>500||typeof item.path!=='string'||!item.path))throw Error('sonarr_unavailable');

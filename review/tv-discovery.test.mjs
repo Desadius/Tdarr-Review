@@ -9,7 +9,7 @@ import {emptyTvLibrary} from './library-paths.mjs';
 import {addTvResult,sonarrMock,episodeRecord,fileRecord,tempRoot,sampleOf,LIBRARY,SOURCE_ROOT,SONARR_ROOT,API_KEY} from './test-helpers/tv-fixture.mjs';
 
 const SERIES=7;
-async function world(t,{mode='discovery',sonarr=true,requestTimeoutMs=2000}={}){
+async function world(t,{mode='discovery',sonarr=true,requestTimeoutMs=2000,sonarrBudgetMs}={}){
  const root=await tempRoot();t.after(()=>fs.rm(root,{recursive:true,force:true}));
  const mediaRoot=path.join(root,'tv-media'),reviewRoot=path.join(root,'review');
  await fs.mkdir(mediaRoot);await fs.mkdir(reviewRoot);
@@ -18,7 +18,7 @@ async function world(t,{mode='discovery',sonarr=true,requestTimeoutMs=2000}={}){
  const tv={...emptyTvLibrary(),mode,mediaRoot,reviewRoot,libraryId:LIBRARY,sourceRoots:[SOURCE_ROOT],reviewPrefixes:['TV'],sonarrRoot:SONARR_ROOT};
  const w={root,mediaRoot,reviewRoot,tv,mock,jobs:[],dbCalls:0,state:{items:{},history:[],sessions:{},pauses:[],reviewSessions:{},approvals:{}},saves:0,settings:{tv,sonarr:sonarr?{url:mock.url,apiKey:API_KEY}:null}};
  w.discovery=createTvDiscovery({getSettings:()=>w.settings,getMovieRoots:()=>({mediaRoot:path.join(root,'movies'),reviewRoot,reviewPrefixes:['PROD-Movies']}),getState:()=>w.state,save:async()=>{w.saves++},
-  dbRows:async table=>{assert.equal(table,'jobsjsondb');w.dbCalls++;return structuredClone(w.jobs)},requestTimeoutMs});
+  dbRows:async table=>{assert.equal(table,'jobsjsondb');w.dbCalls++;return structuredClone(w.jobs)},requestTimeoutMs,...(sonarrBudgetMs?{sonarrBudgetMs}:{})});
  // Adds one result and (unless `sonarr:false`) the Sonarr records that make it bind exactly.
  w.add=async(relative,{jobId='job-'+relative,file=true,episodes=[{season:1,number:1}],fileId,episodeIds,series=SERIES,...rest}={})=>{
   const created=await addTvResult({mediaRoot,reviewRoot,relative,jobId,...rest});w.jobs.push(created.job);
@@ -232,4 +232,32 @@ test('a Sonarr address without a base path reaches /api/v3 instead of a doubled 
  const inspection=createSonarrInspection({getConnection:async()=>({url:mock.url,apiKey:API_KEY})});
  assert.deepEqual(await inspection.series('revision'),{series:[{id:7,title:'Synthetic Show'}]});
  assert.deepEqual(mock.paths(),['/api/v3/series']);
+});
+
+test('ownsResult hands over a TV prefix only inside the shared movie review root and never when misconfigured',async t=>{
+ const w=await world(t);
+ const make=(tvRoot,movieRoot,prefixes=['TV'])=>createTvDiscovery({getSettings:()=>({tv:{...w.tv,reviewRoot:tvRoot,reviewPrefixes:prefixes},sonarr:null}),getMovieRoots:()=>({mediaRoot:path.join(w.root,'movies'),reviewRoot:movieRoot,reviewPrefixes:['PROD-Movies']}),getState:()=>w.state,save:async()=>{},dbRows:async()=>[]});
+ assert.equal(make('/x/r','/x/r').ownsResult('TV/Show/S01E01.mkv'),true);
+ assert.equal(make('/x/r','/x/mvr').ownsResult('TV/Film/Film.mkv'),false,'a movie folder named like a TV prefix in a separate movie root stays a movie');
+ assert.equal(make('/x/r/TV','/x/r').ownsResult('TV/Film/Film.mkv'),false,'nested roots are misconfigured');
+ assert.equal(make('/x/r','/x/r',[]).ownsResult('TV/Film/Film.mkv'),false,'no prefix with a shared root is misconfigured');
+ const overlapping=createTvDiscovery({getSettings:()=>({tv:{...w.tv,reviewRoot:'/x/r',mediaRoot:path.join(w.root,'movies')},sonarr:null}),getMovieRoots:()=>({mediaRoot:path.join(w.root,'movies'),reviewRoot:'/x/r',reviewPrefixes:['PROD-Movies']}),getState:()=>w.state,save:async()=>{},dbRows:async()=>[]});
+ assert.equal(overlapping.ownsResult('TV/Film/Film.mkv'),false,'overlapping media roots (tv_roots_overlap) hand nothing over');
+ assert.equal(make('/x/r','/x/r',['PROD-Movies']).ownsResult('PROD-Movies/Film/Film.mkv'),false,'a movie prefix is never taken');
+});
+
+test('two EpisodeFiles that differ only in path separators are multiple EpisodeFiles',async t=>{
+ const w=await world(t),relative='Synthetic Show/Season 01/S01E01.mkv';
+ await w.add(relative);
+ w.mock.data.files[SERIES].push(fileRecord(900,SERIES,relative,{path:'Z:/Sonarr/TV/'+relative}));
+ const value=await w.discovery.result({force:true});
+ assert.equal(reasonOf(value,relative).reason,'multiple_episode_files');assert.equal(value.totals.bound,0);
+});
+
+test('the overall Sonarr budget bounds each request, so a hung Sonarr cannot hold the scan',async t=>{
+ const w=await world(t,{requestTimeoutMs:5000,sonarrBudgetMs:300});await w.add('Synthetic Show/Season 01/S01E01.mkv');
+ w.mock.delayMs=3000;
+ const started=Date.now(),value=await w.discovery.result({force:true});
+ assert.ok(Date.now()-started<2000,'the budget, not the request timeout, ends the wait');
+ assert.equal(value.unverified[0].reason,'sonarr_unavailable');assert.equal(value.totals.bound,0);
 });

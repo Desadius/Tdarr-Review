@@ -48,7 +48,7 @@ const sameRecorded=(recorded,current)=>identity(recorded)&&current.size===record
  * @param {() => Promise<void>} options.save
  * @param {(table:string) => Promise<object[]>} options.dbRows
  */
-export function createTvDiscovery({getSettings,getMovieRoots,getState,save,dbRows,fetchFn=globalThis.fetch,requestTimeoutMs=7000,now=Date.now}){
+export function createTvDiscovery({getSettings,getMovieRoots,getState,save,dbRows,fetchFn=globalThis.fetch,requestTimeoutMs=7000,sonarrBudgetMs=SONARR_BUDGET_MS,now=Date.now}){
  let cache=null,running=null;
  const configured=()=>{const settings=getSettings();return settings&&tvMode(settings.tv)==='discovery'?settings:null;};
  const signature=settings=>hash(JSON.stringify([settings.tv,settings.sonarr?.url||'',hash(settings.sonarr?.apiKey||'')]));
@@ -57,7 +57,8 @@ export function createTvDiscovery({getSettings,getMovieRoots,getState,save,dbRow
  function ownsResult(reviewRelative){
   const settings=configured();if(!settings)return false;
   const first=String(reviewRelative).split('/')[0],movie=getMovieRoots();
-  return settings.tv.reviewPrefixes.includes(first)&&!movie.reviewPrefixes.includes(first);
+  // Only a TV prefix inside the movie review root itself is handed over, and never while the scan would refuse the configuration.
+  return settings.tv.reviewRoot===movie.reviewRoot&&!misconfigured(settings.tv)&&settings.tv.reviewPrefixes.includes(first)&&!movie.reviewPrefixes.includes(first);
  }
 
  function misconfigured(tv){
@@ -116,7 +117,8 @@ export function createTvDiscovery({getSettings,getMovieRoots,getState,save,dbRow
   if(!candidates.length)return info;
   const unverify=(reason,list=candidates)=>{for(const candidate of list){const item=items.get(candidate.id);item.state='unverified';item.reason=reason;}};
   if(!sonarrConfig||typeof sonarrConfig.url!=='string'||!sonarrConfig.url||typeof sonarrConfig.apiKey!=='string'||!sonarrConfig.apiKey.trim()){unverify('sonarr_not_configured');info.status='not_configured';return info;}
-  let reader;try{reader=createSonarrDiscoveryReader({connection:sonarrConfig,fetchFn,requestTimeoutMs});}catch{unverify('sonarr_unavailable');info.status='unavailable';return info;}
+  const started=now();
+  let reader;try{reader=createSonarrDiscoveryReader({connection:sonarrConfig,fetchFn,requestTimeoutMs,remainingMs:()=>sonarrBudgetMs-(now()-started)});}catch{unverify('sonarr_unavailable');info.status='unavailable';return info;}
   const failure=error=>error?.message==='sonarr_inconsistent'?'sonarr_inconsistent':'sonarr_unavailable';
   let seriesList;
   try{seriesList=await reader.seriesList();}catch(error){const reason=failure(error);unverify(reason);info.status=reason==='sonarr_inconsistent'?'inconsistent':'unavailable';return info;}
@@ -134,11 +136,10 @@ export function createTvDiscovery({getSettings,getMovieRoots,getState,save,dbRow
    involved.get(series.id).candidates.push(candidate);
   }
   info.series=involved.size;info.requestedSeries=[...involved.keys()];
-  const started=now();let sawFailure=null;
+  let sawFailure=null;
   for(const {series,candidates:list} of involved.values()){
    let snapshot;
    try{
-    if(now()-started>SONARR_BUDGET_MS)throw Error('sonarr_unavailable');
     snapshot=await reader.seriesSnapshot(series.id);
    }catch(error){const reason=failure(error);sawFailure??=reason;unverify(reason,list);continue;}
    const resolver=createEpisodeBindingResolver({instanceKey:'tv-discovery:'+crypto.randomUUID(),seriesId:series.id,episodeFiles:snapshot.episodeFiles,episodes:snapshot.episodes});
