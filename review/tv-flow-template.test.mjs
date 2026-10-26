@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {Module} from 'node:module';
@@ -80,7 +81,7 @@ test('versioned TV flow is a closed, non-destructive transcode graph with review
 test('TV receipt helper runs against synthetic files and never changes the source',async()=>{
  const flow=await loadFlow();
  const [preflightHelper,finishHelper]=flow.flowPlugins.filter(node=>node.pluginName==='customFunction').map(node=>compileFlowHelper(node.inputsDB.code));
- const temp=await fs.mkdtemp(path.join(await fs.realpath(path.join(root,'..')),'tv-flow-test-'));
+ const temp=await fs.mkdtemp(path.join(os.tmpdir(),'tv-flow-test-'));
  const sourceRoot=path.join(temp,'source'),reviewRoot=path.join(temp,'review'),cacheRoot=path.join(reviewRoot,'.cache');
  const relative='Series/Season 01/Episode 01.mkv';
  const source=path.join(sourceRoot,relative),output=path.join(reviewRoot,relative);
@@ -140,7 +141,7 @@ test('TV receipt helper runs against synthetic files and never changes the sourc
 test('TV helper blocks root aliases, unknown/HDR inputs, missing job IDs and destination links before receipt',async()=>{
  const helperPath=path.join(root,'templates/tdarr/tv-flow-helper.cjs');
  const helper=(await import(`${pathToFileURL(helperPath).href}?guard=${Date.now()}`)).default;
- const temp=await fs.mkdtemp(path.join(await fs.realpath(path.join(root,'..')),'tv-flow-guards-'));
+ const temp=await fs.mkdtemp(path.join(os.tmpdir(),'tv-flow-guards-'));
  const sourceRoot=path.join(temp,'source'),reviewRoot=path.join(temp,'review'),cacheRoot=path.join(reviewRoot,'.cache');
  const relative='Series/Season 01/Episode 02.mkv',source=path.join(sourceRoot,relative),output=path.join(reviewRoot,relative),working=path.join(cacheRoot,'worker.mkv');
  const metadata=(overrides={})=>({format:{format_name:'matroska',duration:'120.0'},streams:[{index:0,codec_type:'video',codec_name:'h264',width:1280,height:720,field_order:'progressive',avg_frame_rate:'24/1',pix_fmt:'yuv420p',bits_per_raw_sample:'8',sample_aspect_ratio:'1:1',display_aspect_ratio:'16:9',color_transfer:'bt709',color_primaries:'bt709',color_space:'bt709',color_range:'tv',disposition:{default:1,forced:0},...overrides},{index:1,codec_type:'audio',codec_name:'aac',tags:{language:'ces'},channels:2,channel_layout:'stereo',disposition:{default:1,forced:0}}],chapters:[]});
@@ -188,7 +189,7 @@ test('TV helper blocks root aliases, unknown/HDR inputs, missing job IDs and des
 
 test('TV source resolution refuses an internal symlinked parent',async()=>{
  const helper=(await import(`${pathToFileURL(path.join(root,'templates/tdarr/tv-flow-helper.cjs')).href}?parents=${Date.now()}`)).default;
- const temp=await fs.mkdtemp(path.join(await fs.realpath(path.join(root,'..')),'tv-flow-parent-'));
+ const temp=await fs.mkdtemp(path.join(os.tmpdir(),'tv-flow-parent-'));
  const sourceRoot=path.join(temp,'source'),reviewRoot=path.join(temp,'review'),cacheRoot=path.join(reviewRoot,'.cache'),outside=path.join(temp,'outside');
  const relative='Series/Season 01/Episode.mkv',source=path.join(sourceRoot,relative),target=path.join(outside,'Season 01','Episode.mkv');
  try{
