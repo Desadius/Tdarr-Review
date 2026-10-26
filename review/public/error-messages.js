@@ -7,6 +7,7 @@ export const ERROR_MESSAGES=Object.freeze({
  settings_conflict:Object.freeze({cs:'Nastavení se změnilo. Načti aktuální návrh a zkus to znovu.',en:'Settings changed. Reload the current draft and try again.'}),
  settings_invalid:{cs:'Oprav označené pole návrhu.',en:'Correct the indicated draft field.'},
  sonarr_invalid_request:{cs:'Požadavek ruční kontroly Sonarru není platný.',en:'The manual Sonarr inspection request is invalid.'},
+ tv_invalid_request:{cs:'Požadavek na přehled seriálů není platný.',en:'The TV series overview request is invalid.'},
  sonarr_unavailable:{cs:'Sonarr není dostupný nebo vrátil neplatná metadata.',en:'Sonarr is unavailable or returned invalid metadata.'},
  sonarr_too_large:{cs:'Odpověď Sonarru překročila bezpečný limit; snímek není úplný.',en:'The Sonarr response exceeded the safe limit; the snapshot is incomplete.'},
  settings_file_unsafe:{cs:'Soubor nastavení není bezpečný běžný soubor.',en:'The settings file is not a safe regular file.'},

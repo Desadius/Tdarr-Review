@@ -28,6 +28,8 @@ async function responseJson(fetchFn,url,apiKey,limit,requestTimeout=timeoutMs){
  if(total!==null&&(!/^\d+$/.test(total)||!Array.isArray(parsed)||Number(total)!==parsed.length))throw Error('sonarr_unavailable');
  return parsed;
 }
+// A root URL (http://host:8989) has the pathname '/', which must not be doubled in front of the route.
+const routeUrl=(base,route)=>new URL((base.pathname==='/'?'':base.pathname)+route,base.origin);
 function array(value,limit){if(!Array.isArray(value))throw Error('sonarr_unavailable');if(value.length>limit)throw Error('sonarr_too_large');return value;}
 function positive(value){return Number.isSafeInteger(value)&&value>0;}
 function safeRelative(value){
@@ -38,7 +40,7 @@ function safeRelative(value){
 /** Manual, request-scoped Sonarr metadata inspection. No cache, filesystem or mutation path. */
 export function createSonarrInspection({getConnection,fetchFn=globalThis.fetch,requestTimeoutMs=timeoutMs}){
  async function connection(revision){const value=await getConnection(revision);return safeConnection(value);}
- async function get(base,apiKey,route,limit){const url=new URL(base.pathname+route,base.origin);return responseJson(fetchFn,url,apiKey,limit,requestTimeoutMs);}
+ async function get(base,apiKey,route,limit){const url=routeUrl(base,route);return responseJson(fetchFn,url,apiKey,limit,requestTimeoutMs);}
  async function series(revision){
   const {base,apiKey}=await connection(revision),items=array(await get(base,apiKey,'/api/v3/series',seriesLimit),maxSeries);
   if(items.some(item=>!record(item)||!positive(item.id)||typeof item.title!=='string'||item.title.length>500))throw Error('sonarr_unavailable');
@@ -106,4 +108,32 @@ export function createSonarrInspection({getConnection,fetchFn=globalThis.fetch,r
   };
  }
  return {series,inspect,inspectEpisodeFile};
+}
+
+/**
+ * Read-only Sonarr reads for TV discovery (#271): the series list, and the complete EpisodeFile and Episode
+ * snapshot of one series. Only GET requests, each bounded by `requestTimeoutMs`. Nothing is cached or stored here;
+ * a snapshot that contradicts the requested series throws `sonarr_inconsistent`, every other failure `sonarr_unavailable`.
+ */
+export function createSonarrDiscoveryReader({connection,fetchFn=globalThis.fetch,requestTimeoutMs=timeoutMs,remainingMs=()=>Infinity}){
+ const {base,apiKey}=safeConnection(connection);
+ // Each request is also bounded by what is left of the caller's overall budget.
+ const get=(route,limit)=>{const left=remainingMs();if(!(left>0))return Promise.reject(Error('sonarr_unavailable'));return responseJson(fetchFn,routeUrl(base,route),apiKey,limit,Math.min(requestTimeoutMs,left));};
+ async function seriesList(){
+  const items=array(await get('/api/v3/series',seriesLimit),maxSeries);
+  if(items.some(item=>!record(item)||!positive(item.id)||typeof item.title!=='string'||item.title.length>500||typeof item.path!=='string'||!item.path))throw Error('sonarr_unavailable');
+  if(new Set(items.map(item=>item.id)).size!==items.length)throw Error('sonarr_inconsistent');
+  return items.map(({id,title,path,seriesType})=>({id,title,path,seriesType:['standard','daily','anime'].includes(seriesType)?seriesType:null}));
+ }
+ async function seriesSnapshot(seriesId){
+  if(!positive(seriesId))throw Error('sonarr_unavailable');
+  const query='?seriesId='+encodeURIComponent(String(seriesId));
+  const [episodeFiles,episodes]=await Promise.all([
+   get('/api/v3/episodefile'+query,snapshotLimit).then(value=>array(value,maxFiles)),
+   get('/api/v3/episode'+query,snapshotLimit).then(value=>array(value,maxEpisodes)),
+  ]);
+  if(episodeFiles.some(item=>!record(item)||item.seriesId!==seriesId)||episodes.some(item=>!record(item)||item.seriesId!==seriesId))throw Error('sonarr_inconsistent');
+  return {episodeFiles,episodes};
+ }
+ return {seriesList,seriesSnapshot};
 }

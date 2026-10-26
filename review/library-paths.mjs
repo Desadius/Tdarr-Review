@@ -3,13 +3,14 @@ import {constants as fsConstants} from 'node:fs';
 import path from 'node:path';
 
 const tvFields=Object.freeze({
- enabled:'boolean',mediaRoot:'container',reviewRoot:'container',libraryId:'text',
+ enabled:'boolean',mode:'mode',mediaRoot:'container',reviewRoot:'container',libraryId:'text',
  sourceRoots:'namespaces',tdarrReviewRoot:'namespace',reviewPrefixes:'prefixes',
  sonarrRoot:'namespace',quarantineRoot:'container',reports:'container'
 });
 const error=(code,field)=>Object.assign(new Error(code==='settings_invalid'?'Invalid TV library settings':'TV processing is unavailable'),{
  code,...(field?{field}:{}),...(code==='settings_invalid'?{status:400}:{})
 });
+export const TV_MODES=Object.freeze(['off','discovery']);
 const isObject=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const hasTraversal=value=>value.includes('\0')||value.split('/').some(part=>part==='.'||part==='..');
 
@@ -46,7 +47,11 @@ function validateTv(value){
  for(const [key,type] of Object.entries(tvFields)){
   if(!Object.hasOwn(value,key))continue;
   const item=value[key];
-  if(type==='boolean'){
+  if(type==='mode'){
+   // Absent means off, so a settings file written before the mode existed stays byte-for-byte valid.
+   if(!TV_MODES.includes(item))throw error('settings_invalid','libraries.tv');
+   normalized[key]=item;
+  }else if(type==='boolean'){
    if(typeof item!=='boolean')throw error('settings_invalid','libraries.tv');
    normalized[key]=item;
   }else if(type==='text'){
@@ -75,8 +80,12 @@ function validateTv(value){
    normalized[key]=[...item];
   }
  }
+ if(normalized.mode==='discovery'&&!(normalized.mediaRoot&&normalized.reviewRoot&&normalized.libraryId.trim()&&normalized.sourceRoots.length&&normalized.sonarrRoot))throw error('settings_invalid','libraries.tv');
  return normalized;
 }
+
+/** The TV library mode: only an explicit `discovery` turns discovery on; anything else is off. */
+export const tvMode=tv=>tv?.mode==='discovery'?'discovery':'off';
 
 export function emptyTvLibrary(){
  return {enabled:false,mediaRoot:'',reviewRoot:'',libraryId:'',sourceRoots:[],tdarrReviewRoot:'',reviewPrefixes:[],sonarrRoot:'',quarantineRoot:'',reports:''};

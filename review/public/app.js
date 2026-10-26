@@ -7,6 +7,7 @@ import {installComparisons,openComparison,openAudioComparison,openGuidedComparis
 import {installSettingsDialogs} from '/settings-dialogs.js?v=__APP_VERSION__';
 import {installQuarantine,openQuarantine} from '/quarantine.js?v=__APP_VERSION__';
 import {installStatistics,loadStatistics,statisticsLoadedAt} from '/statistics.js?v=__APP_VERSION__';
+import {installTv,loadTv,refreshTvMode,tvEnabled,tvLoadedAt} from '/tv-view.js?v=__APP_VERSION__';
 import {tr,locale,language,initializeLocale} from '/i18n.js?v=__APP_VERSION__';
 import {errorText} from '/error-messages.js?v=__APP_VERSION__';
 initializeLocale();
@@ -37,7 +38,7 @@ async function api(route,body){
  return d;
 }
 function error(e){$('error').textContent=tr(e.message);$('error').hidden=false;const active=[...document.querySelectorAll('dialog[open]')].at(-1);if(active){let alert=active.querySelector('.dialog-error');if(!alert){alert=el('p','alert dialog-error');alert.setAttribute('role','alert');active.prepend(alert)}alert.textContent=tr(e.message);alert.tabIndex=-1;alert.focus();}}
-async function login(key){await api('/api/login',{key});$('key').value='';authenticated=true;$('login').hidden=true;$('error').hidden=true;await load();await loadRequests(true)}
+async function login(key){await api('/api/login',{key});$('key').value='';authenticated=true;$('login').hidden=true;$('error').hidden=true;await load();await loadRequests(true);await refreshTvMode();handleHash()}
 $('loginForm').addEventListener('submit',e=>{e.preventDefault();login($('key').value.trim()).catch(error)});
 $('refresh').addEventListener('click',()=>{$('error').hidden=true;load();loadRequests(true);if(ui.view==='savings')loadStatistics()});
 
@@ -454,15 +455,17 @@ function renderBatch(){const b=latest?.batch;$('batch').hidden=!b||b.status!=='r
 async function load(){if(loading)return;loading=true;try{const d=await api('/api/items');receivedAt=Date.now();serverAt=d.serverTime||receivedAt;authenticated=true;dataError='';$('lastUpdate').textContent=tr(date(receivedAt));$('lastUpdate').dateTime=new Date(receivedAt).toISOString();const sig=previewRenderSignature(d);if(sig!==lastRender||$('workspace').hidden||!$('login').hidden){render(d);lastRender=sig}else{if(latest)latest.previews=d.previews||{};updateGuards()}}catch(e){dataError=e.message;updateGuards();if(!latest)error(e)}finally{loading=false}}
 // refreshKeys: a read-only refresh of Recovery attention (#229), of the named cases or, when empty, of all of them.
 async function loadRequests(force=false,refreshKeys){if(requestsLoading||!authenticated||(!force&&Date.now()-requestsReceived<30000))return;requestsLoading=true;try{const d=refreshKeys?await api('/api/recovery/refresh',refreshKeys.length?{keys:refreshKeys}:{}):await api('/api/radarr/requests');requests=d.requests;recoveryConfig=d.recoveryConfig||null;recoveryRuntime=d.recoveryRuntime||null;requestsReceived=Date.now();requestsError='';if(latest){renderAttention();renderRecovery();const projects=projectRequests(requests,latest.items,Date.now());$('recoveryCount').textContent=tr(projects.filter(x=>x.displayCategory!=='done'&&x.displayCategory!=='deferred').length);$('deferredCount').textContent=tr(projects.filter(x=>x.displayCategory==='deferred').length);const live=ui.detail?.kind==='request'?liveRecoveryRecord(ui.detail.record,requests)||(refreshKeys?requests.find(x=>x.id===ui.detail.record.id&&x.source===ui.detail.record.source):null):null;if(live){ui.detail.record=live;$('detailSubtitle').textContent=tr(classifyRecovery(live).label);renderDetailTab();}updateGuards();handleHash()}}catch(e){requestsError=e.message;if(authenticated){try{recoveryRuntime=await api('/api/recovery/runtime')}catch{}}renderRecovery();updateGuards()}finally{requestsLoading=false}}
-function parseHash(){const [view,query='']=location.hash.slice(1).split('?');return {view:['attention','recovery','history','savings','settings'].includes(view)?view:'attention',params:new URLSearchParams(query)}}
+function parseHash(){const [view,query='']=location.hash.slice(1).split('?');return {view:['attention','recovery','history','savings','settings','tv'].includes(view)?view:'attention',params:new URLSearchParams(query)}}
 function navigate(view,params={}){if(view==='recovery'&&!params.filter)params.filter=ui.filter;const query=new URLSearchParams(params).toString(),hash='#'+view+(query?'?'+query:'');if(location.hash===hash)handleHash();else location.hash=hash}
 function handleHash(){
- const {view,params}=parseHash(),oldView=ui.view,focusWasInContent=$('content').contains(document.activeElement);ui.view=view;
+ let {view,params}=parseHash();if(view==='tv'&&!tvEnabled())view='attention';
+ const oldView=ui.view,focusWasInContent=$('content').contains(document.activeElement);ui.view=view;
  for(const section of document.querySelectorAll('.view'))section.hidden=section.id!=='view-'+view;
  for(const link of document.querySelectorAll('[data-view]')){if(link.dataset.view===view)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current')}
  if(view==='recovery'){const filter=params.get('filter');if(['running','waiting','attention','unverified','deferred','done'].includes(filter)&&filter!==ui.filter){ui.filter=filter;renderRecovery()}}
  if(view==='history'&&params.get('filter')==='warning'&&$('historyFilter').value!=='warning'){$('historyFilter').value='warning';ui.historyPage=0;renderHistory()}
  if(view==='savings'&&Date.now()-statisticsLoadedAt()>15000)loadStatistics();
+ if(view==='tv'&&Date.now()-tvLoadedAt()>15000)void loadTv();
  const tab=params.get('tab');if(['review','overview','comparison','recovery','technical'].includes(tab))ui.tab=params.has('film')&&tab==='comparison'?'review':tab;
  const kind=params.has('film')?'review':params.has('case')?'request':null,id=params.get(kind==='review'?'film':'case');
  if(kind){if(ui.detail?.kind!==kind||ui.detail.id!==id){const exists=kind==='review'?latest?.items.some(x=>x.id===id):projectRequests(requests,latest?.items||[],Date.now()).some(p=>p.key===id);if(exists)openDetail(kind,id,true);else if($('filmDetail').open)$('filmDetail').close()}else if($('detailTabs').querySelector('[aria-selected=true]')?.id!=='detailTabs-'+ui.tab)renderDetailTab()}
@@ -479,7 +482,7 @@ $('historyPrev').onclick=()=>{ui.historyPage--;renderHistory()};$('historyNext')
 $('recoveryRefresh').onclick=()=>loadRequests(true);$('recoveryVerifyAll').onclick=()=>loadRequests(true,[]);$('recoveryQuarantine').onclick=()=>openQuarantine();$('statsRefresh').onclick=()=>loadStatistics();
 
 async function start(){
- const params=new URLSearchParams(location.hash.slice(1)),key=params.get('key');if(key){history.replaceState(null,'',location.pathname);try{await login(key)}catch(e){error(e)}}else{await load();await loadRequests(true)}
+ const params=new URLSearchParams(location.hash.slice(1)),key=params.get('key');if(key){history.replaceState(null,'',location.pathname);try{await login(key)}catch(e){error(e)}}else{await load();await loadRequests(true);await refreshTvMode()}
  handleHash();setInterval(load,2000);setInterval(()=>{paintProgress();updateGuards()},1000);setInterval(()=>loadRequests(),30000);
 }
 
@@ -511,5 +514,5 @@ if(document.modelContext?.registerTool){
 
 // The one context handed to the UI modules; getters keep app.js state authoritative.
 const appContext={api,error,load,loadRequests,openDetail,ui,forceRender:()=>{lastRender=''},get latest(){return latest},get requests(){return requests},get authenticated(){return authenticated}};
-installComparisons(appContext);installSettingsDialogs(appContext);installQuarantine(appContext);installStatistics(appContext);
+installComparisons(appContext);installSettingsDialogs(appContext);installQuarantine(appContext);installStatistics(appContext);installTv(appContext);
 start();

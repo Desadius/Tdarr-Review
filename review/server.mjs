@@ -17,6 +17,9 @@ import {DatabaseSync} from 'node:sqlite';
 import {fileURLToPath} from 'node:url';
 import {safeFile,hash,atomicJSON,command,probe,inspect,replaceChecked,recoverTransactions} from './core.mjs';
 import {measure} from './progress.mjs';
+import {walk} from './media-walk.mjs';
+import {createTvDiscovery} from './tv-discovery.mjs';
+import {tvRoutes} from './routes/tv.mjs';
 import {appVersion} from './app-version.mjs';
 import {logEvent} from './log.mjs';
 import {createApprovalTransaction,outcomeLog,auditFailed} from './approval-transaction.mjs';
@@ -249,6 +252,8 @@ async function readRows(table,cfg=config){
  return rows;
 }
 const dbRows=table=>readRows(table);
+// Read-only TV discovery (#271). It works from the applied settings only and keeps its state under state.tv.
+const tvDiscovery=createTvDiscovery({getSettings:()=>activeSettings?{tv:activeSettings.libraries?.tv??null,sonarr:activeSettings.sonarr??null}:null,getMovieRoots:()=>({mediaRoot:MEDIA,reviewRoot:REVIEW,reviewPrefixes:config.reviewPrefixes}),getState:()=>state,save,dbRows});
 async function tdarr(route,data){const r=await fetch(TDARR+route,{method:data?'POST':'GET',headers:{'content-type':'application/json'},body:data?JSON.stringify({data}):undefined,signal:AbortSignal.timeout(12000)});if(!r.ok)throw new Error('Tdarr neodpovídá: '+r.status);const t=await r.text();let value;try{value=t?JSON.parse(t):null}catch{value=t}if(route==='/api/v2/get-nodes'&&(!value||typeof value!=='object'||Array.isArray(value)))throw new Error('Tdarr vrátil neplatný seznam nodů.');return value}
 function canonical(p,node){p=String(p||'').replaceAll('\\','/');for(const t of node.config?.pathTranslators||[]){const from=t.node.replaceAll('\\','/').replace(/\/$/,'');if(from&&(p===from||p.startsWith(from+'/')))return t.server+p.slice(from.length)}return p}
 function workerBusy(nodes,item){
@@ -333,15 +338,6 @@ if(state.batch?.status==='running'){
   state.batch.message='Aplikace byla restartována. Zbývající filmy nebyly automaticky schválené; vyber je znovu.';
   await save();
 }
-async function walk(dir,prefix=''){
-  const result=[];
-  for(const e of await fs.readdir(dir,{withFileTypes:true}).catch(()=>[])){
-    if(e.isSymbolicLink()||e.name.startsWith('.'))continue;
-    const rel=prefix?prefix+'/'+e.name:e.name;
-    if(e.isDirectory()&&rel.split('/').length<12)result.push(...await walk(path.join(dir,e.name),rel));
-    else if(e.isFile()&&e.name.toLowerCase().endsWith('.mkv'))result.push(rel);
-  }return result;
-}
 const healthCache=new Map();
 async function jobHealth(job){
  if(healthCache.has(job._id))return healthCache.get(job._id);
@@ -363,6 +359,7 @@ async function scan(force=false,recheckId=null,owner=null){
     const jobs=(await dbRows('jobsjsondb')).filter(j=>j.status==='Transcode success').sort((a,b)=>b.end-a.end);
     const list=[];
     for(const rel of await walk(REVIEW)){
+      if(tvDiscovery.ownsResult(rel))continue;
       let relative=mapReview(rel,config.reviewPrefixes);if(!relative)continue;const outputRelative=relative;
       const id=hash(rel).slice(0,24);
       const item={id,title:relative.split('/')[0],relative,reviewRelative:rel,status:'ready',reason:'',audio:[],subtitles:[]};
@@ -455,7 +452,7 @@ const authTimer=setInterval(()=>{pruneAuthAttempts(authAttempts);if(pruneSession
 // Getters/setters keep the module variables above authoritative, so the scan,
 // transaction and preview code shares exactly the state the routes change.
 const ctx={
- ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,recoveryAttention,diagnosticExport,recoverySafeRestore,installedAssessment,tdarrHandoff,transcodeRetry,artwork,reviewSessions,previewPairs,previewPlans,previewAttempts,sharedSettings,sonarrSourceInspection,sonarrResultInspection,
+ ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,recoveryAttention,diagnosticExport,recoverySafeRestore,installedAssessment,tdarrHandoff,transcodeRetry,artwork,reviewSessions,previewPairs,previewPlans,previewAttempts,sharedSettings,sonarrSourceInspection,sonarrResultInspection,tvDiscovery,
  get config(){return config},set config(value){config=value},
  get previewSettings(){return previewSettings},set previewSettings(value){previewSettings=value},
  get state(){return state},
@@ -483,14 +480,17 @@ function assessInvalidation(candidate){
 // Without a level (an adopted ambiguous commit) everything is cleared, as before levels existed.
 let pendingInvalidation='all';
 const activateSettings=(value,invalidation={level:'all'})=>{
+ const tvModeBefore=tvDiscovery.mode();
  activeSettings=value;config=value.review;applyConfig();pendingInvalidation=invalidation.level;
+ // Turning TV discovery on or off changes which result files the movie list owns.
+ if(tvDiscovery.mode()!==tvModeBefore){cache=null;cacheAt=0;}
  if(invalidation.level==='all'){statsCache=null;state.items={};state.reviewSessions={};state.approvals={};cache=null;cacheAt=0;}
  if(invalidation.level!=='none'){previewPairs.clear();previewPlans.clear();previewAttempts.clear();}
  logEvent('settings.activated',{generation:invalidation.generation,invalidation:invalidation.level,fields:invalidation.fields,reviews:invalidation.cleared?.reviews,approvals:invalidation.cleared?.approvals});
 };
 activateSettings.flush=async()=>{if(pendingInvalidation!=='none')await previews.invalidate({all:true});await save();};
 ctx.settingsApply=await createSettingsApply({assess:assessInvalidation,data:DATA,store:sharedSettings,mode:process.env.RECOVERY_MODE||'off',control:restoreControl,safe:()=>!busyFor('settings')&&!replacementTask&&!previewPlanning,barrier:value=>{settingsBusy=value;},activate:activateSettings,readRows});
-const routes=[sharedSettingsRoutes,sonarrRoutes,libraryRoutes,itemRoutes,previewRoutes,settingsRoutes,nodeRoutes,staticRoutes];
+const routes=[sharedSettingsRoutes,sonarrRoutes,tvRoutes,libraryRoutes,itemRoutes,previewRoutes,settingsRoutes,nodeRoutes,staticRoutes];
 const server=http.createServer(async(req,res)=>{
   let releasePreviewBackground=false;const request={mutation:null};
   try {

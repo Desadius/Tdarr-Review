@@ -1,6 +1,7 @@
 export const EMPTY_TV_LIBRARY=Object.freeze({enabled:false,mediaRoot:'',reviewRoot:'',libraryId:'',sourceRoots:[],tdarrReviewRoot:'',reviewPrefixes:[],sonarrRoot:'',quarantineRoot:'',reports:''});
 
 const tvFields=[
+ ['mode','Režim knihovny TV','select'],
  ['mediaRoot','Originály TV v kontejneru Review','text'],
  ['reviewRoot','Výsledky TV v kontejneru Review','text'],
  ['libraryId','ID knihovny TV v Tdarru','text'],
@@ -14,7 +15,7 @@ const tvFields=[
 const roles={source:'Zdroj',result:'Výsledek',quarantine:'Karanténa',reports:'Reporty',database:'Databáze',data:'Data'};
 const statuses={ready:'Připraveno',not_configured:'Není nastaveno',missing_or_unmounted:'Chybí nebo není připojeno',not_directory:'Není adresář',not_file:'Není soubor',unreadable:'Nelze číst',not_writable:'Nelze zapisovat',unsafe_path:'Nebezpečná cesta',unavailable:'Nelze ověřit'};
 const issues={overlap:'Některé nastavené cesty se překrývají.',quarantine_mount_incompatible:'Karanténa není na bezpečně kompatibilním připojení.',namespace_unverified:'Překlad cesty mezi kontejnery nelze ověřit.',processing_unavailable:'Zpracování TV zatím není dostupné.'};
-const tvFieldHelp={sourceRoots:'Tyto cesty popisují umístění souborů viditelné Tdarru, ne identitu epizody.',tdarrReviewRoot:'Jde o přeloženou cestu výsledků, kterou vidí Tdarr.',sonarrRoot:'Jde o přeložený kořen knihovny, který vidí Sonarr.'};
+const tvFieldHelp={mode:'V režimu objevování Review čte výsledky TV a zobrazuje je v sekci Seriály. Nic neschvaluje, nenahrazuje ani nemění ve Sonarru a Tdarru. Změna režimu se použije stejně jako ostatní nastavení: uložit, otestovat, použít.',sourceRoots:'Tyto cesty popisují umístění souborů viditelné Tdarru, ne identitu epizody.',tdarrReviewRoot:'Jde o přeloženou cestu výsledků, kterou vidí Tdarr.',sonarrRoot:'Jde o přeložený kořen knihovny, který vidí Sonarr.'};
 const readOnlyRoles=new Set(['reports','database']);
 
 function listValue(value){return Array.isArray(value)?value.join('\n'):'';}
@@ -23,10 +24,12 @@ export function libraryPathsPatch(tv,savedDraft){return JSON.stringify(stable(tv
 function readTvDescriptor(formFields,existing){
  return {...makeTvDescriptor(),...(existing||{}),...Object.fromEntries(tvFields.map(([field,,type])=>[field,type==='list'?formFields.querySelector(`[data-tv-field="${field}"]`)?.value.split('\n').map(x=>x.trim()).filter(Boolean)??[]:formFields.querySelector(`[data-tv-field="${field}"]`)?.value.trim()??''])),enabled:false};
 }
+const modeOptions=[['off','Vypnuto'],['discovery','Objevování (jen čtení)']];
 function tvFieldInput(key,value,{el,tr}){
  const [,label,type]=tvFields.find(([field])=>field===key);
- const input=el(type==='list'?'textarea':'input');if(type!=='list')input.type='text';input.name='libraries.tv.'+key;input.dataset.tvField=key;
- input.value=type==='list'?listValue(value):String(value??'');
+ const input=el(type==='list'?'textarea':type==='select'?'select':'input');if(type==='text')input.type='text';input.name='libraries.tv.'+key;input.dataset.tvField=key;
+ if(type==='select'){for(const [optionValue,optionLabel] of modeOptions){const option=el('option','',optionLabel);option.value=optionValue;input.append(option);}input.value=value==='discovery'?'discovery':'off';}
+ else input.value=type==='list'?listValue(value):String(value??'');
  const wrapper=el('label','settings-field',label);wrapper.append(input);if(tvFieldHelp[key])wrapper.append(el('small','',tvFieldHelp[key]));return {input,wrapper};
 }
 function makeTvDescriptor(){return {...EMPTY_TV_LIBRARY,sourceRoots:[],reviewPrefixes:[]};}

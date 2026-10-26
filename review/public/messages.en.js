@@ -1,8 +1,9 @@
 import sharedSettingsMessages from './shared-settings-messages.js?v=__APP_VERSION__';
 import guidedMessages from './guided-messages.js?v=__APP_VERSION__';
+import tvMessages from './tv-messages.js?v=__APP_VERSION__';
 import {ERROR_MESSAGES} from './error-messages.js?v=__APP_VERSION__';
 export default {
-  "exact": {...Object.fromEntries(Object.values(ERROR_MESSAGES).map(message=>[message.cs,message.en])),...sharedSettingsMessages,...guidedMessages,
+  "exact": {...Object.fromEntries(Object.values(ERROR_MESSAGES).map(message=>[message.cs,message.en])),...sharedSettingsMessages,...guidedMessages,...tvMessages,
     "Odložené": "Deferred",
     "Odloženo": "Deferred",
     "Probíhá": "Running",

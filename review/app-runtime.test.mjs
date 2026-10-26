@@ -82,7 +82,7 @@ if(typeof vm.SourceTextModule!=='function'){
    calls.push({route,method:options.method,body:options.body?JSON.parse(options.body):undefined});
    const configured=routes[route]||routes[route.split('?')[0]],fixture=typeof configured==='function'?await configured({route,body:options.body?JSON.parse(options.body):undefined}):configured;if(fixture)return {status:fixture.status||200,ok:!fixture.status||fixture.status<400,json:async()=>structuredClone(fixture.data)};if(route==='/api/radarr/requests'&&overviewError)return {status:overviewError.status,ok:false,json:async()=>({error:overviewError.message})};
    if(route==='/api/recovery/runtime'&&fallbackStatus!==200)return {status:fallbackStatus,ok:false,json:async()=>({error:'synthetic runtime unavailable'})};
-   const data=route==='/api/items'?{label:'Synthetic Review',serverTime:now,items:[],history:[],recovery:[],pendingRestores:[],restorePending:0,...itemsData}:route==='/api/radarr/requests'?response:route==='/api/recovery/runtime'?fallbackRuntime:null;
+   const data=route==='/api/items'?{label:'Synthetic Review',serverTime:now,items:[],history:[],recovery:[],pendingRestores:[],restorePending:0,...itemsData}:route==='/api/radarr/requests'?response:route==='/api/recovery/runtime'?fallbackRuntime:route==='/api/tv/status'?{mode:'off'}:null;
    if(!data)throw Error('Unexpected fixture route: '+route);return {status:200,ok:true,json:async()=>structuredClone(data)};
   }});
   const publicRoot=new URL('./public/',import.meta.url),modules=new Map();
@@ -682,4 +682,63 @@ for(const language of ['cs','en'])test('Needs attention shows the server reason,
   assert.equal(runtime.textContent,prior,'failed runtime read retains the last supervised state');assert.match(fixture.document.getElementById('recoveryError').textContent,/synthetic shared case status invalid/);assert.equal(fixture.document.getElementById('recoveryError').hidden,false);
   if(status===401)assert.equal(fixture.document.getElementById('login').hidden,false);
  });
+
+ // TV series section (#271): read-only, offered only in discovery mode, in both interface languages.
+ const tvOverview={mode:'discovery',status:'ok',observedAt:'2026-10-26T10:00:00.000Z',sonarr:{status:'verified',observedAt:'2026-10-26T10:00:00.000Z',series:2},
+  totals:{results:6,bound:3,unbound:2,unverified:1,episodes:4,originalBytes:3*2**30,reviewBytes:2**30},
+  series:[
+   {id:7,title:'Synthetic Show',seriesType:'standard',totals:{results:2,episodes:3,originalBytes:2*2**30,reviewBytes:2**29},seasons:[
+    {seasonNumber:0,results:[{id:'a'.repeat(24),state:'bound',reviewRelative:'TV/Synthetic Show/Specials/S00E01.mkv',originalBytes:2**30,reviewBytes:2**28,file:{episodeFileId:102,label:'Specials/S00E01.mkv',seasonNumber:0},episodes:[{id:1020,seasonNumber:0,episodeNumber:1}]}]},
+    {seasonNumber:1,results:[{id:'b'.repeat(24),state:'bound',reviewRelative:'TV/Synthetic Show/Season 01/S01E01-E02.mkv',originalBytes:2**30,reviewBytes:2**28,file:{episodeFileId:101,label:'Season 01/S01E01-E02.mkv',seasonNumber:1},episodes:[{id:1010,seasonNumber:1,episodeNumber:1},{id:1011,seasonNumber:1,episodeNumber:2}]}]}]},
+   {id:8,title:'Synthetic Anime',seriesType:'anime',totals:{results:1,episodes:1,originalBytes:2**30,reviewBytes:2**29},seasons:[
+    {seasonNumber:1,results:[{id:'c'.repeat(24),state:'bound',reviewRelative:'TV/Synthetic Anime/Season 01/Episode 045.mkv',originalBytes:2**30,reviewBytes:2**29,file:{episodeFileId:201,label:'Season 01/Episode 045.mkv',seasonNumber:1},episodes:[{id:2010,seasonNumber:1,episodeNumber:1,absoluteEpisodeNumber:45}]}]}]}],
+  unbound:[{id:'d'.repeat(24),state:'unbound',reason:'receipt_missing',reviewRelative:'TV/Synthetic Show/Season 01/S01E07.mkv'},{id:'e'.repeat(24),state:'unbound',reason:'no_episode_file',reviewRelative:'TV/Synthetic Show/Season 01/S01E09.mkv'}],
+  unverified:[{id:'f'.repeat(24),state:'unverified',reason:'sonarr_unavailable',reviewRelative:'TV/Synthetic Show/Season 01/S01E11.mkv'}]};
+ for(const language of ['cs','en'])test('TV series section is offered in discovery mode and renders read-only in '+language,async()=>{
+  const f=await appFixture(language,{routes:{'/api/tv/status':{data:{mode:'discovery'}},'/api/tv':{data:tvOverview}}}),dom=f.document;
+  assert.equal(dom.getElementById('tvNav').hidden,false);assert.equal(dom.getElementById('view-tv').hidden,true,'the section stays closed until opened');
+  await f.hash('tv');
+  const view=dom.getElementById('view-tv'),text=dom.getElementById('tvContent').textContent;
+  assert.equal(view.hidden,false);assert.equal(dom.getElementById('tvNav').getAttribute('aria-current'),'page');
+  assert.match(view.textContent,language==='en'?/TV series/:/Seriály/);
+  assert.match(text,/Synthetic Show/);assert.match(text,/Synthetic Anime/);
+  assert.match(text,language==='en'?/Specials \(season 0\)/:/Speciály \(sezóna 0\)/);assert.match(text,language==='en'?/Season 1/:/Sezóna 1/);
+  assert.match(text,/S01E01, S01E02/,'a multi-episode file lists both of its episodes');assert.match(text,/S00E01/);
+  assert.match(text,language==='en'?/Absolute episode number 45/:/Absolutní číslo 45/,'anime shows its absolute number next to the season numbering');
+  assert.match(text,language==='en'?/Bound results/:/Vázané výsledky/);assert.match(text,language==='en'?/Binding not verified/:/Vazba není ověřena/);
+  assert.match(text,language==='en'?/The conversion receipt next to the result is missing/:/Vedle výsledku chybí záznam převodu/);
+  assert.match(text,language==='en'?/Sonarr has no episode file for the source path/:/Sonarr nemá soubor epizody pro cestu zdroje/);
+  assert.match(text,language==='en'?/Sonarr is unavailable or did not answer in time/:/Sonarr není dostupný nebo neodpověděl včas/);
+  assert.equal(dom.querySelector('.tv-unbound').querySelectorAll('.tv-result').length,2,'unbound results are listed separately with their reasons');assert.equal(dom.querySelector('.tv-unverified').querySelectorAll('.tv-result').length,1);
+  for(const series of dom.querySelectorAll('.tv-series'))assert.equal(series.querySelectorAll('.tv-problem').length,0,'no unbound result is listed under a series');
+  // No control approves, rejects, replaces or retains a TV result.
+  assert.deepEqual(view.querySelectorAll('button').map(control=>control.id),['tvRefresh']);assert.equal(view.querySelectorAll('input,select,textarea,a').length,0);
+  assert.match(view.textContent,language==='en'?/no approval, rejection or replacement/:/neexistuje/);
+  await dom.getElementById('tvRefresh').emit('click');for(let i=0;i<10;i++)await flush();
+  assert.equal(f.calls.filter(call=>call.route==='/api/tv?refresh=1').length,1);assert.ok(f.calls.filter(call=>call.route.startsWith('/api/tv')).every(call=>call.method==='GET'));
+  assert.equal(f.calls.some(call=>call.method==='POST'),false);
+  if(language==='en')assert.doesNotMatch(text,/[áčďéěíňóřšťúůýž]/i,'no untranslated Czech text in the English section');
+ });
+ test('TV series section is hidden and never requested while the mode is off',async()=>{
+  const f=await appFixture('cs',{routes:{'/api/tv':()=>{throw Error('must not be requested')}}}),dom=f.document;
+  assert.equal(dom.getElementById('tvNav').hidden,true);await f.hash('tv');
+  assert.equal(dom.getElementById('view-tv').hidden,true,'a TV address falls back to the movie overview');assert.equal(dom.getElementById('view-attention').hidden,false);
+  assert.deepEqual(f.calls.filter(call=>call.route.startsWith('/api/tv')).map(call=>call.route),['/api/tv/status']);
+ });
+ test('TV series section reports an unavailable overview instead of an empty list',async()=>{
+  const f=await appFixture('en',{routes:{'/api/tv/status':{data:{mode:'discovery'}},'/api/tv':{data:{mode:'discovery',status:'unavailable',code:'tv_tdarr_unavailable'}}}});await f.hash('tv');
+  assert.match(f.document.getElementById('tvContent').textContent,/the Tdarr database cannot be read/);
+ });
+
+ for(const language of ['cs','en'])test('the TV library mode is an explicit draft choice that never enables processing, in '+language,async()=>{
+  const tv={enabled:false,mediaRoot:'/media/tv',reviewRoot:'/review',libraryId:'tv-library',sourceRoots:['/tdarr/tv'],tdarrReviewRoot:'/tdarr/review',reviewPrefixes:['TV'],sonarrRoot:'/sonarr/tv',quarantineRoot:'',reports:''};
+  const snapshot={...sharedFixture,draft:{...sharedFixture.draft,libraries:{tv}}};let body;
+  const f=await settingsFixture(language,{'/api/shared-settings':{data:snapshot},'/api/shared-settings/draft':request=>{body=request.body;return {data:snapshot};}}),dom=f.document;
+  const mode=dom.querySelector('[data-tv-field="mode"]');assert.ok(mode);assert.equal(mode.value,'off','an absent mode means off');
+  assert.deepEqual(mode.children.map(option=>option.value),['off','discovery']);
+  assert.match(mode.parentElement.textContent,language==='en'?/Discovery \(read-only\)/:/Objevování \(jen čtení\)/);assert.match(mode.parentElement.textContent,language==='en'?/approves, replaces and changes nothing/:/Nic neschvaluje/);
+  mode.value='discovery';await mode.emit('change');await action(dom,'save').emit('click');
+  assert.equal(body.patch.libraries.tv.mode,'discovery');assert.equal(body.patch.libraries.tv.enabled,false);
+ });
 }
+
