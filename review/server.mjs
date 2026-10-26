@@ -65,7 +65,7 @@ const sonarrSourceInspection=createSonarrSourceInspection({getSnapshot:async rev
 const sonarrResultInspection=createSonarrResultInspection({getSnapshot:async revision=>{
  const current=await sharedSettings.current();if(current.revision!==revision)throw Object.assign(Error('Settings changed'),{code:'settings_conflict'});
  const sonarr=await sharedSettings.sonarrConnection(revision);
- return {revision,sonarr,tv:current.draft.libraries?.tv??null,review:{database:current.draft.review?.database??''}};
+ return {revision,sonarr,tv:current.draft.libraries?.tv??null,review:{database:current.draft.review?.database??'',ffprobe:current.draft.review?.ffprobe??''}};
 }});
 const activeConnection=async()=>activeSettings?activeSettings.radarr:JSON.parse(await fs.readFile(path.join(DATA,'radarr.json'),'utf8'));
 let MEDIA,REVIEW,TDARR,DB,FFPROBE,HOST;
