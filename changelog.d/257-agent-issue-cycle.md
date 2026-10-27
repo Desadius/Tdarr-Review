@@ -1,1 +1,0 @@
-- Claude Code and Codex share one [issue cycle and orchestration protocol](docs/agents/orchestration.md): own unfinished work first, delegation to lower-cost subagents, quiet cycles, and cleanup of an agent's own worktree and local branch after its PR is merged.

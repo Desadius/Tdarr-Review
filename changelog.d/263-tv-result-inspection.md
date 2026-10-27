@@ -1,1 +1,0 @@
-- Add a manual, read-only Sonarr check that associates one selected TV episode file with exact supported Tdarr result, receipt and job evidence.

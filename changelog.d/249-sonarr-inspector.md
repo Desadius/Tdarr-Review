@@ -1,1 +1,0 @@
-- Add an optional manual, read-only Sonarr series and episode metadata inspector. TV processing remains unavailable.

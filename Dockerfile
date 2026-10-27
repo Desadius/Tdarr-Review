@@ -1,7 +1,7 @@
 # Runtime already used by the deployed application (Node 24, Jellyfin FFmpeg).
 ARG TDARR_RUNTIME_IMAGE=ghcr.io/haveagitgat/tdarr@sha256:45742f00e51a58553844c8b13d97e7ae9b2ee9a056bd8e5993d9a8282a45a23f
 FROM ${TDARR_RUNTIME_IMAGE}
-ARG APP_VERSION=2.2.0
+ARG APP_VERSION=2.3.0
 ARG VCS_REF=unknown
 LABEL org.opencontainers.image.title="Tdarr Review" \
       org.opencontainers.image.description="Review and approve Tdarr transcodes before replacing media" \

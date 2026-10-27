@@ -4,7 +4,7 @@ Review and approve Tdarr transcodes before replacing the files in your media lib
 
 Choose **English** or **Čeština** in the interface; Czech is the initial default. This is a community project, independent of Tdarr, Radarr and Plex.
 
-Release version: **[2.2.0](https://github.com/Desadius/Tdarr-Review/releases/tag/v2.2.0)**. Use the explicit Linux amd64 `2.2.0` image tag for this source release. Moving `latest` is a separate publication choice. Source publication, image publication and updating a running installation remain separate operations. Personal configuration, credentials, journals, film files and one-off repair approvals are excluded from the repository and images.
+Release version: **[2.3.0](https://github.com/Desadius/Tdarr-Review/releases/tag/v2.3.0)**. Use the explicit Linux amd64 `2.3.0` image tag for this source release. Moving `latest` is a separate publication choice. Source publication, image publication and updating a running installation remain separate operations. Personal configuration, credentials, journals, film files and one-off repair approvals are excluded from the repository and images.
 
 ## What is included
 
@@ -50,14 +50,14 @@ git clone https://github.com/Desadius/Tdarr-Review.git
 cd Tdarr-Review
 cp .env.example .env
 # Edit .env, create its host directories and set write permissions first.
-# Set REVIEW_IMAGE_TAG=2.2.0 for this release.
+# Set REVIEW_IMAGE_TAG=2.3.0 for this release.
 docker compose pull review
 docker compose up -d --no-build review
 ```
 
-Follow [the installation guide](docs/INSTALL-UNRAID.md) before enabling file replacement. The Linux amd64 image is `ghcr.io/desadius/tdarr-review:2.2.0`. It contains optional Recovery, Off by default and controlled by `RECOVERY_MODE` (`off`, `verify`, `repair`); the separate Recovery image and the Compose `recovery` service are discontinued. Installations that run the separate Recovery container of 1.11.0 move with [the 2.0 migration guide](docs/MIGRATE-TO-2.0.md). To build locally instead, use `docker compose build review` and `docker compose up -d review`. The default bind address is localhost. Set it to your server's LAN address and set `PUBLIC_ORIGIN` to the exact address used in your browser.
+Follow [the installation guide](docs/INSTALL-UNRAID.md) before enabling file replacement. The Linux amd64 image is `ghcr.io/desadius/tdarr-review:2.3.0`. It contains optional Recovery, Off by default and controlled by `RECOVERY_MODE` (`off`, `verify`, `repair`); the separate Recovery image and the Compose `recovery` service are discontinued. Installations that run the separate Recovery container of 1.11.0 move with [the 2.0 migration guide](docs/MIGRATE-TO-2.0.md). To build locally instead, use `docker compose build review` and `docker compose up -d review`. The default bind address is localhost. Set it to your server's LAN address and set `PUBLIC_ORIGIN` to the exact address used in your browser.
 
-The 2.2.0 changes make settings Apply clear only what a change requires (after a Test that shows it), give every reader of Recovery's configuration and files one verdict, and split out internal modules without changing behaviour. Manual assessment and approval protections remain unchanged. Before updating an existing installation, read [Before updating](CHANGELOG.md#before-updating) in the changelog.
+The 2.3.0 changes make **Needs attention** cases actionable: an explained transcode failure with one eligible retry, deferral with a note, and a redacted diagnostic export for an administrator. They also add read-only TV preparation: TV library paths, exact Sonarr episode binding, manual inspection, a versioned Tdarr TV flow template and opt-in read-only TV result discovery. TV results cannot be approved or installed yet. Manual assessment and approval protections remain unchanged. Before updating an existing installation, read [Before updating](CHANGELOG.md#before-updating) in the changelog.
 
 ## Project layout
 

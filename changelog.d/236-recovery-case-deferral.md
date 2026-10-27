@@ -1,1 +1,0 @@
-- Review lets signed-in users defer an eligible Recovery attention case with a required shared note, find it in a separate Deferred list and reopen it manually. A material phase, file identity or binding change restores attention. Deferral does not approve a result or change Recovery, media, quarantine or retention state.
