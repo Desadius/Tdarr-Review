@@ -54,6 +54,8 @@ const validDuration=value=>typeof value==='number'&&Number.isFinite(value)&&valu
 const validTime=(value,duration)=>typeof value==='number'&&Number.isFinite(value)&&value>=0&&value<duration;
 const validClipTime=(value,duration)=>validTime(value,duration)&&value+CLIP_SECONDS<=duration;
 const unique=values=>[...new Set(values)];
+/** Background order: the film under review first, then the films after it in the list, then the earlier ones. */
+export function previewCandidateOrder(items,focusId){const i=items.findIndex(item=>item.id===focusId);return i<0?[...items]:[...items.slice(i),...items.slice(0,i)]}
 
 /** Pure cache plan. Proposed tracks and prepared assets are not manual checks or audioSamples. */
 export function defaultPreviewPlan({itemId,snapshot,durationA,durationB,originalTracks,reviewTracks,scope={},rendererVersion='preview-v1',preferredAudioLanguages=['ces'],fallbackAudioLanguages=['eng','slk'],allowOtherAudioLanguages=true}={}){

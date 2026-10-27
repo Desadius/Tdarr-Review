@@ -40,7 +40,7 @@ export async function itemRoutes(ctx,req,res,url,request){
  if(reviewSession&&req.method==='GET'){
   const id=reviewSession[1],snapshot=url.searchParams.get('snapshot'),item=ctx.state.items[id];
   if(!item||item.snapshot!==snapshot)return reply(res,409,apiError(await needsVerification(ctx,id,snapshot)?'item_needs_verification':'item_changed'));
-  const verified=await ctx.verifyReviewItem(item,{id,snapshot},false);
+  const verified=await ctx.verifyReviewItem(item,{id,snapshot},false);ctx.focusPreviews?.(id);
   return reply(res,200,ctx.reviewSessions.get(id,snapshot,verified.requirements));
  }
  if(reviewSession&&req.method==='POST'){

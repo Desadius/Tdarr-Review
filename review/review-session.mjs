@@ -5,7 +5,7 @@ const SNAPSHOT=/^[a-f0-9]{64}$/;
 const OBSERVATIONS=['image','hdr','audio','syncStart','syncMiddle','syncEnd'];
 const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 function sanitizeComparison(value){
- if(!object(value)||!['guided-ears','guided-sequential'].includes(value.mode)||typeof value.swapEars!=='boolean'||!Array.isArray(value.excerpts)||value.excerpts.length!==3)fail('review_comparison_invalid');
+ if(!object(value)||!['guided-ears','guided-sequential','guided-switch'].includes(value.mode)||typeof value.swapEars!=='boolean'||!Array.isArray(value.excerpts)||value.excerpts.length!==3)fail('review_comparison_invalid');
  const excerpts=value.excerpts.map(seconds=>{if(typeof seconds!=='number'||!Number.isFinite(seconds)||seconds<0||seconds>604800)fail('review_comparison_invalid');return seconds});
  if(!(excerpts[0]<excerpts[1]&&excerpts[1]<excerpts[2]))fail('review_comparison_invalid');
  return {mode:value.mode,swapEars:value.swapEars,excerpts};

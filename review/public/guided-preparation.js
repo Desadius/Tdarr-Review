@@ -2,6 +2,9 @@ export function guidedExcerptTimes(duration,chosen){
  if(!Number.isFinite(duration)||duration<12)throw Error('Film je příliš krátký pro tři řízené ukázky. Použij vlastní přehrávač.');
  const end=duration-12;
  if(chosen!==undefined){if(!Array.isArray(chosen)||chosen.length!==3||chosen.some(x=>!Number.isFinite(x)||x<0||x>end)||!(chosen[0]<chosen[1]&&chosen[1]<chosen[2]))throw Error('Neplatný úsek řízeného porovnání.');return [...chosen]}
+ // Whole seconds at 2/50/95 % match the times the server prepares in the background (preview-plan.mjs).
+ const seconds=[2,50,95].map(percent=>Math.floor(end*percent/100));
+ if(seconds[0]<seconds[1]&&seconds[1]<seconds[2])return seconds;
  const lastMillisecond=Math.floor(end*1000+1e-9);
  if(lastMillisecond<2)throw Error('Film je příliš krátký pro tři řízené ukázky. Použij vlastní přehrávač.');
  const positions=[.02,.5,.95].map(r=>Math.round(lastMillisecond*r));
@@ -16,7 +19,7 @@ export function decodeGuidedPCM(packet){
  for(let i=0;i<out.length;i++){out[i]=view.getFloat32(i*4,true);if(!Number.isFinite(out[i]))throw Error('Neplatné zvukové vzorky.')}
  return out;
 }
-export async function prepareGuidedExcerpts({times,scope,snapshot,load,current=()=>true,onState=()=>{},cachedOnly=false}){
+export async function prepareGuidedExcerpts({times,scope,snapshot,load,current=()=>true,onState=()=>{},cachedOnly=false,previewProfile='detail'}){
  const rows=times.map(seconds=>({seconds,status:'waiting'})),clips=[];
  const publish=()=>{if(current())onState(rows.map(row=>({...row})))};
  const check=()=>{if(!current())throw Error('Rozsah porovnání se změnil. Připrav ukázky znovu.')};
@@ -27,7 +30,7 @@ export async function prepareGuidedExcerpts({times,scope,snapshot,load,current=(
    const audio=await load({...request,mode:'listen'});check();
    if(audio?.pending)throw Error('Ukázka ještě není připravená. Zkus přípravu znovu.');
    const original=decodeGuidedPCM(audio.original),review=decodeGuidedPCM(audio.review);
-   const video=await load({...request,mode:'av',previewProfile:'compact'});check();
+   const video=await load({...request,mode:'av',previewProfile});check();
    if(video?.pending)throw Error('Ukázka ještě není připravená. Zkus přípravu znovu.');
    if(typeof video?.original!=='string'||!video.original||typeof video?.review!=='string'||!video.review)throw Error('Chybí video pro řízené porovnání. Použij vlastní přehrávač.');
    clips.push({seconds:times[i],duration:Math.min(original.length,review.length)/48000,original,review,video});

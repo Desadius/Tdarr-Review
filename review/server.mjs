@@ -33,7 +33,7 @@ import {createArtwork} from './artwork.mjs';
 import {createReviewSessionStore,ReviewSessionError,reviewRequirements} from './review-session.mjs';
 import {createPreviewCache,PreviewCacheError,previewCacheKey} from './preview-cache.mjs';
 import {createPreviewRenderer} from './preview-render.mjs';
-import {defaultPreviewPlan} from './preview-plan.mjs';
+import {defaultPreviewPlan,previewCandidateOrder} from './preview-plan.mjs';
 import {defaultPreviewSettings,validatePreviewSettings,previewLimits} from './preview-settings.mjs';
 import {busyFor as policyBusyFor,mutationKind} from './busy-guards.mjs';
 import {respond,apiError} from './routes/http.mjs';
@@ -192,6 +192,9 @@ async function planPreviewItem(id,snapshot,background=false){
  }
  previewPlans.set(id,{...plan,snapshot});return plan;
 }
+// The film last opened for review; its successors are prepared next while it is being reviewed.
+let previewFocus=null;
+function focusPreviews(id){if(previewFocus===id)return;previewFocus=id;void preparePreviews().catch(error=>console.error('Preview preparation: '+error.message))}
 async function preparePreviews(items=cache||[]){
  if(previewPlanning)return previewPlanning;
  previewPlanning=(async()=>{
@@ -200,7 +203,7 @@ async function preparePreviews(items=cache||[]){
   for(const [key,request] of previewAttempts)if(valid.get(request.itemId)!==request.snapshot||request.expiresAt&&Date.now()>=request.expiresAt)previewAttempts.delete(key);
   await previews.prune();
   if(!previewSettings.enabled)return;
-  const candidates=items.filter(item=>valid.get(item.id)===item.snapshot&&state.items[item.id]?.info).slice(0,previewSettings.maxFilms);
+  const candidates=previewCandidateOrder(items.filter(item=>valid.get(item.id)===item.snapshot&&state.items[item.id]?.info),previewFocus).slice(0,previewSettings.maxFilms);
   for(const item of candidates){
    if(busyFor('background'))break;
    try{
@@ -468,7 +471,7 @@ const ctx={
  get mutationOwner(){return mutationOwner},set mutationOwner(value){mutationOwner=value},
  setRecoveryRestoreBusy:value=>{recoveryRestoreBusy=value;},
  applyConfig,save,busyFor,itemInOperation,enqueueReplacement,keepNodePaused,pendingRestores,scan,perform,performBatch,replacementAction,resume,readRows,dbRows,verifyReviewItem,reviewMutationBlocked,
- previewIdentity,previewPair,previewVersion,previewPreparation,planPreviewItem,preparePreviews,forgetPreviews,
+ previewIdentity,previewPair,previewVersion,previewPreparation,planPreviewItem,preparePreviews,forgetPreviews,focusPreviews,
 };
 // How much saved review work a candidate configuration would invalidate, against the configuration
 // this server runs with, and how many films' saved reviews and Approve decisions that clears.

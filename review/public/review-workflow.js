@@ -1,8 +1,12 @@
-import {STEP_CHECKS,stepChecks as checksOfStep,hasPair,stepReachable,deviceSatisfied,identityChanged,pairChanged,comparisonChanged,clearForIdentity,clearForPair,clearForComparison} from './review-rules.js?v=__APP_VERSION__';
-import {mountContinuousReview} from './continuous-review.js?v=__APP_VERSION__';
+import {CHECKS,STEP_CHECKS,stepChecks as checksOfStep,hasPair,stepReachable,completedStep,deviceSatisfied,identityChanged,pairChanged,comparisonChanged,clearForIdentity,clearForPair,clearForComparison} from './review-rules.js?v=__APP_VERSION__';
+import {mountContinuousReview,SEGMENT_SYNC} from './continuous-review.js?v=__APP_VERSION__';
 import {guidedExcerptTimes} from './guided-preparation.js?v=__APP_VERSION__';
 const STEPS=['Podklady','Obraz','Zvuk','Synchronizace','Rozhodnutí'].map((title,i)=>[title,STEP_CHECKS[i]]);
 const clone=value=>JSON.parse(JSON.stringify(value));
+// The single pass saves one confirmation per write in this order; the server keeps a check only once the
+// checks of the earlier steps are saved (review-session.mjs), so a later one waits as a local confirmation.
+const SAVE_ORDER=Object.freeze(['preparation','image','hdr','audio',...['syncStart','syncMiddle','syncEnd']]);
+const SAVE_STEP=Object.freeze({preparation:0,image:1,hdr:2,audio:2,syncStart:3,syncMiddle:3,syncEnd:3});
 
 export function classifyPreparation(preparation,snapshot){
  const waiting={kind:'waiting',label:'Čeká',icon:'◷',ready:0,total:0,progress:false};
@@ -56,10 +60,10 @@ export function createCachedPreviewLoader({load,readPreparation,current,onReady,
 // Kino layout: the checks/decision panel and focus mode are viewer preferences, kept across films.
 const layout={panel:'open',focus:false};
 try{const saved=JSON.parse(sessionStorage.getItem('tdarr-review-layout')||'null');if(saved?.panel==='closed')layout.panel='closed'}catch{}
-export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openAudioComparison,openGuidedComparison,onSession=()=>{},onPreparation=()=>{},preparation=null,onApprove=()=>{},onApproveOnly=()=>{},onReject=()=>{},onDeferred=()=>{},canApprove=()=>false,canApproveOnly=()=>false,isApproved=()=>false,tr=x=>x,formatBytes=x=>String(x)}={}){
+export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openAudioComparison,openGuidedComparison,onSession=()=>{},onPreparation=()=>{},preparation=null,onApprove=()=>{},onApproveOnly=()=>{},onReject=()=>{},onDeferred=()=>{},onNext=()=>{},onLayout=()=>{},onChrome=()=>{},canApprove=()=>false,canApproveOnly=()=>false,isApproved=()=>false,tr=x=>x,formatBytes=x=>String(x)}={}){
  const make=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=tr(text);return n};
  const button=(text,fn,cls='secondary')=>{const n=make('button',cls,text);n.type='button';n.onclick=fn;return n};
- let dead=false,loaded=false,saving=false,conflict=false,stale=false,revision=0,session=null,baseline=null,complete=false,tracks=null,toolCleanups=[],continuousView=null,metadataLoading=false,hdrRequired=false,observations={},scopeValid=true,explainingSave=false;
+ let dead=false,loaded=false,saving=false,conflict=false,stale=false,revision=0,session=null,baseline=null,complete=false,tracks=null,toolCleanups=[],continuousView=null,metadataLoading=false,hdrRequired=false,observations={},scopeValid=true,explainingSave=false,flushing=null,flushAgain=false,confirmedAt={};
  const cacheKey='tdarr-review-draft:'+item.id+':'+item.snapshot;
  const root=make('div','review-workflow'),sidebar=make('nav','workflow-nav'),main=make('section','workflow-main'),status=make('p','workflow-status'),warning=make('div','alert workflow-warning'),steps=make('div','workflow-step-buttons'),preparationPanel=make('div','preview-preparation');
  sidebar.setAttribute('aria-label',tr('Kroky posouzení'));status.setAttribute('role','status');warning.setAttribute('role','alert');warning.hidden=true;
@@ -77,6 +81,9 @@ export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openA
  const cache=()=>{if(!session||!loaded||dead)return;try{sessionStorage.setItem(cacheKey,JSON.stringify({revision,session}))}catch{}};
  const clearTools=()=>{scopeValid=true;continuousView?.destroy();continuousView=null;for(const cleanup of toolCleanups.splice(0))cleanup?.()};
  const allowed=()=>loaded&&!dead&&!stale&&!conflict&&!saving&&canWrite();
+ // A local confirmation or playback may continue while an earlier confirmation is being written.
+ const confirmable=()=>loaded&&!dead&&!stale&&!conflict&&canWrite();
+ const playable=()=>loaded&&!dead&&!stale&&canWrite();
  const validPair=()=>hasPair(session?.scope)&&(!tracks||tracks.original.some(x=>x.index===session.scope.originalIndex)&&tracks.review.some(x=>x.index===session.scope.reviewIndex));
  // Stricter than the server on purpose (review-rules.js): the device and, with HDR, its confirmation gate each step.
  const validMethod=()=>session?deviceSatisfied(session,{hdr:hdrRequired}):!hdrRequired;
@@ -108,9 +115,12 @@ export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openA
   if(explainingSave)renderSaveReasons();
   for(const n of root.querySelectorAll('[data-preview-control]'))n.disabled=!allowed()||n.dataset.previewBusy==='true'||n.dataset.previewInvalid==='true';
   const approve=root.querySelector('[data-workflow-approve]');if(approve)approve.disabled=!allowed()||!complete||sessionDirty()||!canApprove();
-  const only=root.querySelector('[data-workflow-approve-only]');if(only){const done=isApproved();only.disabled=done||!allowed()||!complete||sessionDirty()||!canApproveOnly();only.textContent=tr(done?'Schváleno · čeká na nahrazení':'Schválit')}
-  continuousView?.refresh({session,observations,allowed:allowed(),scopeValid,hdrRequired});
+  const only=root.querySelector('[data-workflow-approve-only]');if(only){const done=isApproved();only.disabled=done||!allowed()||!complete||sessionDirty()||!canApproveOnly();(only.querySelector('span')||only).textContent=tr(done?'Schváleno · čeká na nahrazení':'Schválit')}
+  refreshContinuous();
  }
+ // Unsaved confirmations or identity; the guided context alone is written with the next confirmation.
+ const pendingWrite=()=>!!session&&!!baseline&&(CHECKS.some(key=>!!session.checks[key]!==!!baseline.checks[key])||identityChanged(baseline,session)||pairChanged(baseline,session));
+ function refreshContinuous(){continuousView?.refresh({session,baseline,observations,allowed:allowed(),saving:saving||!!flushing,conflict,dirty:pendingWrite(),revision,complete})}
  function showWarning(message,reload=false){explainingSave=false;warning.replaceChildren(make('p','',message));if(reload)warning.append(button('Načíst uložený stav',()=>loadSession(false)));warning.hidden=false;refreshGuard()}
  function applyRecord(record,{render=true}={}){
   if(record.snapshot!==item.snapshot){stale=true;showWarning('Soubory se změnily. Zavři detail a otevři aktuální film.');clearTools();return false}
@@ -134,7 +144,7 @@ export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openA
  function setScope(next){
   if(!allowed()||next.seconds!==null&&(!Number.isFinite(next.seconds)||next.seconds<0))return;const changedPair=next.originalIndex!==session.scope.originalIndex||next.reviewIndex!==session.scope.reviewIndex;
   const oldStep=session.step;Object.assign(session.scope,next);if(changedPair){clearForPair(session);complete=false;updateChecks();}
-  cache();if(session.step!==oldStep)renderStep();else updateSaveButton();refreshGuard();
+  cache();if(continuousView){if(changedPair)void flush();refreshGuard();return}if(session.step!==oldStep)renderStep();else updateSaveButton();refreshGuard();
  }
  const setScopeValidity=valid=>{scopeValid=valid===true;updateSaveButton()};
  function updateChecks(){for(const input of root.querySelectorAll('[data-check]'))input.checked=session.checks[input.dataset.check]===true}
@@ -153,7 +163,45 @@ export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openA
   // Input handlers already removed checks for the previous identity. Keep subsequent manual changes as an unsaved draft.
   session={...desired,step:Math.min(desired.step,baseline.step),checks:{...baseline.checks,...desired.checks}};cache();
  }
- async function beforePreview(){await persistIdentity();if(dead||!allowed())throw Error(tr('Posouzení teď nelze uložit. Obnov aktuální údaje.'))}
+ async function beforePreview(){
+  if(continuousView){await flush();if(dead||stale||conflict)throw Error(tr('Posouzení teď nelze uložit. Obnov aktuální údaje.'));return}
+  await persistIdentity();if(dead||!allowed())throw Error(tr('Posouzení teď nelze uložit. Obnov aktuální údaje.'))}
+ // One write, then the local confirmations that are not saved yet stay in the session for the next write.
+ async function writeKept(value){
+  const local=clone(session),before=clone(baseline.checks);await postSession(value);if(dead)return;
+  for(const key of CHECKS)if(local.checks[key]&&!before[key]&&!baseline.checks[key])session.checks[key]=true;
+  session.note=local.note;session.comparison=local.comparison;session.scope.originalIndex=local.scope.originalIndex;session.scope.reviewIndex=local.scope.reviewIndex;
+ }
+ async function flushOnce(){
+  if(!allowed())return;await persistIdentity();if(dead||!allowed())return;
+  const removed=CHECKS.filter(key=>baseline.checks[key]&&!session.checks[key]);
+  if(removed.length){const value=clone(baseline);for(const key of removed)value.checks[key]=false;value.note=session.note;value.deferred=false;value.step=completedStep(value);await writeKept(value);if(dead||!allowed())return}
+  for(const key of SAVE_ORDER){
+   if(!session.checks[key]||baseline.checks[key])continue;
+   const value=clone(baseline);value.checks[key]=true;if(completedStep(value)<SAVE_STEP[key])continue;
+   value.scope={...value.scope,seconds:confirmedAt[key]??value.scope.seconds};value.note=session.note;value.deferred=false;value.step=completedStep(value);
+   await writeKept(value);if(dead||!allowed())return;
+  }
+ }
+ // Serialised: confirmations made during a write are saved by the next pass, in SAVE_ORDER.
+ function flush(){
+  if(flushing){flushAgain=true;return flushing}
+  flushing=(async()=>{try{do{flushAgain=false;await flushOnce()}while(flushAgain&&!dead)}catch{}finally{flushing=null;if(!dead){cache();refreshGuard()}}})();
+  refreshContinuous();return flushing;
+ }
+ function confirmChecks(keys,index){
+  if(!confirmable())return;const times=currentComparison().excerpts;
+  for(const key of keys){if(session.checks[key])continue;session.checks[key]=true;const sync=SEGMENT_SYNC.indexOf(key);confirmedAt[key]=times[sync>=0?sync:index]}
+  complete=false;cache();refreshContinuous();void flush();
+ }
+ // Removing a confirmation also removes the ones that depend on it, as the server does.
+ function unconfirmCheck(key){
+  if(!confirmable()||!session.checks[key])return;session.checks[key]=false;
+  const at=STEPS.findIndex(([,keys])=>keys.includes(key));if(at>=0)for(const [,keys]of STEPS.slice(at+1))for(const downstream of keys)session.checks[downstream]=false;
+  if(at>=0&&at<2)session.checks.hdr=false;
+  complete=false;cache();refreshContinuous();void flush();
+ }
+ async function saveNote(){await flush();if(dead||!allowed()||session.note===baseline.note)return;const value=clone(baseline);value.note=session.note;value.step=completedStep(value);try{await writeKept(value)}catch{}}
  function saveReasons(){
   if(!loaded)return ['Počkej na načtení průběhu posouzení.'];
   if(stale)return ['Soubory se změnily. Zavři detail a otevři aktuální film.'];
@@ -197,30 +245,10 @@ export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openA
   try{const result=await postSession(value);if(result){updateChecks();refreshObservations();updateSaveButton()}}catch{}
  }
  function guidedDefaults(){try{return guidedExcerptTimes(Math.min(item.durationA,item.durationB))}catch{return [0,0,0]}}
- const currentComparison=()=>session.comparison||{mode:'guided-ears',swapEars:false,excerpts:guidedDefaults()};
- const validGuidedComparison=value=>!!value&&['guided-ears','guided-sequential'].includes(value.mode)&&typeof value.swapEars==='boolean'&&Array.isArray(value.excerpts)&&value.excerpts.length===3&&value.excerpts.every((seconds,i)=>Number.isFinite(seconds)&&seconds>=0&&seconds+12<=Math.min(item.durationA,item.durationB)&&(i===0||seconds>value.excerpts[i-1]));
+ const currentComparison=()=>session.comparison||{mode:'guided-switch',swapEars:false,excerpts:guidedDefaults()};
  function setComparison(value){
   if(!allowed()||!value)return;const next={mode:value.mode,swapEars:value.swapEars,excerpts:Array.isArray(value.excerpts)?[...value.excerpts]:[]};
-  if(JSON.stringify(session.comparison??null)===JSON.stringify(next))return;session.comparison=next;clearForComparison(session);complete=false;cache();updateChecks();updateSaveButton();continuousView?.refresh({session,observations,allowed:allowed(),scopeValid,hdrRequired});
- }
- async function saveContinuous(){
-  const required=['preparation','image',...(hdrRequired?['hdr']:[]),'audio','syncStart','syncMiddle','syncEnd'];
-  if(!allowed()||!validPair()||!scopeValid||!validGuidedComparison(session.comparison)||!required.every(key=>session.checks[key])||hdrRequired&&!deviceSatisfied(session,{hdr:true})){
-   showWarning('Vyber platný pár a tři úseky, zadej zařízení pro kontrolu HDR a výslovně potvrď všechny oblasti.');return;
-  }
-  const desired=clone(session);desired.comparison ||= currentComparison();const times=desired.comparison.excerpts;try{
-   await persistIdentity();if(dead)return;
-   for(const [step,keys]of [[1,['preparation']],[2,['image',...(hdrRequired?['hdr']:[])]],[3,['audio']]]){
-    if(keys.every(key=>baseline.checks[key]))continue;const value=clone(session);value.checks=clone(baseline.checks);for(const key of keys)value.checks[key]=desired.checks[key];value.step=Math.max(baseline.step,step);value.note=desired.note;value.deferred=false;await postSession(value);if(dead)return;
-   }
-   for(const [i,key]of ['syncStart','syncMiddle','syncEnd'].entries()){
-    const old=observations[key],same=baseline.checks[key]&&old&&old.scope?.seconds===times[i]&&JSON.stringify(old.comparison??null)===JSON.stringify(desired.comparison);
-    if(same)continue;const value=clone(session);value.scope.seconds=times[i];value.checks=clone(baseline.checks);value.checks[key]=desired.checks[key];value.step=i===2?4:3;value.note=desired.note;value.deferred=false;await postSession(value);if(dead)return;
-   }
-   if(!dead){if(complete&&session.step===4&&!sessionDirty())renderStep();else continuousView?.refresh({session,observations,allowed:allowed(),scopeValid,hdrRequired})}
-  }catch{
-   if(!dead){const committed=clone(baseline);session={...committed,...desired,step:committed.step,checks:{...committed.checks,...desired.checks}};cache();continuousView?.refresh({session,observations,allowed:allowed(),scopeValid,hdrRequired});}
-  }
+  if(JSON.stringify(session.comparison??null)===JSON.stringify(next))return;session.comparison=next;clearForComparison(session);complete=false;cache();updateChecks();updateSaveButton();if(continuousView)void flush();
  }
  const observationText=key=>{const saved=observations[key];if(!saved)return tr('Kontrola zatím není uložená.');return saved.scope.seconds===null?tr('Uloženo bez času kontrolovaného úseku.'):tr('Uloženo v čase:')+' '+Number(saved.scope.seconds).toFixed(2)+' s'};
  function refreshObservations(){for(const n of root.querySelectorAll('[data-observation]'))n.textContent=observationText(n.dataset.observation);for(const b of root.querySelectorAll('[data-checkpoint]'))b.dataset.invalid=String(session.checks[b.dataset.checkpoint]===baseline.checks[b.dataset.checkpoint]);refreshGuard()}
@@ -241,8 +269,20 @@ export function mountReviewWorkflow(host,item,{api,canWrite,openComparison,openA
  function renderStep(){
   if(dead||!session)return;clearTools();steps.replaceChildren();main.replaceChildren(warning);root.dataset.step=String(session.step);
   for(const [i,[title]] of STEPS.entries()){const keys=stepChecks(i),b=button(title,()=>{if(!allowed()||i>baseline.step)return;session.step=i;cache();renderStep()});b.classList.add('workflow-step');b.setAttribute('aria-current',i===session.step?'step':'false');b.dataset.workflowWrite='';b.dataset.invalid=String(i>baseline.step);const number=make('span','workflow-number',keys.length&&keys.every(key=>session.checks[key])?'✓':String(i+1));b.prepend(number);steps.append(b)}
-  const continuous=!!openGuidedComparison&&session.method==='review'&&session.step<4;
-  if(continuous){root.dataset.continuousReview='on';sidebar.hidden=true;renderPreparation();main.append(preparationPanel);const tools=make('div','workflow-tools');main.append(tools);const comparison=currentComparison();if(!session.comparison){session.comparison=clone(comparison);clearForComparison(session);complete=false;cache()}continuousView=mountContinuousReview(tools,{item,session,observations,hdrRequired,tr,openGuidedComparison,playerOptions:{scope:session.scope,comparison,excerptTimes:comparison.excerpts,canInteract:allowed,beforePreview,tracks,preparation,onScopeChange:setScope,onScopeValidityChange:setScopeValidity,onPreparation:observePreparation,onPlaybackState:()=>{},onExternalReview:()=>changeMethod('external')},onCheck:(key,value)=>{session.checks[key]=value;if(!value){const at=STEPS.findIndex(([,keys])=>keys.includes(key));for(const [,keys]of STEPS.slice(at+1))for(const downstream of keys)session.checks[downstream]=false;complete=false}cache();updateChecks();updateSaveButton()},onNote:value=>{session.note=value;cache();refreshGuard()},onDevice:value=>{session.device=value;clearForIdentity(session);complete=false;cache();updateChecks()},onMethod:changeMethod,onScope:setScope,onComparison:setComparison,onSave:saveContinuous,onDraft:deferred=>saveDraft(deferred),onPreparation:observePreparation,onExternalReview:()=>changeMethod('external')});cache();refreshGuard();return;}
+  const continuous=!!openGuidedComparison&&session.method==='review';onLayout(continuous?'single-pass':'steps');
+  if(continuous){
+   root.dataset.continuousReview='on';sidebar.hidden=true;const tools=make('div','workflow-tools');main.append(tools);
+   // A review saved before the guided metadata keeps its evidence; only a fresh one records the guided context.
+   const legacy=!session.comparison&&!!baseline&&['image','hdr','audio',...SEGMENT_SYNC].some(key=>baseline.checks[key]);
+   if(!session.comparison&&!legacy){session.comparison=clone(currentComparison());clearForComparison(session);complete=false;cache()}
+   const comparison=session.comparison||currentComparison();
+   continuousView=mountContinuousReview(tools,{item,session,hdrRequired,tr,formatBytes,openGuidedComparison,
+    playerOptions:{scope:session.scope,comparison,excerptTimes:comparison.excerpts,canInteract:playable,beforePreview,tracks,preparation,onScopeValidityChange:setScopeValidity},
+    onConfirm:confirmChecks,onUnconfirm:unconfirmCheck,onDevice:value=>{session.device=value;clearForIdentity(session);complete=false;cache();refreshContinuous()},
+    onNote:value=>{session.note=value;cache();refreshContinuous()},onSaveNote:saveNote,onDefer:async()=>{await flush();await saveDraft(true)},
+    onReject,onApprove,onApproveOnly:()=>onApproveOnly(revision),onNext,onChrome,onScope:setScope,onComparison:setComparison,onPreparation:observePreparation,onExternalReview:()=>changeMethod('external')});
+   cache();refreshGuard();return;
+  }
   root.dataset.continuousReview='off';sidebar.hidden=false;
   const title=make('h3','',STEPS[session.step][0]);title.tabIndex=-1;renderPreparation();main.append(title,preparationPanel);
   const tools=make('div','workflow-tools'),checks=make('fieldset','workflow-checks');checks.append(make('legend','','Tvoje kontrola'));

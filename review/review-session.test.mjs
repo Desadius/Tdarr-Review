@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createReviewSessionStore,emptyReviewSession,publicReviewSession,ReviewSessionError,reviewRequirements,sanitizeReviewSession} from './review-session.mjs';
+import {completedStep} from './public/review-rules.js';
 
 const ID='a'.repeat(24),SNAPSHOT='b'.repeat(64),OTHER='c'.repeat(64);
 const checks={preparation:true,image:true,audio:true,syncStart:true,syncMiddle:true,syncEnd:true,hdr:true};
@@ -168,4 +169,34 @@ test('failed durable save rolls back the draft and leaves the queue usable',asyn
  let broken=true;const {write,store,saved}=fixture({save:()=>{if(broken)throw Error('disk write failed')}});
  await assert.rejects(write(emptyReviewSession()),/disk write failed/);await store.idle();assert.equal(store.get(ID,SNAPSHOT).revision,0);assert.equal(store.busy,false);assert.equal(saved.length,0);
  broken=false;const stored=await write(emptyReviewSession());assert.equal(stored.revision,1);assert.equal(saved.length,1);
+});
+
+test('the switch listening mode is allowlisted, and changing to it clears the guided checks',async()=>{
+ const comparison={mode:'guided-switch',swapEars:false,excerpts:[5,45,85]};
+ assert.deepEqual(sanitizeReviewSession({...emptyReviewSession(),comparison}).comparison,comparison);
+ const {complete,write}=fixture();let current=await complete({comparison:{...comparison,mode:'guided-ears'}});
+ assert.equal(current.complete,true);
+ current=await write({...current.session,comparison});
+ assert.deepEqual(current.session.comparison,comparison);assert.equal(current.complete,false);
+ for(const key of ['image','audio','syncStart','syncMiddle','syncEnd'])assert.equal(current.session.checks[key],false);
+});
+
+test('one confirmation per write in review order completes the review with each sync bound to its excerpt',async()=>{
+ const {write}=fixture(),excerpts=[5,45,85],comparison={mode:'guided-switch',swapEars:false,excerpts};
+ let current=await write({...emptyReviewSession(),comparison,scope:{originalIndex:1,reviewIndex:2,seconds:5}});
+ const order=[['preparation',5],['image',5],['audio',5],['syncStart',5],['syncMiddle',45],['syncEnd',85]];
+ for(const [key,seconds]of order){
+  const checks={...current.session.checks,[key]:true},session={...current.session,checks,scope:{...current.session.scope,seconds}};
+  session.step=completedStep(session);current=await write(session);
+  assert.equal(current.session.checks[key],true,`${key} is accepted on its own write`);
+ }
+ assert.equal(current.complete,true);
+ excerpts.forEach((seconds,i)=>assert.equal(current.observations[['syncStart','syncMiddle','syncEnd'][i]].scope.seconds,seconds));
+});
+
+test('a synchronisation confirmation written before audio is not kept, so the browser saves in order',async()=>{
+ const {write}=fixture();
+ let current=await write({...emptyReviewSession(),scope:{originalIndex:1,reviewIndex:2,seconds:5},checks:{preparation:true},step:1});
+ current=await write({...current.session,checks:{...current.session.checks,image:true,syncStart:true},step:2});
+ assert.equal(current.session.checks.image,true);assert.equal(current.session.checks.syncStart,false);
 });
