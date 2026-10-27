@@ -6,6 +6,16 @@ Changes merged since the last release are listed under Unreleased below and as f
 
 ## Unreleased
 
+## 2.4.0 — 2026-10-27
+
+### Before updating
+
+- **Reverting to 2.3.0 drops reviews saved in the single pass.** Reviews saved after the update use the new Switch listening mode, which 2.3.0 does not accept: on the older image they show as not started and their **Approve** decisions no longer count. Replace films approved after the update before reverting, or review them again on the older image. Reviews saved before the update are unaffected.
+
+### Changes
+
+- The in-app review is now a single pass over the three excerpts: the picture fills the screen, each excerpt plays once with a new Switch listening mode (A toggles original ↔ transcode without a break), a prompt after each excerpt takes the picture, sound and sync confirmations by key, every confirmation is saved at once in review order, a reopened film continues at the first unconfirmed excerpt, and the decision (S approve, Shift+S approve and replace, Z reject, N next film) ends with the next film of the strip. Guided excerpts use the background-prepared Detail clips, and background preparation favours the films after the one under review ([guided comparison](docs/GUIDED-COMPARISON.md)).
+
 ## 2.3.0 — 2026-10-27
 
 ### Before updating
