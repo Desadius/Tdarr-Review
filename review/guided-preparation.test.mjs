@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {guidedExcerptTimes,decodeGuidedPCM,prepareGuidedExcerpts} from './public/guided-preparation.js';
+import {defaultPreviewPlan} from './preview-plan.mjs';
 
 test('three editable excerpts retain the actual film time and a full bounded interval',()=>{
- assert.deepEqual(guidedExcerptTimes(120),[2.16,54,102.6]);
+ assert.deepEqual(guidedExcerptTimes(120),[2,54,102]);
  assert.deepEqual(guidedExcerptTimes(120,[0,20,108]),[0,20,108]);
  assert.throws(()=>guidedExcerptTimes(11),/krátký/);
  assert.throws(()=>guidedExcerptTimes(120,[0,1,109]),/úsek/);
@@ -40,4 +41,17 @@ test('stale preparation never publishes a ready result or starts another encoder
  const packet={pcm:Buffer.alloc(4).toString('base64'),sampleRate:48000,frames:1};
  await assert.rejects(prepareGuidedExcerpts({times:[1,30,60],scope:{originalIndex:1,reviewIndex:2},snapshot:'fixture',current:()=>current,onState:value=>states.push(value),load:async request=>{calls.push(request);current=false;return {original:packet,review:packet}}}),/změnil/);
  assert.equal(calls.length,1);assert.ok(!states.some(rows=>rows.some(x=>x.status==='ready')));
+});
+test('default excerpt times are the 2/50/95 % times the server prepares in the background',()=>{
+ const tracks=[{index:1,codec_type:'audio',codec_name:'aac',channels:2,tags:{language:'ces'}}];
+ for(const duration of [120,5400.4,7200,9137.917]){
+  const plan=defaultPreviewPlan({itemId:'a'.repeat(24),snapshot:'b'.repeat(64),durationA:duration,durationB:duration,originalTracks:tracks,reviewTracks:tracks});
+  const prepared=new Set(plan.requests.filter(request=>request.mode==='av'&&request.profile==='detail').map(request=>request.seconds));
+  for(const seconds of guidedExcerptTimes(duration))assert.ok(prepared.has(seconds),`${duration} s: ${seconds} is prepared in the background`);
+ }
+});
+test('guided preparation loads the detail video profile used to check the picture',async()=>{
+ const packet={pcm:Buffer.alloc(4).toString('base64'),sampleRate:48000,frames:1},profiles=[];
+ await prepareGuidedExcerpts({times:[1,30,60],scope:{originalIndex:1,reviewIndex:2},snapshot:'fixture',load:async request=>{if(request.mode==='av')profiles.push(request.previewProfile);return request.mode==='listen'?{original:packet,review:packet}:{original:'video-a',review:'video-b'}}});
+ assert.deepEqual(profiles,['detail','detail','detail']);
 });

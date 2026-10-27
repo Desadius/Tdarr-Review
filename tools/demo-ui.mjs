@@ -31,10 +31,15 @@ export function scenario(){
  return {items,reviewSessions,approvals:{[items[4].id]:{reviewRevision:3,approvedAt:'2026-10-18T11:00:00Z'}},previews:{[items[1].id]:{snapshot:items[1].snapshot,state:'running',ready:1,total:4,jobs:[{status:'running'}]}}};
 }
 
-// Optional browser-side switches, read from the page URL: layout=gallery, mode=frames, panel=closed, focus=on.
+// Optional browser-side switches, read from the page URL: layout=gallery, mode=frames, panel=closed, focus=on,
+// keys=Enter,? (pressed in the single pass in turn) and still=off. The demo has no FFmpeg, so the single-pass stage
+// shows the synthetic test frame as a still in place of the excerpt video.
 const DRIVER=`(()=>{const q=new URLSearchParams(location.search),wait=ms=>new Promise(r=>setTimeout(r,ms));setTimeout(async()=>{
  if(q.get('layout')==='gallery'){const r=document.querySelector('input[name=layout][value=gallery]');if(r){r.checked=true;r.dispatchEvent(new Event('change',{bubbles:true}));r.click()}}
  if(q.get('mode')==='frames'){[...document.querySelectorAll('button')].find(n=>/Statické snímky|Still frames/.test(n.textContent))?.click();await wait(400);document.querySelector('.workflow-tools form.comparison-controls')?.requestSubmit()}
+ const film=/film=([a-f0-9]{24})/.exec(location.hash)?.[1],pair=document.querySelector('.single-pass .guided-pair');
+ if(film&&pair&&q.get('still')!=='off'){const frame=await fetch('/api/items/'+film+'/frames',{method:'POST',body:'{}'}).then(r=>r.json());pair.style.background='#000 center/contain no-repeat url(data:image/png;base64,'+frame.original+')'}
+ for(const key of (q.get('keys')||'').split(',').filter(Boolean)){document.querySelector('.single-pass')?.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true}));await wait(300)}
  await wait(400);if(q.get('panel')==='closed')document.querySelector('[data-panel-toggle]')?.click();if(q.get('focus')==='on')document.querySelector('[data-focus-toggle]')?.click();
 },1200)})();`;
 

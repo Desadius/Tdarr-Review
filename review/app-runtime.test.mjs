@@ -239,7 +239,7 @@ test('a mapped Sonarr file cannot be source-checked without an explicit saved ro
   const fixture=await appFixture(language,{itemsData:{items:[reviewItem],history:[{id:'history',title:'Past film',action:'reject',status:'success',time:'2026-10-16T10:00:00Z',rejectionReason:reason}]},routes:{['/api/items/'+reviewItem.id+'/review-session']:{data:session},['/api/items/'+reviewItem.id+'/audio-compare']:{data:{original:[{index:1,label:'Original'}],review:[{index:2,label:'Review'}]}},['/api/items/'+reviewItem.id+'/reject']:{data:{ok:true}}}}),dom=fixture.document;
   const history=dom.getElementById('history');assert.ok(history.textContent.includes((language==='en'?'Reason: ':'Důvod: ')+reason));assert.equal(history.querySelectorAll('img').length,0);
   const inspect=dom.querySelectorAll('button').find(n=>n.getAttribute('aria-label')===(language==='en'?'Review Fixture film':'Posoudit Fixture film'));assert.ok(inspect);await inspect.emit('click');for(let i=0;i<4;i++)await flush();
-  assert(dom.querySelectorAll('[data-check]').length>0);assert(dom.querySelectorAll('[data-check]').every(n=>n.checked===false));
+  const chips=dom.querySelectorAll('[data-review-check]');assert(chips.length>0);assert(chips.every(n=>n.dataset.state==='empty'),'opening confirms nothing');
   const reject=dom.getElementById('detailActions').querySelector('button');assert.equal(reject.disabled,false);await reject.emit('click');assert.equal(dom.getElementById('confirm').open,true);
   await dom.getElementById('commit').emit('click');assert.ok(dom.getElementById('rejectReason').validationMessage);assert.equal(fixture.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,0);
   dom.getElementById('rejectReason').value=reason;await dom.getElementById('rejectReason').emit('input');await dom.getElementById('commit').emit('click');await dom.getElementById('confirm').close('confirm');for(let i=0;i<4;i++)await flush();
@@ -321,15 +321,17 @@ test('a mapped Sonarr file cannot be source-checked without an explicit saved ro
   const routes={};for(const item of [reviewItem,second]){routes['/api/items/'+item.id+'/review-session']={data:blank(item)};routes['/api/items/'+item.id+'/audio-compare']={data:{original:[],review:[]}}}
   const f=await appFixture(language,{itemsData:{items:[reviewItem,second],reviewSessions:{[reviewItem.id]:blank(reviewItem),[second.id]:blank(second)}},routes}),dom=f.document,settle=async()=>{for(let i=0;i<6;i++)await flush()};
   const inspect=dom.querySelectorAll('button').find(n=>n.getAttribute('aria-label')===(en?'Review Fixture film':'Posoudit Fixture film'));await inspect.emit('click');await settle();
-  const strip=dom.getElementById('filmStrip'),entry=id=>strip.querySelector('[data-film="'+id+'"]'),check=()=>dom.getElementById('detailBody').querySelector('[data-check="preparation"]');
+  const strip=dom.getElementById('filmStrip'),entry=id=>strip.querySelector('[data-film="'+id+'"]'),stage=()=>dom.getElementById('detailBody').querySelector('.single-pass');
+  const press=key=>{for(const fn of stage().events.get('keydown')||[])fn({key,target:stage(),preventDefault(){},stopPropagation(){}})},note=()=>stage().querySelector('textarea');
   assert.equal(strip.hidden,false);assert.equal(strip.querySelectorAll('.film-strip-item').length,2);assert.equal(entry(reviewItem.id).getAttribute('aria-current'),'true');
-  const box=check();box.checked=true;await box.emit('change');
+  assert.match(dom.getElementById('filmDetail').className,/single-pass-detail/,'the review opens as the single pass');
+  press('x');note().value='Draft note';await note().emit('input');
   await entry(second.id).emit('click');await settle();
   assert.equal(dom.getElementById('detailTitle').textContent,'Second film');assert.equal(entry(second.id).getAttribute('aria-current'),'true');
-  assert.equal(check().checked,false,'checks never carry over to another film');
+  assert.ok(stage().querySelectorAll('[data-review-check]').every(n=>n.dataset.state==='empty'),'checks never carry over to another film');
   assert.match(entry(reviewItem.id).textContent,en?/Unsaved changes|Draft/:/Rozpracované změny/);
   await entry(reviewItem.id).emit('click');await settle();
-  assert.equal(dom.getElementById('detailTitle').textContent,'Fixture film');assert.equal(check().checked,true,'the draft comes back');
+  press('x');assert.equal(dom.getElementById('detailTitle').textContent,'Fixture film');assert.equal(note().value,'Draft note','the draft comes back');
   entry(reviewItem.id).onkeydown({key:'ArrowRight',preventDefault(){}});assert.equal(dom.activeElement?.dataset?.film,second.id,'arrow keys move along the strip');
   assert.equal(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,0,'switching saves nothing');
  });
@@ -369,7 +371,7 @@ test('a mapped Sonarr file cannot be source-checked without an explicit saved ro
   const f=await appFixture(language,{itemsData:{items:[reviewItem],reviewSessions:{[reviewItem.id]:record},approvals:{}},routes:{['/api/items/'+reviewItem.id+'/review-session']:{data:record},['/api/items/'+reviewItem.id+'/audio-compare']:{data:{original:[],review:[]}},['/api/items/'+reviewItem.id+'/approval']:{data:{ok:true,approval:{reviewRevision:3}}}}}),dom=f.document;
   const inspect=dom.querySelectorAll('button').find(n=>n.getAttribute('aria-label')===(en?'Review Fixture film':'Posoudit Fixture film'));await inspect.emit('click');for(let i=0;i<6;i++)await flush();
   const only=dom.querySelector('[data-workflow-approve-only]'),replace=dom.querySelector('[data-workflow-approve]');
-  assert.ok(only&&replace);assert.equal(only.textContent,en?'Approve':'Schválit');assert.match(replace.textContent,en?/Approve and replace/:/Schválit a nahradit/);
+  assert.ok(only&&replace);assert.equal(only.querySelector('span').textContent,en?'Approve':'Schválit');assert.match(replace.textContent,en?/Approve and replace/:/Schválit a nahradit/);
   assert.equal(only.disabled,false);
   await replace.emit('click');assert.equal(dom.getElementById('confirm').open,true);await dom.getElementById('confirm').close('cancel');for(let i=0;i<4;i++)await flush();
   assert.equal(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,0,'cancelling the replacement dialog records nothing');
@@ -378,13 +380,26 @@ test('a mapped Sonarr file cannot be source-checked without an explicit saved ro
   assert.deepEqual(writes.map(c=>[c.route,c.body]),[['/api/items/'+reviewItem.id+'/approval',{snapshot:reviewItem.snapshot,reviewRevision:3}]]);
   assert.equal(dom.getElementById('filmDetail').open,false,'approve only returns to the overview');
  });
+ test('after Approve in the single pass the next undecided film of the strip opens',async()=>{
+  const checks=Object.fromEntries(['preparation','image','audio','syncStart','syncMiddle','syncEnd'].map(key=>[key,true])),second={...reviewItem,id:'c'.repeat(24),snapshot:'d'.repeat(64),title:'Second film'};
+  const record={version:1,snapshot:reviewItem.snapshot,revision:3,requirements:{hdr:false},complete:true,observations:{},session:{method:'review',device:'',step:4,scope:{originalIndex:1,reviewIndex:2,seconds:10},checks,note:'',deferred:false}};
+  const blank={...record,snapshot:second.snapshot,revision:0,complete:false,session:{...record.session,step:0,checks:Object.fromEntries(Object.keys(checks).map(key=>[key,false]))}};
+  const routes={['/api/items/'+reviewItem.id+'/review-session']:{data:record},['/api/items/'+second.id+'/review-session']:{data:blank},['/api/items/'+reviewItem.id+'/approval']:{data:{ok:true,approval:{reviewRevision:3}}}};
+  for(const item of [reviewItem,second])routes['/api/items/'+item.id+'/audio-compare']={data:{original:[],review:[]}};
+  const f=await appFixture('en',{itemsData:{items:[reviewItem,second],reviewSessions:{[reviewItem.id]:record,[second.id]:blank},approvals:{}},routes}),dom=f.document,settle=async()=>{for(let i=0;i<6;i++)await flush()};
+  await dom.querySelectorAll('button').find(n=>n.getAttribute('aria-label')==='Review Fixture film').emit('click');await settle();
+  await dom.querySelector('[data-workflow-approve-only]').emit('click');await settle();
+  assert.equal(dom.getElementById('filmDetail').open,true,'the review continues');
+  assert.equal(dom.getElementById('detailTitle').textContent,'Second film');
+  assert.deepEqual(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).map(c=>c.route),['/api/items/'+reviewItem.id+'/approval'],'opening the next film saves nothing');
+ });
  test('while a replacement runs, another film keeps its review controls and the film in the operation is locked',async()=>{
   const second={...reviewItem,id:'c'.repeat(24),snapshot:'d'.repeat(64),title:'Second film'};
   const blank=item=>({version:1,snapshot:item.snapshot,revision:1,requirements:{hdr:false},complete:false,observations:{},session:{method:'review',device:'',step:0,scope:{originalIndex:1,reviewIndex:2,seconds:10},checks:Object.fromEntries(['preparation','image','audio','syncStart','syncMiddle','syncEnd'].map(key=>[key,false])),note:'',deferred:false}});
   const routes={};for(const item of [reviewItem,second]){routes['/api/items/'+item.id+'/review-session']={data:blank(item)};routes['/api/items/'+item.id+'/audio-compare']={data:{original:[],review:[]}}}
   const f=await appFixture('cs',{itemsData:{items:[reviewItem,second],active:{id:reviewItem.id,title:reviewItem.title,action:'approve',stage:'Kopíruji',started:Date.now()},restorePending:1,reviewSessions:{[reviewItem.id]:blank(reviewItem),[second.id]:blank(second)}},routes}),dom=f.document,settle=async()=>{for(let i=0;i<6;i++)await flush()};
-  const open=async title=>{if(dom.getElementById('filmDetail').open)await dom.getElementById('filmDetail').close();await dom.querySelectorAll('button').find(n=>n.getAttribute('aria-label')==='Posoudit '+title).emit('click');await settle();return dom.getElementById('detailBody').querySelector('[data-check="preparation"]')};
-  assert.equal((await open('Second film')).disabled,false,'another film stays reviewable');
+  const open=async title=>{if(dom.getElementById('filmDetail').open)await dom.getElementById('filmDetail').close();await dom.querySelectorAll('button').find(n=>n.getAttribute('aria-label')==='Posoudit '+title).emit('click');await settle();return dom.getElementById('detailBody').querySelector('.single-pass')};
+  assert.match((await open('Second film'))?.textContent||'',/Porovnáváš správný originál/,'another film stays reviewable');
   assert.equal(await open('Fixture film'),null,'the film being replaced shows no checklist');assert.match(dom.getElementById('detailBody').textContent,/Tento film se právě nahrazuje nebo čeká v dávce/);
   assert.equal(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,0);
  });

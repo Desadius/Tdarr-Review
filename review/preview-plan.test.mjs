@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {defaultPreviewPlan,normalizePreviewLanguage} from './preview-plan.mjs';
+import {defaultPreviewPlan,normalizePreviewLanguage,previewCandidateOrder} from './preview-plan.mjs';
 const ID='a'.repeat(24),SNAPSHOT='b'.repeat(64);
 const audio=(index,language='eng',extra={})=>({index,codec_type:'audio',codec_name:'dts',channels:6,tags:{language},disposition:{},...extra});
 const input=(extra={})=>({itemId:ID,snapshot:SNAPSHOT,durationA:1000,durationB:1010,originalTracks:[audio(1)],reviewTracks:[audio(2)],rendererVersion:'renderer-test',...extra});
@@ -91,4 +91,11 @@ test('other languages are opt-in after ordered choices; ambiguous present prefer
 test('shared language normalization accepts preference aliases and rejects unknown or malformed language labels',()=>{
  for(const [values,expected]of [[['cs','cz','cze','ces','CS-CZ'],'ces'],[['en','eng','EN-us'],'eng'],[['sk','slo','slk'],'slk'],[['jpn','ja'],'jpn'],[['ara'],'ara']])for(const value of values)assert.equal(normalizePreviewLanguage(value),expected);
  for(const value of [null,42,'','und','unknown','foo','__proto__','constructor','qaa'])assert.equal(normalizePreviewLanguage(value),null);
+});
+
+test('background preparation starts with the film under review and continues with the films after it',()=>{
+ const items=['a','b','c','d'].map(id=>({id}));
+ assert.deepEqual(previewCandidateOrder(items,'c').map(item=>item.id),['c','d','a','b']);
+ assert.deepEqual(previewCandidateOrder(items,null).map(item=>item.id),['a','b','c','d']);
+ assert.deepEqual(previewCandidateOrder(items,'gone').map(item=>item.id),['a','b','c','d']);
 });

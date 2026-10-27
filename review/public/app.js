@@ -62,7 +62,7 @@ document.addEventListener('review-language-change',()=>{try{sessionStorage.setIt
 // Records the decision only; the film then waits for an explicitly confirmed (batch) replacement.
 async function approveOnly(item,revision){
  if(actionInFlight||!caps(item).approveOnly||latest?.reviewSessions?.[item.id]?.revision!==revision)return;
- try{actionInFlight=true;updateGuards();await api(`/api/items/${item.id}/approval`,{snapshot:item.snapshot,reviewRevision:revision});$('filmDetail').close();lastRender='';await load()}
+ try{actionInFlight=true;updateGuards();await api(`/api/items/${item.id}/approval`,{snapshot:item.snapshot,reviewRevision:revision});const next=nextFilmAfter(item.id);lastRender='';await load();afterDecision(item.id,next)}
  catch(e){error(e)}finally{actionInFlight=false;updateGuards()}
 }
 function ask(item,action){
@@ -177,10 +177,18 @@ $('confirm').addEventListener('close',async()=>{
   else if(request.action==='defer')await api('/api/recovery/cases/'+request.record.id+'/defer',{confirm:true,revision:request.revision,note:reason});
   else await api(`/api/items/${request.item.id}/${request.action}`,{snapshot:request.item.snapshot,reviewRevision:request.action==='approve'?request.reviewRevision:undefined,acceptDuration:request.acceptDuration===true,reason:['reject','replace'].includes(request.action)?reason:undefined});
   if(request.item)drafts.delete(request.item.id+':'+request.action);
-  $('filmDetail').close();lastRender='';await load();await loadRequests(true);
+  const next=['approve','reject'].includes(request.action)?nextFilmAfter(request.item.id):null;
+  if(['approve','reject'].includes(request.action))afterDecision(request.item.id,next);else $('filmDetail').close();lastRender='';await load();await loadRequests(true);
  }catch(e){error(e)}finally{actionInFlight=false;updateGuards()}
 });
 
+// After a decision on the open film the review continues with the next undecided film of the strip.
+function nextFilmAfter(id){const items=filteredItems().filter(x=>!x.identityChanged),i=items.findIndex(x=>x.id===id);return [...items.slice(i+1),...items.slice(0,Math.max(0,i))].find(x=>x.id!==id&&x.status==='ready'&&!latest?.approvals?.[x.id]&&!caps(x).inOperation)?.id||null}
+function afterDecision(id,next){if(next&&$('filmDetail').open&&ui.detail?.kind==='review'&&ui.detail.id===id&&latest?.items.some(x=>x.id===next))openDetail('review',next);else $('filmDetail').close()}
+function openNextFilm(id){const next=nextFilmAfter(id);if(next)openDetail('review',next);else $('filmDetail').close()}
+// The single pass hides the heading, tabs and film strip; they slide in at the window edges or with Escape.
+function setChrome(open){const dialog=$('filmDetail');dialog.classList.toggle('chrome-open',!!open);if(open)$('detailTabs-'+ui.tab)?.focus({preventScroll:true})}
+$('filmDetail').addEventListener('mousemove',e=>{const dialog=$('filmDetail');if(!dialog.classList.contains('single-pass-detail'))return;const edge=e.clientY<28||e.clientY>innerHeight-28;if(edge)dialog.classList.add('chrome-open');else if(e.clientY>160&&e.clientY<innerHeight-160&&!dialog.querySelector('.detail-chrome:focus-within,#filmStrip:focus-within'))dialog.classList.remove('chrome-open')});
 function filteredItems(){const query=$('reviewSearch').value.trim().toLocaleLowerCase();return (latest?.items||[]).filter(x=>x.title.toLocaleLowerCase().includes(query))}
 function updateSelection(){
  const eligible=filteredItems().filter(x=>caps(x).select),all=eligible.length>0&&eligible.every(x=>selected.has(x.id));
@@ -308,7 +316,8 @@ function detailReview(item,tab){
    isApproved:()=>!!latest?.approvals?.[item.id],
    onSession:record=>{if(!latest)return;latest.reviewSessions||={};latest.reviewSessions[item.id]=record;updateGuards()},
    onPreparation:record=>{if(!latest||record?.snapshot!==item.snapshot)return;latest.previews||={};latest.previews[item.id]=record;renderAttention()},
-   onApprove:()=>ask(item,'approve'),onApproveOnly:revision=>approveOnly(item,revision),onReject:()=>ask(item,'reject'),onDeferred:()=>{$('filmDetail').close();renderAttention()}});return;
+   onApprove:()=>ask(item,'approve'),onApproveOnly:revision=>approveOnly(item,revision),onReject:()=>ask(item,'reject'),onDeferred:()=>{$('filmDetail').close();renderAttention()},
+   onNext:()=>openNextFilm(item.id),onLayout:mode=>{$('filmDetail').classList.toggle('single-pass-detail',mode==='single-pass');setChrome(false)},onChrome:setChrome});return;
  }
  box.replaceChildren();
  if(tab==='overview'){
@@ -413,7 +422,7 @@ function renderFilmStrip(){
   return b}));
  strip.querySelector('[aria-current=true]')?.scrollIntoView?.({block:'nearest',inline:'nearest'});
 }
-function renderDetailTab(){if(!ui.detail)return;const reviewing=ui.detail.kind==='review';if(!reviewing||ui.tab!=='review'){reviewWorkspace?.destroy();reviewWorkspace=null}const tabs=reviewing?[['review','Posouzení'],['overview','Podklady a metadata'],['recovery','Obnova'],['technical','Technické údaje']]:[['overview','Přehled'],['comparison','Porovnání'],['recovery','Obnova'],['technical','Technické údaje']];makeTabs($('detailTabs'),tabs,ui.tab,changeDetailTab);$('filmDetail').classList.toggle('reviewing',reviewing&&ui.tab==='review');$('detailBody').setAttribute('aria-labelledby','detailTabs-'+ui.tab);reviewing?detailReview(ui.detail.record,ui.tab):detailRequest(ui.detail.record,ui.tab);updateGuards()}
+function renderDetailTab(){if(!ui.detail)return;const reviewing=ui.detail.kind==='review';if(!reviewing||ui.tab!=='review'){reviewWorkspace?.destroy();reviewWorkspace=null;$('filmDetail').classList.remove('single-pass-detail','chrome-open')}const tabs=reviewing?[['review','Posouzení'],['overview','Podklady a metadata'],['recovery','Obnova'],['technical','Technické údaje']]:[['overview','Přehled'],['comparison','Porovnání'],['recovery','Obnova'],['technical','Technické údaje']];makeTabs($('detailTabs'),tabs,ui.tab,changeDetailTab);$('filmDetail').classList.toggle('reviewing',reviewing&&ui.tab==='review');$('detailBody').setAttribute('aria-labelledby','detailTabs-'+ui.tab);reviewing?detailReview(ui.detail.record,ui.tab):detailRequest(ui.detail.record,ui.tab);updateGuards()}
 function openDetail(kind,id,fromHash=false){
  const projected=kind==='request'?projectRequests(requests,latest?.items||[],Date.now()).find(p=>p.key===id):null;
  let record=kind==='review'?latest?.items.find(x=>x.id===id):requests.find(r=>r.id===projected?.id&&r.source===projected?.source);
@@ -426,7 +435,7 @@ function openDetail(kind,id,fromHash=false){
  renderDetailTab();if(!$('filmDetail').open)$('filmDetail').showModal();else $('detailTabs-'+ui.tab)?.focus({preventScroll:true});renderFilmStrip();if(!fromHash)navigate(ui.view,{[kind==='review'?'film':'case']:id,tab:ui.tab});
 }
 $('detailClose').onclick=()=>$('filmDetail').close();
-$('filmDetail').addEventListener('close',()=>{reviewWorkspace?.destroy();reviewWorkspace=null;ui.detail=null;ui.tab='review';const parsed=parseHash();if(parsed.params.has('film')||parsed.params.has('case'))navigate(ui.view,ui.view==='recovery'?{filter:ui.filter}:{})});
+$('filmDetail').addEventListener('close',()=>{reviewWorkspace?.destroy();reviewWorkspace=null;$('filmDetail').classList.remove('single-pass-detail','chrome-open');ui.detail=null;ui.tab='review';const parsed=parseHash();if(parsed.params.has('film')||parsed.params.has('case'))navigate(ui.view,ui.view==='recovery'?{filter:ui.filter}:{})});
 
 function updateGuards(){
  if(!latest)return;const c=context();

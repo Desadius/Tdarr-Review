@@ -136,3 +136,39 @@ test('suspension preserves coverage, errors are reported, and destroy detaches p
   const bad=createGuidedPlayer({context:context(),excerpts:excerpts(),sampleRate:1,preparePhase:async()=>{throw Error('sample unavailable')}});
   await bad.command('play');assert.equal(bad.snapshot().status,'error');assert.match(bad.snapshot().error,/sample unavailable/);
 });
+
+test('switch mode plays each excerpt once with both copies on one clock and stops after it',async()=>{
+  const ctx=context(),player=createGuidedPlayer({context:ctx,excerpts:excerpts(),sampleRate:1,perExcerpt:true});
+  await player.command('routing',{mode:'switch',swapEars:false});
+  assert.equal(player.snapshot().totalDuration,36);
+  await player.command('play');
+  const active=ctx.sources.filter(s=>s.started&&!s.stopped);
+  assert.equal(active.length,2,'original and transcode run together');
+  assert.deepEqual(active.map(s=>s.started),[active[0].started,active[0].started],'both start at the same clock time and offset');
+  assert.equal(player.snapshot().phase,'switch');
+  ctx.finish();await flush();
+  const state=player.snapshot();
+  assert.equal(state.status,'done');
+  assert.equal(state.excerptIndex,0,'the next excerpt waits for an explicit action');
+  assert.equal(ctx.sources.filter(s=>s.started&&!s.stopped).length,0,'nothing plays again by itself');
+  await player.command('excerpt',{index:1,play:true});
+  assert.equal(player.snapshot().excerptIndex,1);assert.equal(player.snapshot().status,'playing');
+});
+
+test('switching what is heard changes only the selection gains without moving the playhead',async()=>{
+  const ctx=context(),player=createGuidedPlayer({context:ctx,excerpts:excerpts(),sampleRate:1,perExcerpt:true});
+  await player.command('routing',{mode:'switch',swapEars:false});
+  await player.command('play');
+  const started=ctx.sources.length,before=player.snapshot(),selects=ctx.gains.filter(g=>g.links.some(link=>link.target.channels===2));
+  assert.deepEqual(selects.map(g=>g.gain.value),[1,0],'the original is heard first');
+  ctx.currentTime+=4;
+  await player.command('listen');
+  assert.equal(player.snapshot().listen,'transcode');
+  assert.deepEqual(selects.map(g=>g.gain.value),[0,1]);
+  assert.equal(ctx.sources.length,started,'no source is restarted');
+  assert.ok(ctx.sources.every(s=>!s.stopped));
+  const when=ctx.sources[0].started.when;
+  assert.equal(before.position,0);
+  assert.ok(Math.abs(player.snapshot().position-(ctx.currentTime-when))<1e-9,'the position keeps running on the same clock');
+  assert.equal(player.snapshot().status,'playing');
+});

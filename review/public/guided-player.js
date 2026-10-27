@@ -1,5 +1,6 @@
 // Guided comparison transport. All positions are on the AudioContext clock.
-export function createGuidedPlayer({context,excerpts,sampleRate=48000,onState=()=>{},preparePhase=async()=>{}}) {
+// perExcerpt stops after each excerpt ('done') instead of running all three in one pass.
+export function createGuidedPlayer({context,excerpts,sampleRate=48000,perExcerpt=false,onState=()=>{},preparePhase=async()=>{}}) {
   if (!context || !Array.isArray(excerpts) || excerpts.length!==3) throw Error('Three audio excerpts are required.');
   if (!Number.isFinite(sampleRate) || sampleRate<=0) throw Error('Invalid audio sample rate.');
   for (const excerpt of excerpts) {
@@ -15,7 +16,7 @@ export function createGuidedPlayer({context,excerpts,sampleRate=48000,onState=()
   master.connect(context.destination);
   const listeners=new Set();
   let status='idle',error=null,excerptIndex=0,phaseIndex=0,position=0;
-  let volume=.5,muted=false,routing='ears',swapEars=false;
+  let volume=.5,muted=false,routing='ears',swapEars=false,listen='original';
   let startTime=0,startPosition=0,handles=[],generation=0,destroyed=false,desiredPlaying=false;
   updateVolume();
 
@@ -24,7 +25,7 @@ export function createGuidedPlayer({context,excerpts,sampleRate=48000,onState=()
     result.getChannelData(0).set(samples);
     return result;
   }
-  function phases() { return routing==='ears' ? ['original','together','transcode'] : ['original','transcode']; }
+  function phases() { return routing==='ears' ? ['original','together','transcode'] : routing==='switch' ? ['switch'] : ['original','transcode']; }
   function phase() { return phases()[phaseIndex]; }
   function duration() { return excerpts[excerptIndex].duration; }
   function currentPosition() {
@@ -36,7 +37,7 @@ export function createGuidedPlayer({context,excerpts,sampleRate=48000,onState=()
     const totalDuration=excerpts.reduce((sum,excerpt)=>sum+excerpt.duration*count,0);
     return {status,error,excerptIndex,excerptCount:excerpts.length,phaseIndex,phase:phase(),
       position:p,duration:duration(),totalDuration,elapsed:status==='ended'?totalDuration:before+phaseIndex*duration()+p,
-      sourceTime:excerpts[excerptIndex].seconds+p,volume,muted,routing,swapEars};
+      sourceTime:excerpts[excerptIndex].seconds+p,volume,muted,routing,swapEars,listen};
   }
   function emit() {
     const state=snapshot();
@@ -53,14 +54,16 @@ export function createGuidedPlayer({context,excerpts,sampleRate=48000,onState=()
   }
   function cancel() {
     generation++;
-    for (const {source,gain,merger} of handles) {
+    for (const {source,gain,merger,select} of handles) {
       source.onended=null;
       try { source.stop(); } catch { /* A source may already have ended. */ }
-      source.disconnect();gain.disconnect();merger.disconnect();
+      source.disconnect();gain.disconnect();select?.disconnect();merger.disconnect();
     }
     handles=[];
   }
   function routeFor(name) {
+    // Switch mode runs both copies on one clock; only their selection gains change.
+    if (name==='switch') return [['original',[0,1]],['review',[0,1]]];
     if (routing==='sequential') return [[name==='transcode'?'review':'original',[0,1]]];
     const left=swapEars?1:0,right=swapEars?0:1;
     if (name==='original') return [['original',[left]]];
@@ -90,12 +93,14 @@ export function createGuidedPlayer({context,excerpts,sampleRate=48000,onState=()
         const source=context.createBufferSource(),gain=context.createGain();
         source.buffer=buffers[index][copy];
         source.connect(gain);
-        for (const channel of channels) gain.connect(merger,0,channel);
+        let select=null,output=gain;
+        if (name==='switch') { select=context.createGain();select.gain.value=selected(copy);gain.connect(select);output=select; }
+        for (const channel of channels) output.connect(merger,0,channel);
         gain.gain.setValueAtTime(0,when);
         gain.gain.linearRampToValueAtTime(1,when+fade);
         gain.gain.setValueAtTime(1,when+remaining-fade);
         gain.gain.linearRampToValueAtTime(0,when+remaining);
-        handles.push({source,gain,merger});
+        handles.push({source,gain,merger,select,copy});
         sources.push(source);
       }
       sources[0].onended=()=>{ if (ticket===generation && !destroyed) void advance(); };
@@ -106,8 +111,22 @@ export function createGuidedPlayer({context,excerpts,sampleRate=48000,onState=()
       cancel();desiredPlaying=false;status='error';error=cause instanceof Error?cause.message:String(cause);emit();
     }
   }
+  function selected(copy) { return (copy==='original')===(listen==='original') ? 1 : 0; }
+  function updateListen() {
+    const now=context.currentTime;
+    for (const {select,copy} of handles) {
+      if (!select) continue;
+      const target=selected(copy);
+      if (select.gain.linearRampToValueAtTime) {
+        select.gain.cancelScheduledValues?.(now);select.gain.setValueAtTime(select.gain.value,now);select.gain.linearRampToValueAtTime(target,now+.01);
+      } else select.gain.value=target;
+    }
+  }
   async function advance() {
     cancel();
+    if (perExcerpt && phaseIndex+1>=phases().length) {
+      position=duration();desiredPlaying=false;status='done';emit();return;
+    }
     position=0;
     if (++phaseIndex>=phases().length) { phaseIndex=0;excerptIndex++; }
     if (excerptIndex>=excerpts.length) {
@@ -131,11 +150,22 @@ export function createGuidedPlayer({context,excerpts,sampleRate=48000,onState=()
       case 'play':
         if (status==='playing') return;
         if (status==='ended') { excerptIndex=0;phaseIndex=0;position=0; }
+        if (status==='done') { phaseIndex=0;position=0; }
         await begin();return;
       case 'toggle':
         if (status==='playing') { interrupted('paused');return; }
         if (status==='ended') { excerptIndex=0;phaseIndex=0;position=0; }
+        if (status==='done') { phaseIndex=0;position=0; }
         await begin();return;
+      case 'excerpt': {
+        if (!value || !Number.isInteger(value.index)) throw Error('Invalid excerpt.');
+        cancel();excerptIndex=Math.max(0,Math.min(excerpts.length-1,value.index));
+        phaseIndex=0;position=0;status='paused';desiredPlaying=false;emit();
+        if (value.play) await begin();return;
+      }
+      case 'listen':
+        if (value!==undefined && !['original','transcode'].includes(value)) throw Error('Invalid audio routing.');
+        listen=value??(listen==='original'?'transcode':'original');updateListen();emit();return;
       case 'pause':
         if (status==='playing' || desiredPlaying) interrupted('paused');return;
       case 'stop':
@@ -164,7 +194,7 @@ export function createGuidedPlayer({context,excerpts,sampleRate=48000,onState=()
       case 'mute':
         muted=typeof value==='boolean'?value:!muted;updateVolume();emit();return;
       case 'routing': {
-        if (!value || !['ears','sequential'].includes(value.mode)) throw Error('Invalid audio routing.');
+        if (!value || !['ears','sequential','switch'].includes(value.mode)) throw Error('Invalid audio routing.');
         const resume=status==='playing'||desiredPlaying;
         cancel();routing=value.mode;swapEars=Boolean(value.swapEars);phaseIndex=0;position=0;status='paused';emit();
         if (resume) await begin();return;

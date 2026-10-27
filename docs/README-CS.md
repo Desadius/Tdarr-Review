@@ -38,4 +38,4 @@ Skóre kontroly vyjadřuje množství doložených kontrol, nikoli procentní pr
 
 V repozitáři nejsou skutečné API klíče, SSH klíče, seznamy osobních filmů, transakční protokoly ani osobní schválení oprav. Existující produkční instalace se tímto zveřejněním nemění.
 
-Nové vestavěné řízené porovnání nabízí průběžnou pracovní plochu se třemi ukázkami, ručními potvrzeními a jedním výslovným uložením; přehrávání samo nic nepotvrzuje. Pro průběh, klávesnici a limity ukázek viz [návod k řízenému porovnání](GUIDED-COMPARISON.md) a [uživatelský návod](USER-GUIDE.md#review-a-film).
+Vestavěné řízené porovnání je jeden průchod po třech úsecích přes celou obrazovku: každý úsek zazní jednou, po něm potvrdíš obraz, zvuk a synchronizaci klávesami a každé potvrzení se hned uloží; přehrávání samo nic nepotvrzuje. Pro průběh, klávesnici a limity ukázek viz [návod k řízenému porovnání](GUIDED-COMPARISON.md) a [uživatelský návod](USER-GUIDE.md#review-a-film).
