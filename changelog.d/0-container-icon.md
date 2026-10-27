@@ -1,1 +1,0 @@
-- Use the mint film-frame and approval-check PNG icon for the Unraid application template and Community Applications repository profile.

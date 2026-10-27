@@ -1,1 +1,0 @@
-- Add the [guided comparison workflow](docs/GUIDED-COMPARISON.md), with excerpt-based playback, explicit observations and server revision checks.

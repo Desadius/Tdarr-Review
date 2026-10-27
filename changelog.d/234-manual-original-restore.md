@@ -1,1 +1,0 @@
-- Add an explicitly confirmed, safely coordinated way to restore the exact quarantined original for eligible manual Recovery cases; see the [user guide](docs/USER-GUIDE.md#return-a-preserved-original).

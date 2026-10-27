@@ -1,1 +1,0 @@
-- **Download and import diagnoses need a manual refresh.** After updating, affected Recovery cases show their diagnosis as unverified until you choose **Refresh status**. Opening the page does not contact Radarr, and a failed or incomplete read remains unavailable.

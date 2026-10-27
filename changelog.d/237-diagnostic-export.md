@@ -1,1 +1,0 @@
-- Review offers an explicit, redacted single-case Diagnostic export (JSON download) for Needs attention and Deferred cases, built only from current local records with no Tdarr or Radarr request and no change to the case, notes, approval, quarantine or retention.

@@ -6,6 +6,58 @@ Changes merged since the last release are listed under Unreleased below and as f
 
 ## Unreleased
 
+## 2.3.0 — 2026-10-27
+
+### Before updating
+
+- **Download and import diagnoses need a manual refresh.** After updating, affected Recovery cases show their diagnosis as unverified until you choose **Refresh status**. Opening the page does not contact Radarr, and a failed or incomplete read remains unavailable.
+
+- **Finish every restore before reverting, then keep Recovery Off on the older image.** Reconcile or complete restore operations while running an image that supports them. Older images do not honor the Review restore fence or exact restored-edition evidence; an enabled worker could ignore an unfinished restore or reconsider the restored original. Do not delete a pending restore journal or fence to make an older image start.
+
+### Changes
+
+- Use the mint film-frame and approval-check PNG icon for the Unraid application template and Community Applications repository profile.
+
+- Add the [guided comparison workflow](docs/GUIDED-COMPARISON.md), with excerpt-based playback, explicit observations and server revision checks.
+
+- Every Recovery case under **Needs attention** now says what happened, where the film verifiably is (library, quarantine, Review result, Tdarr, Radarr) and what you can do, with the recommended action on the card and in the first tab of the detail, what each action changes, and what blocks the rest. The server computes this; **Refresh status** and **Verify the status of all cases** only read Radarr, Tdarr and the library again. A case continued by a verified follow-up is listed once. English and Czech ([user guide](docs/USER-GUIDE.md#recovery-cases-that-need-attention)).
+
+- A Recovery case whose transcoded result is already in the library, with no approval yet, can now be assessed as it is: in your own player, with a named device, explicit picture, sound and sync confirmations, and a required note. Approving it, after its own confirmation, starts the usual quarantine retention. Review says plainly that only the current copy is assessed and that approval does not prove the transcode is faithful to the original; nothing is transcoded, downloaded or moved. English and Czech ([user guide](docs/USER-GUIDE.md#assess-an-installed-copy)).
+
+- A Recovery replacement that was imported but never got a Tdarr entry now appears under **Needs attention**, and Review can hand exactly that file to Tdarr after its own confirmation: Tdarr rescans it and queues it by its own rules. Review checks the file, its stability, Tdarr workers, earlier jobs and Holds first, never releases a Hold, and asks you to confirm that you checked Tdarr before retrying an unconfirmed handoff. English and Czech ([user guide](docs/USER-GUIDE.md#hand-a-replacement-to-tdarr)).
+
+- A Recovery replacement whose Tdarr transcode ended as **Transcode error** or was skipped as **Not required** now says why: Review reads the newest error job of that exact file and shows the cause category, with the recognized decoder message for decode damage only. Review offers one retry of the transcode unless the cause is decode damage or the report cannot be read, and a replacement that Tdarr skipped as **Not required** can be assessed as an installed copy, with the disclosure that it was not transcoded. English and Czech ([user guide](docs/USER-GUIDE.md#a-failed-or-skipped-transcode)).
+
+- For import-blocked and failed-download Recovery cases, **Refresh status** now checks the exact case/movie binding and reads the movie plus a complete bounded queue page from the effective Radarr connection. Review shows only a safe diagnosis and links to the verified movie or general queue; a generic download failure is not called an import problem, and unclear or unavailable evidence stays unverified. Nothing is imported, searched, retried or removed. English and Czech ([user guide](docs/USER-GUIDE.md#recovery-cases-that-need-attention)).
+
+- Add an explicitly confirmed, safely coordinated way to restore the exact quarantined original for eligible manual Recovery cases; see the [user guide](docs/USER-GUIDE.md#return-a-preserved-original).
+
+- Review now explains approval and quarantine-retention evidence mismatches with a fresh, read-only diagnosis and a safe next step; unreadable or changed evidence remains unavailable and preserved.
+
+- Review lets signed-in users defer an eligible Recovery attention case with a required shared note, find it in a separate Deferred list and reopen it manually. A material phase, file identity or binding change restores attention. Deferral does not approve a result or change Recovery, media, quarantine or retention state.
+
+- Review offers an explicit, redacted single-case Diagnostic export (JSON download) for Needs attention and Deferred cases, built only from current local records with no Tdarr or Radarr request and no change to the case, notes, approval, quarantine or retention.
+
+- Add an optional inactive TV library path draft and read-only saved-path diagnostics; TV episode discovery and replacement authorization remain future work ([guide](docs/ADD-TV-PATHS.md)).
+
+- Prepare a separate, inactive Sonarr episode-file binding foundation with exact linked episode IDs and explicit ambiguity checks; TV discovery and processing remain unavailable.
+
+- Add Codex subagent roles and a delegation protocol for scoped implementation, independent review, and concise delivery reports.
+
+- Add an optional manual, read-only Sonarr series and episode metadata inspector. TV processing remains unavailable.
+
+- Add a manual read-only Sonarr EpisodeFile source-path check using exact configured TV path mapping and an isolated bounded worker; TV processing remains unavailable.
+
+- Claude Code and Codex share one [issue cycle and orchestration protocol](docs/agents/orchestration.md): own unfinished work first, delegation to lower-cost subagents, quiet cycles, and cleanup of an agent's own worktree and local branch after its PR is merged.
+
+- Add a manual, read-only Sonarr check that associates one selected TV episode file with exact supported Tdarr result, receipt and job evidence.
+
+- Add a manual, selected-file TV technical-facts inspection after the current Sonarr binding and supported Tdarr receipt/job are verified. The bounded probe reports allowlisted source and result metadata only; it does not establish health, approval or eligibility.
+
+- Add an offline v1 TV Review flow template and guide with conservative source checks, full decode, non-overwriting Review staging, and exact-job receipts; the TV library remains inactive until configured and separately approved.
+
+- Added read-only discovery of TV results (#271). The TV library gets a mode, off by default or discovery; in discovery a new **TV series** section lists each result by series, season and episode when its receipt, Tdarr job, source mapping and exactly one Sonarr episode file agree, and lists every other result as unbound with a reason or as binding not verified when Sonarr cannot confirm it. Nothing can approve, reject, replace or retain a TV result yet, and movie records are untouched ([user guide](docs/USER-GUIDE.md#tv-series-discovery-mode), [TV paths](docs/ADD-TV-PATHS.md#discovery-mode)). A Sonarr address without a base path (`http://sonarr:8989`) now reaches the Sonarr API in the manual inspector too.
+
 ## 2.2.0 — 2026-10-20
 
 Settings Apply clears only what a change requires and needs a Test first, every reader of Recovery's configuration and of its files in Review gives one verdict, and several internal modules were split out without a change in behaviour (the approval transaction, an importable Recovery worker with one frozen-deferral module, the Recovery authority, the review rules shared by server and browser). Read the section below before updating an existing installation.
