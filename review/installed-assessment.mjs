@@ -5,7 +5,7 @@ import {readRecoveryCaseState} from './recovery-snapshot.mjs';
 import {withReviewPaths} from './recovery-case-alias.mjs';
 import {compareIdentity,identityOf} from '../recovery/file-identity.mjs';
 import {createTdarrFileState} from '../recovery/tdarr-file-state.mjs';
-import {approvalEvidencePath,publishApproval} from '../recovery/quarantine-retention.mjs';
+import {approvalEvidencePath,approvalKey,publishApproval} from '../recovery/quarantine-retention.mjs';
 import {deviceSatisfied} from './public/review-rules.js';
 import {reviewRequirements} from './review-session.mjs';
 import {caseLibraryRoot as libraryRoot,importTime} from './recovery-case-paths.mjs';
@@ -53,26 +53,32 @@ export function createInstalledAssessment({data,getConfig,getItems,tdarr,readRow
  async function eligibility(caseId,{busy=false}={}){
   const fail=(...blockers)=>({eligible:false,blockers});
   let c;try{const read=await readRecoveryCaseState(path.join(data,'recovery','state.json'));if(read.error)return fail('installed-unverified');c=read.present?(await withReviewPaths({[caseId]:read.cases[caseId]},getConfig()?.mediaRoot))[caseId]:null;}catch{return fail('installed-unverified');}
-  if(!c||c.status!=='replacement_imported'||!c.replacementRelative||!c.replacementSourceFP||c.cleanup)return fail('installed-not-applicable');
+  const key=approvalKey(c);if(!c||c.status!=='replacement_imported'||!key||c.cleanup)return fail('installed-not-applicable');
   // The evidence must land where Recovery's retention reads it: beside Review's own library root.
   const root=libraryRoot(c);if(!root||!getConfig()?.mediaRoot||path.resolve(root)!==path.resolve(getConfig().mediaRoot))return fail('installed-unverified');
-  try{await fs.lstat(await approvalEvidencePath(root,c.replacementRelative,c.replacementSourceFP));return fail('installed-evidence-exists');}catch(e){if(e.code!=='ENOENT')return fail('installed-unverified');}
+  try{await fs.lstat(await approvalEvidencePath(root,key.relative,key.sourceFP));return fail('installed-evidence-exists');}catch(e){if(e.code!=='ENOENT')return fail('installed-unverified');}
   let copy;try{copy=await installedCopy(root,c.replacementRelative);}catch{return fail('installed-unverified');}
   if(!copy)return fail('installed-file-missing');
   if(copy.ambiguous)return fail('installed-ambiguous');
   if(copy.unsafe)return fail('installed-file-unsafe');
   // The imported replacement itself, untranscoded, can be kept once Tdarr has finished with it: skipped as Not
   // required (#232), or transcoded with a result that failed or never reached Review (#280).
-  const untranscoded=SAME.has(compareIdentity(c.replacementSourceFP,copy.identity));
+  // A case recorded before Recovery kept the replacement's identity (#280) is bound by Radarr's record instead: the
+  // copy at the imported path with the imported size is the replacement itself, and Tdarr's decisions count once
+  // they end after the current copy was written.
+  const written=Number(copy.identity.split(':')[3]),size=Number(copy.identity.split(':')[2]);
+  const untranscoded=key.legacy?copy.relative===c.replacementRelative&&size===c.replacement.size:SAME.has(compareIdentity(c.replacementSourceFP,copy.identity));
   const tdarrPath=path.posix.join(path.posix.dirname(c.file),path.posix.basename(copy.relative));
   let row,jobs;
   try{row=await createTdarrFileState(tdarr,{libraryId:getConfig()?.libraryId}).read(tdarrPath);jobs=await readRows('jobsjsondb');}catch{return fail('installed-unverified');}
-  const imported=importTime(c.replacementSourceFP),decided=status=>Number.isFinite(imported)&&jobs.some(j=>(untranscoded?[tdarrPath]:[c.file,tdarrPath]).includes(j?.file)&&status.test(String(j?.status||''))&&Number(j?.end)>imported);
+  const imported=key.legacy?written:importTime(c.replacementSourceFP),decided=status=>Number.isFinite(imported)&&jobs.some(j=>(untranscoded?[tdarrPath]:[c.file,tdarrPath]).includes(j?.file)&&status.test(String(j?.status||''))&&Number(j?.end)>imported);
   if(untranscoded){if(!FINISHED.has(row?.TranscodeDecisionMaker))return fail('installed-not-transcoded');if(!decided(/^(?:not required|transcode success|transcode error)$/i))return fail('installed-no-decision');}
-  else{if(row?.TranscodeDecisionMaker!=='Transcode success')return fail('installed-tdarr-not-success');if(!decided(/^Transcode success$/))return fail('installed-no-success-job');}
+  // Tdarr may rescan its own result and rate it Not required; the successful transcode since the import still stands.
+  else if(row?.TranscodeDecisionMaker==='Transcode success'){if(!decided(/^Transcode success$/))return fail('installed-no-success-job');}
+  else if(row?.TranscodeDecisionMaker!=='Not required'||!decided(/^Transcode success$/))return fail('installed-tdarr-not-success');
   if(Object.values(getItems()||{}).some(item=>item?.relative===copy.relative))return fail('installed-review-pending');
   if(busy)return fail('installed-busy');
-  return {eligible:true,blockers:[],c,root,copy,tdarrPath,untranscoded,snapshot:token(copy.identity)};
+  return {eligible:true,blockers:[],c,key,root,copy,tdarrPath,untranscoded,snapshot:token(copy.identity)};
  }
 
  async function readDraft(id){try{const value=JSON.parse(await fs.readFile(draftFile(id),'utf8'));return object(value)&&value.version===1?value:null;}catch(e){if(e.code==='ENOENT')return null;throw e;}}
@@ -102,10 +108,10 @@ export function createInstalledAssessment({data,getConfig,getItems,tdarr,readRow
   if(input?.snapshot!==e.snapshot||input?.confirm!==true)throw Object.assign(Error('installed_changed'),{code:'installed_changed'});
   const draft=await readDraft(caseId),{hdr}=await requirements(e);
   if(draft?.snapshot!==e.snapshot||draft.approvedAt||!complete(draft,{hdr}))throw Object.assign(Error('installed_incomplete'),{code:'installed_incomplete'});
-  const evidence=await publishApproval({mediaRoot:e.root,relative:e.c.replacementRelative,sourceFP:e.c.replacementSourceFP,installedRelative:e.copy.relative,atomic:atomicJSON});
+  const evidence=await publishApproval({mediaRoot:e.root,relative:e.key.relative,sourceFP:e.key.sourceFP,installedRelative:e.copy.relative,atomic:atomicJSON});
   if(!SAME.has(compareIdentity(evidence.installedFP,e.copy.identity)))throw Object.assign(Error('installed_changed'),{code:'installed_changed'});
   const approvedAt=evidence.approvedAt;await atomicJSON(draftFile(caseId),{...draft,approvedAt});
-  await recordDecision({event:'installed-approval',...(e.untranscoded?{untranscoded:true}:{}),id:caseId,title:e.c.relative?.split('/')[0]||'Film',device:draft.device,checks:draft.checks,hdr,note:draft.note,approvedAt});
+  await recordDecision({event:'installed-approval',...(e.untranscoded?{untranscoded:true}:{}),...(e.key.legacy?{legacyBinding:true}:{}),id:caseId,title:e.c.relative?.split('/')[0]||'Film',device:draft.device,checks:draft.checks,hdr,note:draft.note,approvedAt});
   return {approvedAt};
  }
  return {eligibility,view,save,approve};

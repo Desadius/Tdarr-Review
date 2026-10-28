@@ -10,7 +10,7 @@ import {atomicJSON} from './core.mjs';
 
 // Assessment of an already installed transcoded result (#230) over synthetic files, a fake Tdarr and an in-memory audit.
 const ID='a'.repeat(24),TDARR='/tdarr/movies/Film/new.mkv';
-async function fixture(t,{row={TranscodeDecisionMaker:'Transcode success'},jobs=null,hdr=false,transcode=true}={}){
+async function fixture(t,{row={TranscodeDecisionMaker:'Transcode success'},jobs=null,hdr=false,transcode=true,legacy=false}={}){
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'installed-assessment-')),data=path.join(root,'data'),media=path.join(root,'media','movies'),quarantine=path.join(root,'quarantine');
  await fs.mkdir(path.join(data,'recovery'),{recursive:true});await fs.mkdir(path.join(media,'Film'),{recursive:true});await fs.mkdir(path.join(quarantine,ID),{recursive:true});
  const library=path.join(media,'Film','new.mkv'),quarantined=path.join(quarantine,ID,'old.mkv');
@@ -18,6 +18,8 @@ async function fixture(t,{row={TranscodeDecisionMaker:'Transcode success'},jobs=
  if(transcode){await new Promise(r=>setTimeout(r,20));await fs.rm(library);await fs.writeFile(library,'TRANSCODED RESULT');}
  await fs.writeFile(quarantined,'FAULTY ORIGINAL');
  const c={id:ID,status:'replacement_imported',file:TDARR,source:path.join(media,'Film','old.mkv'),relative:'Film/old.mkv',fp:identityOf(await fs.stat(quarantined)),replacementRelative:'Film/new.mkv',replacementSourceFP:replacementFP,quarantine:quarantined,movieId:7};
+ // A case recorded before Recovery kept the replacement's identity: only Radarr's record of the imported file.
+ if(legacy){delete c.replacementSourceFP;c.replacement={movieFileId:11,path:'/radarr/movies/Film/new.mkv',size:'IMPORTED REPLACEMENT'.length};}
  const writeCase=value=>fs.writeFile(path.join(data,'recovery','state.json'),JSON.stringify({version:1,jobs:{},cases:{[ID]:value}}));await writeCase(c);
  const calls={tdarr:[],rows:[]},audit=[],items={};
  const assessment=createInstalledAssessment({data,getConfig:()=>({libraryId:'library',mediaRoot:media}),getItems:()=>items,
@@ -147,4 +149,36 @@ test('a Not required decision on the original path does not count for the untran
  const own=await fixture(t,{transcode:false,row:{TranscodeDecisionMaker:'Not required'},jobs:[{file:TDARR,status:'Not required',end:Date.now()+1000}]});
  await own.writeCase({...own.c,file:'/tdarr/movies/Film/old.mkv'});
  assert.equal((await own.assessment.view(ID)).eligible,true,'the replacement\'s own decision counts');
+});
+
+test('a transcoded copy Tdarr later rated Not required is assessed once a transcode succeeded since the import',async t=>{
+ const f=await fixture(t,{row:{TranscodeDecisionMaker:'Not required'},jobs:[{file:TDARR,status:'Transcode success',end:Date.now()+1000},{file:TDARR,status:'Not required',end:Date.now()+2000}]});
+ const view=await f.assessment.view(ID);assert.equal(view.eligible,true,JSON.stringify(view));assert.equal(view.untranscoded,undefined);
+});
+
+// Cases recorded before Recovery kept the replacement's identity (#280).
+test('a legacy case keeps its untranscoded replacement by Radarr\'s path and size, and Recovery retention accepts the evidence',async t=>{
+ const f=await fixture(t,{legacy:true,transcode:false,row:{TranscodeDecisionMaker:'Not required'},jobs:[{file:TDARR,status:'Not required',end:Date.now()+1000}]});
+ const view=await f.assessment.view(ID);assert.equal(view.eligible,true,JSON.stringify(view));assert.equal(view.untranscoded,true);
+ await f.assessment.save(ID,{snapshot:view.snapshot,device:'TV',checks:done,note:'Plays well.'});
+ const {approvedAt}=await f.assessment.approve(ID,{snapshot:view.snapshot,confirm:true});
+ assert.equal(f.audit[0].legacyBinding,true);assert.equal(f.audit[0].untranscoded,true);
+ const c={...f.c,replacement:{movieFileId:11,path:'/radarr/movies/Film/new.mkv',size:'IMPORTED REPLACEMENT'.length}};delete c.replacementSourceFP;let saved=null;
+ await retainCase(c,{mediaRoot:f.media,quarantineRoot:f.quarantine,atomicCase:async v=>{saved=structuredClone(v);},now:Date.now()});
+ assert.equal(saved.cleanup.approvedAt,approvedAt);
+ assert.deepEqual((await f.assessment.view(ID)).blockers,['installed-evidence-exists']);
+});
+test('a legacy case keeps a copy transcoded in place after a successful job since it was written',async t=>{
+ const f=await fixture(t,{legacy:true});
+ const view=await f.assessment.view(ID);assert.equal(view.eligible,true,JSON.stringify(view));assert.equal(view.untranscoded,undefined);
+});
+for(const [name,options,change,blocker]of [
+ ['no Radarr record',{legacy:true},c=>{delete c.replacement;},'installed-not-applicable'],
+ ['a Radarr record for another path',{legacy:true},c=>{c.replacement.path='/radarr/movies/Other/new.mkv';},'installed-not-applicable'],
+ ['a Radarr record without a size',{legacy:true},c=>{delete c.replacement.size;},'installed-not-applicable'],
+ ['an untranscoded decision before the copy was written',{legacy:true,transcode:false,row:{TranscodeDecisionMaker:'Not required'},jobs:[{file:TDARR,status:'Not required',end:1}]},null,'installed-no-decision'],
+ ['a successful transcode before the copy was written',{legacy:true,jobs:[{file:TDARR,status:'Transcode success',end:1}]},null,'installed-no-success-job'],
+])test('the legacy assessment names its blocker: '+name,async t=>{
+ const f=await fixture(t,options);if(change){const c=structuredClone({...f.c,replacement:{movieFileId:11,path:'/radarr/movies/Film/new.mkv',size:'IMPORTED REPLACEMENT'.length}});delete c.replacementSourceFP;change(c);await f.writeCase(c);}
+ assert.deepEqual((await f.assessment.view(ID)).blockers,[blocker]);
 });
