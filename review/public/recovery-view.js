@@ -80,12 +80,9 @@ export function fullHashProgressView(p,detail=true){
 }
 
 
-// Needs attention (#229): the server's reason, verified location, actions and blockers for one case. Only actions
-// the server lists become buttons; `changes` says what an action does before it runs.
-const LOCATION_SOURCES=[['library','Knihovna'],['quarantine','Karanténa'],['review','Výsledek v Review'],['tdarr','Tdarr'],['radarr','Radarr']];
-const LOCATION_DETAILS={present:'Soubor je na místě',changed:'Soubor se od záznamu změnil',missing:'Soubor chybí',pending:'Čeká na posouzení',retained:'Zachovaná podle záznamu',
- 'transcode success':'Převod dokončen','transcode error':'Převod skončil chybou','not required':'Vynecháno jako Not required',hold:'Pozastaveno (Hold)',queued:'Ve frontě',transcoding:'Převádí se',
- 'import-blocked':'Import je blokovaný','queue-failed':'Fronta hlásí chybu','search-failed':'Hledání selhalo',downloading:'Stahuje se','no-download':'Nic se nestahuje'};
+// Needs attention (#229): what the user is asked to do and the actions for one case (#280). Only actions the server
+// lists become buttons; `changes` says what an action does before it runs. Refresh runs on its own and the
+// diagnostic export lives in Settings, so neither is a button here.
 export const ATTENTION_ACTIONS={refresh:['Obnovit stav','Jen znovu načte údaje z Radarru, Tdarru a knihovny; nic nemění.'],openRadarr:['Otevřít film v Radarru','Otevře Radarr; nic nemění.'],openQueue:['Otevřít frontu Radarru','Otevře obecnou frontu Radarru; nic nemění.'],
  openReview:['Posoudit výsledek v Review','Otevře posouzení; schválení je samostatný krok.'],replaceSource:['Vyžádat jinou kopii přes Radarr','Spustí vyžádání náhrady; originál zůstane zachovaný v karanténě.'],
  restore:['Vrátit originál i převod z karantény','Přesune zachované soubory zpět do knihovny.'],assessInstalled:['Ponechat aktuální kopii','Otevře krátké posouzení kopie, která je v knihovně; teprve její schválení spustí úklid karantény.'],
@@ -98,23 +95,23 @@ const BLOCKERS={'source-not-confirmed':'Vada originálu není potvrzená dvěma 
  'radarr-download-stuck':'Pokud stahování v Radarru visí, odstraň ho v Radarru.','manual-import-in-radarr':'Stažený soubor přiřaď správnému filmu ručním importem v Radarru.',
  'retention-evidence':'Důkaz pro úklid karantény nesouhlasí; karanténa zůstává zachovaná.','status-unverified':'Stav nelze ověřit; obnov ho, a pokud zůstane neověřený, správce zkontroluje propojení.',
  'review-result-missing':'Výsledek v Review k této kopii zatím není doložený.','replacement-blocked':'Náhradu teď nelze vyžádat; důvod je uvedený v detailu.','radarr-link-unavailable':'Odkaz do Radarru není k dispozici; zkontroluj připojení Radarru.',
- 'installed-unverified':'Nainstalovanou kopii nelze ověřit; obnov stav.','installed-evidence-exists':'Kopie je schválená; Recovery spustí úklid karantény při další kontrole.',
+ 'installed-unverified':'Nainstalovanou kopii nelze ověřit; Review to zkusí znovu samo.','installed-evidence-exists':'Kopie je schválená; Recovery spustí úklid karantény při další kontrole.',
  'installed-file-missing':'V knihovně není žádná kopie k posouzení.','installed-ambiguous':'V knihovně je víc možných kopií; správce musí ponechat jen jednu.',
  'installed-file-unsafe':'Kopie v knihovně není běžný samostatný soubor; správce ji musí zkontrolovat.','installed-not-transcoded':'V knihovně je stále nepřevedená náhrada.',
  'installed-tdarr-not-success':'Tdarr pro tuto kopii nehlásí Transcode success.','installed-no-success-job':'V historii Tdarru není úspěšný převod této kopie po importu náhrady.',
  'installed-review-pending':'K této kopii čeká výsledek v Review; posuď ho tam.','installed-busy':'Probíhá jiná akce; posouzení bude možné po jejím dokončení.',
  'restore-over-installed':'Zastaralý originál Review přes aktuální kopii nevrací.',
- 'transcode-not-failed':'Tdarr už převod nehlásí jako chybný; obnov stav.',
+ 'transcode-not-failed':'Tdarr už převod nehlásí jako chybný; Review stav ověří znovu samo.',
  'transcode-report-unreadable':'Report převodu v Tdarru nelze přečíst; opakování Review nenabídne, dokud příčina není známá.',
  'transcode-decode-damage':'Převod selhal na poškozeném souboru náhrady; poškozením se zabývá Recovery ve vlastním případu. Opakování nepomůže.',
- 'transcode-newest-not-error':'Nejnovější úloha tohoto souboru v Tdarru není ta chybná; obnov stav.',
- 'transcode-job-unfinished':'Nejnovější úloha tohoto souboru v Tdarru nemá čas konce; opakování se nenabízí, obnov stav.',
- 'transcode-unverified':'Stav převodu nelze ověřit; obnov stav.',
+ 'transcode-newest-not-error':'Nejnovější úloha tohoto souboru v Tdarru není ta chybná; Review stav ověří znovu samo.',
+ 'transcode-job-unfinished':'Nejnovější úloha tohoto souboru v Tdarru nemá čas konce; opakování se nenabízí, dokud neskončí.',
+ 'transcode-unverified':'Stav převodu nelze ověřit; Review to zkusí znovu samo.',
  'transcode-retry-used':'Review už převod jednou zopakovalo; další opakování nenabízí.',
  'transcode-retry-failed-again':'Opakovaný převod také selhal; prověř Tdarr. Diagnostiku k exportu přinese další verze.',
  'transcode-not-required':'Tdarr náhradu podle svých pravidel nepotřebuje převádět; opakování by ji znovu vynechalo.',
- 'installed-no-decision':'Tdarr pro tuto kopii po importu nerozhodl Not required; obnov stav.',
- 'handoff-unverified':'Stav předání nelze ověřit; obnov stav.',
+ 'installed-no-decision':'Tdarr o této kopii po importu ještě nerozhodl; Review stav ověří znovu samo.',
+ 'handoff-unverified':'Stav předání nelze ověřit; Review to zkusí znovu samo.',
  'handoff-library-id':'Pro předání Tdarru vyplň v nastavení ID knihovny Tdarr.',
  'handoff-file-missing':'Soubor náhrady v knihovně chybí.',
  'handoff-file-unsafe':'Soubor náhrady není běžný samostatný soubor; správce ho musí zkontrolovat.',
@@ -122,7 +119,7 @@ const BLOCKERS={'source-not-confirmed':'Vada originálu není potvrzená dvěma 
  'handoff-file-unstable':'Soubor náhrady se nedávno změnil; předání bude možné po 10 minutách klidu.',
  'handoff-hold':'Náhrada je v Tdarru pozastavená (Hold); Review Hold neuvolňuje, uvolni ho v Tdarru.',
  'handoff-hold-protected':'Náhradu drží Hold jiného případu, který ji chrání; Review ho neuvolní.',
- 'handoff-reached':'Náhrada už do Tdarru došla; obnov stav.',
+ 'handoff-reached':'Náhrada už do Tdarru došla; Review stav ověří znovu samo.',
  'handoff-worker-busy':'Tdarr soubor právě zpracovává.',
  'handoff-busy':'Probíhá jiná akce; předání bude možné po jejím dokončení.',
  'handoff-manual':'Recovery předání vzdala; správce musí případ zkontrolovat. Schválení by tu úklid karantény nespustilo.'};
@@ -132,8 +129,8 @@ const IMPORT_DIAGNOSIS={
  'download-pending':'Stahování stále probíhá; podrobnosti ověř ve frontě Radarru.',
  'import-problem':'Radarr hlásí problém při importu; vyřeš ho v Radarru.',
  unrecognized:'Příčina není jednoznačná; podrobnosti ověř ve frontě Radarru.',
- unverified:'Diagnóza importu zatím není ověřena. Obnov stav ručně.',
- unavailable:'Diagnózu importu se nepodařilo ověřit. Obnov stav ručně.'
+ unverified:'Diagnóza importu zatím není ověřena. Review ji ověří znovu samo.',
+ unavailable:'Diagnózu importu se nepodařilo ověřit. Review to zkusí znovu samo.'
 };
 const RETENTION_DIAGNOSIS={
  'approval-evidence-missing':'Schválení nebylo v ověřeném umístění nalezeno. Karanténa zůstává zachovaná; správce musí zkontrolovat vazbu případu a schvalovací evidenci. Zde schválení neopakuj ani neměň lhůtu.',
@@ -176,14 +173,26 @@ export function importDiagnosisView(diagnosis,translate=tr){
  return box;
 }
 
-export function attentionLocationView(location,translate=tr){
- const rows=LOCATION_SOURCES.filter(([key])=>location?.[key]&&location[key].status!=='not-used').map(([key,label])=>{const v=location[key];
-  return [label,translate(LOCATION_DETAILS[v.detail]||(v.status==='unverified'?'Nelze ověřit':'Není doloženo'))+' · '+translate(v.status==='verified'?'ověřeno':'neověřeno')+(v.at?' · '+date(v.at):''),true];});
- return rows.length?detailsFacts(rows):el('p','details','Umístění filmu zatím nelze ověřit.');
-}
 /** Buttons for the server-listed actions (only the recommended one when `recommendedOnly`), with what each changes. */
+const HIDDEN_ACTIONS=new Set(['refresh','exportDiagnostic']);
+// One sentence per case on what the user is asked to do: by the recommended action, otherwise why nothing can be done.
+const ASK={assessInstalled:'V knihovně je kopie, kterou zatím nikdo neschválil. Přehraj ji a rozhodni, jestli ji ponecháš.',
+ openReview:'Výsledek převodu čeká v Review. Posuď ho a rozhodni o něm.',
+ replaceSource:'Originál je vadný a nemá vazbu na vydání v Radarru. Rozhodni, jestli vyžádáš jinou kopii.',
+ retryTranscode:'Převod náhrady selhal. Zkus ho spustit znovu.',
+ handoffTdarr:'Náhrada se do Tdarru nedostala. Předej ji Tdarru.',
+ restore:'Zachované soubory lze vrátit do knihovny. Rozhodni, jestli je vrátíš.',
+ openRadarr:'Je potřeba zásah v Radarru. Otevři film v Radarru; Review potom stav ověří samo.',
+ openQueue:'Je potřeba zásah ve frontě Radarru. Otevři frontu; Review potom stav ověří samo.'};
+export function attentionAsk(attention,fallback,translate=tr){
+ const offered=new Set((attention?.actions||[]).map(a=>a.id)),recommended=attention?.recommended;
+ if(ASK[recommended]&&offered.has(recommended))return translate(ASK[recommended]);
+ const blocker=(attention?.blockers||[]).find(code=>BLOCKERS[code]);
+ if(!blocker)return fallback?translate(fallback):'';
+ return translate('Teď tu nic udělat nemůžeš.')+' '+translate(BLOCKERS[blocker])+(offered.has('defer')?' '+translate('Pokud to tak chceš nechat, případ uzavři beze změny.'):'');
+}
 export function attentionActionsView(attention,run,{recommendedOnly=false}={},translate=tr){
- const box=el('div','attention-actions'),list=(attention?.actions||[]).filter(a=>ATTENTION_ACTIONS[a.id]&&(!recommendedOnly||a.id===attention.recommended));
+ const box=el('div','attention-actions'),list=(attention?.actions||[]).filter(a=>ATTENTION_ACTIONS[a.id]&&!HIDDEN_ACTIONS.has(a.id)&&(!recommendedOnly||a.id===attention.recommended));
  list.sort((a,b)=>(b.id===attention.recommended)-(a.id===attention.recommended));
  for(const action of list){const [label,changes]=ATTENTION_ACTIONS[action.id],primary=action.id===attention.recommended;
   const node=['openRadarr','openQueue'].includes(action.id)?Object.assign(el('a',primary?'primary':'secondary',label),{href:action.href,target:'_blank',rel:'noopener noreferrer'}):el('button',primary?'primary':'secondary',label);
@@ -193,13 +202,12 @@ export function attentionActionsView(attention,run,{recommendedOnly=false}={},tr
 }
 // The cause category of a failed replacement transcode (#232); the decoder message is value-free.
 const DIAGNOSIS={operational:'Provozní chyba (oprávnění, disk, paměť nebo síť)',unrecognized:'Příčina není rozpoznaná','decode-damage':'Poškození při dekódování',unreadable:'Report nelze přečíst'};
-export function attentionView(attention,run,translate=tr){
+export function attentionView(attention,run,translate=tr,fallback=''){
  const box=el('section','attention-model');box.setAttribute('aria-label',translate('Co dál'));
- box.append(el('h4','','Kde je film teď'),attentionLocationView(attention.location,translate));const diagnosis=importDiagnosisView(attention.importDiagnosis,translate);if(diagnosis)box.append(diagnosis);const retention=retentionDiagnosisView(attention.retentionDiagnosis,translate);if(retention)box.append(retention);
- box.append(el('h4','','Co můžeš udělat'),attentionActionsView(attention,run,{},translate));
+ const ask=attentionAsk(attention,fallback,translate);if(ask)box.append(el('h4','','Co se po tobě chce'),el('p','attention-ask',ask,true));
+ const diagnosis=importDiagnosisView(attention.importDiagnosis,translate);if(diagnosis)box.append(diagnosis);const retention=retentionDiagnosisView(attention.retentionDiagnosis,translate);if(retention)box.append(retention);
+ const actions=attentionActionsView(attention,run,{},translate);if(actions.children.length)box.append(el('h4','','Co můžeš udělat'),actions);
  if(attention.diagnosis&&DIAGNOSIS[attention.diagnosis.cause]){box.append(el('h4','','Příčina selhání převodu'),el('p','',DIAGNOSIS[attention.diagnosis.cause]));if(attention.diagnosis.message)box.append(el('p','details',translate('Hláška dekodéru:')+' '+attention.diagnosis.message,true));}
- const blockers=(attention.blockers||[]).filter(code=>BLOCKERS[code]);
- if(blockers.length){const list=el('ul','attention-blockers');for(const code of blockers)list.append(el('li','',BLOCKERS[code]));box.append(el('h4','','Co brání dalšímu kroku'),list);}
  if(attention.recoveryPolledAt)box.append(el('p','details',translate('Recovery naposledy ověřila stav:')+' '+date(attention.recoveryPolledAt),true));
  return box;
 }

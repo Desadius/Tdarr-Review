@@ -193,7 +193,7 @@ export function classifyRecovery(record, now = Date.now()) {
   if (unknownTime) warnings.push('Čas posledního ověření stavu není dostupný.');
 
   // reason: a stable code for the path that set the label; the server's attention model keys on it (#229).
-  let category = 'unverified', label = 'Stav nelze ověřit', nextStep = 'Obnov stav a zkontroluj detail případu.', unknown = false, reason = 'unverified';
+  let category = 'unverified', label = 'Stav nelze ověřit', nextStep = 'Review stav ověří znovu samo; pokud zůstane neověřený, zkontroluj detail případu.', unknown = false, reason = 'unverified';
   // deleteAfter is only published after the backend verified approval evidence.
   const approvalTime = finiteTime(r.approvedAt || r.cleanup?.approvedAt);
   const deletionTime = finiteTime(r.deleteAfter || r.cleanup?.deleteAfter);
@@ -255,7 +255,7 @@ export function classifyRecovery(record, now = Date.now()) {
     } else if (tdarrStatus === 'hold') {
       category = 'attention'; reason = 'tdarr-hold'; label = 'Náhrada je pozastavená v Tdarru'; nextStep = 'Zkontroluj důvod pozastavení a navazující případ Recovery.';
     } else {
-      unknown = true; label = 'Náhrada předána; stav Tdarru není doložen'; nextStep = 'Obnov stav a ověř, kde se náhrada nachází.';
+      unknown = true; label = 'Náhrada předána; stav Tdarru není doložen'; nextStep = 'Review ověří znovu samo, kde se náhrada nachází.';
     }
   } else if (r.phase === 'waiting' || r.phase === 'waiting_replacement') {
     if (queue.length) {
