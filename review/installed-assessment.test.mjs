@@ -50,6 +50,12 @@ for(const [name,setup,blocker]of [
  const f=await fixture(t);await setup(f);
  assert.deepEqual(await f.assessment.view(ID),{eligible:false,blockers:[blocker]});
 });
+test('a case recorded under Recovery\'s own mount of the same share is assessed under Review\'s mediaRoot',async t=>{
+ // Recovery records /storage/movies while Review reads the same share as /media/movies.
+ const f=await fixture(t),storage=path.join(f.root,'storage');await fs.symlink(path.join(f.root,'media'),storage);
+ await f.writeCase({...f.c,source:path.join(storage,'movies','Film','old.mkv'),quarantine:f.quarantined});
+ assert.equal((await f.assessment.view(ID)).eligible,true);
+});
 test('the imported replacement itself, untranscoded, is not assessed as a result',async t=>{
  const f=await fixture(t,{transcode:false});assert.deepEqual((await f.assessment.view(ID)).blockers,['installed-not-transcoded']);
 });

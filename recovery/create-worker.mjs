@@ -22,6 +22,7 @@ import {readRecoveryConfiguration,readRecoveryApprovals} from './recovery-author
 import {atomicJson as atomic} from './atomic-json.mjs';
 import {hasFiniteTruncation} from './matroska-bounds.mjs';
 import {identityOf} from './file-identity.mjs';
+import {isTransientError,isTransientMessage,noteObservationError,clearObservationError} from './transient-error.mjs';
 
 // The Recovery worker without its process: configuration, state and the approval registry are
 // loaded and checked by the caller (recovery/worker.mjs), which also owns signals, the control
@@ -196,7 +197,7 @@ export function createWorker({data,reviewData=data,mode,cfg,configText,managed,s
     if(c.status==='replacement_queue_intent'&&(rel!==c.replacementRelative||s.fp!==c.replacementSourceFP||m.movieFileId!==c.replacement?.movieFileId))throw Object.assign(Error('Replacement identity changed after handoff intent'),{code:'TDARR_HANDOFF_BINDING'});
     c.replacement={movieFileId:m.movieFileId,path:m.movieFile.path,size:m.movieFile.size};
     c.replacementRelative=rel;c.replacementSourceFP=s.fp;
-    if(cfg.enabled===false){delete c.observationError;continue;} // Observe the import, but preserve the paused phase.
+    if(cfg.enabled===false){clearObservationError(c);continue;} // Observe the import, but preserve the paused phase.
     const file=cfg.sourceRoot+'/'+rel;
     await phase(c,'replacement_queue_intent','Replacement imported; refreshing Tdarr entry');
     // A newer case may already have held this exact imported source after its
@@ -205,9 +206,9 @@ export function createWorker({data,reviewData=data,mode,cfg,configText,managed,s
     c.handoffStatus=await ensureHandoff({tdarr:td,file,libraryId:cfg.libraryId,preserveHold});
     await phase(c,'replacement_imported','Replacement submitted to Tdarr; quarantine retained until quality is verified');
    }
-   delete c.observationError;
+   clearObservationError(c);
    } catch(e) {
-    c.observationError=e.message;
+    noteObservationError(c,e);
     if(cfg.enabled!==false&&c.status==='replacement_queue_intent'&&['TDARR_HANDOFF_BINDING','TDARR_HANDOFF_STATE'].includes(e.code))await phase(c,'manual',e.message);
     // A temporarily unavailable replacement must not stop checks for other films.
    }
@@ -216,15 +217,29 @@ export function createWorker({data,reviewData=data,mode,cfg,configText,managed,s
  // Resume frozen deferrals of one kind: reconcile an interrupted intent by reads, then continue the
  // existing repair with its frozen evidence once the kind's gate opens. One repair per poll.
  async function resumeDeferred(kind,eligible=()=>true){
+  // A deferral that went manual only because Radarr or Tdarr was briefly unreachable during these reads
+  // returns to its deferred state: its journal is validated now and inspectDeferred verifies the unchanged
+  // source, binding and Hold again below. A case that ever started a mutation stays manual.
+  for(const c of Object.values(state.cases).filter(c=>c.status==='manual'&&c[kind.journal]&&isTransientMessage(c.message)&&!c.mutationStarted&&!c.quarantine&&eligible(c))){
+   try{kind.validate({cfg,c,now:Date.now(),statuses:['manual']});}catch{continue;}
+   await phase(c,kind.deferred,'Deferral resumed after a transient read failure');
+  }
   for(const c of Object.values(state.cases).filter(c=>[kind.deferred,kind.intent].includes(c.status)&&eligible(c))){
    if(!canStart())return;
+   let result;
    try{
     const deps={...adapters,c};
     if(c.status===kind.intent)await reconcileDeferredIntent(kind,deps);
-    const result=await inspectDeferred(kind,deps);
+    result=await inspectDeferred(kind,deps);
+   }catch(e){
+    // These steps only read; an unreachable service is tried again on the next poll.
+    if(isTransientError(e)){noteObservationError(c,e);continue;}
+    await phase(c,'manual',e.message);continue;
+   }
+   try{
     if(result.retryAt)c.nextRetryAt=result.retryAt;
     if(result.status==='ready'){await repair(c,{reuseConfirmedEvidence:true});return;}
-    delete c.observationError;
+    clearObservationError(c);
    }catch(e){await phase(c,'manual',e.message);}
   }
  }

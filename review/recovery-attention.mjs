@@ -3,6 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {classifyRecovery,recoveryFollowup,RECOVERY_STALE_MS} from './public/review-model.js';
 import {readRecoveryCaseState} from './recovery-snapshot.mjs';
+import {withReviewPaths} from './recovery-case-alias.mjs';
 import {compareIdentity,identityOf} from '../recovery/file-identity.mjs';
 import {createTdarrFileState} from '../recovery/tdarr-file-state.mjs';
 import {readRecoveryConfiguration,readRecoveryRestoreBinding} from '../recovery/recovery-authority.mjs';
@@ -81,7 +82,7 @@ export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnec
  /** @type {Map<string,{at:string,tdarr?:string|null,tdarrError?:boolean,radarr?:string|null,radarrError?:boolean}>} */
  const refreshed=new Map();
  const caseFile=()=>path.join(data,'recovery','state.json');
- async function cases(){const read=await readRecoveryCaseState(caseFile());return read.present&&!read.error?read.cases:null;}
+ async function cases(){const read=await readRecoveryCaseState(caseFile());return read.present&&!read.error?await withReviewPaths(read.cases,getConfig()?.mediaRoot):null;}
  const fresh=time=>{const t=Date.parse(time);return Number.isFinite(t)&&now()-t<=RECOVERY_STALE_MS&&t<=now()+120000;};
 
  // The Review result waiting for the library copy: same path, and the file in the library now is the one Review scanned.
