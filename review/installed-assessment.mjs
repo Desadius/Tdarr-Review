@@ -35,6 +35,7 @@ const object=v=>!!v&&typeof v==='object'&&!Array.isArray(v);
  * @param {(record:any)=>Promise<void>} deps.recordDecision Decision audit.
  * @param {()=>number} [deps.now]
  */
+const FINISHED=new Set(['Not required','Transcode success','Transcode error']);
 export function createInstalledAssessment({data,getConfig,getItems,tdarr,readRows,probe,atomicJSON,recordDecision,now=Date.now}){
  const directory=path.join(data,'recovery-assessments');
  const draftFile=id=>path.join(directory,id+'.json');
@@ -60,13 +61,14 @@ export function createInstalledAssessment({data,getConfig,getItems,tdarr,readRow
   if(!copy)return fail('installed-file-missing');
   if(copy.ambiguous)return fail('installed-ambiguous');
   if(copy.unsafe)return fail('installed-file-unsafe');
-  // The imported replacement itself is assessed only when Tdarr's rules skipped it as Not required (#232).
+  // The imported replacement itself, untranscoded, can be kept once Tdarr has finished with it: skipped as Not
+  // required (#232), or transcoded with a result that failed or never reached Review (#280).
   const untranscoded=SAME.has(compareIdentity(c.replacementSourceFP,copy.identity));
   const tdarrPath=path.posix.join(path.posix.dirname(c.file),path.posix.basename(copy.relative));
   let row,jobs;
   try{row=await createTdarrFileState(tdarr,{libraryId:getConfig()?.libraryId}).read(tdarrPath);jobs=await readRows('jobsjsondb');}catch{return fail('installed-unverified');}
   const imported=importTime(c.replacementSourceFP),decided=status=>Number.isFinite(imported)&&jobs.some(j=>(untranscoded?[tdarrPath]:[c.file,tdarrPath]).includes(j?.file)&&status.test(String(j?.status||''))&&Number(j?.end)>imported);
-  if(untranscoded){if(row?.TranscodeDecisionMaker!=='Not required')return fail('installed-not-transcoded');if(!decided(/^not required$/i))return fail('installed-no-decision');}
+  if(untranscoded){if(!FINISHED.has(row?.TranscodeDecisionMaker))return fail('installed-not-transcoded');if(!decided(/^(?:not required|transcode success|transcode error)$/i))return fail('installed-no-decision');}
   else{if(row?.TranscodeDecisionMaker!=='Transcode success')return fail('installed-tdarr-not-success');if(!decided(/^Transcode success$/))return fail('installed-no-success-job');}
   if(Object.values(getItems()||{}).some(item=>item?.relative===copy.relative))return fail('installed-review-pending');
   if(busy)return fail('installed-busy');

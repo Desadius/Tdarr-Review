@@ -35,6 +35,7 @@ import {createPreviewCache,PreviewCacheError,previewCacheKey} from './preview-ca
 import {createPreviewRenderer} from './preview-render.mjs';
 import {defaultPreviewPlan,previewCandidateOrder} from './preview-plan.mjs';
 import {defaultPreviewSettings,validatePreviewSettings,previewLimits} from './preview-settings.mjs';
+import {createQuarantineDelete} from './quarantine-delete.mjs';
 import {busyFor as policyBusyFor,mutationKind} from './busy-guards.mjs';
 import {respond,apiError} from './routes/http.mjs';
 import {login,authenticated} from './routes/auth.mjs';
@@ -309,6 +310,7 @@ const tdarrHandoff=createTdarrHandoff({data:DATA,getConfig:()=>config,tdarr,read
 async function jobReport(job){const f=await safeFile(path.resolve(path.dirname(DB),'..','JobReports'),job.job.footprintId+'/'+job.job.fileId);if(f.stat.size>12*1024*1024)throw Object.assign(Error(),{code:'REPORT_TOO_LARGE'});return fs.readFile(f.path,'utf8');}
 const transcodeRetry=createTranscodeRetry({data:DATA,getConfig:()=>config,tdarr,readRows:table=>dbRows(table),readReport:jobReport,isWorkerBusy:async item=>workerBusy(await tdarr('/api/v2/get-nodes'),item),atomicJSON});
 const recoveryDeferrals=createRecoveryDeferrals({data:DATA});
+const quarantineDelete=createQuarantineDelete({data:DATA,getConfig:()=>config,getOverview:()=>replacements.overview()});
 const recoveryAttention=createRecoveryAttention({data:DATA,getConfig:()=>config,getItems:()=>state.items,tdarr,getConnection:activeConnection,mode:process.env.RECOVERY_MODE||'off',installed:installedAssessment,handoff:tdarrHandoff,retry:transcodeRetry,deferrals:recoveryDeferrals,getOverview:()=>replacements.overview(),isBusy:()=>!!busyFor('replace')});
 const diagnosticExport=createDiagnosticExport({data:DATA,getOverview:()=>replacements.overview(),deferrals:recoveryDeferrals,version:()=>APP_VERSION,getConfig:()=>config,getConnection:activeConnection});
 const localOff={requestDrain:async()=>({state:'off'}),status:async()=>({state:'off'}),cancel:async()=>({state:'off'}),stopAfterDrain:async()=>({state:'stopped'}),restart:async()=>({state:'off'}),wait:async()=>({state:'off'})};
@@ -455,7 +457,7 @@ const authTimer=setInterval(()=>{pruneAuthAttempts(authAttempts);if(pruneSession
 // Getters/setters keep the module variables above authoritative, so the scan,
 // transaction and preview code shares exactly the state the routes change.
 const ctx={
- ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,recoveryAttention,diagnosticExport,recoverySafeRestore,installedAssessment,tdarrHandoff,transcodeRetry,artwork,reviewSessions,previewPairs,previewPlans,previewAttempts,sharedSettings,sonarrSourceInspection,sonarrResultInspection,tvDiscovery,
+ ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,recoveryAttention,quarantineDelete,diagnosticExport,recoverySafeRestore,installedAssessment,tdarrHandoff,transcodeRetry,artwork,reviewSessions,previewPairs,previewPlans,previewAttempts,sharedSettings,sonarrSourceInspection,sonarrResultInspection,tvDiscovery,
  get config(){return config},set config(value){config=value},
  get previewSettings(){return previewSettings},set previewSettings(value){previewSettings=value},
  get state(){return state},

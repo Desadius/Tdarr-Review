@@ -93,7 +93,7 @@ test('HTTP retention diagnosis is bound to fresh Recovery and Review cases and p
  assert.equal(record.deleteAfter??null,null);assert.equal(record.approvedAt,undefined);
 });
 
-test('a verified attention case can be deferred with a note and reopened over the authenticated HTTP API',linux,async t=>{
+test('a verified attention case can be closed unchanged with a note and reopened over the authenticated HTTP API',linux,async t=>{
  const id='f'.repeat(24);let expected;
  const f=await reviewFixture({beforeStart:async({data,media,mockBase})=>{
   const file=path.join(media,'A','A.mkv'),identity=identityOf(await fs.stat(file)),now=new Date().toISOString();
@@ -112,7 +112,7 @@ test('a verified attention case can be deferred with a note and reopened over th
  const defer=record.attention.actions.find(a=>a.id==='defer');assert.ok(defer?.revision,'defer requires the server-issued exact-binding revision');
  await fs.writeFile(expected.configFile,'{broken');const unknownAuthority=await f.get('/api/radarr/requests'),unknownRecord=unknownAuthority.requests.find(r=>r.id===id&&r.source==='recovery');assert.equal(unknownAuthority.error,undefined,'an invalid canonical authority does not fail the overview');assert.ok(unknownRecord.attention);assert.equal(unknownRecord.attention.actions.some(a=>a.id==='defer'),false,'unknown Recovery binding cannot authorize deferral');
  await fs.writeFile(expected.configFile,expected.configBefore);
- const blank=await f.post('/api/recovery/cases/'+id+'/defer',{confirm:true,revision:defer.revision,note:'   '});assert.equal(blank.status,400);
+ const notText=await f.post('/api/recovery/cases/'+id+'/defer',{confirm:true,revision:defer.revision,note:42});assert.equal(notText.status,400);
  const tooLong=await f.post('/api/recovery/cases/'+id+'/defer',{confirm:true,revision:defer.revision,note:'n'.repeat(1001)});assert.equal(tooLong.status,400);
  const notes=['Check the retained copy after Radarr finishes.','Wait for the second reviewer before continuing.'];
  const saves=await Promise.all(notes.map(note=>f.post('/api/recovery/cases/'+id+'/defer',{confirm:true,revision:defer.revision,note}))),winner=saves.findIndex(response=>response.status===200);assert.notEqual(winner,-1,'one concurrent compare-and-write succeeds');assert.equal(saves.filter(response=>response.status===200).length,1);assert.ok(saves.every(response=>[200,409].includes(response.status)));const note=notes[winner];

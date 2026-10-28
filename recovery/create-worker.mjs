@@ -22,6 +22,7 @@ import {readRecoveryConfiguration,readRecoveryApprovals} from './recovery-author
 import {atomicJson as atomic} from './atomic-json.mjs';
 import {hasFiniteTruncation} from './matroska-bounds.mjs';
 import {identityOf} from './file-identity.mjs';
+import {userDeletedQuarantine} from './quarantine-deletion.mjs';
 import {isTransientError,isTransientMessage,noteObservationError,clearObservationError} from './transient-error.mjs';
 
 // The Recovery worker without its process: configuration, state and the approval registry are
@@ -275,7 +276,7 @@ export function createWorker({data,reviewData=data,mode,cfg,configText,managed,s
   await processPending({...adapters,approvals:pendingApprovals,caseId,repair});
   if(!canStart())return;
   await publishNow(()=>liveStatus.refresh());
-  for(const c of Object.values(state.cases).filter(c=>c.status==='replacement_imported'&&cfg.enabled!==false)){if(!canStart())return;try{await retainCase(c,{mediaRoot:cfg.mediaRoot,quarantineRoot:cfg.quarantineRoot,atomicCase:save});delete c.retentionError;}catch(e){c.retentionError=e.message;}}
+  for(const c of Object.values(state.cases).filter(c=>c.status==='replacement_imported'&&cfg.enabled!==false)){if(!canStart())return;try{await retainCase(c,{mediaRoot:cfg.mediaRoot,quarantineRoot:cfg.quarantineRoot,atomicCase:save,deletedByUser:(file,identity)=>userDeletedQuarantine({data:reviewData,file,identity})});delete c.retentionError;}catch(e){c.retentionError=e.message;}}
   // Catch these files even when Tdarr has silently classified them Not required.
   if(cfg.detectTerminalHeaders){
    for(const f of rows('filejsondb').filter(f=>f.DB===cfg.libraryId&&['Queued','Not required','Transcode error','Hold'].includes(f.TranscodeDecisionMaker)&&String(f._id).toLowerCase().endsWith('.mkv'))){

@@ -198,7 +198,10 @@ export function classifyRecovery(record, now = Date.now()) {
   const approvalTime = finiteTime(r.approvedAt || r.cleanup?.approvedAt);
   const deletionTime = finiteTime(r.deleteAfter || r.cleanup?.deleteAfter);
   const approvalEvidence = (approvalTime !== null && approvalTime <= clock && r.approvalVerified !== false) || deletionTime !== null;
-  if (r.cleanupComplete === true || r.cleanup?.complete === true) {
+  if (r.quarantineDeleted === true) {
+    // The user deleted the preserved copy through Review's Quarantine dialog (#280).
+    category = 'done'; label = 'Karanténa smazána'; nextStep = 'Zachovanou kopii jsi smazal; v knihovně zůstává aktuální soubor.'; reason = 'quarantine-deleted';
+  } else if (r.cleanupComplete === true || r.cleanup?.complete === true) {
     category = 'done'; label = 'Náhrada schválena; karanténa uklizena'; nextStep = 'Obnova je dokončená.'; reason = 'complete';
   } else if (approvalEvidence) {
     category = 'done'; label = 'Náhrada schválena'; nextStep = 'Karanténa zůstává do termínu automatického úklidu.'; reason = 'approved';
@@ -269,9 +272,11 @@ export function classifyRecovery(record, now = Date.now()) {
     if (running) { category = 'running'; [label, nextStep] = running; }
     else unknown = true;
   }
-  if(verifyPaused(r)){category='waiting';label='Pozastaveno režimem Verify';nextStep='Po přepnutí na Repair Recovery znovu ověří aktuální stav a automaticky pokračuje.';unknown=false;}
-  if(verifyPaused(r)&&!stale&&!unknownTime&&originalOutsideTooLong(r,clock)){category='attention';reason='original-outside-library';label='Originál je déle než 24 hodin mimo knihovnu';nextStep='Pokud stahování v Radarru visí, odstraň ho v Radarru; Recovery při příští kontrole vrátí originál do knihovny.';}
-  if (r.retentionErrorPresent===true||warnings.some(w => w !== 'Stav je starší než 12 minut; obnov aktuální údaje.' && w !== 'Čas posledního ověření stavu není dostupný.')) {
+  if(verifyPaused(r)&&r.quarantineDeleted!==true){category='waiting';label='Pozastaveno režimem Verify';nextStep='Po přepnutí na Repair Recovery znovu ověří aktuální stav a automaticky pokračuje.';unknown=false;}
+  if(verifyPaused(r)&&r.quarantineDeleted!==true&&!stale&&!unknownTime&&originalOutsideTooLong(r,clock)){category='attention';reason='original-outside-library';label='Originál je déle než 24 hodin mimo knihovnu';nextStep='Pokud stahování v Radarru visí, odstraň ho v Radarru; Recovery při příští kontrole vrátí originál do knihovny.';}
+  if (r.quarantineDeleted===true) {
+    // Nothing preserved remains to act on; later warnings of the case do not reopen it.
+  } else if (r.retentionErrorPresent===true||warnings.some(w => w !== 'Stav je starší než 12 minut; obnov aktuální údaje.' && w !== 'Čas posledního ověření stavu není dostupný.')) {
     category = 'attention'; nextStep = 'Zkontroluj upozornění v detailu případu.';
     reason = blockedImport ? 'import-blocked' : failedQueue ? 'queue-failed' : failedSearch ? 'search-failed' : r.retentionError||r.retentionErrorPresent===true ? 'retention-error' : 'case-error';
     if(blockedImport){label='Staženo; Radarr blokuje import';nextStep='Otevři frontu Radarru a přiřaď stažený soubor správnému filmu přes ruční import. Nové stahování není potřeba.';}

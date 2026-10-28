@@ -63,6 +63,8 @@ export function mutationKind(method,pathname){
  if(pathname==='/api/approve-batch')return 'batch';
  if(pathname==='/api/node-restores/keep')return 'keepPaused';
  if(/^\/api\/radarr\/requests\/[a-f0-9]{24}\/restore$/.test(pathname))return 'restore';
+ // Deleting a quarantined file excludes the same work as returning one (#280).
+ if(pathname==='/api/quarantine/delete')return 'restore';
  if(/^\/api\/recovery\/cases\/[a-f0-9]{24}\/restore-original$/.test(pathname))return 'restore';
  if(/^\/api\/recovery\/cases\/[a-f0-9]{24}\/restore-original\/reconcile$/.test(pathname))return 'restoreReconcile';
  if(/^\/api\/recovery\/cases\/[a-f0-9]{24}\/defer(?:\/reopen)?$/.test(pathname))return 'deferral';

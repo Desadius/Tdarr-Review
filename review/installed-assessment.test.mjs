@@ -56,8 +56,15 @@ test('a case recorded under Recovery\'s own mount of the same share is assessed 
  await f.writeCase({...f.c,source:path.join(storage,'movies','Film','old.mkv'),quarantine:f.quarantined});
  assert.equal((await f.assessment.view(ID)).eligible,true);
 });
-test('the imported replacement itself, untranscoded, is not assessed as a result',async t=>{
- const f=await fixture(t,{transcode:false});assert.deepEqual((await f.assessment.view(ID)).blockers,['installed-not-transcoded']);
+test('an untranscoded replacement can be kept once Tdarr finished with it; not while it still waits',async t=>{
+ // Transcode success whose result never reached Review, and a failed transcode (#280).
+ for(const status of ['Transcode success','Transcode error']){
+  const f=await fixture(t,{transcode:false,row:{TranscodeDecisionMaker:status},jobs:[{file:TDARR,status,end:Date.now()+1000}]}),view=await f.assessment.view(ID);
+  assert.equal(view.eligible,true,status+' '+JSON.stringify(view));assert.equal(view.untranscoded,true);
+ }
+ for(const status of ['Queued','Transcoding','Hold']){
+  const f=await fixture(t,{transcode:false,row:{TranscodeDecisionMaker:status}});assert.deepEqual((await f.assessment.view(ID)).blockers,['installed-not-transcoded'],status);
+ }
 });
 for(const [name,options,blocker]of [
  ['Tdarr row not Transcode success',{row:{TranscodeDecisionMaker:'Queued'}},'installed-tdarr-not-success'],
@@ -128,7 +135,7 @@ test('a replacement Tdarr skipped as Not required is assessed as it is, untransc
 });
 for(const [name,options,blocker]of [
  ['no Not required decision since the import',{transcode:false,row:{TranscodeDecisionMaker:'Not required'},jobs:[{file:TDARR,status:'Not required',end:1}]},'installed-no-decision'],
- ['a transcode error',{transcode:false,row:{TranscodeDecisionMaker:'Transcode error'}},'installed-not-transcoded'],
+ ['a transcode still queued',{transcode:false,row:{TranscodeDecisionMaker:'Queued'}},'installed-not-transcoded'],
  ['a transcoded copy reported Not required',{row:{TranscodeDecisionMaker:'Not required'},jobs:[{file:TDARR,status:'Not required',end:Date.now()+1000}]},'installed-tdarr-not-success'],
 ])test('the untranscoded assessment names its blocker: '+name,async t=>{
  const f=await fixture(t,options);assert.deepEqual((await f.assessment.view(ID)).blockers,[blocker]);
