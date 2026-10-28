@@ -6,6 +6,22 @@ Changes merged since the last release are listed under Unreleased below and as f
 
 ## Unreleased
 
+## 2.5.0 — 2026-10-28
+
+### Before updating
+
+- **After closing cases or deleting quarantine, do not revert to 2.4.0 without expecting them back.** 2.4.0 does not read a case closed without a note, so it shows the case as not readable, and it does not know quarantine deletions, so a case whose preserved copy you deleted returns to Needs attention and can show a retention error. Neither moves or deletes anything; on 2.5.0 again they read as before.
+
+- **Expect Needs attention to change right after the update.** Cases that waited for a cooldown or the daily limit and went manual only because Radarr was briefly unreachable return to waiting on Recovery's first poll, and cases on another mount of the share start offering assessment, handoff and retry. Nothing is moved, approved or downloaded by the update itself.
+
+### Changes
+
+- Needs attention is simpler: every case says in one sentence what you are asked to do, or why nothing can be done and that you can close it unchanged. Review refreshes the status on its own (the server every 10 minutes, a case when you open it), so the refresh buttons, the *Where the film is now* list and the blocker list are gone, and the diagnostic export moved to **Settings → Case diagnostics** ([guide](docs/USER-GUIDE.md#recovery-cases-that-need-attention)).
+
+- Recovery cases that need attention get clear actions: **Close unchanged** (formerly *Defer case*, the note is now optional) moves a case to the **Closed** list without approving anything, and **Keep the current copy** opens the short assessment of the copy in the library, now also when Tdarr skipped the replacement or its transcode failed. Every file in the **Quarantine** dialog can be deleted after a confirmation that names whether the film's current copy is in the library; Recovery treats the recorded deletion as the user's decision and the case moves to Done ([guide](docs/USER-GUIDE.md#delete-a-quarantined-file)).
+
+- Recovery cases recorded under Recovery's own mount of the media share (for example `/storage/movies` while Review reads `/media/movies`) now get their actions: **Assess the installed copy**, **Hand the replacement to Tdarr**, **Try the transcode again** and **Defer case** no longer refuse every such case. A brief Radarr or Tdarr outage no longer turns a waiting repair into a manual case: Recovery tries the read again on its next poll, a case that went manual only for that reason resumes waiting, and the failure appears under Needs attention only after it has lasted an hour ([Operations](docs/OPERATIONS.md#recovery-status-is-stale)).
+
 ## 2.4.0 — 2026-10-27
 
 ### Before updating
