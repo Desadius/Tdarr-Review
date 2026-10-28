@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {readRecoveryCaseState} from './recovery-snapshot.mjs';
+import {withReviewPaths} from './recovery-case-alias.mjs';
 import {compareIdentity,identityOf} from '../recovery/file-identity.mjs';
 import {createTdarrFileState} from '../recovery/tdarr-file-state.mjs';
 import {approvalEvidencePath,publishApproval} from '../recovery/quarantine-retention.mjs';
@@ -50,7 +51,7 @@ export function createInstalledAssessment({data,getConfig,getItems,tdarr,readRow
  /** Whether the case may be assessed now, from fresh reads. Blocker codes are value-free. */
  async function eligibility(caseId,{busy=false}={}){
   const fail=(...blockers)=>({eligible:false,blockers});
-  let c;try{const read=await readRecoveryCaseState(path.join(data,'recovery','state.json'));if(read.error)return fail('installed-unverified');c=read.present?read.cases[caseId]:null;}catch{return fail('installed-unverified');}
+  let c;try{const read=await readRecoveryCaseState(path.join(data,'recovery','state.json'));if(read.error)return fail('installed-unverified');c=read.present?(await withReviewPaths({[caseId]:read.cases[caseId]},getConfig()?.mediaRoot))[caseId]:null;}catch{return fail('installed-unverified');}
   if(!c||c.status!=='replacement_imported'||!c.replacementRelative||!c.replacementSourceFP||c.cleanup)return fail('installed-not-applicable');
   // The evidence must land where Recovery's retention reads it: beside Review's own library root.
   const root=libraryRoot(c);if(!root||!getConfig()?.mediaRoot||path.resolve(root)!==path.resolve(getConfig().mediaRoot))return fail('installed-unverified');

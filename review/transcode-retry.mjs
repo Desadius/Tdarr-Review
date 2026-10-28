@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {readRecoveryCaseState,readRecoveryRuntime} from './recovery-snapshot.mjs';
+import {withReviewPaths} from './recovery-case-alias.mjs';
 import {compareIdentity,identityOf} from '../recovery/file-identity.mjs';
 import {createTdarrFileState} from '../recovery/tdarr-file-state.mjs';
 import {classify,originalFailureReport} from '../recovery/policy.mjs';
@@ -38,7 +39,7 @@ export function createTranscodeRetry({data,getConfig,tdarr,readRows,readReport,i
  const journalFile=id=>path.join(directory,id+'.json');
  const files=()=>createTdarrFileState(tdarr,{libraryId:getConfig()?.libraryId});
  async function readJournal(id){try{const value=JSON.parse(await fs.readFile(journalFile(id),'utf8'));if(!object(value)||value.version!==1)throw Object.assign(Error(),{code:'RETRY_JOURNAL'});return value;}catch(e){if(e.code==='ENOENT')return null;throw e;}}
- async function cases(){const read=await readRecoveryCaseState(path.join(data,'recovery','state.json'));return read.error?null:read.present?read.cases:{};}
+ async function cases(){const read=await readRecoveryCaseState(path.join(data,'recovery','state.json'));return read.error?null:read.present?await withReviewPaths(read.cases,getConfig()?.mediaRoot):{};}
 
  /** The cause of the replacement's failed transcode: decode-damage, operational, unrecognized or unreadable. */
  async function diagnose(caseId){

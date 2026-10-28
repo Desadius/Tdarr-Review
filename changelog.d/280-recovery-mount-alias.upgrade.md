@@ -1,0 +1,1 @@
+- **Expect Needs attention to change right after the update.** Cases that waited for a cooldown or the daily limit and went manual only because Radarr was briefly unreachable return to waiting on Recovery's first poll, and cases on another mount of the share start offering assessment, handoff and retry. Nothing is moved, approved or downloaded by the update itself.

@@ -236,6 +236,32 @@ test('an older handoff cannot release a newer confirmed faulty-source Hold',{ski
  }finally{await f.cleanup();}
 });
 
+// A deferral is never turned manual by an unreachable Radarr, and one that was returns to its deferral.
+function frozenCooldown(f){
+ const signature='quant_step_size larger than huff_lsbs',sampleSHA256=crypto.createHash('sha256').update('DISPOSABLE SOURCE BYTES'.repeat(3)).digest('hex'),retryAt=new Date(f.parent.mutationStarted+30*86400000).toISOString();
+ f.state.jobs['fixture-job']='superseded';f.row.TranscodeDecisionMaker='Hold';f.row.holdUntil=DEFERRED_HOLD_UNTIL;
+ return {id:f.id,status:'deferred_cooldown',movieId:1,file:f.file,relative:f.relative,source:f.source,size:f.size,fp:f.sourceFP,binding:f.binding,skipCurrentEdition:true,preservedSourceFP:f.sourceFP,
+  evidence:{sourceFP:f.sourceFP,sampleSHA256,signature,confirmed:new Date(Date.now()-1000).toISOString(),checks:[{code:0,stderr:signature},{code:0,stderr:signature}]},
+  deferredCooldown:{version:1,file:f.file,source:f.source,size:f.size,sourceFP:f.sourceFP,sourceRoot:f.cfg.sourceRoot,libraryId:f.cfg.libraryId,binding:f.binding,sampleSHA256,signature,retryAt}};
+}
+test('a deferral that went manual on a transient read failure resumes its deferral; a started mutation stays manual',{skip:process.platform!=='linux'},async()=>{
+ for(const started of [false,true]){
+  const f=await fixture();try{
+   f.state.cases[f.id]={...frozenCooldown(f),status:'manual',message:'fetch failed',...(started?{mutationStarted:Date.now()-1000}:{})};
+   await f.write();await f.run();const c=(await f.result()).state.cases[f.id];
+   assert.equal(c.status,started?'manual':'deferred_cooldown',c.message);
+   assert.equal(f.requests.filter(r=>r.method!=='GET'&&r.url!=='/api/v2/cruddb').length,0,'no mutation');await f.unchanged();
+  }finally{await f.cleanup();}
+ }
+});
+test('an unreachable Radarr during deferral reads keeps the deferral and records the failure',{skip:process.platform!=='linux'},async()=>{
+ const f=await fixture();try{
+  f.state.cases[f.id]=frozenCooldown(f);f.cfg.radarrUrl='http://127.0.0.1:9';
+  await f.write();await f.run();const c=(await f.result()).state.cases[f.id];
+  assert.equal(c.status,'deferred_cooldown',c.message);assert.equal(c.observationError,'fetch failed');await f.unchanged();
+ }finally{await f.cleanup();}
+});
+
 test('a clean decode is a diagnostic completion only for the unchanged source',{skip:process.platform!=='linux'},async()=>{
  for(const changed of [false,true]){
   const f=await fixture();try{

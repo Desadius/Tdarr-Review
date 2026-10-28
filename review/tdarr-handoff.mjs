@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {readRecoveryCaseState,readRecoveryRuntime} from './recovery-snapshot.mjs';
+import {withReviewPaths} from './recovery-case-alias.mjs';
 import {compareIdentity,identityOf} from '../recovery/file-identity.mjs';
 import {createTdarrFileState} from '../recovery/tdarr-file-state.mjs';
 import {preservesHold} from '../recovery/replacement-handoff.mjs';
@@ -35,7 +36,7 @@ export function createTdarrHandoff({data,getConfig,tdarr,readRows,isWorkerBusy,a
  const journalFile=id=>path.join(directory,id+'.json');
  const files=()=>createTdarrFileState(tdarr,{libraryId:getConfig()?.libraryId});
  async function readJournal(id){try{const value=JSON.parse(await fs.readFile(journalFile(id),'utf8'));return object(value)&&value.version===1?value:null;}catch(e){if(e.code==='ENOENT')return null;throw e;}}
- async function cases(){const read=await readRecoveryCaseState(path.join(data,'recovery','state.json'));return read.error?null:read.present?read.cases:{};}
+ async function cases(){const read=await readRecoveryCaseState(path.join(data,'recovery','state.json'));return read.error?null:read.present?await withReviewPaths(read.cases,getConfig()?.mediaRoot):{};}
 
  /** Whether the replacement of a replacement_imported case verifiably has no Tdarr row (fresh read). */
  async function rowMissing(c){

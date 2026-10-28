@@ -6,6 +6,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {identityOf,compareIdentity} from './file-identity.mjs';
 import {createTdarrFileState,HOLD_FOREVER} from './tdarr-file-state.mjs';
+import {noteObservationError,clearObservationError,publishedObservationError} from './transient-error.mjs';
 // Quarantine moves and library links change the preserved original's ctime. An unreadable
 // recorded identity is refused with its own reason instead of looking like a change.
 function samePreserved(current,stored){
@@ -52,7 +53,7 @@ export async function maintainWaitingSources({cfg,state,rad,td,phase,save,comman
     const rel=f.path.slice(root.length);if(rel.split('/').some(x=>!x||x==='.'||x==='..')||rel.includes('\\'))throw Error('Unsafe replacement path');
     const replacement=await safeSource(rel);if(replacement.size!==f.size)throw Error('Replacement size does not match Radarr');
     const q=await fs.lstat(c.quarantine);if(!q.isFile()||q.isSymbolicLink()||!samePreserved(identityOf(q),c.fp)||await fs.realpath(c.quarantine)!==c.quarantine)throw Error('Quarantine identity changed');
-    c.skipCurrentEdition=false;delete c.observationError;c.nextSearchAt=null;
+    c.skipCurrentEdition=false;clearObservationError(c);c.nextSearchAt=null;
     await phase(c,'waiting_replacement','Importována nová kopie; původní vydání je zachované v karanténě.');continue;
    }
    const source=await safeSource(c.relative);
@@ -74,7 +75,7 @@ export async function maintainWaitingSources({cfg,state,rad,td,phase,save,comman
    await command({name:'RescanMovie',movieId:c.movieId});if((await rad('/movie/'+c.movieId)).movieFileId)throw Error('Radarr still sees kept source');
    await phase(c,'replacement_download_intent','Předávám vhodnou náhradu ke stažení.');await rad('/release',{guid:release.guid,indexerId:release.indexerId,movieId:c.movieId});c.skipCurrentEdition=false;c.selectedRelease=release.title;
    await phase(c,'waiting_replacement','Radarr stahuje jinou kopii; původní vydání zůstává v karanténě.');
-  }catch(e){c.observationError=e.message;await save();}
+  }catch(e){noteObservationError(c,e);await save();}
  }
 }
 // Historical journals lacked replacementRelative/FP. Recover only a display
@@ -101,7 +102,7 @@ export async function publishRecoveryStatus({cfg,state,atomic,tdarrFiles=[],regi
   if(c.status==='replacement_imported'&&tdarrStatus==='Hold'&&!c.cleanup?.approvedAt)pipelineLabel='Náhrada je pozastavená v Tdarru; zkontroluj důvod';
   if(c.status==='no_action')pipelineLabel=c.originalCheckKind==='healthy'?'Úplná kontrola originálu bez chyby':'Kontrola originálu nepotvrdila poškození';
   const followup=replacementFollowup(c,{cfg,state});
-  return {...await verifyPause(c,cfg),replacementFollowupId:followup?.id||null,replacementFollowupBinding:followup?.binding||null,id:c.id,title:c.relative?.split('/')[0]||'Film',phase:c.status,pipelineLabel,source:'recovery',message:c.message,reason:c.evidence?.signature||c.approval?.signature||c.message,created:c.created,updated:c.updated,lastSearchAt:c.lastSearchAt||null,nextSearchAt:c.nextSearchAt||null,nextRetryAt:(c.status==='deferred_limit'&&c.approval&&!c.deferredLimit?frozenLimit?.retryAt:c.nextRetryAt)||null,sourceRetained:c.status==='waiting_source_kept'||c.status==='deferred_cooldown'||c.status==='deferred_limit'&&!!(c.deferredLimit||c.approval),bindingFailure:c.bindingFailure?.code||null,sourceConfirmed:!!(c.bindingFailure&&c.evidence?.sourceFP===c.fp&&c.evidence.checks?.length===2),originalCheckKind:c.originalCheckKind||null,tmdbId:c.tmdbId||null,titleSlug:c.titleSlug||null,edition:c.binding?.sourceTitle||c.approval?.sourceTitle||null,queue:['waiting_replacement','waiting_source_kept','manual'].includes(c.status)?c.latestQueue||[]:[],error:c.observationError||c.retentionError||null,retentionErrorPresent:!!c.retentionError,tdarrStatus,legacyReplacementBinding:display?.legacy===true,replacementTitle:display?.relative.split('/').pop()||null,quarantineRetained:!!c.quarantine&&!c.cleanup?.complete,cleanupComplete:!!c.cleanup?.complete,deleteAfter:c.cleanup?.deleteAfter||null,fullHash:c.fullHash?{stage:c.fullHash.stage,done:c.fullHash.done,total:c.fullHash.total,started:c.fullHash.started,updated:c.fullHash.updated||null}:null,canRestore:false};
+  return {...await verifyPause(c,cfg),replacementFollowupId:followup?.id||null,replacementFollowupBinding:followup?.binding||null,id:c.id,title:c.relative?.split('/')[0]||'Film',phase:c.status,pipelineLabel,source:'recovery',message:c.message,reason:c.evidence?.signature||c.approval?.signature||c.message,created:c.created,updated:c.updated,lastSearchAt:c.lastSearchAt||null,nextSearchAt:c.nextSearchAt||null,nextRetryAt:(c.status==='deferred_limit'&&c.approval&&!c.deferredLimit?frozenLimit?.retryAt:c.nextRetryAt)||null,sourceRetained:c.status==='waiting_source_kept'||c.status==='deferred_cooldown'||c.status==='deferred_limit'&&!!(c.deferredLimit||c.approval),bindingFailure:c.bindingFailure?.code||null,sourceConfirmed:!!(c.bindingFailure&&c.evidence?.sourceFP===c.fp&&c.evidence.checks?.length===2),originalCheckKind:c.originalCheckKind||null,tmdbId:c.tmdbId||null,titleSlug:c.titleSlug||null,edition:c.binding?.sourceTitle||c.approval?.sourceTitle||null,queue:['waiting_replacement','waiting_source_kept','manual'].includes(c.status)?c.latestQueue||[]:[],error:publishedObservationError(c)||c.retentionError||null,retentionErrorPresent:!!c.retentionError,tdarrStatus,legacyReplacementBinding:display?.legacy===true,replacementTitle:display?.relative.split('/').pop()||null,quarantineRetained:!!c.quarantine&&!c.cleanup?.complete,cleanupComplete:!!c.cleanup?.complete,deleteAfter:c.cleanup?.deleteAfter||null,fullHash:c.fullHash?{stage:c.fullHash.stage,done:c.fullHash.done,total:c.fullHash.total,started:c.fullHash.started,updated:c.fullHash.updated||null}:null,canRestore:false};
  }));
  await atomic(path.join(path.dirname(cfg.mediaRoot),'.tdarr-recovery-status.json'),{version:1,updated:new Date().toISOString(),configChange:state.configChange?{detectedAt:state.configChange.detectedAt,restartRequired:true,valid:state.configChange.valid,error:state.configChange.error}:null,registryAllowedModes,cases},0o644);
 }
