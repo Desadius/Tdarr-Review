@@ -9,6 +9,7 @@ import dv81 from './dv81.cjs';
 import dualHDR from './dual-hdr.cjs';
 import legacySDR from './legacy-sdr.cjs';
 import hdrExtra from './hdr-extra.cjs';
+import dv7to81 from './dv7to81.cjs';
 import {identityOf,compareIdentity} from '../recovery/file-identity.mjs';
 
 /**
@@ -162,6 +163,7 @@ export function inspect(original,review) {
     else if(review.format?.tags?.TDARR_HDR_PROFILE===dv81.MARKER)dv81.compare(original.hdr10,review.hdr10);
     else if(review.format?.tags?.TDARR_HDR_PROFILE===hdrExtra.PLUS)hdrExtra.compare(original.hdr10,review.hdr10,'plus');
     else if(review.format?.tags?.TDARR_HDR_PROFILE===hdrExtra.P7)hdrExtra.compare(original.hdr10,review.hdr10,'p7');
+    else if(review.format?.tags?.TDARR_HDR_PROFILE===dv7to81.MARKER)dv7to81.compare(original.hdr10,review.hdr10);
     else {
       if(review.format?.tags?.TDARR_HDR_PROFILE!==hdr10.MARKER)throw new Error('HEVC výsledek nepochází z povoleného HDR profilu.');
       hdr10.compareHDR(original.hdr10,review.hdr10);
