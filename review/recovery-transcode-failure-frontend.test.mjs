@@ -30,7 +30,7 @@ const CASES=[
  ['second failure',{...base,actions:[],blockers:['transcode-retry-failed-again'],diagnosis:{cause:'operational'}},
   ['Opakovaný převod také selhal'],['The retried transcode failed too; inspect Tdarr']],
  ['Not required',{...base,recommended:'assessInstalled',actions:[{id:'assessInstalled',changes:'nothing'}],blockers:['transcode-not-required','restore-over-installed']},
-  ['Ponechat aktuální kopii'],['Keep the current copy',"Tdarr's rules do not require transcoding the replacement; a retry would skip it again."]],
+  ['Ponechat aktuální kopii','Přehraj ji a rozhodni, jestli ji ponecháš.'],['Keep the current copy','Play it and decide whether to keep it.']],
 ];
 for(const [name,attention,czech,english]of CASES){
  test('the attention model renders '+name+' in Czech',()=>withDocument(()=>{

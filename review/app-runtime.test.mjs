@@ -82,7 +82,7 @@ if(typeof vm.SourceTextModule!=='function'){
    calls.push({route,method:options.method,body:options.body?JSON.parse(options.body):undefined});
    const configured=routes[route]||routes[route.split('?')[0]],fixture=typeof configured==='function'?await configured({route,body:options.body?JSON.parse(options.body):undefined}):configured;if(fixture)return {status:fixture.status||200,ok:!fixture.status||fixture.status<400,json:async()=>structuredClone(fixture.data)};if(route==='/api/radarr/requests'&&overviewError)return {status:overviewError.status,ok:false,json:async()=>({error:overviewError.message})};
    if(route==='/api/recovery/runtime'&&fallbackStatus!==200)return {status:fallbackStatus,ok:false,json:async()=>({error:'synthetic runtime unavailable'})};
-   const data=route==='/api/items'?{label:'Synthetic Review',serverTime:now,items:[],history:[],recovery:[],pendingRestores:[],restorePending:0,...itemsData}:route==='/api/radarr/requests'?response:route==='/api/recovery/runtime'?fallbackRuntime:route==='/api/tv/status'?{mode:'off'}:null;
+   const data=route==='/api/items'?{label:'Synthetic Review',serverTime:now,items:[],history:[],recovery:[],pendingRestores:[],restorePending:0,...itemsData}:route==='/api/radarr/requests'||route==='/api/recovery/refresh'?response:route==='/api/recovery/runtime'?fallbackRuntime:route==='/api/tv/status'?{mode:'off'}:null;
    if(!data)throw Error('Unexpected fixture route: '+route);return {status:200,ok:true,json:async()=>structuredClone(data)};
   }});
   const publicRoot=new URL('./public/',import.meta.url),modules=new Map();
@@ -92,8 +92,9 @@ if(typeof vm.SourceTextModule!=='function'){
   const app=await moduleFor(new URL('app.js',publicRoot));
   await app.link((specifier,referencing)=>moduleFor(specifier.startsWith('/')?new URL(specifier.slice(1),publicRoot):new URL(specifier,referencing.identifier)));
   await app.evaluate();for(let i=0;i<10;i++)await flush();
-  const refresh=async()=>{await document.getElementById('recoveryRefresh').emit('click');for(let i=0;i<10;i++)await flush()};
-  return {document,calls,timers,storage,navigations,downloads,blobs,async hash(value){location.hash=value;for(const fn of windowListeners.hashchange||[])fn();for(let i=0;i<6;i++)await flush()},async tick(){for(const timer of timers.filter(t=>t.ms===1000))timer.fn();for(let i=0;i<15;i++)await flush()},async update(value){response=value;await refresh()},async failOverview(runtime,status=500,runtimeStatus=200){overviewError={status,message:'synthetic shared case status invalid'};fallbackRuntime=runtime;fallbackStatus=runtimeStatus;now+=60000;await refresh()}};
+  // The list reloads on its own every 30 seconds; the fixture lets that time pass.
+  const refresh=async(items=true)=>{now+=30000;for(const timer of timers.filter(t=>t.ms===30000||items&&t.ms===2000))timer.fn();for(let i=0;i<10;i++)await flush()};
+  return {document,calls,timers,storage,navigations,downloads,blobs,async hash(value){location.hash=value;for(const fn of windowListeners.hashchange||[])fn();for(let i=0;i<6;i++)await flush()},async tick(){for(const timer of timers.filter(t=>t.ms===1000))timer.fn();for(let i=0;i<15;i++)await flush()},async update(value){response=value;await refresh()},async failOverview(runtime,status=500,runtimeStatus=200){overviewError={status,message:'synthetic shared case status invalid'};fallbackRuntime=runtime;fallbackStatus=runtimeStatus;now+=60000;await refresh(false)}};
  }
  const sharedFixture={revision:'fixture-revision',managed:false,generation:0,active:null,historyUsesSetupTime:true,conflicts:[],migrationChoices:[],history:[],apply:{state:'idle'},draft:{review:{label:'Fixture',publicOrigin:'http://localhost',tdarrUrl:'http://127.0.0.1:8266',libraryId:'fixture',sourceRoots:['/tdarr-films','/alias'],tdarrReviewRoot:'/tdarr-review',mediaRoot:'/media',reviewRoot:'/review',reviewPrefixes:[],database:'/db',ffmpeg:'/ffmpeg',ffprobe:'/ffprobe'},radarr:{url:'http://127.0.0.1:7878',mediaRoot:'/radarr-films',quarantineRoot:'/radarr-quarantine',preferCzechEnglish:true,hasApiKey:true},sonarr:{url:'http://127.0.0.1:8989',hasApiKey:true},recovery:{sourceRoot:'/tdarr-films',quarantineRoot:'/recovery-quarantine',reports:'/reports',stableMinutes:10,confirmDelaySeconds:30,pollSeconds:300,decodeTimeoutHours:12,maxRepairsPerDay:3,movieCooldownDays:30,fullSourceHash:false,detectTerminalHeaders:true,since:1700000000000}}};
  test('both legacy settings entry points open one guided shared draft without applying',async()=>{
@@ -403,52 +404,65 @@ test('a mapped Sonarr file cannot be source-checked without an explicit saved ro
   assert.equal(await open('Fixture film'),null,'the film being replaced shows no checklist');assert.match(dom.getElementById('detailBody').textContent,/Tento film se právě nahrazuje nebo čeká v dávce/);
   assert.equal(f.calls.filter(c=>c.method==='POST'&&!c.route.endsWith('/audio-compare')).length,0);
  });
- for(const language of ['cs','en'])test('a Needs attention or Deferred case downloads its Diagnostic export without any other effect, and failures are understandable, in '+language,async()=>{
+ for(const language of ['cs','en'])test('Settings downloads the Diagnostic export of a Needs attention or Closed case without any other effect, and failures are understandable, in '+language,async()=>{
  const id='d'.repeat(24),runtime={present:true,version:1,mode:'repair',state:'running',reason:null},report={format:'tdarr-review-diagnostic-export',case:{source:'recovery',id}};
  const attention={reason:'manual',recommended:'refresh',blockers:['inspect-case'],location:{},actions:[{id:'refresh',changes:'information'},{id:'exportDiagnostic',changes:'nothing'},{id:'reopen',changes:'review-only',revision:'r'.repeat(64)}]};
  const record={id,source:'recovery',title:'Synthetic attention film',phase:'manual',canRestore:false,statusUpdated:new Date().toISOString(),attention,deferral:{state:'deferred',note:'private note',revision:'r'.repeat(64)}};
  let answer={data:report};
  const f=await appFixture(language,{routes:{['/api/cases/recovery/'+id+'/diagnostic-export']:()=>answer}}),dom=f.document;
  await f.update({requests:[record],recoveryRuntime:runtime});await f.hash('#recovery?filter=deferred');
- const list=dom.getElementById('recoveryList'),label=language==='en'?/Download diagnostic export/:/Stáhnout diagnostický export/;
- const deferredButton=list.querySelectorAll('button').find(n=>label.test(n.textContent));assert.ok(deferredButton,'a Deferred case offers the export');
- const before=f.calls.length;await deferredButton.emit('click');for(let i=0;i<8;i++)await flush();
+ const label=language==='en'?/Download diagnostic export/:/Stáhnout diagnostický export/;
+ assert.equal(dom.getElementById('recoveryList').querySelectorAll('button').some(n=>label.test(n.textContent)),false,'the case list no longer offers the export');
+ await f.hash('#settings');
+ const listed=dom.getElementById('diagnosticCases');assert.match(listed.textContent,/Synthetic attention film/);
+ const before=f.calls.length;await listed.querySelectorAll('button').find(n=>label.test(n.textContent)).emit('click');for(let i=0;i<8;i++)await flush();
  const sent=f.calls.slice(before);assert.deepEqual(sent.map(c=>c.method+' '+c.route),['GET /api/cases/recovery/'+id+'/diagnostic-export'],'one read-only request, nothing else');
  assert.equal(f.downloads.length,1);assert.equal(f.downloads[0].name,'tdarr-review-diagnostic-recovery-'+id+'.json');
  assert.deepEqual(JSON.parse(await f.blobs.get(f.downloads[0].href).text()),report);
- // The detail view offers the same action for an active case.
- await f.update({requests:[{...record,deferral:undefined,attention:{...attention,actions:attention.actions.filter(a=>a.id!=='reopen')}}],recoveryRuntime:runtime});await f.hash('#recovery?filter=attention');
- await dom.querySelectorAll('button').find(n=>/Synthetic attention film/.test(n.getAttribute('aria-label')||'')).emit('click');for(let i=0;i<6;i++)await flush();
- const action=dom.getElementById('detailBody').querySelector('[data-attention-action="exportDiagnostic"]');assert.ok(action,'the detail view lists the export');
- answer={status:404,data:{code:'diagnostic_case_unavailable',error:'x'}};const failed=f.downloads.length;await action.emit('click');for(let i=0;i<8;i++)await flush();
+ // An active case is listed too, and its detail no longer shows the export.
+ await f.update({requests:[{...record,deferral:undefined,attention:{...attention,actions:attention.actions.filter(a=>a.id!=='reopen')}}],recoveryRuntime:runtime});await f.hash('#settings');
+ const again=dom.getElementById('diagnosticCases').querySelectorAll('button').find(n=>label.test(n.textContent));assert.ok(again,'an active case is listed');
+ answer={status:404,data:{code:'diagnostic_case_unavailable',error:'x'}};const failed=f.downloads.length;await again.emit('click');for(let i=0;i<8;i++)await flush();
  assert.equal(f.downloads.length,failed,'a failed export saves nothing');
  assert.match(dom.getElementById('error').textContent,language==='en'?/diagnostic export cannot be created for this case/:/diagnostický export vytvořit/);
  assert.equal(f.calls.some(c=>c.method==='POST'),false,'no approval, note, quarantine or deadline request');
 });
-for(const language of ['cs','en'])test('Needs attention shows the server reason, location and only the server-listed actions, recommended first, in '+language,async()=>{
+for(const language of ['cs','en'])test('Needs attention says what the user is asked to do and shows only the server-listed actions, recommended first, in '+language,async()=>{
   const id='d'.repeat(24),itemId='e'.repeat(24),runtime={present:true,version:1,mode:'repair',state:'running',reason:null};
   const attention={reason:'awaiting-review',recommended:'openReview',recoveryPolledAt:new Date().toISOString(),blockers:['transcode-retry-unavailable'],
    location:{library:{status:'verified',detail:'present'},quarantine:{status:'verified',detail:'present'},review:{status:'verified',detail:'pending'},tdarr:{status:'unverified',detail:'transcode success',by:'recovery'},radarr:{status:'not-used'}},
-   actions:[{id:'refresh',changes:'information'},{id:'openRadarr',changes:'nothing',href:'http://radarr.invalid/movie/x'},{id:'openReview',changes:'nothing',itemId}]};
+   actions:[{id:'refresh',changes:'information'},{id:'openRadarr',changes:'nothing',href:'http://radarr.invalid/movie/x'},{id:'openReview',changes:'nothing',itemId},{id:'exportDiagnostic',changes:'nothing'}]};
   const record={id,source:'recovery',title:'Synthetic attention film',phase:'replacement_imported',tdarrStatus:'Transcode success',canRestore:false,statusUpdated:new Date().toISOString(),radarrMovieUrl:'http://radarr.invalid/movie/x',attention};
   const f=await appFixture(language,{routes:{'/api/recovery/refresh':{data:{requests:[record],recoveryConfig:null,recoveryRuntime:runtime}}}}),dom=f.document;
   await f.update({requests:[record],recoveryRuntime:runtime});
   await f.hash('#recovery?filter=attention');
-  const card=dom.getElementById('recoveryList');
+  assert.equal(dom.getElementById('recoveryRefresh'),null,'no refresh button');assert.equal(dom.getElementById('recoveryVerifyAll'),null,'no verify-all button');
+  const card=dom.getElementById('recoveryList'),ask=language==='en'?/The transcode result is waiting in Review\. Assess it and decide\./:/Výsledek převodu čeká v Review\. Posuď ho a rozhodni o něm\./;
+  assert.match(card.textContent,ask,'the card says what the user is asked to do');
   assert.deepEqual(card.querySelectorAll('[data-attention-action]').map(n=>n.dataset.attentionAction),['openReview'],'the card shows the recommended action only');
   assert.match(card.textContent,language==='en'?/Opens the assessment; approval is a separate step/:/Otevře posouzení; schválení je samostatný krok/);
+  const before=f.calls.length;
   await dom.querySelectorAll('button').find(n=>/Synthetic attention film/.test(n.getAttribute('aria-label')||'')).emit('click');for(let i=0;i<6;i++)await flush();
   const body=dom.getElementById('detailBody');
-  assert.deepEqual(body.querySelectorAll('[data-attention-action]').map(n=>n.dataset.attentionAction),['openReview','refresh','openRadarr'],'recommended first, then the other listed actions; nothing else');
+  assert.deepEqual(body.querySelectorAll('[data-attention-action]').map(n=>n.dataset.attentionAction),['openReview','openRadarr'],'recommended first, then the other listed actions; refresh and export are not buttons');
   assert.equal(body.querySelector('[data-attention-action="restore"]'),null);
-  assert.match(body.textContent,language==='en'?/Where the film is now/:/Kde je film teď/);
-  assert.match(body.textContent,language==='en'?/The file is in place · verified/:/Soubor je na místě · ověřeno/);
-  assert.match(body.textContent,language==='en'?/Transcode finished · not verified/:/Převod dokončen · neověřeno/);
-  assert.match(body.textContent,language==='en'?/Review does not offer another transcode yet/:/Opakovaný převod Review zatím nenabízí/);
+  assert.match(body.textContent,language==='en'?/What you are asked to do/:/Co se po tobě chce/);assert.match(body.textContent,ask);
+  assert.doesNotMatch(body.textContent,language==='en'?/Where the film is now|What blocks the next step/:/Kde je film teď|Co brání dalšímu kroku/);
   assert.equal(body.querySelector('[data-attention-action="openRadarr"]').href,'http://radarr.invalid/movie/x');
-  const before=f.calls.length;await body.querySelector('[data-attention-action="refresh"]').emit('click');for(let i=0;i<8;i++)await flush();
-  const sent=f.calls.slice(before).find(c=>c.route==='/api/recovery/refresh');assert.equal(sent.method,'POST');assert.deepEqual(sent.body,{keys:['recovery:'+id]});
-  assert.equal(f.calls.slice(before).some(c=>c.method==='POST'&&c.route!=='/api/recovery/refresh'),false,'refresh only reads');
+  const sent=f.calls.slice(before).filter(c=>c.method==='POST');assert.deepEqual(sent.map(c=>[c.route,c.body]),[['/api/recovery/refresh',{keys:['recovery:'+id]}]],'opening the case verifies it once, read-only');
+  dom.getElementById('filmDetail').close();for(let i=0;i<4;i++)await flush();
+  await dom.querySelectorAll('button').find(n=>/Synthetic attention film/.test(n.getAttribute('aria-label')||'')).emit('click');for(let i=0;i<6;i++)await flush();
+  assert.equal(f.calls.slice(before).filter(c=>c.route==='/api/recovery/refresh').length,1,'reopening within a minute does not verify again');
+ });
+ for(const language of ['cs','en'])test('a case with nothing to do says why and offers closing it unchanged in '+language,async()=>{
+  const id='a'.repeat(24),runtime={present:true,version:1,mode:'repair',state:'running',reason:null};
+  const attention={reason:'manual',recommended:'refresh',blockers:['inspect-case'],location:{},actions:[{id:'refresh',changes:'information'},{id:'defer',changes:'review-only'}]};
+  const record={id,source:'recovery',title:'Synthetic idle film',phase:'manual',canRestore:false,statusUpdated:new Date().toISOString(),attention};
+  const f=await appFixture(language),dom=f.document;await f.update({requests:[record],recoveryRuntime:runtime});await f.hash('#recovery?filter=attention');
+  const card=dom.getElementById('recoveryList');
+  assert.match(card.textContent,language==='en'?/There is nothing you can do here now\./:/Teď tu nic udělat nemůžeš\./);
+  assert.match(card.textContent,language==='en'?/close the case unchanged/:/případ uzavři beze změny/);
+  assert.deepEqual(card.querySelectorAll('[data-attention-action]').map(n=>n.dataset.attentionAction),[],'refresh is not offered as the recommended button');
  });
  for(const language of ['cs','en'])test('real Recovery attention explains missing approval evidence without offering approval or retention changes in '+language,async()=>{
   const id='d'.repeat(24),attention={reason:'retention-error',recommended:'refresh',blockers:['retention-evidence'],retentionDiagnosis:{status:'verified',reason:'approval-evidence-missing'},location:{},actions:[{id:'refresh',changes:'information'}]};
@@ -469,7 +483,7 @@ for(const language of ['cs','en'])test('Needs attention shows the server reason,
   await card.querySelectorAll('button').find(n=>/Synthetic Review retention film/.test(n.getAttribute('aria-label')||'')).emit('click');for(let i=0;i<6;i++)await flush();
   const body=dom.getElementById('detailBody');assert.match(body.textContent,language==='en'?/Approval evidence was not found in the verified location/:/Schválení nebylo v ověřeném umístění nalezeno/);
   assert.match(body.textContent,language==='en'?/Do not approve again or change the deadline/:/schválení neopakuj ani neměň lhůtu/);assert.doesNotMatch(body.textContent,/private retention sentinel|secret|\/private\//i);
-  assert.deepEqual(body.querySelectorAll('[data-attention-action]').map(n=>n.dataset.attentionAction),['refresh']);
+  assert.deepEqual(body.querySelectorAll('[data-attention-action]').map(n=>n.dataset.attentionAction),[],'refresh runs on its own');
  });
  for(const language of ['cs','en'])test('real Review-owned attention remains visible when approval evidence is unreadable in '+language,async()=>{
   const id='b'.repeat(24),attention={reason:'retention-error',recommended:'refresh',blockers:['retention-evidence'],retentionDiagnosis:{status:'unavailable',reason:'approval-evidence-unavailable'},location:{},actions:[{id:'refresh',changes:'information'}]};
@@ -480,7 +494,7 @@ for(const language of ['cs','en'])test('Needs attention shows the server reason,
   await card.querySelectorAll('button').find(n=>/Synthetic unreadable Review retention film/.test(n.getAttribute('aria-label')||'')).emit('click');for(let i=0;i<6;i++)await flush();
   const body=dom.getElementById('detailBody');assert.match(body.textContent,language==='en'?/Approval evidence could not be read safely/:/Schvalovací evidenci nelze bezpečně přečíst/);
   assert.match(body.textContent,language==='en'?/The quarantine stays preserved/:/Karanténa zůstává zachovaná/);assert.doesNotMatch(body.textContent,/private retention sentinel|secret|\/private\//i);
-  assert.deepEqual(body.querySelectorAll('[data-attention-action]').map(n=>n.dataset.attentionAction),['refresh']);
+  assert.deepEqual(body.querySelectorAll('[data-attention-action]').map(n=>n.dataset.attentionAction),[],'refresh runs on its own');
  });
  for(const language of ['cs','en'])test('manual import diagnosis is clearly unverified until refresh and links only to the exact movie or general queue in '+language,async()=>{
   const en=language==='en',id='a'.repeat(24),runtime={present:true,version:1,mode:'repair',state:'running',reason:null};
@@ -494,8 +508,8 @@ for(const language of ['cs','en'])test('Needs attention shows the server reason,
   assert.ok(en?card.textContent.includes('Open the Radarr Activity/Queue'):card.textContent.includes('Otevřít frontu Radarru'));
   assert.equal(card.querySelectorAll('a').find(a=>a.href==='http://radarr.invalid/activity/queue').href,'http://radarr.invalid/activity/queue');
   assert.doesNotMatch(card.textContent,/PRIVATE RAW ERROR|api[_ -]?key|\/private\//i);
-  const before=f.calls.length;await card.querySelector('[data-attention-action="refresh"]').emit('click');for(let i=0;i<10;i++)await flush();
-  assert.deepEqual(f.calls.slice(before).filter(c=>c.method==='POST').map(c=>[c.route,c.body]),[['/api/recovery/refresh',{keys:['recovery:'+id]}]],'refresh is the only request and is read-only');
+  const before=f.calls.length;await dom.querySelectorAll('button').find(n=>/Synthetic import film/.test(n.getAttribute('aria-label')||'')).emit('click');for(let i=0;i<10;i++)await flush();
+  assert.deepEqual(f.calls.slice(before).filter(c=>c.method==='POST').map(c=>[c.route,c.body]),[['/api/recovery/refresh',{keys:['recovery:'+id]}]],'opening the case refreshes it; that is the only request and is read-only');
   const refreshed=dom.getElementById('recoveryList');
   assert.match(refreshed.textContent,en?/language or quality mismatch/i:/nesoulad jazyka nebo kvality/i);
   assert.equal(refreshed.querySelectorAll('a').find(a=>a.href==='http://radarr.invalid/movie/synthetic-import-film').href,'http://radarr.invalid/movie/synthetic-import-film');
@@ -607,14 +621,6 @@ for(const language of ['cs','en'])test('Needs attention shows the server reason,
   assert.equal(dom.getElementById('confirm').open,true);assert.match(dom.getElementById('dialogText').textContent,language==='en'?/will not rerun an uncertain operation/:/Nejasnou operaci znovu nespustí/);assert.equal(dom.getElementById('commit').disabled,false);
   assert.equal(f.calls.some(c=>c.method==='POST'&&c.route===base+'/reconcile'),false);dom.getElementById('confirm').returnValue='confirm';await dom.getElementById('confirm').close();for(let i=0;i<10;i++)await flush();
   assert.deepEqual(f.calls.filter(c=>c.method==='POST'&&c.route===base+'/reconcile').map(c=>c.body),[{confirm:true,operationId,revision}]);assert.equal(reconciled,true);
- });
- test('Verify the status of all cases asks the server for a read-only refresh of the whole queue',async()=>{
-  const runtime={present:true,version:1,mode:'repair',state:'running',reason:null};
-  const f=await appFixture('en',{routes:{'/api/recovery/refresh':{data:{requests:[],recoveryConfig:null,recoveryRuntime:runtime}}}}),dom=f.document;
-  await f.hash('#recovery?filter=attention');const before=f.calls.length;
-  await dom.getElementById('recoveryVerifyAll').emit('click');for(let i=0;i<8;i++)await flush();
-  const sent=f.calls.slice(before).filter(c=>c.method==='POST');assert.deepEqual(sent.map(c=>[c.route,c.body]),[['/api/recovery/refresh',{}]]);
-  assert.equal(dom.getElementById('recoveryVerifyAll').textContent,'Verify the status of all cases');
  });
  test('a confirmed binding-failure case offers the manual Radarr replacement only with the server offer and a reason',async()=>{
   const id='c'.repeat(24),record={id,source:'recovery',title:'Vadný film',phase:'manual',bindingFailure:'grab-missing',sourceConfirmed:true,canRestore:false,statusUpdated:new Date().toISOString()};

@@ -332,6 +332,9 @@ async function replacementAction(item,reason){
 }
 let replacementTask=null;
 const replacementTimer=setInterval(()=>{if(!replacementTask&&!busyFor('background'))replacementTask=replacements.observe().then(()=>replacements.cleanup()).catch(e=>console.error('Radarr status: '+e.message)).finally(()=>{replacementTask=null});},60000);replacementTimer.unref();
+// Needs attention verifies itself (#280): the same read-only refresh as opening a case, for every case, every 10 minutes.
+let attentionTask=null;
+const attentionTimer=setInterval(()=>{if(!attentionTask&&!busyFor('background'))attentionTask=replacements.overview().then(overview=>recoveryAttention.refresh(overview)).catch(e=>console.error('Recovery attention refresh: '+e.message)).finally(()=>{attentionTask=null});},600000);attentionTimer.unref();
 
 // Recover/inspect transactions before restarting dispatch; never replay approvals after restart.
 const recovery=await recoverTransactions(path.join(DATA,'transactions'));
