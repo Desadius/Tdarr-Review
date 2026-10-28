@@ -15,6 +15,11 @@ const RESTORE_RECONCILE_ERRORS=new Set(['restore_reconcile_confirm_required','re
  'restore_unchanged_state_unproven','restore_destination_occupied','recovery_control_unavailable','recovery_restart_unconfirmed',
  'recovery_cancel_unconfirmed','recovery_control_outcome_unknown','recovery_worker_resume_unverified']);
 
+// The quarantine folders Review lists: Recovery's, Review's manual replacement and Review results.
+async function quarantineRoots(ctx){
+ const parent=path.dirname(await fs.realpath(ctx.config.mediaRoot)),settings=await ctx.replacements.publicSettings();
+ return [path.join(parent,'.tdarr-corrupt'),settings.quarantineRoot||path.join(parent,'.tdarr-review-quarantine'),path.join(await fs.realpath(ctx.config.reviewRoot),'.radarr-quarantine')];
+}
 // Posters, statistics, quarantine listing and Radarr replacement requests/settings.
 export async function libraryRoutes(ctx,req,res,url,request){
  const poster=/^\/api\/artwork\/(review|request)\/([a-f0-9]{24})$/.exec(url.pathname);
@@ -41,9 +46,7 @@ export async function libraryRoutes(ctx,req,res,url,request){
   return reply(res,200,ctx.statsCache);
  }
  if(url.pathname==='/api/quarantine'&&req.method==='GET'){
-  const parent=path.dirname(await fs.realpath(ctx.config.mediaRoot)),settings=await ctx.replacements.publicSettings();
-  const roots=[path.join(parent,'.tdarr-corrupt'),settings.quarantineRoot||path.join(parent,'.tdarr-review-quarantine'),path.join(await fs.realpath(ctx.config.reviewRoot),'.radarr-quarantine')];
-  const files=[],warnings=[];
+  const roots=await quarantineRoots(ctx),files=[],warnings=[];
   for(const root of [...new Set(roots)]){
    try{
     if(await fs.realpath(root)!==root)throw Error('Karanténa nesmí být symlink.');
@@ -58,6 +61,21 @@ export async function libraryRoutes(ctx,req,res,url,request){
    }catch(e){if(e.code!=='ENOENT')warnings.push('Nelze načíst '+root+': '+e.message);}
   }
   return reply(res,200,{files,warnings,...quarantineRetention});
+ }
+ // Deleting one quarantined file at the user's request (#280): a read of what it would do, or the confirmed deletion.
+ if(url.pathname==='/api/quarantine/delete'&&['GET','POST'].includes(req.method)){
+  const input=req.method==='GET'?{caseId:url.searchParams.get('caseId'),name:url.searchParams.get('name')}:await body(req);
+  try{
+   if(req.method==='GET')return reply(res,200,await ctx.quarantineDelete.inspect(await quarantineRoots(ctx),input.caseId,input.name,{busy:!!ctx.busyFor('restore')}));
+   if(ctx.busyFor('restore',request.mutation))return reply(res,409,apiError('busy'));
+   const result=await ctx.quarantineDelete.remove(await quarantineRoots(ctx),input.caseId,input.name,{snapshot:input.snapshot,confirm:input.confirm,busy:false});
+   logEvent('quarantine.deleted',{caseId:input.caseId,bytes:result.bytes});return reply(res,200,{ok:true,...result});
+  }catch(e){
+   if(['quarantine_delete_invalid','quarantine_delete_confirm_required'].includes(e.code))return reply(res,400,apiError(e.code));
+   if(e.code==='quarantine_delete_missing')return reply(res,404,apiError(e.code));
+   if(['quarantine_delete_not_eligible','quarantine_delete_changed','quarantine_delete_ambiguous'].includes(e.code))return reply(res,409,{...apiError(e.code),blockers:e.blockers||[]});
+   throw e;
+  }
  }
  if(url.pathname==='/api/radarr/settings'&&req.method==='GET'){const shared=await ctx.sharedSettings.public();return reply(res,200,{...await ctx.replacements.publicSettings(),revision:shared.revision,draft:shared.draft.radarr});}
  if(['/api/radarr/settings','/api/radarr/settings/test'].includes(url.pathname)&&req.method==='POST'){

@@ -314,6 +314,8 @@ Seven days are counted from a verified Review approval of the identified replace
 
 Only recorded eligible files are removed; unrelated quarantine contents are not recursively deleted. Unapproved replacements, unknown identities and historical cases missing evidence stay preserved. They can therefore consume space until reviewed deliberately.
 
+The user can delete one quarantined file without approval evidence (#280). `review/quarantine-delete.mjs` serves `GET /api/quarantine/delete` (what the deletion would do: size, the library state of the case's current copy, blockers, and a snapshot hash over file identity, case and library state) and `POST` with `confirm: true` and that snapshot, under the `restore` busy policy. It refuses a case Recovery still works with (running, waiting or unverified attention categories), symlinked roots, case folders or files, and a file found in more than one root. Before unlinking, it writes `data/quarantine-deletions/<case>-<name hash>.json` (`recovery/quarantine-deletion.mjs`, atomic with fsync) holding the case folder, file name and identity, then re-checks the identity, unlinks, fsyncs the folder and removes it when empty. `retainCase` takes a `deletedByUser` predicate: a preserved file that is missing and matches such a record (same, or ctime-only changed, identity) is reported as purged by the user instead of a retention error. Review's attention model marks the case `quarantineDeleted` and classifies it as done.
+
 ## Access boundaries
 
 All application APIs require a Review session. Mutations check browser origin. Session cookies are HttpOnly and SameSite Strict. The provided containers drop capabilities, run as an unprivileged UID, use a read-only root filesystem, and do not mount the Docker socket.

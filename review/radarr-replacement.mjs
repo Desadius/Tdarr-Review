@@ -2,6 +2,7 @@ import {downloadQueue} from '../recovery/download-queue.mjs';
 import {readRecoveryRuntime,readRecoveryStatus as readRecoveryStatusFile,readRecoveryCaseState,recoveryStatusFile} from './recovery-snapshot.mjs';
 import {ensureHandoff,preservesHold} from '../recovery/replacement-handoff.mjs';
 import {retainCase,quarantineRetention} from '../recovery/quarantine-retention.mjs';
+import {userDeletedQuarantine} from '../recovery/quarantine-deletion.mjs';
 import {identityOf,compareIdentity} from '../recovery/file-identity.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -69,6 +70,8 @@ async function readRecoveryCases(file){
  return read.cases;
 }
 export function createReplacement({data,getConfig,getConnection,safeFile,hash,atomicJSON,tdarr,pauseDispatch,verifyPaused=async()=>{},isWorkerBusy=async()=>false,resume,onProgress}){
+ // A preserved file the user deleted through Review's Quarantine dialog is not a retention error (#280).
+ const deletedByUser=(file,identity)=>userDeletedQuarantine({data,file,identity});
  const connectionFile=path.join(data,'radarr.json'),directory=path.join(data,'radarr-replacements'),recoveryCases=()=>readRecoveryCases(path.join(data,'recovery','state.json'));let observing=false,mutating=false;
  async function connection(){const value=getConnection?await getConnection():JSON.parse(await fs.readFile(connectionFile,'utf8'));if(!value?.url)throw Object.assign(Error('Vyplň adresu Radarru, API klíč a cestu knihovny v Radarru.'),{code:'ENOENT'});return validateConnection(value);}
  async function api(c,route,method='GET',body){
@@ -231,11 +234,11 @@ export function createReplacement({data,getConfig,getConnection,safeFile,hash,at
  async function cleanupLanguageRepairs(){
   const directory=path.join(data,'language-repairs'),cfg=getConfig();await fs.mkdir(directory,{recursive:true});
   for(const name of await fs.readdir(directory)){if(!name.endsWith('.json'))continue;const file=path.join(directory,name),st=await fs.lstat(file);if(!st.isFile()||st.isSymbolicLink())continue;const c=JSON.parse(await fs.readFile(file,'utf8'));
-   try{await retainCase(c,{mediaRoot:cfg.mediaRoot,reviewRoot:cfg.reviewRoot,reviewQuarantineRoot:path.join(cfg.reviewRoot,'.language-repair-backups'),atomicCase:record=>atomicJSON(file,record)});delete c.retentionError;}catch(e){c.retentionError=e.message;}
+   try{await retainCase(c,{mediaRoot:cfg.mediaRoot,reviewRoot:cfg.reviewRoot,reviewQuarantineRoot:path.join(cfg.reviewRoot,'.language-repair-backups'),atomicCase:record=>atomicJSON(file,record),deletedByUser});delete c.retentionError;}catch(e){c.retentionError=e.message;}
    await atomicJSON(file,c);
   }
  }
- async function cleanup(){await cleanupLanguageRepairs();const cfg=getConfig(),con=await connection();for(const c of (await list()).filter(c=>c.phase==='imported')){try{await retainCase(c,{mediaRoot:cfg.mediaRoot,reviewRoot:cfg.reviewRoot,quarantineRoot:con.quarantineRoot||path.join(path.dirname(cfg.mediaRoot),'.tdarr-review-quarantine'),reviewQuarantineRoot:path.join(cfg.reviewRoot,'.radarr-quarantine'),atomicCase:persist});if(c.retentionError){delete c.retentionError;await persist(c);}}catch(e){c.retentionError=e.message;await persist(c);}}}
+ async function cleanup(){await cleanupLanguageRepairs();const cfg=getConfig(),con=await connection();for(const c of (await list()).filter(c=>c.phase==='imported')){try{await retainCase(c,{mediaRoot:cfg.mediaRoot,reviewRoot:cfg.reviewRoot,quarantineRoot:con.quarantineRoot||path.join(path.dirname(cfg.mediaRoot),'.tdarr-review-quarantine'),reviewQuarantineRoot:path.join(cfg.reviewRoot,'.radarr-quarantine'),atomicCase:persist,deletedByUser});if(c.retentionError){delete c.retentionError;await persist(c);}}catch(e){c.retentionError=e.message;await persist(c);}}}
  // The shared Recovery status file, or null when Recovery is not installed.
  async function readRecoveryStatus(){
   const read=await readRecoveryStatusFile(recoveryStatusFile(getConfig().mediaRoot));

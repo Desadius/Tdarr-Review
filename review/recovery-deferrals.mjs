@@ -9,10 +9,10 @@ const digest=value=>crypto.createHash('sha256').update(JSON.stringify(value)).di
 const object=value=>!!value&&typeof value==='object'&&!Array.isArray(value);
 const invalid=()=>({invalid:true});
 const validRecord=value=>object(value)&&value.version===1&&['recovery','radarr'].includes(value.source)&&idPattern.test(value.id||'')&&
- ['deferred','reopened','invalidated'].includes(value.state)&&typeof value.note==='string'&&value.note.trim().length>0&&value.note.length<=MAX_NOTE&&
+ ['deferred','reopened','invalidated'].includes(value.state)&&typeof value.note==='string'&&value.note.length<=MAX_NOTE&&
  typeof value.fingerprint==='string'&&/^[a-f0-9]{64}$/.test(value.fingerprint)&&typeof value.revision==='string'&&/^[a-f0-9]{64}$/.test(value.revision);
 
-/** Review-owned, source-namespaced notes for temporarily deferring an attention case. */
+/** Review-owned, source-namespaced records of attention cases closed unchanged ("deferred"), with an optional note. */
 export function createRecoveryDeferrals({data}){
  const directory=path.join(data,'recovery-deferrals'),secret=crypto.randomBytes(32),queues=new Map();
  const file=(source,id)=>path.join(directory,source+'-'+id+'.json');
@@ -59,7 +59,9 @@ export function createRecoveryDeferrals({data}){
  async function defer({source,id,fingerprint,revision,note,recheck}){
   return serialized(source+':'+id,async()=>{
    if(!['recovery','radarr'].includes(source)||!idPattern.test(id||'')||!/^[a-f0-9]{64}$/.test(fingerprint||''))throw Object.assign(new Error('deferral_unavailable'),{code:'deferral_unavailable'});
-   if(typeof note!=='string'||note.trim().length===0||note.length>MAX_NOTE)throw Object.assign(new Error('deferral_note_invalid'),{code:'deferral_note_invalid'});
+   // Closing a case unchanged needs no note; one may still be left for the next person.
+   if(note===undefined)note='';
+   if(typeof note!=='string'||note.length>MAX_NOTE)throw Object.assign(new Error('deferral_note_invalid'),{code:'deferral_note_invalid'});
    const old=await read(source,id);if(old?.invalid)throw Object.assign(new Error('deferral_unavailable'),{code:'deferral_unavailable'});if(old?.state==='deferred')throw Object.assign(new Error('deferral_conflict'),{code:'deferral_conflict'});
    const expected=token(source,id,fingerprint,old?.state||'none',old?.revision||'none');if(typeof revision!=='string'||!/^[a-f0-9]{64}$/.test(revision)||!crypto.timingSafeEqual(Buffer.from(revision),Buffer.from(expected)))throw Object.assign(new Error('deferral_stale'),{code:'deferral_stale'});
    if(await recheck?.()!==fingerprint)throw Object.assign(new Error('deferral_stale'),{code:'deferral_stale'});

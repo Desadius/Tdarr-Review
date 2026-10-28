@@ -25,3 +25,26 @@ test('cleanup deadline and the published retention rules come from one policy',a
   assert.equal(Date.parse(s.c.cleanup.deleteAfter)-Date.parse(s.c.cleanup.approvedAt),quarantineRetention.retentionDays*86400000);
  }finally{await fs.rm(s.root,{recursive:true,force:true})}
 });
+
+test('a preserved file the user deleted through Review ends retention without an error; any other missing file still fails',async()=>{
+ const s=await setup();try{
+  const fp=s.c.fp;await publishApproval({...s,relative:'new.mkv',sourceFP:s.c.replacementSourceFP,installedRelative:'new.mkv'});
+  await retainCase(s.c,{...s,now:Date.now()});await fs.rm(s.file);
+  await assert.rejects(retainCase(s.c,{...s,now:Date.now()+8*86400000}),{code:'ENOENT'},'an unexplained missing file is a retention error');
+  const asked=[];const deletedByUser=async(file,identity)=>{asked.push([file,identity]);return file===s.file&&identity===fp;};
+  await retainCase(s.c,{...s,deletedByUser,now:Date.now()+8*86400000});
+  assert.deepEqual(asked,[[s.file,fp]]);
+ }finally{await fs.rm(s.root,{recursive:true,force:true})}
+});
+
+test('when the user deleted every preserved file, a changed approved copy no longer reports a retention error',{skip:process.platform==='win32'?'POSIX ctime semantics required':false},async()=>{
+ const s=await setup();try{
+  await publishApproval({...s,relative:'new.mkv',sourceFP:s.c.replacementSourceFP,installedRelative:'new.mkv'});
+  await retainCase(s.c,{...s,now:Date.now()});
+  await new Promise(r=>setTimeout(r,30));await fs.chmod(s.installed,0o640);
+  await assert.rejects(retainCase(s.c,{...s,now:Date.now()+8*86400000}),/metadata timestamp changed/);
+  await fs.rm(s.file);
+  await retainCase(s.c,{...s,deletedByUser:async()=>true,now:Date.now()+8*86400000});
+  await assert.rejects(retainCase(s.c,{...s,deletedByUser:async()=>false,now:Date.now()+8*86400000}),/metadata timestamp changed/);
+ }finally{await fs.rm(s.root,{recursive:true,force:true})}
+});

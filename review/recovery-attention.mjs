@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import {classifyRecovery,recoveryFollowup,RECOVERY_STALE_MS} from './public/review-model.js';
 import {readRecoveryCaseState} from './recovery-snapshot.mjs';
 import {withReviewPaths} from './recovery-case-alias.mjs';
+import {deletedQuarantineCases} from '../recovery/quarantine-deletion.mjs';
 import {compareIdentity,identityOf} from '../recovery/file-identity.mjs';
 import {createTdarrFileState} from '../recovery/tdarr-file-state.mjs';
 import {readRecoveryConfiguration,readRecoveryRestoreBinding} from '../recovery/recovery-authority.mjs';
@@ -114,7 +115,7 @@ export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnec
   // A transcoded result already installed in place of the imported replacement can be assessed as it is (#230).
   let installedResult=null;
   // So can an untranscoded replacement that Tdarr's rules skipped as Not required (#232).
-  if(installed&&record.source==='recovery'&&!item&&(library.detail==='changed'||String(record.tdarrStatus||'').toLowerCase()==='not required')){try{installedResult=await installed.eligibility(record.id,{busy:isBusy()});}catch{installedResult={eligible:false,blockers:['installed-unverified']};}}
+  if(installed&&record.source==='recovery'&&!item&&(library.detail==='changed'||['not required','transcode success','transcode error'].includes(String(record.tdarrStatus||'').toLowerCase()))){try{installedResult=await installed.eligibility(record.id,{busy:isBusy()});}catch{installedResult={eligible:false,blockers:['installed-unverified']};}}
   return {location:{library,quarantine,review,tdarr:tdarrState,radarr:radarrState},reviewItemId:item,installedResult,libraryIdentity:identity,quarantineIdentity};
  }
  function decide(record,classification,{reviewItemId,installedResult,handoffResult,retryResult,importDiagnosis}){
@@ -238,6 +239,9 @@ export function createRecoveryAttention({data,getConfig,getItems,tdarr,getConnec
     }
    }
   }
+  // A case whose preserved copy the user deleted through the Quarantine dialog is done (#280).
+  let deleted=new Set();try{deleted=await deletedQuarantineCases({data});}catch{}
+  for(const r of requests){delete r.quarantineDeleted;if(r&&deleted.has(r.id))r.quarantineDeleted=true;}
   // A parent whose verified follow-up still carries unresolved work is shown once, as the follow-up.
   const classifiedChild=new Map(requests.filter(r=>r?.source==='recovery').map(r=>[r.id,classifyRecovery(r,now())]));
   // An imported replacement whose Tdarr row a fresh read finds missing (#231).

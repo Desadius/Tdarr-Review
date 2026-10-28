@@ -19,7 +19,7 @@ const ROUTES=[
  ['GET','/api/tv','tvRoutes'],['GET','/api/tv/status','tvRoutes'],
  ...['draft','test','apply','cancel'].map(p=>['POST','/api/shared-settings/'+p,'sharedSettingsRoutes']),
  ['GET','/api/artwork/review/'+ID,'libraryRoutes'],['GET','/api/artwork/request/'+ID,'libraryRoutes'],
- ['GET','/api/statistics','libraryRoutes'],['GET','/api/quarantine','libraryRoutes'],
+ ['GET','/api/statistics','libraryRoutes'],['GET','/api/quarantine','libraryRoutes'],['GET','/api/quarantine/delete','libraryRoutes'],['POST','/api/quarantine/delete','libraryRoutes'],
  ['GET','/api/radarr/settings','libraryRoutes'],['POST','/api/radarr/settings','libraryRoutes'],['POST','/api/radarr/settings/test','libraryRoutes'],
  ['GET','/api/radarr/requests','libraryRoutes'],['POST','/api/radarr/requests/'+ID+'/restore','libraryRoutes'],
  ['GET','/api/recovery/runtime','libraryRoutes'],
