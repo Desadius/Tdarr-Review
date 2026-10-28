@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import {constants as fsConstants} from 'node:fs';
 import path from 'node:path';
-import {approvalEvidencePath} from '../recovery/quarantine-retention.mjs';
+import {approvalEvidencePath,approvalKey} from '../recovery/quarantine-retention.mjs';
 import {compareIdentity,identityOf} from '../recovery/file-identity.mjs';
 import {readRecoveryCaseState} from './recovery-snapshot.mjs';
 import {readRecoveryRestoreBinding} from '../recovery/recovery-authority.mjs';
@@ -116,7 +116,7 @@ export async function diagnoseRetentionEvidence({data,mode='off',record,reviewCo
    if(evidenceWasMissing){if(!fresh.missing)return unavailable('approval-evidence-unavailable');}
    else if(fresh.unavailable||JSON.stringify(fresh.value)!==JSON.stringify(evidenceValue))return unavailable('approval-evidence-unavailable');
   }
-  const usable=evidenceValue?.version===1&&evidenceValue.relative===c.replacementRelative&&evidenceValue.sourceFP===c.replacementSourceFP&&safeRelative(evidenceValue.installedRelative)&&validIdentity(evidenceValue.installedFP)&&Number.isFinite(Date.parse(evidenceValue.approvedAt))&&Date.parse(evidenceValue.approvedAt)<=Date.now();
+  const usable=evidenceValue?.version===1&&evidenceValue.relative===approvalKey(c)?.relative&&evidenceValue.sourceFP===approvalKey(c)?.sourceFP&&safeRelative(evidenceValue.installedRelative)&&validIdentity(evidenceValue.installedFP)&&Number.isFinite(Date.parse(evidenceValue.approvedAt))&&Date.parse(evidenceValue.approvedAt)<=Date.now();
   if(usable){
    const file=within(reviewConfig.mediaRoot,evidenceValue.installedRelative);if(!file)return unavailable('approval-binding-unavailable');
    const actual=await regularIdentity(file);let reason=actual.reason==='file-missing'?'approved-copy-missing':actual.reason?'approved-copy-unavailable':null;
@@ -140,8 +140,8 @@ export async function diagnoseRetentionEvidence({data,mode='off',record,reviewCo
   const result=await reviewCase({data,record,reviewConfig});if(result.reason)return result;c=result.c;
   if(typeof c.mediaRoot!=='string'||!path.isAbsolute(c.mediaRoot)||typeof c.reviewRoot!=='string'||!path.isAbsolute(c.reviewRoot)||typeof reviewConfig?.mediaRoot!=='string'||!path.isAbsolute(reviewConfig.mediaRoot)||typeof reviewConfig?.reviewRoot!=='string'||!path.isAbsolute(reviewConfig.reviewRoot)||path.resolve(c.mediaRoot)!==path.resolve(reviewConfig.mediaRoot)||path.resolve(c.reviewRoot)!==path.resolve(reviewConfig.reviewRoot))return unavailable('configuration-binding-changed');
  }else return unavailable('case-binding-unavailable');
- const relative=c.replacementRelative,sourceFP=c.replacementSourceFP;
- if(!safeRelative(relative)||!validIdentity(sourceFP))return unavailable('replacement-binding-unavailable');
+ const key=approvalKey(c),relative=key?.relative,sourceFP=key?.sourceFP;
+ if(!key||!safeRelative(relative)||!key.legacy&&!validIdentity(sourceFP))return unavailable('replacement-binding-unavailable');
  try{evidenceFile=await approvalEvidencePath(reviewConfig.mediaRoot,relative,sourceFP);}catch{return unavailable('configuration-binding-changed');}
  const evidence=await boundedJson(evidenceFile,16384);evidenceValue=evidence.value;evidenceWasMissing=evidence.missing===true;
  if(evidence.missing)return finish(verified('approval-evidence-missing'));

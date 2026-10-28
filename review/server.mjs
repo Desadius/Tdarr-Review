@@ -537,8 +537,12 @@ const resumeRetryTimer=setInterval(()=>{
 },RESUME_RETRY_TICK_MS);resumeRetryTimer.unref();
 const previewStart=setTimeout(()=>{void scan().then(preparePreviews).catch(error=>console.error('Preview preparation: '+error.message))},1000);previewStart.unref();
 let stopping=false;
+const SHUTDOWN_GRACE_MS=5000;
 for(const signal of ['SIGTERM','SIGINT'])process.once(signal,()=>{
- if(stopping)return;stopping=true;clearInterval(previewTimer);clearTimeout(previewStart);clearInterval(replacementTimer);clearInterval(resumeRetryTimer);
+ if(stopping)return;stopping=true;clearInterval(previewTimer);clearTimeout(previewStart);clearInterval(replacementTimer);clearInterval(attentionTimer);clearInterval(resumeRetryTimer);
  const drained=new Promise(resolve=>server.close(resolve));server.closeIdleConnections();
+ // An open browser tab or a streaming preview must not hold the stop until the container is killed; running
+ // work is still awaited below, only its sockets close.
+ setTimeout(()=>server.closeAllConnections(),SHUTDOWN_GRACE_MS).unref();
  void Promise.all([previews.close(),sonarrSourceInspection.close(),sonarrResultInspection.close(),drained]).then(async()=>{while(active||batchRunning||reviewSessions.busy||settingsBusy||resumeTask)await new Promise(resolve=>setTimeout(resolve,50));await saveChain;process.exit(0)}).catch(error=>{console.error('Review shutdown: '+error.message);process.exit(1)});
 });

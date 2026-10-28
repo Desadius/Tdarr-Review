@@ -10,6 +10,19 @@ async function regular(p){if(await fs.realpath(path.dirname(p))!==path.dirname(p
 function key(relative,sourceFP){return crypto.createHash('sha256').update(relative+'\0'+sourceFP).digest('hex')+'.json';}
 /** The approval evidence file for an imported replacement, beside the library root (shared with Review, #230). */
 export async function approvalEvidencePath(mediaRoot,relative,sourceFP){return path.join(path.dirname(await fs.realpath(mediaRoot)),'.tdarr-approvals',key(relative,sourceFP));}
+/**
+ * What an approval of an imported replacement is keyed by: the replacement's recorded identity, or for a case
+ * recorded before Recovery kept that identity, Radarr's record of the imported file (#280). Null when neither binds.
+ * @param {any} c The case.
+ * @returns {{relative:string,sourceFP:string,legacy?:true}|null}
+ */
+export function approvalKey(c){
+ if(typeof c?.replacementRelative!=='string'||!c.replacementRelative)return null;
+ if(c.replacementSourceFP)return {relative:c.replacementRelative,sourceFP:c.replacementSourceFP};
+ const r=c.replacement;
+ if(!Number.isSafeInteger(r?.movieFileId)||r.movieFileId<=0||!Number.isSafeInteger(r?.size)||r.size<=0||typeof r.path!=='string'||!r.path.replaceAll('\\','/').endsWith('/'+c.replacementRelative))return null;
+ return {relative:c.replacementRelative,sourceFP:'radarr-file:'+r.movieFileId+':'+r.size,legacy:true};
+}
 export async function publishApproval({mediaRoot,relative,sourceFP,installedRelative,atomic}){
  const parent=path.dirname(await fs.realpath(mediaRoot)),directory=path.join(parent,'.tdarr-approvals');await fs.mkdir(directory,{recursive:true,mode:0o770});if(await fs.realpath(directory)!==directory)throw Error('Approval directory symlink');
  const installed=under(mediaRoot,installedRelative),st=await regular(installed);
@@ -25,11 +38,11 @@ async function absent(file){try{await fs.lstat(file);return false;}catch(e){if(e
  * @param {(file:string,identity:string)=>Promise<boolean>} [options.deletedByUser] Whether the user deleted exactly this file through Review (#280).
  */
 export async function retainCase(c,{mediaRoot,reviewRoot,quarantineRoot,reviewQuarantineRoot,atomicCase,deletedByUser=null,now=Date.now()}){
- if(!quarantineRetention.cleanupEnabled||!c.replacementSourceFP||!c.replacementRelative||c.cleanup?.complete)return;
+ const approval=approvalKey(c);if(!quarantineRetention.cleanupEnabled||!approval||c.cleanup?.complete)return;
  // Every preserved file was deleted by the user through Review: nothing is left to retain or to report.
  if(deletedByUser){const files=preserved(c);let all=files.length>0;for(const [file,expected]of files)if(!(all=all&&await absent(file)&&await deletedByUser(file,expected)))break;if(all)return;}
- let a;try{const f=await approvalEvidencePath(mediaRoot,c.replacementRelative,c.replacementSourceFP);await regular(f);a=JSON.parse(await fs.readFile(f,'utf8'));}catch(e){if(e.code==='ENOENT')return;throw e;}
- if(a.version!==1||a.relative!==c.replacementRelative||a.sourceFP!==c.replacementSourceFP||!Number.isFinite(Date.parse(a.approvedAt))||Date.parse(a.approvedAt)>now)throw Error('Invalid approval evidence');
+ let a;try{const f=await approvalEvidencePath(mediaRoot,approval.relative,approval.sourceFP);await regular(f);a=JSON.parse(await fs.readFile(f,'utf8'));}catch(e){if(e.code==='ENOENT')return;throw e;}
+ if(a.version!==1||a.relative!==approval.relative||a.sourceFP!==approval.sourceFP||!Number.isFinite(Date.parse(a.approvedAt))||Date.parse(a.approvedAt)>now)throw Error('Invalid approval evidence');
  const installed=under(mediaRoot,a.installedRelative);const installedNow=identityOf(await regular(installed));
  if(installedNow!==a.installedFP){
   const change=compareIdentity(a.installedFP,installedNow);

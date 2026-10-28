@@ -48,3 +48,19 @@ test('when the user deleted every preserved file, a changed approved copy no lon
   await assert.rejects(retainCase(s.c,{...s,deletedByUser:async()=>false,now:Date.now()+8*86400000}),/metadata timestamp changed/);
  }finally{await fs.rm(s.root,{recursive:true,force:true})}
 });
+
+test('a case recorded without the replacement identity is keyed by Radarr\'s record of the imported file (#280)',async()=>{
+ const {approvalKey}=await import('./quarantine-retention.mjs');
+ const replacement={movieFileId:11,path:'/radarr/movies/new.mkv',size:13};
+ assert.deepEqual(approvalKey({replacementRelative:'new.mkv',replacement}),{relative:'new.mkv',sourceFP:'radarr-file:11:13',legacy:true});
+ assert.deepEqual(approvalKey({replacementRelative:'new.mkv',replacementSourceFP:'1:2:3:4:5',replacement}),{relative:'new.mkv',sourceFP:'1:2:3:4:5'},'a recorded identity always wins');
+ for(const r of [null,{...replacement,movieFileId:0},{...replacement,size:-1},{...replacement,path:'/radarr/movies/other.mkv'},{...replacement,path:'/radarr/movies/xnew.mkv'}])assert.equal(approvalKey({replacementRelative:'new.mkv',replacement:r}),null,JSON.stringify(r));
+ assert.equal(approvalKey({replacement}),null);
+ const s=await setup();try{
+  delete s.c.replacementSourceFP;s.c.replacement={...replacement,size:(await fs.stat(s.installed)).size};
+  await publishApproval({...s,relative:'new.mkv',sourceFP:'source-fingerprint',installedRelative:'new.mkv'});
+  await retainCase(s.c,{...s,now:Date.now()+8*86400000});assert.equal(s.c.cleanup,undefined,'evidence under another key does not start retention');
+  await publishApproval({...s,relative:'new.mkv',sourceFP:approvalKey(s.c).sourceFP,installedRelative:'new.mkv'});
+  await retainCase(s.c,{...s,now:Date.now()+8*86400000});await assert.rejects(fs.stat(s.file),{code:'ENOENT'});assert.ok((await fs.stat(s.installed)).isFile());
+ }finally{await fs.rm(s.root,{recursive:true,force:true})}
+});

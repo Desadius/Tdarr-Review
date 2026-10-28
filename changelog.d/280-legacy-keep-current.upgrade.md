@@ -1,0 +1,1 @@
+- **Older cases may offer Keep the current copy after the update.** Approving one writes approval evidence keyed by Radarr's file record. If you return to 2.5.0, Recovery ignores that evidence and keeps the quarantined original until you delete it yourself.

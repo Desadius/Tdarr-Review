@@ -277,13 +277,15 @@ For `Not required` there is no retry, since Tdarr would skip the file again by t
 - the case in Recovery's `state.json`, under Review's own `mediaRoot`;
 - no evidence file (`approvalEvidencePath`);
 - one plain, single-link file at the replacement path or with the same name and another video extension, whose identity differs from the replacement's;
-- the Tdarr row of that file in `Transcode success`;
+- the Tdarr row of that file in `Transcode success`, or `Not required` when Tdarr rescanned its own result;
 - a successful `jobsjsondb` job for it that ended after the replacement's recorded modification and change times;
 - no Review item for the same path, and no running mutation.
 
 Any read failure is `installed-unverified`. The attention model offers `assessInstalled` and then never `restore`.
 
 In the `Not required` mode (#232), the same assessment covers the untranscoded imported replacement itself: the file must be the replacement's own identity, the Tdarr row must be `Not required` with a `Not required` decision after the import instead of the success row and job, and the view carries `untranscoded: true` so that the disclosure says the copy was not transcoded.
+
+A case recorded before Recovery kept `replacementSourceFP` is keyed by `approvalKey` in `recovery/quarantine-retention.mjs` (#280): `radarr-file:<movieFileId>:<size>` from `c.replacement`, accepted only when the recorded Radarr path ends with `replacementRelative`. Such a copy counts as untranscoded when it sits at the replacement path with the recorded size, and Tdarr decisions count when they ended after the current copy's modification time. `retainCase` and the retention diagnosis use the same key; the installed-copy identity check before any deletion is unchanged.
 
 The assessment is Review-owned:
 - the draft lives in `data/recovery-assessments/<case>.json` (device, explicit boolean checks, note), bound to a token of the current file identity; a changed file voids it;
