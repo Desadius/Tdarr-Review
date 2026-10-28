@@ -20,7 +20,8 @@ async function commandRules(){
 
 async function allowedCommands(){
  const {claude,codex}=await commandRules();
- return {claude:claude.allow.map(value=>value.slice(5,-1).replace(/ \*$/,'')).sort(),codex:codex('allow').sort()};
+ // MCP tool entries have no Codex counterpart; compare shell commands only.
+ return {claude:claude.allow.filter(value=>value.startsWith('Bash(')).map(value=>value.slice(5,-1).replace(/ \*$/,'')).sort(),codex:codex('allow').sort()};
 }
 
 test('Claude and Codex allow the same repository command prefixes',async()=>{

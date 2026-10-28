@@ -69,7 +69,9 @@ Claude Code and Codex run the same set of commands without asking:
 - `gh pr view`, `list`, `checks`, `diff`, `create`, `comment`, `edit`
 - `gh issue view`, `list`, `comment`, `edit`
 - `gh label list`
-- `gh run view`, `list`
+- `gh run view`, `list`, `watch`
+- `npm run check`, `npm test`
+- `git check-ignore`
 - `git add`, `git commit`
 - `git fetch origin`, `git push origin` (also with `-u`/`--set-upstream`)
 - `git worktree remove`, `git worktree prune` (post-merge cleanup of an agent's own clean worktree)

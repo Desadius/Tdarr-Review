@@ -28,11 +28,35 @@ prefix_rule(
 )
 
 prefix_rule(
-    pattern = ["gh", "run", ["view", "list"]],
+    pattern = ["gh", "run", ["view", "list", "watch"]],
     decision = "allow",
     justification = "Read GitHub Actions runs",
-    match = ["gh run list --limit 5", "gh run view 123 --log-failed"],
+    match = ["gh run list --limit 5", "gh run view 123 --log-failed", "gh run watch 123 --exit-status"],
     not_match = ["gh run rerun 123", "gh run delete 123"],
+)
+
+prefix_rule(
+    pattern = ["npm", "test"],
+    decision = "allow",
+    justification = "Run the repository's regression suite (temporary directories only)",
+    match = ["npm test"],
+    not_match = ["npm install", "npm run build"],
+)
+
+prefix_rule(
+    pattern = ["npm", "run", "check"],
+    decision = "allow",
+    justification = "Run the syntax, version and source-text checks",
+    match = ["npm run check"],
+    not_match = ["npm run typecheck", "npm run test:docker"],
+)
+
+prefix_rule(
+    pattern = ["git", "check-ignore"],
+    decision = "allow",
+    justification = "Check whether a path is ignored before staging",
+    match = ["git check-ignore -v .claude/settings.local.json"],
+    not_match = ["git clean -fdx"],
 )
 
 prefix_rule(
