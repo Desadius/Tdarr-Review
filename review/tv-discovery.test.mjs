@@ -88,7 +88,7 @@ const REASON_CASES=[
  ['receipt_missing','receipt missing',{withReceipt:false}],
  ['receipt_invalid','receipt without a job id',{receipt:{jobId:undefined}}],
  ['receipt_invalid','receipt with an empty job id',{receipt:{jobId:' '}}],
- ['receipt_invalid','receipt with the wrong version',{receipt:{version:2}}],
+ ['receipt_invalid','receipt with the wrong version',{receipt:{version:3}}],
  ['job_missing','job unknown to Tdarr',{dropJob:true}],
  ['job_not_successful','job not successful',{job:{status:'Transcode error'}}],
  ['job_other_library','job in another library',{job:{DB:'movie-library'}}],
@@ -119,6 +119,15 @@ test('a source file that is gone is unmapped, never guessed from names',async t=
  await fs.mkdir(path.join(w.mediaRoot,'Synthetic Show','Season 1'),{recursive:true});await fs.writeFile(path.join(w.mediaRoot,'Synthetic Show','Season 1','S01E01.mkv'),created.sourceBytes);
  const value=await w.discovery.result({force:true});
  assert.equal(reasonOf(value,relative).reason,'source_unmapped');assert.equal(value.totals.bound,0);
+});
+
+test('a v2 receipt with malformed strict proof stays visible but is never eligible',async t=>{
+ const w=await world(t),relative='Synthetic Show/Season 01/S01E01.mkv';
+ const created=await w.add(relative,{receiptVersion:2,receipt:{strictProof:{jobId:'different-job'}}});
+ const value=await w.discovery.result({force:true}),item=reasonOf(value,relative);
+ assert.equal(item.state,'unbound');assert.equal(item.reason,'flow_evidence_invalid');
+ assert.equal(value.totals.bound,0);assert.equal(value.series.length,0);
+ assert.equal(await fs.readFile(created.sourcePath,'utf8'),created.sourceBytes.toString());
 });
 
 test('two results for one source file or one job both stay unbound',async t=>{

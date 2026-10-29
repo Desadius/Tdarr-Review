@@ -129,7 +129,7 @@ export async function reviewFixture({pauses=false,recovery=false,clock=false,nod
    return events(name);
   };
   const restart=async()=>{await harness.stop();await harness.start({settings:JSON.parse(await fs.readFile(path.join(data,'settings.json'),'utf8')),preload,clock,supervisor,env});cookie=await harness.login();};
-  return {request:(route,options={})=>harness.request(route,{...options,headers:{cookie,...options.headers}}),setProbe:adjust=>{probeAdjust=adjust},setRadarrMovie:movie=>{restoreRadarrMovie=()=>movie},setRadarrQueue:queue=>{restoreRadarrQueue=queue},tdarrRows,afterRescan,afterBulk,root,data,files,mockBase,nodes,hold,calls,changes,post,get,items,confirm,approve,allMutations,journals,settled,preserved,close,restart,showNodes,addFilm,events,eventually,tick:harness.tick,state:harness.state,output:harness.output,diagnostics:harness.diagnostics};
+  return {request:(route,options={})=>harness.request(route,{...options,headers:{cookie,...options.headers}}),setProbe:adjust=>{probeAdjust=adjust},setRadarrMovie:movie=>{restoreRadarrMovie=()=>movie},setRadarrQueue:queue=>{restoreRadarrQueue=queue},tdarrRows,afterRescan,afterBulk,root,data,files,mockBase,nodes,hold,calls,changes,post,get,items,confirm,approve,allMutations,journals,settled,preserved,close,restart,kill:harness.kill,showNodes,addFilm,events,eventually,tick:harness.tick,state:harness.state,output:harness.output,diagnostics:harness.diagnostics};
  }catch(error){await close();throw error}
 }
 

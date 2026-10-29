@@ -27,6 +27,14 @@ import {identityOf,compareIdentity} from '../recovery/file-identity.mjs';
  * @property {string} created ISO time.
  * @property {string} [error] Why the exchange stopped.
  * @property {string} [rollbackError] Why restoring the original failed, if it did.
+ * @property {string} [retainedOriginal] TV original retained under its separate quarantine root.
+ * @property {string} [retainedRoot] Canonical TV quarantine directory pinned during installation.
+ * @property {string} [retainedLeaf] Quarantine entry name for the retained TV original.
+ * @property {string} [retainedTemp] Pending quarantine entry path.
+ * @property {string} [retainedTempLeaf] Pending quarantine entry name.
+ * @property {'intent'|'verified'} [retainedPhase] Durable retained-original journal phase.
+ * @property {string} [retainedFP] Identity of the retained original copy.
+ * @property {string} [retainedHash] SHA-256 of the retained original copy.
  */
 /** @typedef {{path:string,stat:import('node:fs').Stats,fp:string}} SafeFile */
 /** @typedef {{done:number,total:number,unit?:string,phase?:string,speed?:number|null}} TransferProgress */
@@ -60,6 +68,69 @@ export async function atomicJSON(file,data) {
 async function syncDirectory(dir) {
   const h=await fs.open(dir,'r');try{await h.sync()}finally{await h.close()}
 }
+const procPath=(directory,name)=>`/proc/self/fd/${directory.handle.fd}/${name}`;
+async function openDirectoryPathNoFollow(root){
+ const flags=fs.constants.O_RDONLY|fs.constants.O_DIRECTORY|fs.constants.O_NOFOLLOW;let parent=await fs.open(path.parse(root).root,flags);
+ try{
+  for(const part of root.slice(path.parse(root).root.length).split(path.sep).filter(Boolean)){
+   const via=`/proc/self/fd/${parent.fd}/${part}`,before=await fs.lstat(via);if(before.isSymbolicLink()||!before.isDirectory())throw Error('Kořen trvalé karantény není bezpečný adresář.');
+   const next=await fs.open(via,flags);const opened=await next.stat(),named=await fs.lstat(via);
+   if(!opened.isDirectory()||named.isSymbolicLink()||opened.dev!==before.dev||opened.ino!==before.ino||named.dev!==opened.dev||named.ino!==opened.ino){await next.close();throw Error('Kořen trvalé karantény se změnil.');}
+   await parent.close();parent=next;
+  }
+  const result=parent;parent=null;return result;
+ }finally{await parent?.close().catch(()=>{})}
+}
+async function openRetainedDirectory(root,target){
+  if(process.platform!=='linux')throw Error('Trvalá karanténa vyžaduje Linux.');
+  const resolved=await fs.realpath(root),relative=path.relative(resolved,target);
+  if(resolved!==root||path.isAbsolute(relative)||!relative||relative.includes(path.sep)||relative==='.'||relative==='..')throw Error('Cesta trvalé karantény je mimo bezpečný kořen.');
+ const handle=await openDirectoryPathNoFollow(root),after=await handle.stat();
+ if(!after.isDirectory()){await handle.close();throw Error('Kořen trvalé karantény není bezpečný adresář.');}
+  return {handle,root:resolved,leaf:relative,stat:after};
+}
+async function sha256Handle(handle){
+  const digest=crypto.createHash('sha256'),buffer=Buffer.alloc(4*1024*1024);let position=0;
+  while(true){const {bytesRead}=await handle.read(buffer,0,buffer.length,position);if(!bytesRead)break;digest.update(buffer.subarray(0,bytesRead));position+=bytesRead;}
+  return digest.digest('hex');
+}
+async function verifyRetainedDirectory(directory){
+  const named=await openDirectoryPathNoFollow(directory.root);try{const actual=await named.stat(),opened=await directory.handle.stat();if(actual.dev!==directory.stat.dev||actual.ino!==directory.stat.ino||opened.dev!==actual.dev||opened.ino!==actual.ino)throw Error('Kořen trvalé karantény se změnil.');}finally{await named.close()}
+}
+async function validateRetainedCopy(record,directory){
+  if(!directory||record.retainedPhase!=='verified')throw Error('Trvalý originál není ověřený.');
+  if(record.retainedRoot!==directory.root)throw Error('Kořen trvalé karantény se změnil.');
+  await verifyRetainedDirectory(directory);
+  const handle=await fs.open(procPath(directory,record.retainedLeaf),fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW);
+  try{
+    const stat=await handle.stat(),named=await fs.lstat(procPath(directory,record.retainedLeaf));
+    if(!stat.isFile()||named.isSymbolicLink()||stat.nlink!==1||compareIdentity(record.retainedFP,identityOf(stat))!=='same'||identityOf(named)!==identityOf(stat)||stat.dev!==directory.stat.dev)throw Error('Identita trvalého originálu se změnila.');
+    if(await sha256Handle(handle)!==record.retainedHash)throw Error('Kontrolní součet trvalého originálu se změnil.');
+  }finally{await handle.close()}
+}
+async function makeRetainedCopy(original,originalFP,record,directory){
+  const source=await fs.open(original,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW),sourceStat=await source.stat();
+    const target=await fs.open(procPath(directory,record.retainedTempLeaf),fs.constants.O_RDWR|fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_NOFOLLOW,0o600);
+  try{
+    if(!sourceStat.isFile()||sourceStat.nlink!==1||identityOf(sourceStat)!==originalFP||sourceStat.dev!==directory.stat.dev)throw Error('Originál nebo karanténa se změnily před zkopírováním.');
+    const buffer=Buffer.alloc(4*1024*1024);let position=0;
+    while(position<sourceStat.size){const amount=Math.min(buffer.length,sourceStat.size-position),read=await source.read(buffer,0,amount,position);if(read.bytesRead!==amount)throw Error('Originál se změnil při kopírování do karantény.');let written=0;while(written<amount){const result=await target.write(buffer,written,amount-written,position+written);if(!result.bytesWritten)throw Error('Zápis trvalého originálu selhal.');written+=result.bytesWritten;}position+=amount;}
+    // chown can clear set-id bits, so set ownership before restoring the exact mode.
+    // If the caller cannot preserve the original owner and group, fail before install.
+    await target.chown(sourceStat.uid,sourceStat.gid);
+    await target.chmod(sourceStat.mode&0o7777);
+    await target.sync();
+    const sourceAfter=await source.stat(),targetStat=await target.stat();
+    if(identityOf(sourceAfter)!==originalFP||targetStat.size!==sourceStat.size||targetStat.dev!==sourceStat.dev||targetStat.nlink!==1||targetStat.uid!==sourceStat.uid||targetStat.gid!==sourceStat.gid||(targetStat.mode&0o7777)!==(sourceStat.mode&0o7777))throw Error('Originál nebo jeho karanténní kopie se změnily.');
+    const originalHash=await sha256Handle(source),retainedHash=await sha256Handle(target);
+    if(originalHash!==retainedHash||identityOf(await source.stat())!==originalFP)throw Error('Kontrolní součet trvalé kopie nesouhlasí.');
+    record.retainedHash=retainedHash;
+  }finally{await Promise.all([source.close(),target.close()]);}
+  await fs.link(procPath(directory,record.retainedTempLeaf),procPath(directory,record.retainedLeaf));
+  await fs.unlink(procPath(directory,record.retainedTempLeaf));await directory.handle.sync();
+  const retainedStat=await fs.stat(procPath(directory,record.retainedLeaf));record.retainedFP=identityOf(retainedStat);
+  record.retainedPhase='verified';await validateRetainedCopy(record,directory);
+}
 const statOrMissing=async file=>{try{return await fs.lstat(file)}catch(e){if(e.code==='ENOENT')return null;throw e}};
 // Renaming changes ctime. Device, inode, size and mtime still identify the saved original.
 // A recorded identity that cannot be read never matches; its journal stays for inspection.
@@ -88,7 +159,8 @@ function validJournalPaths(t) {
     &&typeof t.review==='string'&&path.isAbsolute(t.review)
     &&t.tmp===path.join(path.dirname(t.original),`.tdarr-review-${t.id}.tmp`)
     &&t.backup===path.join(path.dirname(t.original),`.tdarr-review-${t.id}.old`)
-    &&(!t.destination||validDestination(t.original,t.destination));
+    &&(!t.destination||validDestination(t.original,t.destination))
+    &&(!t.retainedOriginal||typeof t.retainedRoot==='string'&&path.isAbsolute(t.retainedRoot)&&path.dirname(t.retainedOriginal)===t.retainedRoot&&path.basename(t.retainedOriginal)===t.retainedLeaf&&t.retainedTempLeaf===t.retainedLeaf+'.'+t.id+'.pending'&&t.retainedTemp===path.join(t.retainedRoot,t.retainedTempLeaf)&&['intent','verified'].includes(t.retainedPhase)&&(!t.retainedFP||readableIdentity(t.retainedFP))&&(!t.retainedHash||/^[a-f0-9]{64}$/.test(t.retainedHash)));
 }
 function validDestination(original,destination){return destination===original||(/\.(m2ts|ts)$/i.test(original)&&destination===original.replace(/\.(m2ts|ts)$/i,'.mkv'))}
 // Recovery only rolls back a provably untouched original. Installed/uncertain files
@@ -103,6 +175,10 @@ export async function recoverTransactions(directory) {
       if(['complete','aborted'].includes(t.phase))continue;
       if(!validJournalPaths(t))throw new Error('Neplatné cesty v záznamu výměny.');
       if(!readableIdentity(t.originalFP)||t.reviewFP!==undefined&&!readableIdentity(t.reviewFP))throw new Error('Neplatná identita souboru v záznamu výměny.');
+      if(t.retainedOriginal){
+        const retainedDirectory=await openRetainedDirectory(t.retainedRoot,t.retainedOriginal);
+        try{await validateRetainedCopy(t,retainedDirectory)}finally{await retainedDirectory.handle.close()}
+      }
       if(['preparing','syncing-copy','verifying-copy','ready','original-backed-up'].includes(t.phase)&&await restoreBackup(t)){
         // Keep any unfinished replacement copy. Recovery does not delete new content.
         t.phase='aborted';t.recoveredAt=new Date().toISOString();
@@ -194,24 +270,36 @@ export function inspect(original,review) {
  * @param {string} options.originalFP
  * @param {string} options.reviewFP
  * @param {string} options.journal Path of the TransactionJournal file.
+ * @param {{root:string,path:string}} [options.retainOriginal] Optional retained-original copy (TV only).
  * @param {(phase:TransactionJournal['phase'])=>void} [options.onStage]
  * @param {(progress:TransferProgress)=>void} [options.onProgress]
  * @param {()=>Promise<void>} [options.beforeCommit]
  */
-export async function replaceChecked({original,review,destination=original,originalFP,reviewFP,journal,onStage=()=>{},onProgress=()=>{},beforeCommit=async()=>{}}) {
+export async function replaceChecked({original,review,destination=original,originalFP,reviewFP,journal,retainOriginal,onStage=()=>{},onProgress=()=>{},beforeCommit=async()=>{}}) {
   if(!validDestination(original,destination))throw Error('Nepovolená cílová cesta převodu.');
   const check=async()=>{
-    if(identityOf(await fs.stat(original))!==originalFP||identityOf(await fs.stat(review))!==reviewFP) throw new Error('Soubor se od kontroly změnil. Obnov přehled.');
+    const [originalStat,reviewStat]=await Promise.all([fs.stat(original),fs.stat(review)]);
+    if(identityOf(originalStat)!==originalFP||identityOf(reviewStat)!==reviewFP||retainOriginal&&(originalStat.nlink!==1||reviewStat.nlink!==1)) throw new Error('Soubor se od kontroly změnil nebo má pevný odkaz. Obnov přehled.');
     if(destination!==original&&await statOrMissing(destination))throw Error('Cílový MKV již existuje; nebude přepsán.');
   };
   await check();
   const id=crypto.randomUUID(),tmp=path.join(path.dirname(original),`.tdarr-review-${id}.tmp`),backup=path.join(path.dirname(original),`.tdarr-review-${id}.old`);
+  let retainedDirectory=null,retainedTemp,retainedTempLeaf,retainedLeaf;
+  if(retainOriginal){
+    try{
+      retainedDirectory=await openRetainedDirectory(retainOriginal.root,retainOriginal.path);retainedLeaf=retainedDirectory.leaf;retainedTempLeaf=retainedLeaf+'.'+id+'.pending';retainedTemp=path.join(retainedDirectory.root,retainedTempLeaf);
+      const [sourceStat,existing,sourceSpace,targetSpace,reviewStat]=await Promise.all([fs.stat(original),statOrMissing(procPath(retainedDirectory,retainedLeaf)),fs.statfs(path.dirname(original)).catch(()=>null),fs.statfs(`/proc/self/fd/${retainedDirectory.handle.fd}`).catch(()=>null),fs.stat(review)]);
+      if(existing)throw Error('Cíl trvalé karantény již existuje.');
+      if(sourceStat.nlink!==1||sourceStat.dev!==retainedDirectory.stat.dev)throw Error('Trvalá karanténa musí být na stejném souborovém systému jako originál.');
+      if(!sourceSpace||!targetSpace||sourceSpace.bavail*sourceSpace.bsize<reviewStat.size+sourceStat.size||targetSpace.bavail*targetSpace.bsize<sourceStat.size)throw Error('Nedostatek ověřitelného místa pro trvalou karanténu nebo výměnu.');
+    }catch(error){await retainedDirectory?.handle.close().catch(()=>{});throw error}
+  }
   /** @type {TransactionJournal} */
-  const record={id,original,review,destination,tmp,backup,originalFP,reviewFP,phase:'preparing',created:new Date().toISOString()};
+  const record={id,original,review,destination,tmp,backup,originalFP,reviewFP,phase:'preparing',created:new Date().toISOString(),...(retainOriginal?{retainedOriginal:retainOriginal.path,retainedRoot:retainedDirectory.root,retainedTemp,retainedTempLeaf,retainedLeaf,retainedPhase:'intent'}:{})};
   const save=async phase=>{record.phase=phase;await atomicJSON(journal,record);onStage(phase);};
-  await save('preparing');
   let movedOriginal=false;
   try {
+    await save('preparing');
     const size=(await fs.stat(review)).size;
     onProgress({phase:'preparing',done:0,total:size,unit:'bytes'});
     let copying=true;
@@ -221,14 +309,19 @@ export async function replaceChecked({original,review,destination=original,origi
     await save('syncing-copy');
     const fh=await fs.open(tmp,'r+');try{await fh.sync()}finally{await fh.close()}
     const originalStat=await fs.stat(original);
-    await fs.chmod(tmp,originalStat.mode & 0o777);
-    if(typeof process.getuid==='function'&&process.getuid()===0)await fs.chown(tmp,originalStat.uid,originalStat.gid);
+    await fs.chmod(tmp,originalStat.mode & (retainOriginal?0o7777:0o777));
+    if(retainOriginal||typeof process.getuid==='function'&&process.getuid()===0)await fs.chown(tmp,originalStat.uid,originalStat.gid);
+    if(retainOriginal){const installedStat=await fs.stat(tmp);if(installedStat.uid!==originalStat.uid||installedStat.gid!==originalStat.gid||(installedStat.mode&0o7777)!==(originalStat.mode&0o7777))throw Error('Vlastníka, skupinu nebo režim originálu nelze zachovat.');}
     await save('verifying-copy');
     const counts=[0,0];
     const counted=i=>done=>{counts[i]=done;onProgress({phase:'verifying-copy',done:counts[0]+counts[1],total:size*2,unit:'bytes'})};
     const [a,b]=await Promise.all([sha256(review,counted(0)),sha256(tmp,counted(1))]);
     if(a!==b)throw new Error('Kontrolní součet kopie nesouhlasí.');
-    await beforeCommit();await check();
+    if(retainOriginal){
+      await makeRetainedCopy(original,originalFP,record,retainedDirectory);
+      await atomicJSON(journal,record);
+    }
+    await beforeCommit();await check();if(retainOriginal)await validateRetainedCopy(record,retainedDirectory);
     await save('ready');
     await fs.rename(original,backup);
     movedOriginal=true;
@@ -238,6 +331,11 @@ export async function replaceChecked({original,review,destination=original,origi
     else {await fs.link(tmp,destination);await fs.unlink(tmp);}
     await syncDirectory(path.dirname(original));
     await save('installed');
+    if(retainOriginal){
+      await validateRetainedCopy(record,retainedDirectory);
+      const [backupStat,reviewStat]=await Promise.all([fs.stat(backup),fs.stat(review)]);
+      if(!originalIdentity(backupStat,originalFP)||backupStat.nlink!==1||identityOf(reviewStat)!==reviewFP||reviewStat.nlink!==1)throw Error('Záloha originálu nebo výsledek se změnily; záloha zůstává zachována.');
+    }
     await fs.unlink(backup);
     await syncDirectory(path.dirname(original));
     await save('original-removed');
@@ -253,7 +351,9 @@ export async function replaceChecked({original,review,destination=original,origi
       try {
         // A completed rollback is terminal; it must not block approvals after restart.
         const untouched=!movedOriginal&&!(await statOrMissing(backup));
-        if(untouched||await restoreBackup(record)){
+        let retainedSafe=true;
+        if(retainOriginal){try{await validateRetainedCopy(record,retainedDirectory)}catch{retainedSafe=false}}
+        if(retainedSafe&&(untouched||await restoreBackup(record))){
           await fs.unlink(tmp).catch(err=>{if(err.code!=='ENOENT')throw err});
           await syncDirectory(path.dirname(original));
           record.phase='aborted';
@@ -261,5 +361,5 @@ export async function replaceChecked({original,review,destination=original,origi
       }catch(rollbackError){record.rollbackError=rollbackError.message}
     }
     await atomicJSON(journal,record);throw e;
-  }
+  }finally{await retainedDirectory?.handle.close().catch(()=>{})}
 }

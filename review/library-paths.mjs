@@ -10,7 +10,7 @@ const tvFields=Object.freeze({
 const error=(code,field)=>Object.assign(new Error(code==='settings_invalid'?'Invalid TV library settings':'TV processing is unavailable'),{
  code,...(field?{field}:{}),...(code==='settings_invalid'?{status:400}:{})
 });
-export const TV_MODES=Object.freeze(['off','discovery']);
+export const TV_MODES=Object.freeze(['off','discovery','strict-review']);
 const isObject=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const hasTraversal=value=>value.includes('\0')||value.split('/').some(part=>part==='.'||part==='..');
 
@@ -38,6 +38,7 @@ function namespacePath(value,{preserveDriveCase=false}={}){
 function prefix(value){
  return typeof value==='string'&&value.length>0&&value.length<=1024&&!value.includes('\0')&&!value.includes('/')&&!value.includes('\\')&&value!=='.'&&value!=='..';
 }
+function overlapPath(a,b){return a===b||a.startsWith(b+'/')||b.startsWith(a+'/');}
 
 function validateTv(value){
  if(!isObject(value))throw error('settings_invalid','libraries.tv');
@@ -80,12 +81,15 @@ function validateTv(value){
    normalized[key]=[...item];
   }
  }
- if(normalized.mode==='discovery'&&!(normalized.mediaRoot&&normalized.reviewRoot&&normalized.libraryId.trim()&&normalized.sourceRoots.length&&normalized.sonarrRoot))throw error('settings_invalid','libraries.tv');
+ if(['discovery','strict-review'].includes(normalized.mode)&&!(normalized.mediaRoot&&normalized.reviewRoot&&normalized.libraryId.trim()&&normalized.sourceRoots.length&&normalized.sonarrRoot))throw error('settings_invalid','libraries.tv');
+ if(normalized.mode==='strict-review'&&!normalized.quarantineRoot)throw error('settings_invalid','libraries.tv');
+ if(normalized.mode==='strict-review'&&[normalized.mediaRoot,normalized.reviewRoot].some(root=>root&&overlapPath(root,normalized.quarantineRoot)))throw error('settings_invalid','libraries.tv');
  return normalized;
 }
 
-/** The TV library mode: only an explicit `discovery` turns discovery on; anything else is off. */
-export const tvMode=tv=>tv?.mode==='discovery'?'discovery':'off';
+/** Parse only the explicit applied TV mode; `tvDiscoveryEnabled` decides which non-off modes expose discovery. */
+export const tvMode=tv=>TV_MODES.includes(tv?.mode)?tv.mode:'off';
+export const tvDiscoveryEnabled=tv=>['discovery','strict-review'].includes(tvMode(tv));
 
 export function emptyTvLibrary(){
  return {enabled:false,mediaRoot:'',reviewRoot:'',libraryId:'',sourceRoots:[],tdarrReviewRoot:'',reviewPrefixes:[],sonarrRoot:'',quarantineRoot:'',reports:''};

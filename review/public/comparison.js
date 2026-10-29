@@ -2,7 +2,7 @@
 import {mountAVComparison} from '/av-player.js?v=__APP_VERSION__';
 import {mountGuidedComparison} from '/guided-comparison.js?v=__APP_VERSION__';
 import {preparationSummary,previewJobMatches,createCachedPreviewLoader} from '/review-workflow.js?v=__APP_VERSION__';
-import {tr,translateAudioTrackLabel as audioTrackLabel} from '/i18n.js?v=__APP_VERSION__';
+import {tr,translateAudioTrackLabel as audioTrackLabel} from './i18n.js?v=__APP_VERSION__';
 import {el,button,elapsedText} from '/ui-kit.js?v=__APP_VERSION__';
 
 let app=null;
@@ -20,11 +20,11 @@ export function installComparisons(context){
 }
 export function openGuidedComparison(item,options={}){
  if(!options.host)throw Error('Řízené porovnání vyžaduje otevřené posouzení.');
- return mountGuidedComparison(options.host,item,{...options,api,tr,current:()=>options.host.isConnected&&app.latest?.items.some(value=>value.id===item.id&&value.snapshot===item.snapshot),onFrames:scope=>openComparison(item,{scope,beforePreview:options.beforePreview,canInteract:options.canInteract})});
+ return mountGuidedComparison(options.host,item,{...options,api:options.api||api,tr:options.tr||tr,current:()=>options.host.isConnected&&(options.current?.()??app.latest?.items.some(value=>value.id===item.id&&value.snapshot===item.snapshot)),onFrames:scope=>openComparison(item,{scope,api:options.api,current:options.current,beforePreview:options.beforePreview,canInteract:options.canInteract,tr:options.tr||tr})});
 }
 export function openComparison(item,options={}){
  const host=options.host||compareDialog;let dead=false,request=0,cachedLoader=null;host.replaceChildren();
- const current=()=>!dead&&host.isConnected&&app.latest?.items.some(x=>x.id===item.id&&x.snapshot===item.snapshot);
+ const current=()=>!dead&&host.isConnected&&(options.current?.()??app.latest?.items.some(x=>x.id===item.id&&x.snapshot===item.snapshot));
  const cleanup=()=>{dead=true;request++;cachedLoader?.stop();host.replaceChildren()};if(!options.host){compareCleanup?.();compareCleanup=cleanup}
  const heading=el('div','comparison-head'),close=button('Zavřít',()=>compareDialog.close());heading.append(el('h2','',item.title,true),close);
  const note=el('p','','Snímky ve stejném čase, PNG bez další ztrátové komprese. Porovnání je statické, bez zvuku.');
@@ -42,18 +42,18 @@ export function openComparison(item,options={}){
   status.textContent=tr('Hotové snímky jsou načtené.')+' '+tr('Čas ve filmu (sekundy)')+': '+Number(d.seconds).toFixed(2)+' · '+tr(d.hdr?'HDR převedeno shodně do SDR pro náhled. Věrnost HDR ověř na TV.':'Plné rozlišení snímků; detaily porovnej ve zvětšení 1 : 1.');
  }
  controls.onsubmit=async e=>{e.preventDefault();if(go.disabled||!canInteract()||!validTime())return;scopeChanged();const generation=++request;setBusy(true);pair.replaceChildren();status.textContent=tr('Připravuji oba snímky na serveru… Obvykle několik sekund, nejvýše dvě minuty.');
-  try{await options.beforePreview?.();if(!current())return;const d=await api('/api/items/'+item.id+'/frames',{snapshot:item.snapshot,seconds:Number(time.value)});if(!current()||generation!==request)return;if(d.pending){options.onPreparation?.(d.preparation);status.textContent=preparationSummary(d.preparation,tr);return}renderFrames(d)}
+  try{await options.beforePreview?.();if(!current())return;const d=await (options.api||api)('/api/items/'+item.id+'/frames',{snapshot:item.snapshot,seconds:Number(time.value)});if(!current()||generation!==request)return;if(d.pending){options.onPreparation?.(d.preparation);status.textContent=preparationSummary(d.preparation,tr);return}renderFrames(d)}
   catch(e){if(current()&&generation===request)status.textContent=tr(e.message)}finally{if(current()&&generation===request)setBusy(false)}
  };
  host.append(...(options.host?[]:[heading]),note,controls,presets,status,pair);if(!options.host){compareDialog.setAttribute('aria-label',tr('Porovnání obrazu · '+item.title));compareDialog.showModal()}
  if(options.cachedAutoLoad){void Promise.resolve().then(()=>{if(!current()||!validTime())return;const generation=request;
-  cachedLoader=createCachedPreviewLoader({current:()=>current()&&generation===request,load:body=>api('/api/items/'+item.id+'/frames',body),readPreparation:()=>api('/api/items/'+item.id+'/preview-status?snapshot='+encodeURIComponent(item.snapshot)),onPreparation:options.onPreparation,onPending:(d,body)=>status.textContent=pendingPreviewMessage(d.preparation,body),onReady:renderFrames,onError:e=>status.textContent=tr(e.message)});
+  cachedLoader=createCachedPreviewLoader({current:()=>current()&&generation===request,load:body=>(options.api||api)('/api/items/'+item.id+'/frames',body),readPreparation:()=>(options.api||api)('/api/items/'+item.id+'/preview-status?snapshot='+encodeURIComponent(item.snapshot)),onPreparation:options.onPreparation,onPending:(d,body)=>status.textContent=pendingPreviewMessage(d.preparation,body),onReady:renderFrames,onError:e=>status.textContent=tr(e.message)});
   cachedLoader.start([{snapshot:item.snapshot,mode:'frames',seconds:Number(time.value)}]);
  })}else if(options.autoLoad!==false)controls.requestSubmit();return cleanup;
 }
 export function openAudioComparison(item,options={}){
  const host=options.host||audioDialog;let dead=false,generation=0,working=false,abPlayer=null,avCleanup=null,prepared=null,preparedIdentity=null,trackReady=false,cachedLoader=null,preparation=options.preparation;host.replaceChildren();
- const current=()=>!dead&&host.isConnected&&app.latest?.items.some(x=>x.id===item.id&&x.snapshot===item.snapshot);
+ const current=()=>!dead&&host.isConnected&&(options.current?.()??app.latest?.items.some(x=>x.id===item.id&&x.snapshot===item.snapshot));
  const cleanup=()=>{dead=true;generation++;cachedLoader?.stop();abPlayer?.close();abPlayer=null;avCleanup?.();avCleanup=null;host.replaceChildren()};if(!options.host){audioCleanup?.();audioCleanup=cleanup}
  const head=el('div','comparison-head'),close=button('Zavřít',()=>audioDialog.close());head.append(el('h2','',item.title+' — porovnání zvuku'),close);
  const note=el('p','details','Porovnej stejný jazyk i verzi zvuku (nikoli dabing s originálem nebo komentářem). Grafy ukazují hlasitost v krocích 10 ms na stejné časové ose, nikoli kvalitu zvuku. Odhad hledá posun do ±1 sekundy. Neověřuje soulad řeči s pohybem úst.');
@@ -96,7 +96,7 @@ export function openAudioComparison(item,options={}){
  }
  function startAutomatic(){
   if(!options.cachedAutoLoad||working||!trackReady||!validTime()||!current())return;cachedLoader?.stop();const identity=previewIdentity(),attempt=generation,modes=options.mode==='audio'?['wave','listen']:['av'];
-  cachedLoader=createCachedPreviewLoader({current:()=>current()&&attempt===generation&&identity===previewIdentity(),load:body=>api('/api/items/'+item.id+'/audio-compare',body),readPreparation:()=>api('/api/items/'+item.id+'/preview-status?snapshot='+encodeURIComponent(item.snapshot)),onPreparation:observePreparation,onPending:(d,request)=>status.textContent=pendingPreviewMessage(d.preparation,request),onReady:(d,request)=>{renderPayload(request.mode,d);status.textContent=tr('Hotová ukázka je načtená. Přehrávání spusť ručně.');setWorking(false)},onError:e=>status.textContent=tr(e.message)});
+  cachedLoader=createCachedPreviewLoader({current:()=>current()&&attempt===generation&&identity===previewIdentity(),load:body=>(options.api||api)('/api/items/'+item.id+'/audio-compare',body),readPreparation:()=>(options.api||api)('/api/items/'+item.id+'/preview-status?snapshot='+encodeURIComponent(item.snapshot)),onPreparation:observePreparation,onPending:(d,request)=>status.textContent=pendingPreviewMessage(d.preparation,request),onReady:(d,request)=>{renderPayload(request.mode,d);status.textContent=tr('Hotová ukázka je načtená. Přehrávání spusť ručně.');setWorking(false)},onError:e=>status.textContent=tr(e.message)});
   cachedLoader.start(modes.map(mode=>({snapshot:item.snapshot,...selectedScope(),mode,...(mode==='av'?{previewProfile:profile.value}:{})})));
  }
  async function prepare(mode){
@@ -104,7 +104,7 @@ export function openAudioComparison(item,options={}){
   if(mode==='listen'&&prepared&&preparedIdentity===scopeIdentity()){try{await play()}catch(e){if(current())status.textContent=tr(e.message)}return}
   const attempt=++generation;cachedLoader?.stop();withdrawExternal();lastScope=previewIdentity();options.onScopeValidityChange?.(true);options.onScopeChange?.(selectedScope());setWorking(true);abPlayer?.stop();avCleanup?.();avCleanup=null;plot.replaceChildren();avHost.replaceChildren();
   try{if(mode==='listen')await ensurePlayer();status.textContent=tr(mode==='av'?'Připravuji dvě videa a zvukové průběhy. Příprava může trvat až čtyři minuty.':mode==='listen'?'Připravuji dvě 12sekundové ukázky; nejvýše dvě minuty.':'Připravuji zvukové průběhy… Nejvýše dvě minuty.');
-   await options.beforePreview?.();if(!current()||attempt!==generation)return;const capture={snapshot:item.snapshot,...selectedScope()},d=await api('/api/items/'+item.id+'/audio-compare',{...capture,...(mode==='wave'?{}:{mode}),...(mode==='av'?{previewProfile:profile.value}:{})});if(!current()||attempt!==generation)return;
+   await options.beforePreview?.();if(!current()||attempt!==generation)return;const capture={snapshot:item.snapshot,...selectedScope()},d=await (options.api||api)('/api/items/'+item.id+'/audio-compare',{...capture,...(mode==='wave'?{}:{mode}),...(mode==='av'?{previewProfile:profile.value}:{})});if(!current()||attempt!==generation)return;
    if(d.pending){observePreparation(d.preparation);status.textContent=pendingPreviewMessage(d.preparation,{...capture,mode,previewProfile:profile.value});return}
    renderPayload(mode,d);if(mode==='listen')await play();
   }catch(e){if(current()&&attempt===generation){status.textContent=tr(e.message);if(mode==='av')offerExternal()}}finally{if(current()&&attempt===generation)setWorking(false)}
@@ -113,7 +113,7 @@ export function openAudioComparison(item,options={}){
  const showAV=options.mode!=='audio',showAudio=options.mode!=='av';if(showAV){const label=el('label','','Kvalita videonáhledu');label.append(profile);form.append(label,avButton)}if(showAudio)form.append(go);
  host.append(...(options.host?[]:[head]),note,form,presets,status,fallback);if(showAudio)host.append(el('p','details','Sluchátka: nejprve originál vlevo, potom stejný úsek převodu vpravo. Obě stopy se převedou na mono 48 kHz. Bez samostatné normalizace hlasitosti a bez automatického posunu; použij odpovídající dialogové stopy.'),audioControls);host.append(avHost,plot);
  if(!options.host){audioDialog.setAttribute('aria-label',tr('Porovnání zvuku · '+item.title));audioDialog.showModal()}setWorking(false);
- (async()=>{try{await Promise.resolve();const data=options.tracks||await api('/api/items/'+item.id+'/audio-compare',{snapshot:item.snapshot,mode:'tracks'});if(!current())return;observePreparation(data.preparation);
+ (async()=>{try{await Promise.resolve();const data=options.tracks||await (options.api||api)('/api/items/'+item.id+'/audio-compare',{snapshot:item.snapshot,mode:'tracks'});if(!current())return;observePreparation(data.preparation);
   for(const [select,tracks,key]of [[a,data.original,'originalIndex'],[b,data.review,'reviewIndex']]){select.append(new Option(tr('Vyber zvukovou stopu'),''));for(const track of tracks){const option=el('option','',audioTrackLabel(track.label),true);option.value=String(track.index);select.append(option)}select.value=options.scope?.[key]===null||options.scope?.[key]===undefined?'':String(options.scope[key])}
   trackReady=a.value!==''&&b.value!=='';lastScope=previewIdentity();const ready=()=>{trackReady=a.value!==''&&b.value!=='';setWorking(false)};a.addEventListener('change',ready);b.addEventListener('change',ready);setWorking(false);status.textContent=tr('Vyber odpovídající stopy a připrav ukázku.');startAutomatic();
  }catch(e){if(current())status.textContent=tr(e.message)}})();

@@ -1,6 +1,6 @@
 # TV episode binding foundation
 
-`review/episode-binding.mjs` exports the pure synchronous function `resolveEpisodeBinding(input)`. The manual Sonarr inspector calls it with a request-scoped namespace and selected-series snapshot; results remain descriptive metadata and are not persisted. The inspector is separate from discovery, approvals, Recovery and replacement transactions. TV processing remains unavailable. See the [manual inspector guide](SONARR-INSPECTOR.md).
+`review/episode-binding.mjs` exports the pure synchronous function `resolveEpisodeBinding(input)`. The manual Sonarr inspector and TV discovery call it with a request-scoped namespace and selected-series snapshot; discovery may display a fresh exact binding, while strict review repeats that binding at assessment, approval and installation barriers. Bindings remain descriptive metadata and are not persisted as authority. See the [manual inspector guide](SONARR-INSPECTOR.md).
 
 ## Input boundary
 
@@ -39,6 +39,6 @@ Supplied `hasFile` and embedded file data must agree with explicit links. Missin
 
 ## Integration limits
 
-No result from this module grants technical validation, individual observation, sampled coverage, approval, retention, dispatch or replacement authority. The manual Sonarr inspector has separate point-in-time Tdarr association and technical-facts actions. Facts are available only after a fresh exact EpisodeFile binding and supported successful receipt/job association; they are allowlisted container and stream metadata, not proof of health, quality, episode contents or eligibility. Any future TV workflow must independently establish the evidence and explicit review policy it needs. Changed imports, ambiguous mappings and changed cohort membership must invalidate the relevant authorisation.
+No result from this module grants technical validation, individual observation, sampled coverage, approval, retention, dispatch or replacement authority. The strict TV path additionally requires a v2 typed receipt proof, the supported single-episode SDR Matroska profile and explicit human review; it retains the original in a separate indefinite quarantine. Changed imports, ambiguous mappings and changed settings invalidate the decision before installation. Movie IDs, paths and state are unchanged. The manual inspector contacts only the explicitly configured Sonarr endpoint and does not verify an installed Sonarr version. API references describe the v3 contract.
 
-Movie IDs, paths and state are unchanged. The manual inspector contacts only the explicitly configured Sonarr endpoint and does not verify an installed Sonarr version. API references describe the v3 contract. Persistent bindings, multi-library routing, previews, cohort review, TV transactions and Sonarr Recovery remain follow-up work under #238.
+The separate strict-review Sonarr adapter posts only `RescanSeries` with a validated positive series ID after installation, then performs bounded readback. Sonarr's command rescans the series' files, not just the changed episode. The API command contract and completion enums are source-verified and synthetic-tested; no production instance version was probed.

@@ -4,6 +4,7 @@ import {createSonarrInspection} from './sonarr-inspection.mjs';
 import {mapSonarrSourcePath} from './sonarr-source-path.mjs';
 import {compareIdentity} from '../recovery/file-identity.mjs';
 import {validTechnicalFacts} from './sonarr-technical-facts.mjs';
+import {validTvStrictProof} from './tv-flow-proof.mjs';
 
 const workerFile=fileURLToPath(new URL('./sonarr-result-worker.mjs',import.meta.url));
 const outputLimit=256*1024,inputLimit=256*1024;
@@ -29,8 +30,9 @@ function candidates(relative){
 }
 function validReceipt(receipt,relative,outputRelative){
  const exactKeys=(value,keys)=>plain(value)&&Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key));
- return plain(receipt)&&receipt.version===1&&receipt.relative===relative&&receipt.outputRelative===outputRelative&&
-  exactKeys(receipt,['version','relative','outputRelative','source','output','jobId','createdAt'])&&exactKeys(receipt.source,['size','mtime','sample'])&&exactKeys(receipt.output,['size','mtime','sample'])&&
+ return plain(receipt)&&[1,2].includes(receipt.version)&&receipt.relative===relative&&receipt.outputRelative===outputRelative&&
+  exactKeys(receipt,receipt.version===1?['version','relative','outputRelative','source','output','jobId','createdAt']:['version','relative','outputRelative','source','output','jobId','createdAt','strictProof'])&&exactKeys(receipt.source,['size','mtime','sample'])&&exactKeys(receipt.output,['size','mtime','sample'])&&
+  (receipt.version===1||validTvStrictProof(receipt))&&
   Number.isSafeInteger(receipt.createdAt)&&receipt.createdAt>=0&&typeof receipt.jobId==='string'&&receipt.jobId.length>0&&receipt.jobId.length<=512&&receipt.jobId===receipt.jobId.trim()&&
   identity(receipt.source)&&identity(receipt.output);
 }

@@ -15,7 +15,7 @@ const tvFields=[
 const roles={source:'Zdroj',result:'Výsledek',quarantine:'Karanténa',reports:'Reporty',database:'Databáze',data:'Data'};
 const statuses={ready:'Připraveno',not_configured:'Není nastaveno',missing_or_unmounted:'Chybí nebo není připojeno',not_directory:'Není adresář',not_file:'Není soubor',unreadable:'Nelze číst',not_writable:'Nelze zapisovat',unsafe_path:'Nebezpečná cesta',unavailable:'Nelze ověřit'};
 const issues={overlap:'Některé nastavené cesty se překrývají.',quarantine_mount_incompatible:'Karanténa není na bezpečně kompatibilním připojení.',namespace_unverified:'Překlad cesty mezi kontejnery nelze ověřit.',processing_unavailable:'Zpracování TV zatím není dostupné.'};
-const tvFieldHelp={mode:'V režimu objevování Review čte výsledky TV a zobrazuje je v sekci Seriály. Nic neschvaluje, nenahrazuje ani nemění ve Sonarru a Tdarru. Změna režimu se použije stejně jako ostatní nastavení: uložit, otestovat, použít.',sourceRoots:'Tyto cesty popisují umístění souborů viditelné Tdarru, ne identitu epizody.',tdarrReviewRoot:'Jde o přeloženou cestu výsledků, kterou vidí Tdarr.',sonarrRoot:'Jde o přeložený kořen knihovny, který vidí Sonarr.'};
+const tvFieldHelp={mode:'Vypnuto nic neprochází. Objevování je pouze pro čtení. Přísné posouzení výslovně zapne ruční posouzení a instalaci podporovaných jednotlivých SDR epizod; použije se až po uložení a použití nastavení.',sourceRoots:'Tyto cesty popisují umístění souborů viditelné Tdarru, ne identitu epizody.',tdarrReviewRoot:'Jde o přeloženou cestu výsledků, kterou vidí Tdarr.',sonarrRoot:'Jde o přeložený kořen knihovny, který vidí Sonarr.'};
 const readOnlyRoles=new Set(['reports','database']);
 
 function listValue(value){return Array.isArray(value)?value.join('\n'):'';}
@@ -24,11 +24,11 @@ export function libraryPathsPatch(tv,savedDraft){return JSON.stringify(stable(tv
 function readTvDescriptor(formFields,existing){
  return {...makeTvDescriptor(),...(existing||{}),...Object.fromEntries(tvFields.map(([field,,type])=>[field,type==='list'?formFields.querySelector(`[data-tv-field="${field}"]`)?.value.split('\n').map(x=>x.trim()).filter(Boolean)??[]:formFields.querySelector(`[data-tv-field="${field}"]`)?.value.trim()??''])),enabled:false};
 }
-const modeOptions=[['off','Vypnuto'],['discovery','Objevování (jen čtení)']];
+const modeOptions=[['off','Vypnuto'],['discovery','Objevování (jen čtení)'],['strict-review','Přísné posouzení']];
 function tvFieldInput(key,value,{el,tr}){
  const [,label,type]=tvFields.find(([field])=>field===key);
  const input=el(type==='list'?'textarea':type==='select'?'select':'input');if(type==='text')input.type='text';input.name='libraries.tv.'+key;input.dataset.tvField=key;
- if(type==='select'){for(const [optionValue,optionLabel] of modeOptions){const option=el('option','',optionLabel);option.value=optionValue;input.append(option);}input.value=value==='discovery'?'discovery':'off';}
+ if(type==='select'){for(const [optionValue,optionLabel] of modeOptions){const option=el('option','',optionLabel);option.value=optionValue;input.append(option);}input.value=['discovery','strict-review'].includes(value)?value:'off';}
  else input.value=type==='list'?listValue(value):String(value??'');
  const wrapper=el('label','settings-field',label);wrapper.append(input);if(tvFieldHelp[key])wrapper.append(el('small','',tvFieldHelp[key]));return {input,wrapper};
 }
@@ -39,7 +39,7 @@ export function renderLibraryPaths({tv,paths,onChange,onCheck,disabled=false,che
  const panel=el('section','tv-library-settings');panel.setAttribute('aria-label',tr('Cesty knihovny TV'));
  panel.append(el('p','details','Viditelná složka /media sama o sobě neznamená, že jsou cesty TV nastavené. Tyto hodnoty popisují cesty uvnitř jednotlivých kontejnerů. Změna mapování vyžaduje výslovné znovuvytvoření kontejnerů; tato kontrola nic nemění.'));
  panel.append(el('p','details','Cesty Tdarru a Sonarru jsou překlady umístění mezi kontejnery. Samy neurčují, ke které epizodě soubor patří.'));
- panel.append(el('p','details','Zpracování TV zůstává nedostupné do zpřístupnění samostatných bezpečnostních opatření.'));
+ panel.append(el('p','details','Přísné posouzení je omezené na přesně vázanou jednu epizodu v SDR Matroska, s důkazem kontroly výstupu z profilu Tdarru. Originál se po instalaci uchová v oddělené TV karanténě.'));
  const details=el('details','settings-advanced tv-library-details');details.open=!!tv;
  details.append(el('summary','','Volitelné cesty knihovny TV'));
  let removed=!tv;

@@ -52,10 +52,16 @@ export async function serverHarness({host='127.0.0.1'}={}){
      try{await deadline(closed,'server shutdown')}catch(error){child.kill('SIGKILL');await closed;throw error}
     }
   };
+  const killProcess=async()=>{
+   if(child&&child.exitCode===null&&child.signalCode===null){
+    if(HANDOFF&&!reservation)reservation=await bindLoopback(port,host);
+    const closed=new Promise(resolve=>child.once('close',resolve));child.kill('SIGKILL');await closed;
+   }
+  };
   const close=async()=>{
    try{await stopProcess();}finally{await release();await fs.rm(root,{recursive:true,force:true})}
   };
-  return {root,data,media,review,port,base,request,close,stop:stopProcess,diagnostics:()=>diagnostics,output:()=>output,
+  return {root,data,media,review,port,base,request,close,stop:stopProcess,kill:killProcess,diagnostics:()=>diagnostics,output:()=>output,
    async start({settings={},state,preload,clock=false,traceRoutes=false,env={},supervisor=false}={}){
     try{
      // Every default endpoint is loopback; missing synthetic databases fail closed.

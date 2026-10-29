@@ -24,7 +24,7 @@ const labels={'preparing':['Kopíruji výsledek do složky filmu',3],'syncing-co
  * @param {()=>any} adapters.getConfig Review configuration (libraryId, sourceRoots, reviewPrefixes).
  * @param {any[]} adapters.recovery Unresolved exchange transactions; an unfinished journal is added here.
  * @param {{approval:(id:string,snapshot:string,revision:number)=>any}} adapters.reviewSessions
- * @param {object} adapters.files media(), review(), safeFile, hash, captureReceipt, cleanupReviewed, unlink, probe(file), inspect, replaceChecked, newJournal(), readJournal(journal).
+ * @param {object} adapters.files media(), review(), safeFile, hash, captureReceipt, cleanupReviewed, unlink, probe(file), inspect, replaceChecked, newJournal(), readJournal(journal); optional snapshotMatches(item,source,result) for library-specific snapshots.
  * @param {object} adapters.tdarr nodes(), workerBusy(nodes,item), pauseDispatch(item), verifyPaused(item), resume(), libraries(), rescan(body).
  * @param {object} adapters.records publishApproval(entry), recordRejection(entry), recordDecision(entry).
  * @param {object} adapters.activity start(entry), progress(stage,step,phase), measured(progress), finish().
@@ -45,12 +45,13 @@ export function createApprovalTransaction({getState,getConfig,recovery,reviewSes
   log('action.started',{action,id:item.id,title:item.title,acceptDuration:acceptDuration||undefined});
   await forgetPreviews(item.id);
   progress('Ověřuji soubory, délku a zachované stopy');
-  let journal,warning,outcome,reviewEvidence;
+  let journal,warning,outcome,reviewEvidence,tdarrRefreshFailed=false;
   try {
     if(action==='approve')reviewEvidence=reviewSessions.approval(item.id,item.snapshot,item.reviewRevision);
     if(recovery.length)throw new Error('Je nutné dokončit obnovu předchozí výměny.');
+    if(action==='approve'&&tdarr.validateLibrary)await tdarr.validateLibrary(item);
     const a=await files.safeFile(files.media(),item.relative),b=await files.safeFile(files.review(),item.reviewRelative);
-    if(files.hash(a.fp+'|'+b.fp)!==item.snapshot)throw new Error('Soubory se změnily. Obnov přehled.');
+    if(files.snapshotMatches?!files.snapshotMatches(item,a,b):files.hash(a.fp+'|'+b.fp)!==item.snapshot)throw new Error('Soubory se změnily. Obnov přehled.');
     const nodes=await tdarr.nodes();if(tdarr.workerBusy(nodes,item))throw new Error('Tento film právě zpracovává Tdarr. Zkus akci po dokončení.');
     const receipt=await files.captureReceipt(files.review(),item.reviewRelative,item.relative,b.stat);
     if(action==='reject'){
@@ -69,13 +70,13 @@ export function createApprovalTransaction({getState,getConfig,recovery,reviewSes
       try{await records.publishApproval({mediaRoot:files.media(),relative:item.relative,sourceFP:previous.originalFP,installedRelative:item.outputRelative||item.relative})}catch(e){warning='Film je schválený, ale důkaz pro úklid karantény se neuložil: '+e.message}
       progress('Obnovuji údaje filmu v Tdarru',6,'rescan');
       try {
-        const config=getConfig(),lib=(await tdarr.libraries()).find(l=>config.libraryId?l._id===config.libraryId:config.sourceRoots.includes(String(l.folder).replace(/\/$/,'')));
+        const config=getConfig(),lib=tdarr.resolveLibrary?await tdarr.resolveLibrary(config,item):(await tdarr.libraries()).find(l=>config.libraryId?l._id===config.libraryId:config.sourceRoots.includes(String(l.folder).replace(/\/$/,'')));
         if(lib)await tdarr.rescan({_id:String(lib.folder).replace(/\/$/,'')+'/'+(item.outputRelative||item.relative),DB:lib._id});
-      }catch(e){warning='Film je nahrazený, ale aktualizace údajů v Tdarru selhala: '+e.message}
+      }catch(e){tdarrRefreshFailed=true;warning='Film je nahrazený, ale aktualizace údajů v Tdarru selhala: '+e.message;}
     }
     progress('Uklízím prázdné složky review',6,'cleanup');
     try{await files.cleanupReviewed(files.review(),item.reviewRelative,receipt,getConfig().reviewPrefixes)}catch(e){warning=[warning,'Film je vyřízený, ale úklid review selhal: '+e.message].filter(Boolean).join(' ')}
-    outcome={id:item.id,title:item.title,action,rejectionReason:action==='reject'?reason:undefined,jobId:item.jobId||previous?.jobId,reviewSession:reviewEvidence,acceptedDurationDifference:acceptDuration?item.durationA-item.durationB:undefined,status:'success',warning,time:new Date(now()).toISOString(),elapsedSeconds:Math.round((now()-started)/1000),savedBytes:action==='approve'?item.originalBytes-item.reviewBytes:0};state.history.unshift(outcome);
+    outcome={id:item.id,title:item.title,action,rejectionReason:action==='reject'?reason:undefined,jobId:item.jobId||previous?.jobId,reviewSession:reviewEvidence,acceptedDurationDifference:acceptDuration?item.durationA-item.durationB:undefined,status:'success',warning,tdarrRefreshFailed:tdarrRefreshFailed||undefined,time:new Date(now()).toISOString(),elapsedSeconds:Math.round((now()-started)/1000),savedBytes:action==='approve'?item.originalBytes-item.reviewBytes:0};state.history.unshift(outcome);
     delete state.items[item.id];delete state.reviewSessions[item.id];forgetApproval(state,item.id);invalidateStats();
   }catch(e){
     outcome={id:item.id,title:item.title,action,rejectionReason:action==='reject'?reason:undefined,jobId:item.jobId||previous?.jobId,reviewSession:reviewEvidence,status:'error',message:e.message,time:new Date(now()).toISOString()};state.history.unshift(outcome);

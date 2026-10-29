@@ -55,7 +55,9 @@ Configure the node cache/backpressure limit outside this flow as well. The helpe
 
 The graph performs a software HEVC encode in Matroska without forced container conformance, checks duration and size as sanity gates, then runs strict decode, preservation checks, exclusive staging and receipt creation. The ratio gates are not proof of health; the full decode and metadata comparisons are required. A helper or ratio-gate refusal goes to `Fail Flow`.
 
-The final helper writes `<episode>.mkv.tdarr-receipt.json` beside the staged result. The receipt uses the existing version-1 Review schema, with the original Series/Season-relative path in both `relative` and `outputRelative`, source/output size, rounded mtime and sample hash, and the current Tdarr job's `args.job.jobId`. Review must still find the exact successful job with the configured library, source path and byte sizes. A receipt alone does not make an item approved, eligible for replacement, or safe to delete.
+The final helper writes `<episode>.mkv.tdarr-receipt.json` beside the staged result. Discovery accepts the legacy v1 receipt for read-only association. The current template emits v2: it retains the same relative path, file sample and exact job ID, and adds typed strict proof only after stream/flag/chapter preservation, full natural decode, source identity recheck and durable staged-copy verification. Review validates the v2 job ID and exact source/result identities again. A v1 receipt remains discoverable but cannot enter strict review; neither receipt version grants approval or permits cleanup by itself.
+
+Importing or updating this template changes the custom-function receipt contract from v1 to v2. Existing jobs and v1 receipts remain read-only discovery records. Review has not imported this flow into a Tdarr instance or verified a deployed Tdarr/Community plugin version; new jobs must use the reviewed helper embedded in the v2 template before they can be considered by strict review.
 
 ## Verification and limits
 
