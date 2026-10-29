@@ -91,11 +91,16 @@ test('current observation distinguishes changed, missing, symlink and unreadable
  const f=await fixture(t);await add(f);const leaf=path.join(f.quarantine,'kept.mkv');await fs.writeFile(leaf,'changed');assert.equal((await f.ledger.page()).items[0].retained.current,'changed');
  await fs.unlink(leaf);assert.equal((await f.ledger.page()).items[0].retained.current,'missing');await fs.symlink(path.join(f.data,'outside'),leaf);assert.equal((await f.ledger.page()).items[0].retained.current,'unsafe');
  await fs.unlink(leaf);await fs.writeFile(leaf,'unreadable');const fp=identityOf(await fs.stat(leaf));await fs.chmod(leaf,0);
- if(process.getuid()===0){
+ let cannotRead=false;
+ try{const probe=await fs.open(leaf,fs.constants.O_RDONLY);await probe.close()}
+ catch(error){if(error?.code==='EACCES'||error?.code==='EPERM')cannotRead=true;else throw error}
+ if(cannotRead)assert.equal(await observeRetainedIdentity(f.quarantine,'kept.mkv',fp),'inaccessible');
+ else{
+  assert.equal(process.getuid?.(),0,'only privileged root may read a mode-000 file');
   await fs.chmod(f.data,0o755);await fs.chmod(f.quarantine,0o755);
   const code='import {observeRetainedIdentity} from '+JSON.stringify(new URL('./core.mjs',import.meta.url).href)+';console.log(await observeRetainedIdentity(...JSON.parse(process.argv[1])))';
   assert.equal(execFileSync(process.execPath,['--input-type=module','-e',code,JSON.stringify([f.quarantine,'kept.mkv',fp])],{uid:65534,gid:65534,encoding:'utf8'}).trim(),'inaccessible');
- }else assert.equal(await observeRetainedIdentity(f.quarantine,'kept.mkv',fp),'inaccessible');
+ }
 });
 
 test('duplicate, missing and incomplete references stay unverified and cursor tampering is refused',linuxOnly,async t=>{
