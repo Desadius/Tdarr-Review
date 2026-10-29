@@ -15,6 +15,8 @@ const bindingStatus={mapped:'Přesně přiřazeno',unmapped:'Vazba nenalezena',a
 const sourceStatus={present:'Metadata jednoho běžného souboru jsou dostupná; obsah a identita nejsou ověřené.',missing:'Soubor na odvozené cestě nebyl nalezen.',unsafe:'Soubor nebo cesta nesplňuje bezpečnostní omezení.',unsupported:'Typ souboru není podporován pro tuto kontrolu.',changed:'Cesta se během kontroly změnila.',busy:'Kontrola zdroje už probíhá.',unavailable:'Kontrola zdroje není dostupná.',unmapped:'Cestu Sonarru nelze přesně namapovat.',ambiguous:'Vazba epizody není jednoznačná.',invalid:'Metadata Sonarru nejsou platná.'};
 const resultStatus={matched:'Přiřazení výsledku Tdarru odpovídá vybranému souboru a podporovaným metadatům. Není to kontrola technického zdraví ani schválení.',unverified:'Přiřazení výsledku Tdarru nebylo ověřeno.','source-missing':'Zdrojový soubor nebyl nalezen.','result-missing':'Výsledek nebyl nalezen.','receipt-missing':'Chybí podporovaný záznam výsledku.','job-missing':'Chybí přesně uvedená úspěšná úloha Tdarru.','wrong-library':'Úloha patří do jiné knihovny Tdarru.','job-not-successful':'Úloha Tdarru není označena jako úspěšná.','job-path-mismatch':'Cesta úlohy neodpovídá nakonfigurovanému zdroji.','evidence-mismatch':'Velikosti úlohy neodpovídají aktuálním souborům.','ambiguous-result':'Více výsledků odpovídá vybranému souboru.','ambiguous-job':'ID úlohy není jednoznačné.','unsafe-path':'Cesta nebo soubor nesplňuje bezpečnostní omezení.','unsupported-layout':'Rozložení nebo nastavení není pro tuto kontrolu podporované.','unsupported-evidence':'Záznam nemá podporovaný formát nebo údaje.','file-changed':'Zdroj, výsledek nebo vazba se během kontroly změnily.','evidence-unavailable':'Důkazy nejsou dostupné.','busy':'Kontrola výsledku už probíhá.'};
 const technicalStatus={'technical-facts-unavailable':'Technická metadata nejsou dostupná pro tento soubor nebo výstup sondy.'};
+const reconciliationReason={settings_not_applied:'Nejprve použij stejné připojení Sonarru a TV cesty jako v uloženém návrhu.',series_unavailable:'Vybranou sérii nelze jednoznačně ověřit.',series_path_unmapped:'Složku série nelze bezpečně namapovat pod nakonfigurovanou kořenovou cestu.',sonarr_path_unmapped:'Některé cesty Sonarru neleží bezpečně pod složkou vybrané série.',sonarr_inconsistent:'Vazby souborů nebo epizod Sonarru jsou nejednoznačné či neúplné.',sonarr_unavailable:'Úplný snímek Sonarru není dostupný.',sonarr_too_large:'Odpověď Sonarru překročila bezpečný limit; porovnání není úplné.',snapshot_limit:'Vybraná série překročila limit bezpečného porovnání.',snapshot_changed:'Snímek Sonarru se během porovnání změnil.',scan_limit:'Porovnání skončilo bezpečnostním limitem; chybějící a místní soubory nejsou určeny.',scan_changed:'Složka nebo soubory se během porovnání změnily.',scan_unsafe:'Vybranou složku série nelze bezpečně procházet.',scan_inaccessible:'K některé složce nebo souboru nejsou dostupná potřebná oprávnění.',scan_unsupported:'Souborový systém nepodporuje bezpečné čtení metadat.',worker_unavailable:'Oddělený proces pro čtení metadat není dostupný.',response_limit:'Výsledek překročil limit zobrazení.',timeout:'Porovnání překročilo časový limit.',settings_conflict:'Použitá nastavení se během porovnání změnila. Načti je znovu.',busy:'Jiné porovnání série už probíhá.',cancelled:'Porovnání bylo přerušeno.',invalid_request:'Požadavek na porovnání není platný.'};
+const reconciliationStatus={present:'Soubor je na přesné cestě uvedené v Sonarru.',missing:'Přesná cesta uvedená v Sonarru ve složce série chybí.',unmapped:'Cesta uvedená v Sonarru neleží pod nakonfigurovanou složkou série.',ambiguous:'Vazba souboru nebo cesty je nejednoznačná.',unsafe:'Soubor nebo cesta není bezpečné číst.',unknown:'Stav souboru nelze určit.',local_only:'Soubor není uveden mezi soubory epizod Sonarru.',observed:'Položka byla pozorována; nejde o vazbu epizody.',directory:'Složka série.',unsupported:'Typ položky není běžný soubor.',invalid:'Metadata souboru nejsou platná.'};
 const factValue=value=>value===null||value===undefined?tr('neznámé'):String(value);
 function appendFacts(el,container,label,facts){
  const section=el('section','sonarr-technical-facts');section.append(el('h5','',label));
@@ -38,20 +40,46 @@ function appendFacts(el,container,label,facts){
  tracks('video',facts.video);tracks('audio',facts.audio);tracks('subtitle',facts.subtitles);container.append(section);
 }
 
-export function renderSonarrInspector({el,button,api,revision,configured,sourceConfigured=false,resultConfigured=false,dirty}){
- let activeConfigured=configured,activeSourceConfigured=sourceConfigured,activeResultConfigured=resultConfigured,activeDirty=dirty;
+export function renderSonarrInspector({el,button,api,revision,configured,sourceConfigured=false,resultConfigured=false,reconciliationConfigured=false,dirty}){
+ let activeConfigured=configured,activeSourceConfigured=sourceConfigured,activeResultConfigured=resultConfigured,activeReconciliationConfigured=reconciliationConfigured,activeDirty=dirty;
  const panel=el('section','sonarr-inspector');panel.setAttribute('aria-label',tr('Ruční kontrola Sonarru'));
  panel.append(el('h3','','Ruční kontrola Sonarru'),el('p','details','Zdroj a odpovědi Sonarru jsou neověřené. Výsledek popisuje pouze metadata; nepotvrzuje existenci souboru ani povolení ke zpracování.'));
  const state=el('p','details','Načtení vyžaduje uložený návrh a ruční akci.');state.setAttribute('role','status');
  const select=el('select');select.setAttribute('aria-label',tr('Vybraná série'));select.disabled=true;
  const selectLabel=el('label','settings-field','Série');selectLabel.append(select);
  const results=el('div','sonarr-inspection-results'),sourceChecks=[],resultChecks=[],technicalChecks=[];
- let series=[];
+ const reconciliationView=el('section','sonarr-reconciliation-results');reconciliationView.setAttribute('aria-live','polite');
+ let series=[],reconciliationSeq=0;
+ const reconciliationHint=()=>{if(!activeReconciliationConfigured)reconciliationView.replaceChildren(el('p','details',tr('Pro porovnání použij stejné připojení Sonarru a TV kořenové cesty, jaké jsou právě použité.')));};
+ reconciliationHint();
  const load=button('Načíst série',async()=>{
-  if(load.disabled)return;load.disabled=true;inspect.disabled=true;state.textContent=tr('Načítám série z uloženého Sonarru…');results.replaceChildren();
-  try{const value=await api('/api/sonarr/series?revision='+encodeURIComponent(revision));series=value.series;select.replaceChildren();for(const item of series){const option=el('option','',item.title);option.value=String(item.id);select.append(option);}select.value=String(series[0]?.id||'');select.disabled=!series.length;inspect.disabled=!series.length||activeDirty||!activeConfigured;state.textContent=tr('Série načteny ručním požadavkem.');}
+  if(load.disabled)return;reconciliationSeq++;load.disabled=true;inspect.disabled=true;reconcile.disabled=true;reconciliationView.replaceChildren();state.textContent=tr('Načítám série z uloženého Sonarru…');results.replaceChildren();
+  try{const value=await api('/api/sonarr/series?revision='+encodeURIComponent(revision));series=value.series;select.replaceChildren();for(const item of series){const option=el('option','',item.title);option.value=String(item.id);select.append(option);}select.value=String(series[0]?.id||'');select.disabled=!series.length;inspect.disabled=!series.length||activeDirty||!activeConfigured;reconcile.disabled=!series.length||activeDirty||!activeReconciliationConfigured;state.textContent=tr('Série načteny ručním požadavkem.');}
   catch(error){series=[];select.replaceChildren();state.textContent=apiError(error);}
-  finally{load.disabled=activeDirty||!activeConfigured;}
+  finally{load.disabled=activeDirty||!activeConfigured;reconciliationHint();}
+ });
+ const reconcile=button(tr('Porovnat soubory s diskem'),async()=>{
+  const id=select.value;if(reconcile.disabled||!id)return;const sequence=++reconciliationSeq;reconcile.disabled=true;load.disabled=true;inspect.disabled=true;reconciliationView.replaceChildren(el('p','details',tr('Čtu pouze metadata vybrané složky a porovnávám je s úplným snímkem Sonarru…')));
+  try{
+   const query=new URLSearchParams({revision,seriesId:id}),value=await api('/api/sonarr/reconcile?'+query.toString());
+   if(sequence!==reconciliationSeq||select.value!==id)return;
+   const title=value.complete?'Úplné pozorování aktuálních metadat':'Neúplné pozorování';
+   reconciliationView.replaceChildren(el('h4','',tr(title)),el('p','details',tr('Použitá revize')+': '+String(value.revision||revision.slice(0,12))+' · '+tr('Generace')+': '+String(value.generation??'—')+' · '+tr('Pozorováno UTC')+': '+(value.observedAt?new Date(value.observedAt).toISOString():'—')),el('p','details',tr('Limity')+': '+(value.limits?.episodeFiles??'—')+' '+tr('souborů epizod,')+' '+(value.limits?.diskEntries??'—')+' '+tr('položek na disku,')+' '+(value.limits?.operationMs??'—')+' ms'));
+   if(value.reason)reconciliationView.append(el('p','alert',tr(reconciliationReason[value.reason]||reconciliationReason.worker_unavailable)));
+   const counts=value.counts||{};reconciliationView.append(el('p','details',tr('Sonarr soubory')+': '+(counts.episodeFiles??0)+' · '+tr('Epizody')+': '+(counts.episodes??0)+' · '+tr('Propojené epizody')+': '+(counts.linkedEpisodes??0)+' · '+tr('Bez souboru')+': '+(counts.unlinkedEpisodes??0)+' · '+tr('Přesně nalezeno')+': '+(counts.present??0)+' · '+tr('Chybí')+': '+(counts.missing??0)+' · '+tr('Pouze na disku')+': '+(counts.localOnly??0)+' · '+tr('Vedlejší soubory')+': '+(counts.sidecars??0)+' · '+tr('Neznámé')+': '+(counts.unknown??0)));
+   for(const row of value.rows||[]){
+    const block=el('article','sonarr-file-binding'),label=row.relative||tr('Cesta není bezpečně ověřena');
+    const categoryText={media:'Mediální soubor neuvedený v Sonarru',possible_sample:'Možný vzorek',possible_alternate:'Možná alternativní verze',sidecar:'Vedlejší soubor',other:'Jiný soubor',directory:'Složka',unsafe:'Symbolický odkaz',hardlink:'Pevný odkaz',unsupported:'Nepodporovaný typ položky'};
+    const diskLabel=value.complete?tr(categoryText[row.category]||'Jiná položka'):tr('Pozorovaná položka, vazba není určena')+' · '+tr(categoryText[row.category]||'Jiná položka');
+    block.append(el('h5','',row.kind==='episodeFile'?tr('Soubor epizody')+' '+(row.episodeFileId??'—')+' · '+label:diskLabel+' · '+label));
+    block.append(el('p',row.status==='present'?'success':row.status==='missing'||row.status==='unsafe'?'alert':'details',tr(reconciliationStatus[row.status]||reconciliationStatus.unknown)));
+    if(Number.isSafeInteger(row.size))block.append(el('p','details',tr('Velikost')+': '+row.size+' B'));
+    if(Array.isArray(row.episodes))for(const episode of row.episodes)block.append(el('p','details',tr('ID epizody')+': '+episode.id+' · '+numbering(episode)));
+    reconciliationView.append(block);
+   }
+   if(value.unacquiredEpisodes?.length){const block=el('article','sonarr-file-binding');block.append(el('h5','','Epizody bez souboru v Sonarru'));for(const episode of value.unacquiredEpisodes)block.append(el('p','details',tr('ID epizody')+': '+episode.id+' · '+numbering(episode)));reconciliationView.append(block);}
+  }catch(error){if(sequence===reconciliationSeq)reconciliationView.replaceChildren(el('p','alert',apiError(error)));}
+  finally{if(sequence===reconciliationSeq){reconcile.disabled=activeDirty||!activeReconciliationConfigured||!series.length;load.disabled=activeDirty||!activeConfigured;inspect.disabled=activeDirty||!activeConfigured||!series.length||!select.value;}}
  });
  const inspect=button('Zkontrolovat vybranou sérii',async()=>{
   const id=select.value;if(inspect.disabled||!id)return;inspect.disabled=true;load.disabled=true;state.textContent=tr('Načítám úplný snímek vybrané série…');results.replaceChildren();
@@ -111,10 +139,10 @@ export function renderSonarrInspector({el,button,api,revision,configured,sourceC
   }catch(error){state.textContent=apiError(error);}
   finally{inspect.disabled=activeDirty||!activeConfigured||!series.length;load.disabled=activeDirty||!activeConfigured;}
  });
- select.onchange=()=>{inspect.disabled=activeDirty||!activeConfigured||!select.value};
- const buttons=el('div','dialog-actions');buttons.append(load,inspect);panel.append(selectLabel,buttons,state,results);
- panel.setAvailability=({isDirty,isConfigured,isSourceConfigured=activeSourceConfigured,isResultConfigured=activeResultConfigured})=>{activeDirty=isDirty;activeConfigured=isConfigured;activeSourceConfigured=isSourceConfigured;activeResultConfigured=isResultConfigured;load.disabled=isDirty||!isConfigured;inspect.disabled=isDirty||!isConfigured||!series.length||!select.value;select.disabled=isDirty||!series.length;for(const check of sourceChecks)check.disabled=isDirty||!isSourceConfigured;for(const check of resultChecks)check.disabled=isDirty||!isResultConfigured;for(const check of technicalChecks)check.disabled=isDirty||!isResultConfigured;};
- panel.setAvailability({isDirty:dirty,isConfigured:configured});return panel;
+ select.onchange=()=>{reconciliationSeq++;reconciliationView.replaceChildren();reconciliationHint();inspect.disabled=activeDirty||!activeConfigured||!select.value;reconcile.disabled=activeDirty||!activeReconciliationConfigured||!select.value};
+ const buttons=el('div','dialog-actions');buttons.append(load,inspect,reconcile);panel.append(selectLabel,buttons,state,results,reconciliationView);
+ panel.setAvailability=({isDirty,isConfigured,isSourceConfigured=activeSourceConfigured,isResultConfigured=activeResultConfigured,isReconciliationConfigured=activeReconciliationConfigured})=>{const wasAvailable=activeReconciliationConfigured;activeDirty=isDirty;activeConfigured=isConfigured;activeSourceConfigured=isSourceConfigured;activeResultConfigured=isResultConfigured;activeReconciliationConfigured=isReconciliationConfigured;load.disabled=isDirty||!isConfigured;inspect.disabled=isDirty||!isConfigured||!series.length||!select.value;reconcile.disabled=isDirty||!isReconciliationConfigured||!series.length||!select.value;select.disabled=isDirty||!series.length;for(const check of sourceChecks)check.disabled=isDirty||!isSourceConfigured;for(const check of resultChecks)check.disabled=isDirty||!isResultConfigured;for(const check of technicalChecks)check.disabled=isDirty||!isResultConfigured;if(wasAvailable!==activeReconciliationConfigured||isDirty){reconciliationSeq++;reconciliationHint();}};
+ panel.setAvailability({isDirty:dirty,isConfigured:configured,isReconciliationConfigured:reconciliationConfigured});return panel;
 }
 
 function apiError(error){

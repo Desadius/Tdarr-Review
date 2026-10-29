@@ -8,11 +8,11 @@ const ambiguous = (reason) => ({ status: 'ambiguous', reason });
 const copyIssue = (issue) => ({ status: issue.status, reason: issue.reason });
 
 function buildEpisodeBindingResolver(input = {}) {
-  if (!isRecord(input)) return { resolve: () => invalid('invalid-input') };
+  if (!isRecord(input)) return { resolve: () => invalid('invalid-input'), integrity: () => invalid('invalid-input') };
   const { instanceKey, seriesId, episodeFiles, episodes } = input;
   if (typeof instanceKey !== 'string' || instanceKey.trim() === ''
       || !isPositiveId(seriesId) || !Array.isArray(episodeFiles) || !Array.isArray(episodes)) {
-    return { resolve: () => invalid('invalid-input') };
+    return { resolve: () => invalid('invalid-input'), integrity: () => invalid('invalid-input') };
   }
 
   const allFiles = [], filesByPath = new Map(), filesById = new Map();
@@ -121,6 +121,16 @@ function buildEpisodeBindingResolver(input = {}) {
   }
 
   return {
+    integrity() {
+      if (fileIssue) return copyIssue(fileIssue);
+      if (duplicateSelectedFileIds || foreignFileIdConflict) return ambiguous('duplicate-episode-file-id');
+      if ([...selectedFilesByPath.values()].some((matches) => matches.length > 1)) return ambiguous('duplicate-file-path');
+      if (episodeIssue) return copyIssue(episodeIssue);
+      if (duplicateSelectedEpisodeIds || foreignEpisodeIdConflict) return ambiguous('duplicate-episode-id');
+      if (targetEpisodeSeriesConflict) return invalid('episode-series-mismatch');
+      if (linkIssue) return copyIssue(linkIssue);
+      return { status: 'valid', reason: null };
+    },
     resolve(filePath) {
       if (typeof filePath !== 'string' || filePath.length === 0) return invalid('invalid-input');
       if (fileIssue) return copyIssue(fileIssue);

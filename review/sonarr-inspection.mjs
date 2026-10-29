@@ -12,8 +12,9 @@ function safeConnection(value){
  base.pathname=base.pathname.replace(/\/+$/,'');
  return {base,apiKey:value.apiKey.trim()};
 }
-async function responseJson(fetchFn,url,apiKey,limit,requestTimeout=timeoutMs){
- const response=await fetchFn(url,{method:'GET',redirect:'error',headers:{'X-Api-Key':apiKey,accept:'application/json'},signal:AbortSignal.timeout(requestTimeout)});
+async function responseJson(fetchFn,url,apiKey,limit,requestTimeout=timeoutMs,signal){
+ const timeout=AbortSignal.timeout(requestTimeout),requestSignal=signal?AbortSignal.any([timeout,signal]):timeout;
+ const response=await fetchFn(url,{method:'GET',redirect:'error',headers:{'X-Api-Key':apiKey,accept:'application/json'},signal:requestSignal});
  if(response.status!==200||response.redirected){await response.body?.cancel();throw Error('sonarr_unavailable');}
  const mime=response.headers.get('content-type')||'';
  if(!/^application\/json(?:\s*;|$)/i.test(mime)){await response.body?.cancel();throw Error('sonarr_unavailable');}
@@ -115,10 +116,10 @@ export function createSonarrInspection({getConnection,fetchFn=globalThis.fetch,r
  * snapshot of one series. Only GET requests, each bounded by `requestTimeoutMs`. Nothing is cached or stored here;
  * a snapshot that contradicts the requested series throws `sonarr_inconsistent`, every other failure `sonarr_unavailable`.
  */
-export function createSonarrDiscoveryReader({connection,fetchFn=globalThis.fetch,requestTimeoutMs=timeoutMs,remainingMs=()=>Infinity}){
+export function createSonarrDiscoveryReader({connection,fetchFn=globalThis.fetch,requestTimeoutMs=timeoutMs,remainingMs=()=>Infinity,signal}){
  const {base,apiKey}=safeConnection(connection);
  // Each request is also bounded by what is left of the caller's overall budget.
- const get=(route,limit)=>{const left=remainingMs();if(!(left>0))return Promise.reject(Error('sonarr_unavailable'));return responseJson(fetchFn,routeUrl(base,route),apiKey,limit,Math.min(requestTimeoutMs,left));};
+ const get=(route,limit)=>{const left=remainingMs();if(!(left>0))return Promise.reject(Error('sonarr_unavailable'));return responseJson(fetchFn,routeUrl(base,route),apiKey,limit,Math.min(requestTimeoutMs,left),signal);};
  async function seriesList(){
   const items=array(await get('/api/v3/series',seriesLimit),maxSeries);
   if(items.some(item=>!record(item)||!positive(item.id)||typeof item.title!=='string'||item.title.length>500||typeof item.path!=='string'||!item.path))throw Error('sonarr_unavailable');
