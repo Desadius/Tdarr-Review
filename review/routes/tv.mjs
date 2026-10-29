@@ -64,8 +64,19 @@ export async function tvRoutes(ctx,req,res,url,httpRequest={}){
    return reply(res,202,{ok:true,installing:true});
   }catch(error){return reply(res,error.status||409,apiError(error.code||'tv_install_unavailable'))}
  }
+ if(req.method==='GET'&&url.pathname==='/api/tv/installations'){
+  const keys=[...url.searchParams.keys()];if(keys.some(key=>!['limit','cursor'].includes(key))||url.searchParams.getAll('limit').length>1||url.searchParams.getAll('cursor').length>1)return reply(res,400,apiError('tv_invalid_request'));
+  const rawLimit=url.searchParams.get('limit'),limit=rawLimit===null?20:/^(?:[1-9]|[1-4][0-9]|50)$/.test(rawLimit)?Number(rawLimit):NaN;
+  if(!Number.isSafeInteger(limit))return reply(res,400,apiError('tv_invalid_request'));
+  try{
+   const page=await ctx.tvInstallLedger.page({limit,cursor:url.searchParams.has('cursor')?url.searchParams.get('cursor'):undefined});
+   const indexPresent=await ctx.tvInstallLedger.hasIndex();
+   const legacyUnverified=ctx.tvWorkflowState.history.filter(value=>!indexPresent||typeof value.transactionRef!=='string').slice(0,20).map(value=>({verification:'unverified',status:typeof value.status==='string'&&['success','error','incomplete_refresh'].includes(value.status)?value.status:'unknown',time:typeof value.time==='string'&&Number.isFinite(Date.parse(value.time))?new Date(value.time).toISOString():'',reason:'legacy_history_unbound'}));
+   return reply(res,200,{mode:ctx.tvDiscovery.mode(),...page,legacyUnverified,legacyLimit:20,inventoryScope:'indexed_transactions_only'});
+  }catch(error){return reply(res,error.status||500,apiError(error.status===400?'tv_invalid_request':'tv_install_ledger_unavailable'))}
+ }
  if(req.method!=='GET'||!['/api/tv','/api/tv/status'].includes(url.pathname))return false;
- if(url.pathname==='/api/tv/status')return reply(res,200,{mode:ctx.tvDiscovery.mode(),active:ctx.active?.library==='tv'?{id:ctx.active.id,action:ctx.active.action,stage:ctx.active.stage}:null,history:ctx.tvWorkflowState.history.slice(0,20).map(value=>({id:value.id,status:value.status,time:value.time,refresh:value.refresh}))});
+ if(url.pathname==='/api/tv/status')return reply(res,200,{mode:ctx.tvDiscovery.mode(),installationsAvailable:(await ctx.tvInstallLedger.hasIndex())||ctx.tvWorkflowState.history.length>0,active:ctx.active?.library==='tv'?{id:ctx.active.id,action:ctx.active.action,stage:ctx.active.stage}:null,history:ctx.tvWorkflowState.history.slice(0,20).map(value=>({id:/^[a-f0-9]{24}$/.test(value.id||'')?value.id:null,status:['success','error','incomplete_refresh'].includes(value.status)?value.status:'unknown',time:typeof value.time==='string'&&Number.isFinite(Date.parse(value.time))?new Date(value.time).toISOString():'',refresh:['pending','completed','failed'].includes(value.refresh)?value.refresh:undefined}))});
  const keys=[...url.searchParams.keys()];
  if(keys.some(key=>key!=='refresh')||url.searchParams.getAll('refresh').length>1||!['',null,'1'].includes(url.searchParams.get('refresh')))return reply(res,400,apiError('tv_invalid_request'));
  const overview=await ctx.tvDiscovery.result({force:url.searchParams.get('refresh')==='1'}),publicOverview=structuredClone(overview);

@@ -7,7 +7,7 @@ import {installComparisons,openComparison,openAudioComparison,openGuidedComparis
 import {installSettingsDialogs} from '/settings-dialogs.js?v=__APP_VERSION__';
 import {installQuarantine,openQuarantine} from '/quarantine.js?v=__APP_VERSION__';
 import {installStatistics,loadStatistics,statisticsLoadedAt} from '/statistics.js?v=__APP_VERSION__';
-import {installTv,loadTv,refreshTvMode,tvEnabled,tvLoadedAt} from '/tv-view.js?v=__APP_VERSION__';
+import {installTv,loadTv,loadTvInstallations,refreshTvMode,tvEnabled,tvLedgerEnabled,tvLoadedAt,tvHistoryLoadedAt} from '/tv-view.js?v=__APP_VERSION__';
 import {tr,locale,language,initializeLocale} from '/i18n.js?v=__APP_VERSION__';
 import {errorText} from '/error-messages.js?v=__APP_VERSION__';
 initializeLocale();
@@ -39,9 +39,9 @@ async function api(route,body){
  return d;
 }
 function error(e){$('error').textContent=tr(e.message);$('error').hidden=false;const active=[...document.querySelectorAll('dialog[open]')].at(-1);if(active){let alert=active.querySelector('.dialog-error');if(!alert){alert=el('p','alert dialog-error');alert.setAttribute('role','alert');active.prepend(alert)}alert.textContent=tr(e.message);alert.tabIndex=-1;alert.focus();}}
-async function login(key){await api('/api/login',{key});$('key').value='';authenticated=true;$('login').hidden=true;$('error').hidden=true;await load();await loadRequests(true);await refreshTvMode();handleHash()}
+async function login(key){await api('/api/login',{key});$('key').value='';authenticated=true;$('login').hidden=true;$('error').hidden=true;await loadInitial();handleHash()}
 $('loginForm').addEventListener('submit',e=>{e.preventDefault();login($('key').value.trim()).catch(error)});
-$('refresh').addEventListener('click',()=>{$('error').hidden=true;load();loadRequests(true);if(ui.view==='savings')loadStatistics()});
+$('refresh').addEventListener('click',()=>{$('error').hidden=true;if(ui.view==='tv-history'){void loadTvInstallations({reset:true});return}load();loadRequests(true);if(ui.view==='savings')loadStatistics()});
 
 function writeItem(item,action){
  const current=latest?.items.find(x=>x.id===item.id);
@@ -440,11 +440,11 @@ $('detailClose').onclick=()=>$('filmDetail').close();
 $('filmDetail').addEventListener('close',()=>{reviewWorkspace?.destroy();reviewWorkspace=null;$('filmDetail').classList.remove('single-pass-detail','chrome-open');ui.detail=null;ui.tab='review';const parsed=parseHash();if(parsed.params.has('film')||parsed.params.has('case'))navigate(ui.view,ui.view==='recovery'?{filter:ui.filter}:{})});
 
 function updateGuards(){
- if(!latest)return;const c=context();
- const displayFresh=ui.view==='tv'?!!tvLoadedAt()&&Date.now()-tvLoadedAt()<TV_DISPLAY_FRESH_MS:c.fresh,displayLoadedAt=ui.view==='tv'?tvLoadedAt():receivedAt;
+ if(!latest&&ui.view!=='tv-history')return;const c=context();
+ const displayFresh=ui.view==='tv'?!!tvLoadedAt()&&Date.now()-tvLoadedAt()<TV_DISPLAY_FRESH_MS:ui.view==='tv-history'?!!tvHistoryLoadedAt()&&Date.now()-tvHistoryLoadedAt()<TV_DISPLAY_FRESH_MS:c.fresh,displayLoadedAt=ui.view==='tv'?tvLoadedAt():ui.view==='tv-history'?tvHistoryLoadedAt():receivedAt;
  $('connection').textContent=tr(!authenticated?'Přihlášení vypršelo':dataError?'Spojení přerušeno':displayFresh?'Připojeno':'Čekám na aktuální údaje');$('connection').classList.toggle('failure',!authenticated||!!dataError||!displayFresh);
  $('freshness').hidden=displayFresh&&authenticated;$('freshness').textContent=tr(!authenticated?'Přihlas se znovu. Zobrazené údaje jsou poslední načtený stav; změny jsou zablokované.':`Údaje nejsou aktuální. Poslední načtení ${date(displayLoadedAt)}. Změny jsou zablokované.${dataError?' '+dataError:''}`);
- updateSelection();
+ if(!latest)return;updateSelection();
  if(ui.detail){const item=ui.detail.record,current=ui.detail.kind==='review'?latest.items.find(x=>x.id===item.id):requests.find(x=>x.id===item.id&&x.source===item.source),changed=!current||(ui.detail.kind==='review'?current.snapshot!==item.snapshot:JSON.stringify(current)!==JSON.stringify(item));
   $('detailChanged').hidden=!changed;$('detailChanged').textContent=tr('Stav tohoto filmu se změnil. Zavři detail a otevři aktuální údaje.');
   for(const b of $('filmDetail').querySelectorAll('[data-cap]'))b.disabled=changed||!caps(current||item)[b.dataset.cap];
@@ -464,7 +464,7 @@ function render(d){
  renderAttention();renderRecovery();renderHistory();renderBatch();paintProgress();updateGuards();handleHash();
 }
 function renderBatch(){const b=latest?.batch;$('batch').hidden=!b||b.status!=='running';$('batch').replaceChildren();if(b?.status==='running'){const p=el('progress','batch-meter');p.max=b.total;p.value=b.finished;p.setAttribute('aria-label',tr('Dokončené filmy dávky'));$('batch').append(el('strong','',`Hromadné schválení · ${b.finished} z ${b.total}`),p,el('span','details',`Chyby: ${b.failed}${b.message?' · '+b.message:''}`))}}
-async function load(){if(loading)return;loading=true;try{const d=await api('/api/items');receivedAt=Date.now();serverAt=d.serverTime||receivedAt;authenticated=true;dataError='';$('lastUpdate').textContent=tr(date(receivedAt));$('lastUpdate').dateTime=new Date(receivedAt).toISOString();const sig=previewRenderSignature(d);if(sig!==lastRender||$('workspace').hidden||!$('login').hidden){render(d);lastRender=sig}else{if(latest)latest.previews=d.previews||{};updateGuards()}}catch(e){dataError=e.message;updateGuards();if(!latest)error(e)}finally{loading=false}}
+async function load(){if(ui.view==='tv-history'||loading)return;loading=true;try{const d=await api('/api/items');receivedAt=Date.now();serverAt=d.serverTime||receivedAt;authenticated=true;dataError='';$('lastUpdate').textContent=tr(date(receivedAt));$('lastUpdate').dateTime=new Date(receivedAt).toISOString();const sig=previewRenderSignature(d);if(sig!==lastRender||$('workspace').hidden||!$('login').hidden){render(d);lastRender=sig}else{if(latest)latest.previews=d.previews||{};updateGuards()}}catch(e){dataError=e.message;updateGuards();if(!latest)error(e)}finally{loading=false}}
 // Fresh status without a button (#280): the server verifies every case that needs attention on its own, and opening
 // one case verifies that case at most once a minute. Both only read.
 const caseVerifiedAt=new Map();
@@ -476,11 +476,11 @@ function renderDiagnosticCases(){
  if(!cases.length)$('diagnosticCases').replaceChildren(el('p','details','Žádný případ k exportu.'));
 }
 // refreshKeys: a read-only refresh of Recovery attention (#229), of the named cases or, when empty, of all of them.
-async function loadRequests(force=false,refreshKeys){if(requestsLoading||!authenticated||(!force&&Date.now()-requestsReceived<30000))return;requestsLoading=true;try{const d=refreshKeys?await api('/api/recovery/refresh',refreshKeys.length?{keys:refreshKeys}:{}):await api('/api/radarr/requests');requests=d.requests;recoveryConfig=d.recoveryConfig||null;recoveryRuntime=d.recoveryRuntime||null;requestsReceived=Date.now();requestsError='';if(latest){renderAttention();renderRecovery();if(ui.view==='settings')renderDiagnosticCases();const projects=projectRequests(requests,latest.items,Date.now());$('recoveryCount').textContent=tr(projects.filter(x=>x.displayCategory!=='done'&&x.displayCategory!=='deferred').length);$('deferredCount').textContent=tr(projects.filter(x=>x.displayCategory==='deferred').length);const live=ui.detail?.kind==='request'?liveRecoveryRecord(ui.detail.record,requests)||(refreshKeys?requests.find(x=>x.id===ui.detail.record.id&&x.source===ui.detail.record.source):null):null;if(live){ui.detail.record=live;$('detailSubtitle').textContent=tr(classifyRecovery(live).label);renderDetailTab();}updateGuards();handleHash()}}catch(e){requestsError=e.message;if(authenticated){try{recoveryRuntime=await api('/api/recovery/runtime')}catch{}}renderRecovery();updateGuards()}finally{requestsLoading=false}}
-function parseHash(){const [view,query='']=location.hash.slice(1).split('?');return {view:['attention','recovery','history','savings','settings','tv'].includes(view)?view:'attention',params:new URLSearchParams(query)}}
+async function loadRequests(force=false,refreshKeys){if(ui.view==='tv-history'||requestsLoading||!authenticated||(!force&&Date.now()-requestsReceived<30000))return;requestsLoading=true;try{const d=refreshKeys?await api('/api/recovery/refresh',refreshKeys.length?{keys:refreshKeys}:{}):await api('/api/radarr/requests');requests=d.requests;recoveryConfig=d.recoveryConfig||null;recoveryRuntime=d.recoveryRuntime||null;requestsReceived=Date.now();requestsError='';if(latest){renderAttention();renderRecovery();if(ui.view==='settings')renderDiagnosticCases();const projects=projectRequests(requests,latest.items,Date.now());$('recoveryCount').textContent=tr(projects.filter(x=>x.displayCategory!=='done'&&x.displayCategory!=='deferred').length);$('deferredCount').textContent=tr(projects.filter(x=>x.displayCategory==='deferred').length);const live=ui.detail?.kind==='request'?liveRecoveryRecord(ui.detail.record,requests)||(refreshKeys?requests.find(x=>x.id===ui.detail.record.id&&x.source===ui.detail.record.source):null):null;if(live){ui.detail.record=live;$('detailSubtitle').textContent=tr(classifyRecovery(live).label);renderDetailTab();}updateGuards();handleHash()}}catch(e){requestsError=e.message;if(authenticated){try{recoveryRuntime=await api('/api/recovery/runtime')}catch{}}renderRecovery();updateGuards()}finally{requestsLoading=false}}
+function parseHash(){const [view,query='']=location.hash.slice(1).split('?');return {view:['attention','recovery','history','savings','settings','tv','tv-history'].includes(view)?view:'attention',params:new URLSearchParams(query)}}
 function navigate(view,params={}){if(view==='recovery'&&!params.filter)params.filter=ui.filter;const query=new URLSearchParams(params).toString(),hash='#'+view+(query?'?'+query:'');if(location.hash===hash)handleHash();else location.hash=hash}
 function handleHash(){
- let {view,params}=parseHash();if(view==='tv'&&!tvEnabled())view='attention';
+ let {view,params}=parseHash();if(view==='tv'&&!tvEnabled())view='attention';if(view==='tv-history'&&!tvLedgerEnabled())view='attention';
  const oldView=ui.view,focusWasInContent=$('content').contains(document.activeElement);ui.view=view;
  for(const section of document.querySelectorAll('.view'))section.hidden=section.id!=='view-'+view;
  for(const link of document.querySelectorAll('[data-view]')){if(link.dataset.view===view)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current')}
@@ -489,6 +489,7 @@ function handleHash(){
  if(view==='savings'&&Date.now()-statisticsLoadedAt()>15000)loadStatistics();
  if(view==='settings')renderDiagnosticCases();
  if(view==='tv'&&Date.now()-tvLoadedAt()>15000)void loadTv();
+ if(view==='tv-history'&&Date.now()-tvHistoryLoadedAt()>15000)void loadTvInstallations({reset:true});
  const tab=params.get('tab');if(['review','overview','comparison','recovery','technical'].includes(tab))ui.tab=params.has('film')&&tab==='comparison'?'review':tab;
  const kind=params.has('film')?'review':params.has('case')?'request':null,id=params.get(kind==='review'?'film':'case');
  if(kind){if(ui.detail?.kind!==kind||ui.detail.id!==id){const exists=kind==='review'?latest?.items.some(x=>x.id===id):projectRequests(requests,latest?.items||[],Date.now()).some(p=>p.key===id);if(exists)openDetail(kind,id,true);else if($('filmDetail').open)$('filmDetail').close()}else if($('detailTabs').querySelector('[aria-selected=true]')?.id!=='detailTabs-'+ui.tab)renderDetailTab()}
@@ -504,8 +505,14 @@ for(const id of ['historySearch','historyFilter'])$(id).addEventListener(id==='h
 $('historyPrev').onclick=()=>{ui.historyPage--;renderHistory()};$('historyNext').onclick=()=>{ui.historyPage++;renderHistory()};
 $('recoveryQuarantine').onclick=()=>openQuarantine();$('statsRefresh').onclick=()=>loadStatistics();
 
+async function loadInitial(){
+ if(parseHash().view==='tv-history'){
+  try{await api('/api/tv/status');authenticated=true;await refreshTvMode();if(tvLedgerEnabled()){$('login').hidden=true;$('workspace').hidden=false;dataError='';handleHash();return}}catch(e){error(e);return}
+ }
+ await load();await loadRequests(true);await refreshTvMode();
+}
 async function start(){
- const params=new URLSearchParams(location.hash.slice(1)),key=params.get('key');if(key){history.replaceState(null,'',location.pathname);try{await login(key)}catch(e){error(e)}}else{await load();await loadRequests(true);await refreshTvMode()}
+ const params=new URLSearchParams(location.hash.slice(1)),key=params.get('key');if(key){history.replaceState(null,'',location.pathname);try{await login(key)}catch(e){error(e)}}else{await loadInitial()}
  handleHash();setInterval(load,2000);setInterval(()=>{paintProgress();updateGuards()},1000);setInterval(()=>loadRequests(),30000);
 }
 

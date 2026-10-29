@@ -8,6 +8,7 @@ export const ERROR_MESSAGES=Object.freeze({
  settings_invalid:{cs:'Oprav označené pole návrhu.',en:'Correct the indicated draft field.'},
  sonarr_invalid_request:{cs:'Požadavek ruční kontroly Sonarru není platný.',en:'The manual Sonarr inspection request is invalid.'},
  tv_invalid_request:{cs:'Požadavek na přehled seriálů není platný.',en:'The TV series overview request is invalid.'},
+ tv_install_ledger_unavailable:Object.freeze({cs:'Historii instalací TV nelze bezpečně přečíst.',en:'The TV installation history cannot be read safely.'}),
  approval_required:Object.freeze({cs:'Nejdříve výslovně dokonči kontrolu a schval přesně tento výsledek.',en:'Complete the review and explicitly approve this exact result first.'}),
  review_store_unavailable:Object.freeze({cs:'Záznam postupu posouzení nelze bezpečně přečíst.',en:'Review progress cannot be read safely.'}),
  sonarr_command_mismatch:Object.freeze({cs:'Sonarr potvrdil jiný příkaz než kontrolu této série.',en:'Sonarr acknowledged a different command than the rescan for this series.'}),

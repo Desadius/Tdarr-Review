@@ -88,8 +88,9 @@ export function renderTv(data){
  return box;
 }
 
-let app=null,mode='off',loading=false,loadedAt=0,reviewDialog=null,reviewWorkspace=null,activeReview=null,reviewApproval=null,reviewRevision=0;
+let app=null,mode='off',installationsAvailable=false,loading=false,ledgerLoading=false,loadedAt=0,ledgerLoadedAt=0,ledgerCursors=[],ledgerPage=0,currentLedgerPage=null,reviewDialog=null,reviewWorkspace=null,activeReview=null,reviewApproval=null,reviewRevision=0;
 export const tvEnabled=()=>mode==='discovery'||mode==='strict-review';
+export const tvLedgerEnabled=()=>installationsAvailable;
 function updateTvModeCopy(){
  const eyebrow=$('tvModeEyebrow'),intro=$('tvModeIntro');if(!eyebrow||!intro)return;
  eyebrow.textContent=tr(mode==='strict-review'?'Přísné posouzení · ruční kontrola a oddělená instalace':'Pouze čtení · žádná akce schválení, zamítnutí ani nahrazení');
@@ -98,10 +99,10 @@ function updateTvModeCopy(){
 /** Asks the server whether TV discovery is on, and shows or hides the navigation entry. Failures keep the section hidden. */
 export async function refreshTvMode(){
  if(!app?.authenticated)return mode;
- try{const value=await app.api('/api/tv/status');mode=['discovery','strict-review'].includes(value?.mode)?value.mode:'off';}catch{mode='off';}
- const link=$('tvNav');if(link)link.hidden=mode==='off';
+ try{const value=await app.api('/api/tv/status');mode=['discovery','strict-review'].includes(value?.mode)?value.mode:'off';installationsAvailable=value?.installationsAvailable===true;}catch{mode='off';installationsAvailable=false;}
+ const link=$('tvNav');if(link)link.hidden=mode==='off';const ledgerLink=$('tvLedgerNav');if(ledgerLink)ledgerLink.hidden=!installationsAvailable;
  updateTvModeCopy();
- if(mode==='off'&&app.ui.view==='tv')location.hash='#attention';
+ if(mode==='off'&&app.ui.view==='tv')location.hash=installationsAvailable?'#tv-history':'#attention';
  return mode;
 }
 export async function loadTv(force=false){
@@ -117,10 +118,46 @@ export async function loadTv(force=false){
  }finally{loading=false;}
 }
 export const tvLoadedAt=()=>loadedAt;
+export const tvHistoryLoadedAt=()=>ledgerLoadedAt;
+
+const ledgerReason={journal_unavailable:'Instalace potřebuje kontrolu: transakční protokol není dostupný.',audit_context_incomplete:'Instalace potřebuje kontrolu: auditní kontext není úplný.',index_unsafe:'Index instalací není bezpečný ke čtení.',index_changed_or_truncated:'Index se změnil nebo byl zkrácen; obnov stránku historie.',cursor_out_of_range:'Stránka historie je mimo dostupný rozsah.',cursor_not_on_record_boundary:'Odkaz na stránku historie není platný.',index_row_too_large:'Řádek indexu překračuje bezpečný limit.',index_truncated:'Konec indexu je neúplný.',index_corrupt:'Index obsahuje neplatný záznam.',index_duplicate:'Index obsahuje duplicitní odkaz; tento rozsah je neúplný.',index_incomplete:'Index nelze bezpečně dokončit.',index_unavailable:'Index instalací není dostupný.'};
+const identityLabel={matches:'Současná kopie odpovídá zaznamenané identitě.',changed:'Současná kopie se liší od zaznamenané identity.',missing:'Současná kopie chybí.',unsafe:'Současná kopie nesplňuje bezpečnostní podmínky.',inaccessible:'Současnou kopii nelze přečíst.',root_changed:'Aktuální kořen se liší od kořene použitého při instalaci; původní cesta nebyla čtena.',root_unavailable:'Aktuální stav nelze bezpečně ověřit.',missing_or_root_unavailable:'Aktuální stav nelze bezpečně ověřit.',not_verifiable:'Aktuální stav nelze bezpečně ověřit.',unknown:'Aktuální stav nelze bezpečně ověřit.'};
+const phaseLabel=phase=>phase==='complete'?'Výsledek byl nainstalován':phase==='aborted'?'Transakce byla přerušena':'Instalace čeká na kontrolu';
+const refreshLabel=value=>({completed:'Dokončeno',pending:'Čeká',failed:'Selhalo',unknown:'Neznámé',not_applicable:'Nepoužito'}[value]||'Neznámé');
+const ledgerBytes=value=>Number.isSafeInteger(value)?fmt(value)+' ('+value.toLocaleString()+' B)':tr('Nedoloženo');
+function renderLedgerRecord(record){
+ const card=el('details','tv-install-record');card.open=false;
+ const summary=el('summary','');summary.append(el('strong','',record.series?.title||(record.series?.id?tr('Seriály')+' · '+record.series.id:tr('Neověřený starší záznam')),true),el('span','details',' · '+(record.episodes||[]).map(episode=>episodeLabel(episode,record.series?.type)).join(', '),true),el('span','details',' · '+tr(phaseLabel(record.phase)),true));card.append(summary);
+ if(record.verification!=='recorded'){card.append(el('p','alert inline-warning',tr(record.reason==='journal_unavailable'?'Instalace potřebuje kontrolu: transakční protokol není dostupný.':'Instalace potřebuje kontrolu: auditní kontext není úplný.')));return card;}
+ const facts=[
+  ['Schváleno',tr(date(record.approvedAt))],['Nainstalováno',record.installedAt?tr(date(record.installedAt)):tr('Aktuální stav nelze bezpečně ověřit.')],
+  ['Zásada posouzení',tr(record.policy==='individual'?'Jednotlivé posouzení':'Neověřená zásada')],['ID souboru epizody',String(record.episodeFileId??'—')],['ID úlohy Tdarru',String(record.jobId??'—')],['Odkaz na transakci',record.transaction],
+  ['Původní velikost',ledgerBytes(record.sourceBytes)],['Nainstalovaná velikost',ledgerBytes(record.installed.bytes)],['Rozdíl velikosti',ledgerBytes(Number.isSafeInteger(record.installed.bytes)?record.sourceBytes-record.installed.bytes:null)],['Bajty uchované při instalaci',ledgerBytes(record.retained.bytes)],
+  ['Doklad při instalaci',tr(record.retained.atInstall==='verified'?'Ověřeno při instalaci':'Doklad o uchování při instalaci chybí.')],['Doklad výsledku při instalaci',tr(record.installed.identityVerified&&record.installed.hashVerified?'Ověřeno při instalaci':'Nedoloženo')],['Aktuální identita',tr(identityLabel[record.retained.current]||identityLabel.unknown)],['Aktualizace Tdarru',tr(refreshLabel(record.refresh.tdarr))],['Aktualizace Sonarru',tr(refreshLabel(record.refresh.sonarr))]
+ ];
+ const list=el('dl','tv-install-facts');for(const [label,value] of facts){list.append(el('dt','',label),el('dd','',value,true));}card.append(list,el('p','details','Rozdíl velikosti není uvolněné místo. Uchované bajty jsou údaj při instalaci; současný stav je uveden zvlášť.'),el('p','details','Zaznamenané ověření při instalaci a aktuální pozorování identity nejsou kontrolou kvality média.'));
+ return card;
+}
+function renderLegacy(records){const box=$('tvLedgerLegacy');box.replaceChildren();if(!records?.length)return;box.append(el('h3','',tr('Nedávná historie instalací TV')));for(const record of records){const card=el('article','tv-install-record unverified'),status=record.status==='success'?'completed':record.status==='error'?'failed':record.status==='incomplete_refresh'?'pending':'unknown';card.append(el('strong','',tr('Neověřený starší záznam')),el('p','details',tr('Nedávná historie bez přesného transakčního propojení; nejde o důkaz instalace ani uchovaného souboru.')),el('p','details',tr('Stav')+': '+tr(refreshLabel(status))),el('p','details',record.time?date(record.time):''));box.append(card)}}
+function drawLedger(value){
+ const entries=$('tvLedgerEntries');entries.replaceChildren();for(const record of value.items||[])entries.append(renderLedgerRecord(record));
+ $('tvLedgerScope').textContent=tr('Záznamy jsou načtené pouze z přesného TV indexu a svázaného transakčního protokolu. Starší, osiřelé a nezaindexované kopie nejsou úplným inventářem.')+' '+tr('Zobrazení historie zůstává jen pro čtení a nevolá Tdarr, Sonarr, Radarr ani Plex.');
+ if(value.reason)entries.prepend(el('p','alert',tr(ledgerReason[value.reason]||'Index instalací není dostupný.')));
+ else if(!(value.items||[]).length)entries.append(el('p','empty',tr('V indexu zatím nejsou žádné instalace.')));
+ $('tvLedgerPage').textContent=tr('Stránka {0} · {1} záznamů · zachycený snímek indexu').replace('{0}',String(ledgerPage+1)).replace('{1}',String(value.items?.length||0));
+ $('tvLedgerPrev').disabled=ledgerPage===0;$('tvLedgerNext').disabled=!value.nextCursor;
+ $('tvLedgerLegacy').dataset.visible='true';renderLegacy(value.legacyUnverified||[]);ledgerLoadedAt=Date.now();$('lastUpdate').textContent=date(ledgerLoadedAt);$('lastUpdate').dateTime=new Date(ledgerLoadedAt).toISOString();app.refreshGuards?.();
+}
+export async function loadTvInstallations({next=false,previous=false,reset=false}={}){
+ if(ledgerLoading||!app?.authenticated)return;ledgerLoading=true;
+ if(reset){ledgerCursors=[];ledgerPage=0}else if(next){if(!currentLedgerPage?.nextCursor){ledgerLoading=false;return}ledgerCursors[ledgerPage+1]=currentLedgerPage.nextCursor;ledgerPage++}else if(previous)ledgerPage=Math.max(0,ledgerPage-1);
+ try{const cursor=ledgerCursors[ledgerPage],value=await app.api('/api/tv/installations?limit=20'+(cursor?'&cursor='+encodeURIComponent(cursor):''));currentLedgerPage=value;drawLedger(value)}catch{const entries=$('tvLedgerEntries');entries.replaceChildren(el('p','alert',tr('Index instalací není dostupný.')))}finally{ledgerLoading=false}
+}
 export function installTv(context){
  app=context;
  reviewDialog=el('dialog','comparison tv-review-dialog');document.body.append(reviewDialog);
  $('tvRefresh').onclick=()=>loadTv(true);
+ $('tvLedgerNext').onclick=()=>void loadTvInstallations({next:true});$('tvLedgerPrev').onclick=()=>void loadTvInstallations({previous:true});
  setInterval(()=>{if(app.ui.view==='tv')void loadTv();},30000);
  setInterval(()=>{void refreshTvMode();},15000);
 }

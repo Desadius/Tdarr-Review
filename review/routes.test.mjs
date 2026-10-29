@@ -16,7 +16,7 @@ const ID='a'.repeat(24);
 const ROUTES=[
  ...['','/status','/audit','/paths'].map(p=>['GET','/api/shared-settings'+p,'sharedSettingsRoutes']),
  ['GET','/library-paths-view.js','staticRoutes'],['GET','/tv-view.js','staticRoutes'],['GET','/tv-messages.js','staticRoutes'],
- ['GET','/api/tv','tvRoutes'],['GET','/api/tv/status','tvRoutes'],
+ ['GET','/api/tv','tvRoutes'],['GET','/api/tv/status','tvRoutes'],['GET','/api/tv/installations','tvRoutes'],
  ...['draft','test','apply','cancel'].map(p=>['POST','/api/shared-settings/'+p,'sharedSettingsRoutes']),
  ['GET','/api/artwork/review/'+ID,'libraryRoutes'],['GET','/api/artwork/request/'+ID,'libraryRoutes'],
  ['GET','/api/statistics','libraryRoutes'],['GET','/api/quarantine','libraryRoutes'],['GET','/api/quarantine/delete','libraryRoutes'],['POST','/api/quarantine/delete','libraryRoutes'],

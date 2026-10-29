@@ -66,7 +66,8 @@ export function createApprovalTransaction({getState,getConfig,recovery,reviewSes
       progress('Pozastavuji přijímání nových úloh v Tdarru',2,'pause');
       await tdarr.pauseDispatch(item);
       journal=files.newJournal();
-      await files.replaceChecked({original:a.path,review:b.path,destination:item.outputRelative&&item.outputRelative!==item.relative?path.join(path.dirname(a.path),path.basename(item.outputRelative)):a.path,originalFP:previous.originalFP,reviewFP:previous.reviewFP,journal,onStage:s=>progress(labels[s][0],labels[s][1],s),onProgress:activity.measured,beforeCommit:()=>tdarr.verifyPaused(item)});
+      const tvAudit=files.tvAuditContext?.({action,item,previous,reviewEvidence,journal});
+      await files.replaceChecked({original:a.path,review:b.path,destination:item.outputRelative&&item.outputRelative!==item.relative?path.join(path.dirname(a.path),path.basename(item.outputRelative)):a.path,originalFP:previous.originalFP,reviewFP:previous.reviewFP,journal,...(tvAudit?{tvAudit,beforeMediaMutation:record=>files.beforeTvMediaMutation?.({journal,record,item})}:{}),onStage:s=>progress(labels[s][0],labels[s][1],s),onProgress:activity.measured,beforeCommit:()=>tdarr.verifyPaused(item)});
       try{await records.publishApproval({mediaRoot:files.media(),relative:item.relative,sourceFP:previous.originalFP,installedRelative:item.outputRelative||item.relative})}catch(e){warning='Film je schválený, ale důkaz pro úklid karantény se neuložil: '+e.message}
       progress('Obnovuji údaje filmu v Tdarru',6,'rescan');
       try {
@@ -81,7 +82,9 @@ export function createApprovalTransaction({getState,getConfig,recovery,reviewSes
   }catch(e){
     outcome={id:item.id,title:item.title,action,rejectionReason:action==='reject'?reason:undefined,jobId:item.jobId||previous?.jobId,reviewSession:reviewEvidence,status:'error',message:e.message,time:new Date(now()).toISOString()};state.history.unshift(outcome);
     if(journal){const t=await files.readJournal(journal);if(!['aborted','complete'].includes(t.phase)){recovery.push({...t,id:t.id||'unknown',journal});log('transaction.unresolved',{transaction:t.id||'unknown',phase:t.phase,id:item.id,title:item.title})}}
-  }finally{if(action==='reject'){try{await records.recordRejection({event:'completed',...outcome})}catch(e){outcome.warning=[outcome.warning,'Uložení výsledku do archivu zamítnutí selhalo: '+e.message].filter(Boolean).join(' ');}}
+  }finally{
+    if(files.tvAuditContext&&journal)outcome.transactionRef=path.basename(journal);
+    if(action==='reject'){try{await records.recordRejection({event:'completed',...outcome})}catch(e){outcome.warning=[outcome.warning,'Uložení výsledku do archivu zamítnutí selhalo: '+e.message].filter(Boolean).join(' ');}}
     if(action==='approve'){try{await records.recordDecision({event:'approval',id:item.id,title:item.title,relative:item.relative,outputRelative:item.outputRelative,reviewRelative:item.reviewRelative,snapshot:item.snapshot,jobId:outcome.jobId,originalBytes:item.originalBytes,reviewBytes:item.reviewBytes,reviewSession:reviewEvidence,acceptedDurationDifference:outcome.acceptedDurationDifference,transaction:journal?path.basename(journal,'.json'):null,outcome:outcome.status,message:outcome.message,warning:outcome.warning,savedBytes:outcome.savedBytes,elapsedSeconds:outcome.elapsedSeconds})}catch(e){auditFailed(outcome,e)}}if(!recovery.length){progress('Obnovuji původní stav nodů',6,'resume');await tdarr.resume()}state.history=state.history.slice(0,150);await save();activity.finish();log('action.finished',outcomeLog(outcome));next()}
   return outcome;
  };

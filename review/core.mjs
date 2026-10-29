@@ -35,6 +35,11 @@ import {identityOf,compareIdentity} from '../recovery/file-identity.mjs';
  * @property {'intent'|'verified'} [retainedPhase] Durable retained-original journal phase.
  * @property {string} [retainedFP] Identity of the retained original copy.
  * @property {string} [retainedHash] SHA-256 of the retained original copy.
+ * @property {object} [tvAudit] Versioned, TV-only immutable installation context.
+ * @property {string} [installedFP] Identity of the installed TV result after commit.
+ * @property {string} [installedHash] SHA-256 verified at the installed TV path.
+ * @property {string} [installedAt] Time the installed TV path passed its commit identity check.
+ * @property {object} [tvInstallOutcome] TV-only metadata refresh outcome.
  */
 /** @typedef {{path:string,stat:import('node:fs').Stats,fp:string}} SafeFile */
 /** @typedef {{done:number,total:number,unit?:string,phase?:string,speed?:number|null}} TransferProgress */
@@ -81,6 +86,7 @@ async function openDirectoryPathNoFollow(root){
   const result=parent;parent=null;return result;
  }finally{await parent?.close().catch(()=>{})}
 }
+export async function openDirectoryNoFollow(root){return openDirectoryPathNoFollow(root)}
 async function openRetainedDirectory(root,target){
   if(process.platform!=='linux')throw Error('Trvalá karanténa vyžaduje Linux.');
   const resolved=await fs.realpath(root),relative=path.relative(resolved,target);
@@ -88,6 +94,23 @@ async function openRetainedDirectory(root,target){
  const handle=await openDirectoryPathNoFollow(root),after=await handle.stat();
  if(!after.isDirectory()){await handle.close();throw Error('Kořen trvalé karantény není bezpečný adresář.');}
   return {handle,root:resolved,leaf:relative,stat:after};
+}
+/** Current-root-only metadata observation for the read-only TV installation ledger. */
+export async function observeRetainedIdentity(root,leaf,expectedFP){
+ if(process.platform!=='linux')return 'not_verifiable';
+ if(typeof leaf!=='string'||!leaf||leaf==='.'||leaf==='..'||leaf.includes('/')||leaf.includes('\\'))return 'unsafe';
+ let directory;
+ try{directory=await openDirectoryPathNoFollow(root)}catch(error){return error?.code==='ENOENT'?'missing_or_root_unavailable':'inaccessible'}
+ try{
+  const filePath=`/proc/self/fd/${directory.fd}/${leaf}`;let handle;
+  try{handle=await fs.open(filePath,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW|(fs.constants.O_NONBLOCK||0))}catch(error){if(error?.code==='ENOENT')return 'missing';if(error?.code==='ELOOP')return 'unsafe';return 'inaccessible'}
+  try{
+   const opened=await handle.stat(),named=await fs.lstat(filePath);
+   const rootStat=await directory.stat();
+   if(!opened.isFile()||named.isSymbolicLink()||opened.nlink!==1||opened.dev!==rootStat.dev||opened.dev!==named.dev||opened.ino!==named.ino)return 'unsafe';
+   return compareIdentity(expectedFP,identityOf(opened))==='same'?'matches':'changed';
+  }finally{await handle.close()}
+ }finally{await directory.close()}
 }
 async function sha256Handle(handle){
   const digest=crypto.createHash('sha256'),buffer=Buffer.alloc(4*1024*1024);let position=0;
@@ -271,11 +294,13 @@ export function inspect(original,review) {
  * @param {string} options.reviewFP
  * @param {string} options.journal Path of the TransactionJournal file.
  * @param {{root:string,path:string}} [options.retainOriginal] Optional retained-original copy (TV only).
+ * @param {object} [options.tvAudit] Optional immutable TV-only audit context.
+ * @param {(record:TransactionJournal)=>Promise<void>} [options.beforeMediaMutation] Durable TV index hook after preparing journal, before file copy.
  * @param {(phase:TransactionJournal['phase'])=>void} [options.onStage]
  * @param {(progress:TransferProgress)=>void} [options.onProgress]
  * @param {()=>Promise<void>} [options.beforeCommit]
  */
-export async function replaceChecked({original,review,destination=original,originalFP,reviewFP,journal,retainOriginal,onStage=()=>{},onProgress=()=>{},beforeCommit=async()=>{}}) {
+export async function replaceChecked({original,review,destination=original,originalFP,reviewFP,journal,retainOriginal,tvAudit,beforeMediaMutation,onStage=()=>{},onProgress=()=>{},beforeCommit=async()=>{}}) {
   if(!validDestination(original,destination))throw Error('Nepovolená cílová cesta převodu.');
   const check=async()=>{
     const [originalStat,reviewStat]=await Promise.all([fs.stat(original),fs.stat(review)]);
@@ -295,16 +320,17 @@ export async function replaceChecked({original,review,destination=original,origi
     }catch(error){await retainedDirectory?.handle.close().catch(()=>{});throw error}
   }
   /** @type {TransactionJournal} */
-  const record={id,original,review,destination,tmp,backup,originalFP,reviewFP,phase:'preparing',created:new Date().toISOString(),...(retainOriginal?{retainedOriginal:retainOriginal.path,retainedRoot:retainedDirectory.root,retainedTemp,retainedTempLeaf,retainedLeaf,retainedPhase:'intent'}:{})};
+  const record={id,original,review,destination,tmp,backup,originalFP,reviewFP,phase:'preparing',created:new Date().toISOString(),...(retainOriginal?{retainedOriginal:retainOriginal.path,retainedRoot:retainedDirectory.root,retainedTemp,retainedTempLeaf,retainedLeaf,retainedPhase:'intent'}:{}),...(tvAudit?{tvAudit:structuredClone(tvAudit)}:{})};
   const save=async phase=>{record.phase=phase;await atomicJSON(journal,record);onStage(phase);};
-  let movedOriginal=false;
+  let movedOriginal=false,tempCreated=false;
   try {
     await save('preparing');
+    if(beforeMediaMutation)await beforeMediaMutation(record);
     const size=(await fs.stat(review)).size;
     onProgress({phase:'preparing',done:0,total:size,unit:'bytes'});
     let copying=true;
     const poll=setInterval(()=>{fs.stat(tmp).then(s=>{if(copying)onProgress({phase:'preparing',done:Math.min(size,s.size),total:size,unit:'bytes'})}).catch(()=>{});},1000);
-    try{await fs.copyFile(review,tmp,fs.constants.COPYFILE_EXCL)}finally{copying=false;clearInterval(poll)}
+    try{await fs.copyFile(review,tmp,fs.constants.COPYFILE_EXCL);tempCreated=true}finally{copying=false;clearInterval(poll)}
     onProgress({phase:'preparing',done:size,total:size,unit:'bytes'});
     await save('syncing-copy');
     const fh=await fs.open(tmp,'r+');try{await fh.sync()}finally{await fh.close()}
@@ -315,21 +341,32 @@ export async function replaceChecked({original,review,destination=original,origi
     await save('verifying-copy');
     const counts=[0,0];
     const counted=i=>done=>{counts[i]=done;onProgress({phase:'verifying-copy',done:counts[0]+counts[1],total:size*2,unit:'bytes'})};
+    const stagedBefore=retainOriginal?await fs.lstat(tmp):null;
     const [a,b]=await Promise.all([sha256(review,counted(0)),sha256(tmp,counted(1))]);
     if(a!==b)throw new Error('Kontrolní součet kopie nesouhlasí.');
+    const stagedProof=retainOriginal?await fs.lstat(tmp):null;
+    if(retainOriginal&&(!stagedProof.isFile()||stagedProof.nlink!==1||identityOf(stagedBefore)!==identityOf(stagedProof)))throw Error('Nainstalovaný výsledek neodpovídá ověřené kopii.');
     if(retainOriginal){
       await makeRetainedCopy(original,originalFP,record,retainedDirectory);
       await atomicJSON(journal,record);
     }
     await beforeCommit();await check();if(retainOriginal)await validateRetainedCopy(record,retainedDirectory);
+    if(retainOriginal&&identityOf(await fs.lstat(tmp))!==identityOf(stagedProof))throw Error('Nainstalovaný výsledek neodpovídá ověřené kopii.');
     await save('ready');
     await fs.rename(original,backup);
     movedOriginal=true;
     await syncDirectory(path.dirname(original));
     await save('original-backed-up');
+    const stagedInstalledStat=retainOriginal?await fs.lstat(tmp):null;
+    if(retainOriginal&&identityOf(stagedInstalledStat)!==identityOf(stagedProof))throw Error('Nainstalovaný výsledek neodpovídá ověřené kopii.');
     if(destination===original)await fs.rename(tmp,original);
     else {await fs.link(tmp,destination);await fs.unlink(tmp);}
     await syncDirectory(path.dirname(original));
+    if(retainOriginal){
+      const installedStat=await fs.stat(destination),installedNamed=await fs.lstat(destination),identityMatch=compareIdentity(identityOf(stagedInstalledStat),identityOf(installedStat));
+      if(!installedStat.isFile()||installedNamed.isSymbolicLink()||installedStat.dev!==installedNamed.dev||installedStat.ino!==installedNamed.ino||installedStat.nlink!==1||!['same','ctime-changed'].includes(identityMatch)||installedStat.size!==stagedInstalledStat.size)throw Error('Nainstalovaný výsledek neodpovídá ověřené kopii.');
+      record.installedFP=identityOf(installedStat);record.installedHash=b;record.installedAt=new Date().toISOString();
+    }
     await save('installed');
     if(retainOriginal){
       await validateRetainedCopy(record,retainedDirectory);
@@ -343,20 +380,29 @@ export async function replaceChecked({original,review,destination=original,origi
     if(identityOf(await fs.stat(review))!==reviewFP)throw new Error('Originál nahrazen; review se změnilo a nebylo odstraněno.');
     await fs.unlink(review);
     await syncDirectory(path.dirname(review));
+    if(retainOriginal)record.installedAt=record.installedAt||new Date().toISOString();
     await save('complete');
     return record;
   } catch(e) {
     record.error=e.message;
     if(['preparing','syncing-copy','verifying-copy','ready','original-backed-up'].includes(record.phase)) {
       try {
+        let untouchedBeforeHook=false;
+        if(beforeMediaMutation&&!tempCreated&&!movedOriginal&&record.phase==='preparing'&&!(await statOrMissing(backup))){
+          const [sourceNow,resultNow,retained,retainedTempNow]=await Promise.all([fs.stat(original),fs.stat(review),retainOriginal?statOrMissing(procPath(retainedDirectory,retainedLeaf)):null,retainOriginal?statOrMissing(procPath(retainedDirectory,retainedTempLeaf)):null]);
+          untouchedBeforeHook=identityOf(sourceNow)===originalFP&&identityOf(resultNow)===reviewFP&&(!retainOriginal||record.retainedPhase==='intent'&&!retained&&!retainedTempNow);
+        }
+        if(untouchedBeforeHook)record.phase='aborted';
+        else {
         // A completed rollback is terminal; it must not block approvals after restart.
         const untouched=!movedOriginal&&!(await statOrMissing(backup));
         let retainedSafe=true;
         if(retainOriginal){try{await validateRetainedCopy(record,retainedDirectory)}catch{retainedSafe=false}}
         if(retainedSafe&&(untouched||await restoreBackup(record))){
-          await fs.unlink(tmp).catch(err=>{if(err.code!=='ENOENT')throw err});
+          if(tempCreated||!beforeMediaMutation)await fs.unlink(tmp).catch(err=>{if(err.code!=='ENOENT')throw err});
           await syncDirectory(path.dirname(original));
           record.phase='aborted';
+        }
         }
       }catch(rollbackError){record.rollbackError=rollbackError.message}
     }
