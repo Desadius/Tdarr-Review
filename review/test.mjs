@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {safeFile,replaceChecked,inspect,recoverTransactions} from './core.mjs';
+import {safeFile,replaceChecked,inspect,recoverTransactions,sha256} from './core.mjs';
 import {identityOf} from '../recovery/file-identity.mjs';
 const directorySync={skip:process.platform==='win32'?'Requires POSIX directory fsync for durable replacement journals':false};
 const fileSymlink={skip:process.platform==='win32'?'File symlinks require Windows Developer Mode or elevated privileges; covered by the Linux suite':false};
@@ -20,7 +20,7 @@ test('file symlinks are rejected',fileSymlink,async()=>{
 test('approval replaces only the selected original and cleans completed transaction',directorySync,async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'review-test-'));
  try {const original=path.join(root,'movie.mkv'),review=path.join(root,'review.mkv'),journal=path.join(root,'transaction.json');await fs.writeFile(original,'original film');await fs.writeFile(review,'new film');await fs.writeFile(path.join(root,'other.mkv'),'keep');
- const updates=[];await replaceChecked({original,review,journal,originalFP:identityOf(await fs.stat(original)),reviewFP:identityOf(await fs.stat(review)),onProgress:p=>updates.push(p)});assert(updates.some(p=>p.phase==='preparing'&&p.done===8&&p.total===8));assert(updates.some(p=>p.phase==='verifying-copy'&&p.done===16&&p.total===16));assert.equal(await fs.readFile(original,'utf8'),'new film');assert.equal(await fs.readFile(path.join(root,'other.mkv'),'utf8'),'keep');await assert.rejects(fs.stat(review));assert.equal(JSON.parse(await fs.readFile(journal)).phase,'complete');assert.equal((await fs.readdir(root)).filter(n=>n.endsWith('.old')||n.endsWith('.tmp')).length,0)
+ const updates=[];await replaceChecked({original,review,journal,originalFP:identityOf(await fs.stat(original)),reviewFP:identityOf(await fs.stat(review)),onProgress:p=>updates.push(p)});assert(updates.some(p=>p.phase==='preparing'&&p.done===8&&p.total===8));assert(updates.some(p=>p.phase==='verifying-copy'&&p.done===16&&p.total===16));assert.equal(await fs.readFile(original,'utf8'),'new film');assert.equal(await fs.readFile(path.join(root,'other.mkv'),'utf8'),'keep');await assert.rejects(fs.stat(review));const record=JSON.parse(await fs.readFile(journal));assert.equal(record.phase,'complete');assert.equal(record.tvAudit,undefined);assert.equal(record.installedFP,undefined,'Movie transaction journal retains its existing fields');assert.equal((await fs.readdir(root)).filter(n=>n.endsWith('.old')||n.endsWith('.tmp')).length,0)
  }finally{await fs.rm(root,{recursive:true,force:true})}
 });
 test('retained-original replacement verifies and keeps its quarantine copy after install',directorySync,async()=>{
@@ -28,10 +28,30 @@ test('retained-original replacement verifies and keeps its quarantine copy after
  try{
   const media=path.join(root,'media'),quarantine=path.join(root,'quarantine');await fs.mkdir(media);await fs.mkdir(quarantine);
   const original=path.join(media,'episode.mkv'),review=path.join(root,'review.mkv'),retained=path.join(quarantine,'episode.mkv'),journal=path.join(root,'transaction.json');
-  await fs.writeFile(original,'byte-for-byte original');await fs.writeFile(review,'approved output');
+  await fs.writeFile(original,'byte-for-byte original');await fs.writeFile(review,'approved output');const installedHash=await sha256(review);
   await replaceChecked({original,review,journal,retainOriginal:{root:quarantine,path:retained},originalFP:identityOf(await fs.stat(original)),reviewFP:identityOf(await fs.stat(review))});
   const record=JSON.parse(await fs.readFile(journal,'utf8'));
-  assert.equal(record.retainedPhase,'verified');assert.equal(record.phase,'complete');assert.equal(await fs.readFile(retained,'utf8'),'byte-for-byte original');assert.equal(await fs.readFile(original,'utf8'),'approved output');
+  assert.equal(record.retainedPhase,'verified');assert.equal(record.phase,'complete');assert.equal(await fs.readFile(retained,'utf8'),'byte-for-byte original');assert.equal(await fs.readFile(original,'utf8'),'approved output');assert.equal(record.installedFP,identityOf(await fs.stat(original)));assert.equal(record.installedHash,installedHash);
+ }finally{await fs.rm(root,{recursive:true,force:true})}
+});
+test('TV audit preparation preserves an unrelated temp collision before media copy',directorySync,async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'review-tv-audit-hook-'));
+ try{
+  const media=path.join(root,'media'),quarantine=path.join(root,'quarantine');await fs.mkdir(media);await fs.mkdir(quarantine);
+  const original=path.join(media,'episode.mkv'),review=path.join(root,'review.mkv'),journal=path.join(root,'tv-transaction.json');
+  await fs.writeFile(original,'original');await fs.writeFile(review,'result');const originalBefore=await fs.readFile(original),reviewBefore=await fs.readFile(review);let unrelatedTmp;
+  await assert.rejects(replaceChecked({original,review,journal,retainOriginal:{root:quarantine,path:path.join(quarantine,'episode.mkv')},originalFP:identityOf(await fs.stat(original)),reviewFP:identityOf(await fs.stat(review)),tvAudit:{version:1,transaction:path.basename(journal),context:{version:1}},beforeMediaMutation:async record=>{unrelatedTmp=record.tmp;await fs.writeFile(unrelatedTmp,'unrelated temp')}}),{code:'EEXIST'});
+  assert.deepEqual(await fs.readFile(original),originalBefore);assert.deepEqual(await fs.readFile(review),reviewBefore);assert.equal(await fs.readFile(unrelatedTmp,'utf8'),'unrelated temp');
+  const record=JSON.parse(await fs.readFile(journal,'utf8'));assert.equal(record.phase,'aborted');assert.equal((await fs.readdir(quarantine)).length,0);assert.deepEqual(await recoverTransactions(path.dirname(journal)),[]);
+ }finally{await fs.rm(root,{recursive:true,force:true})}
+});
+test('TV installed digest cannot be reused after the staged copy changes at the commit barrier',directorySync,async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'review-tv-stage-proof-'));
+ try{
+  const original=path.join(root,'original.mkv'),review=path.join(root,'result.mkv'),journal=path.join(root,'journal.json'),quarantine=path.join(root,'quarantine');await fs.mkdir(quarantine);await fs.writeFile(original,'untouched original');await fs.writeFile(review,'approved result');
+  const originalFP=identityOf(await fs.stat(original)),reviewFP=identityOf(await fs.stat(review));
+  await assert.rejects(replaceChecked({original,review,journal,originalFP,reviewFP,retainOriginal:{root:quarantine,path:path.join(quarantine,'kept.mkv')},beforeCommit:async()=>{const record=JSON.parse(await fs.readFile(journal));await fs.writeFile(record.tmp,'tampered staged result')}}),/ověřené kopii/);
+  assert.equal(await fs.readFile(original,'utf8'),'untouched original');assert.equal(await fs.readFile(review,'utf8'),'approved result');const record=JSON.parse(await fs.readFile(journal));assert.equal(record.phase,'aborted');assert.equal(record.installedHash,undefined);
  }finally{await fs.rm(root,{recursive:true,force:true})}
 });
 for(const capacity of ['insufficient','unverifiable'])test(`retained-original capacity ${capacity} blocks before writing or swapping`,directorySync,async t=>{

@@ -266,6 +266,12 @@ Transaction recovery handles Review's unfinished file-exchange transactions sepa
 
 ## TV series (discovery and strict review)
 
+**TV installations** (**Instalace TV**) is a separate, authenticated history view. It remains available with TV processing Off when local indexed installations or legacy history exist. Expanding a row shows the series/episode as recorded at installation, individual-review policy, approval/installation times, exact transaction reference, sizes and metadata-refresh outcomes. Refreshing this view reads local records only; it does not contact Tdarr, Sonarr, Radarr or Plex or enable processing.
+
+Retention proof describes the copy verified during installation. **Current identity** is a metadata observation of that copy under the currently configured quarantine root: matching, changed, missing, unsafe, unreadable or unverified. Neither observation is a media-quality verdict. Recorded retained bytes are separate from the size reduction of the installed library copy, and the difference does not mean disk space was freed.
+
+Pages cover indexed transactions, not every file in quarantine. Old/unassociated history, missing or malformed journals and incomplete indexes stay unverified; orphaned or unindexed copies are not silently assigned to an episode. No index is backfilled or repaired on reads. The API returns at most 50 records per page (the UI uses 20), scans at most 128 KiB of index per request and refuses indexes over 64 MiB. A page sequence pins its original end; **Refresh** starts a new snapshot, also after a server restart invalidates a cursor. There are no restore, delete or retry controls in this view.
+
 The optional TV library has a mode under shared settings: **Off** (the default), **Discovery (read-only)** or **Strict review**. Like every setting it is saved as a draft, tested and then applied; see [Add TV paths](ADD-TV-PATHS.md). In Off mode Review does not scan TV results or contact Sonarr for them, and no **TV series** entry appears in the navigation.
 
 In Discovery mode the **TV series** section lists the TV results Tdarr has written, as series, then season, then episode, with the number of files and episodes and the sizes of originals and results. It remains read-only: there is no assessment, approval or installation action, and nothing here changes a library, Tdarr or Sonarr.

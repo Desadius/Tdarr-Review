@@ -57,16 +57,24 @@ async function tvServer(t,{strict=false}={}){
  return {f,sonarr,results,tv,apply};
 }
 const flat=value=>[...value.series.flatMap(s=>s.seasons.flatMap(x=>x.results)),...value.unbound,...value.unverified];
-const appliedStatus=mode=>({mode,active:null,history:[]});
+const appliedStatus=mode=>({mode,installationsAvailable:false,active:null,history:[]});
 
 test('HTTP: mode off (the default) offers no TV section and makes no Sonarr call',linuxServer,async t=>{
  const {f,sonarr}=await tvServer(t);
  const unauthenticated=await f.request('/api/tv',{headers:{cookie:'review-session=invalid'}});assert.equal(unauthenticated.status,401);
- assert.deepEqual(await f.get('/api/tv/status'),appliedStatus('off'));assert.deepEqual(await f.get('/api/tv'),appliedStatus('off'));assert.deepEqual(await f.get('/api/tv?refresh=1'),appliedStatus('off'));
+ const unauthLedger=await f.request('/api/tv/installations',{headers:{cookie:'review-session=invalid'}});assert.equal(unauthLedger.status,401);
+ assert.deepEqual(await f.get('/api/tv/status'),appliedStatus('off'));assert.deepEqual(await f.get('/api/tv'),{mode:'off',active:null,history:[]});assert.deepEqual(await f.get('/api/tv?refresh=1'),{mode:'off',active:null,history:[]});
+ const emptyLedger=await f.get('/api/tv/installations');assert.equal(emptyLedger.mode,'off');assert.deepEqual(emptyLedger.items,[]);assert.equal(emptyLedger.complete,true);assert.equal(emptyLedger.inventoryScope,'indexed_transactions_only');
  assert.deepEqual(sonarr.calls,[],'no Sonarr request while the mode is off');
  const items=await f.items();assert.deepEqual(items.items.map(i=>i.title).sort(),['A','B','C','TV','TV','TV','TV','TV','TV'],'unchanged baseline: the movie scan lists whatever lies under its review root');
  assert.equal((await f.request('/api/tv?x=1')).status,400);
  assert.equal((await f.state()).tv,undefined,'no TV state exists in off mode');
+});
+
+test('HTTP: local legacy TV history stays reachable while mode is off, without an index or service calls',linuxServer,async t=>{
+ const {f,sonarr}=await tvServer(t);await f.kill();const state=await f.state();state.tvReview={history:[{id:'/private/old/path',status:'EIO /tmp/private',time:'/tmp/private'}]};await fs.writeFile(path.join(f.data,'state.json'),JSON.stringify(state));await f.restart();
+ assert.equal(JSON.stringify(await f.get('/api/tv/status')).includes('/private'),false,'availability/status read also projects only safe legacy values');
+ assert.equal((await f.get('/api/tv/status')).installationsAvailable,true);const ledger=await f.get('/api/tv/installations');assert.equal(ledger.mode,'off');assert.equal(ledger.inventoryScope,'indexed_transactions_only');assert.deepEqual(ledger.items,[]);assert.equal(ledger.legacyUnverified.length,1);assert.equal(ledger.legacyUnverified[0].verification,'unverified');assert.equal(ledger.legacyUnverified[0].reason,'legacy_history_unbound');assert.equal(ledger.legacyUnverified[0].status,'unknown');assert.equal(ledger.legacyUnverified[0].time,'');assert.equal('id' in ledger.legacyUnverified[0],false);assert.equal(JSON.stringify(ledger).includes('/private/'),false);assert.deepEqual(sonarr.calls,[]);await assert.rejects(fs.stat(path.join(f.data,'tv-install-index.jsonl')),{code:'ENOENT'});
 });
 
 test('HTTP: discovery binds exact results, lists unbound ones with reasons and leaves every movie record byte-identical',linuxServer,async t=>{
@@ -135,7 +143,7 @@ test('HTTP: Sonarr unavailable or inconsistent shows binding not verified and pe
 test('HTTP: switching the mode back to off stops scanning and Sonarr reads',linuxServer,async t=>{
  const {f,sonarr,apply}=await tvServer(t);await apply('discovery');assert.equal((await f.get('/api/tv?refresh=1')).totals.bound,3);
  await apply('off');const calls=sonarr.calls.length;
- assert.deepEqual(await f.get('/api/tv/status'),appliedStatus('off'));assert.deepEqual(await f.get('/api/tv?refresh=1'),appliedStatus('off'));assert.equal(sonarr.calls.length,calls);
+ assert.deepEqual(await f.get('/api/tv/status'),appliedStatus('off'));assert.deepEqual(await f.get('/api/tv?refresh=1'),{mode:'off',active:null,history:[]});assert.equal(sonarr.calls.length,calls);
 });
 
 test('settings: an applied generation written before the TV mode existed still loads and means off',linuxServer,async t=>{
@@ -166,19 +174,26 @@ test('HTTP strict review: one v2 episode can be compared, explicitly reviewed, a
  const reviewed={...identity,checks:{preparation:true,image:true,audio:true,syncStart:true,syncMiddle:true,syncEnd:true,hdr:false},step:4};
  response=await f.post(sessionRoute,{snapshot:item.snapshot,revision:1,session:reviewed});assert.equal(response.status,200,await response.clone().text());
  const saved=await response.json();assert.equal(saved.complete,true);assert.equal(saved.revision,2);
- response=await f.post(`/api/tv/${item.id}/approval`,{snapshot:item.snapshot,reviewRevision:saved.revision});assert.equal(response.status,200,await response.clone().text());
+ response=await f.post(`/api/tv/${item.id}/approval`,{snapshot:item.snapshot,reviewRevision:saved.revision});assert.equal(response.status,200,await response.clone().text());const approved=(await response.json()).approval;
  assert.deepEqual(await movieState(f),moviesBefore,'TV assessment and approval never touch movie records');
  const source=results.strict.sourcePath,original=await fs.readFile(source),install=await f.post(`/api/tv/${item.id}/install`,{snapshot:item.snapshot,reviewRevision:saved.revision});assert.equal(install.status,202,await install.clone().text());
  const stop=Date.now()+20000;let status;
  while(Date.now()<stop){status=await f.get('/api/tv/status');if(!status.active&&status.history.length)break;await new Promise(resolve=>setTimeout(resolve,30));}
- assert.equal(status.history[0].status,'success',JSON.stringify(status));
+ assert.equal(status.history[0].status,'success',JSON.stringify(status)+' '+f.diagnostics()+' '+JSON.stringify((await f.state()).tvReview.history[0]));
  assert.equal(status.history[0].refresh,'completed');
  assert.deepEqual(sonarr.calls.filter(call=>call.method==='POST').map(call=>[call.path,call.input]),[['/api/v3/command',{name:'RescanSeries',seriesId:7}]]);
  assert.ok(sonarr.calls.some(call=>call.method==='GET'&&call.path==='/api/v3/command/1'));
  assert.equal(await fs.readFile(path.join(tv.mediaRoot,'Synthetic Show/Season 01/S01E03.mkv'),'utf8'),'synthetic result Synthetic Show/Season 01/S01E03.mkv');
  const retained=(await fs.readdir(tv.quarantineRoot)).filter(name=>!name.endsWith('.pending'));assert.equal(retained.length,1);assert.deepEqual(await fs.readFile(path.join(tv.quarantineRoot,retained[0])),original);
+ const sonarrCallsBeforeLedger=sonarr.calls.length,tdarrCallsBeforeLedger=f.calls.length,moviesBeforeLedger=await movieState(f),ledger=await f.get('/api/tv/installations');assert.equal(ledger.items.length,1);assert.equal(ledger.items[0].verification,'recorded');assert.deepEqual(ledger.legacyUnverified,[],'the exact indexed transaction is not duplicated as legacy history');assert.match(ledger.items[0].transaction,/^tv-[0-9a-f-]{36}\.json$/);
+ const entry=ledger.items[0],journal=JSON.parse(await fs.readFile(path.join(f.data,'transactions',entry.transaction),'utf8'));
+ assert.equal(journal.tvAudit.context.approvedAt,approved.approvedAt);assert.equal(entry.series.id,7);assert.equal(entry.series.title,'Synthetic Show');assert.equal(entry.episodeFileId,103);assert.equal(entry.episodes[0].episodeNumber,3);assert.equal(entry.jobId,'tv-job-strict');assert.equal(entry.policy,'individual');assert.equal(entry.phase,'complete');assert.equal(entry.retained.atInstall,'verified');assert.equal(entry.retained.current,'matches');assert.equal(entry.installed.identityVerified,true);assert.equal(entry.installed.hashVerified,true);assert.equal(entry.refresh.sonarr,'completed');assert.equal(entry.refresh.tdarr,'completed');
+ const ledgerAgain=await f.get('/api/tv/installations');assert.deepEqual(ledgerAgain.items,ledger.items);assert.equal(sonarr.calls.length,sonarrCallsBeforeLedger);assert.equal(f.calls.length,tdarrCallsBeforeLedger);assert.equal(await movieState(f),moviesBeforeLedger);assert.equal((await fs.readFile(path.join(f.data,'tv-install-index.jsonl'),'utf8')).trim().split('\n').length,1);
  const duplicate=await f.post(`/api/tv/${item.id}/install`,{snapshot:item.snapshot,reviewRevision:saved.revision});assert.equal(duplicate.status,409);
  assert.ok(sonarr.calls.every(call=>call.method==='GET'||call.path==='/api/v3/command'), 'TV operations call Sonarr only for read-only binding and the pinned series rescan');
+ await f.restart();const afterRestart=await f.get('/api/tv/installations');assert.equal(afterRestart.items.length,1);assert.equal(afterRestart.items[0].transaction,entry.transaction);
+ await apply('off');sonarr.calls.length=0;const offStatus=await f.get('/api/tv/status');assert.equal(offStatus.mode,'off');assert.equal(offStatus.installationsAvailable,true);
+ const offCalls=f.calls.length,offlineLedger=await f.get('/api/tv/installations');assert.equal(offlineLedger.items.length,1);assert.equal(sonarr.calls.length,0);assert.equal(f.calls.length,offCalls);await f.restart();assert.equal((await f.get('/api/tv/installations')).items[0].transaction,entry.transaction);
  await f.preserved();
 });
 

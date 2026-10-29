@@ -54,6 +54,7 @@ import {createSonarrSourceInspection} from './sonarr-source-inspection.mjs';
 import {createSonarrResultInspection} from './sonarr-result-inspection.mjs';
 import {inspectTvReviewPair,supportedTvReviewItem,tvReviewBlockCode} from './tv-review.mjs';
 import {validTvStrictProof,tvStrictProofMatchesFiles} from './tv-flow-proof.mjs';
+import {createTvInstallLedger} from './tv-install-ledger.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 const DATA=process.env.DATA_ROOT||'/data',PORT=Number(process.env.PORT||8270),APP_VERSION=await appVersion();
@@ -79,6 +80,7 @@ let statsCache=null,statsTask=null;
 let settingsBusy=false;
 await fs.mkdir(DATA,{recursive:true});await fs.mkdir(path.join(DATA,'transactions'),{recursive:true});
 const keyfile=path.join(DATA,'access-key');
+const tvInstallLedger=createTvInstallLedger({data:DATA,getQuarantineRoot:()=>activeSettings?.libraries?.tv?.quarantineRoot||''});
 let KEY=await fs.readFile(keyfile,'utf8').catch(()=>null);
 if(!KEY){KEY=crypto.randomBytes(24).toString('base64url');await fs.writeFile(keyfile,KEY,{mode:0o600,flag:'wx'})}
 KEY=KEY.trim();
@@ -310,7 +312,7 @@ async function refreshTvReviewItem(id){
  if(!technical.ok)throw new ReviewSessionError(tvReviewBlockCode(technical.reason),409);
  const [a2,b2]=await Promise.all([safeFile(tv.mediaRoot,item.relative),safeFile(tv.reviewRoot,item.reviewRelative)]);
  if(a2.fp!==a.fp||b2.fp!==b.fp)throw new Error('TV file changed during technical inspection.');
- const record={id,title:item.series.title+' · '+item.episodes.map(e=>'S'+String(e.seasonNumber??0).padStart(2,'0')+'E'+String(e.episodeNumber??0).padStart(2,'0')).join(', '),relative:item.relative,outputRelative:item.relative,reviewRelative:item.reviewRelative,snapshot:item.snapshot,fileSnapshot:item.fileSnapshot,originalFP:a.fp,reviewFP:b.fp,originalBytes:a.stat.size,reviewBytes:b.stat.size,jobId:item.jobId,flowProofHash:hash(JSON.stringify(receipt)),jobEvidenceHash:item.jobEvidenceHash,seriesId:item.series.id,episodeFileId:item.file.episodeFileId,episodeIds:[...item.binding.episodeIds],settingsGeneration:settings.generation,settingsRevision:currentSettings.revision,strictProof:receipt.strictProof,info:technical,sourceProbe,resultProbe};
+ const record={id,title:item.series.title+' · '+item.episodes.map(e=>'S'+String(e.seasonNumber??0).padStart(2,'0')+'E'+String(e.episodeNumber??0).padStart(2,'0')).join(', '),relative:item.relative,outputRelative:item.relative,reviewRelative:item.reviewRelative,snapshot:item.snapshot,fileSnapshot:item.fileSnapshot,originalFP:a.fp,reviewFP:b.fp,originalBytes:a.stat.size,reviewBytes:b.stat.size,jobId:item.jobId,flowProofHash:hash(JSON.stringify(receipt)),jobEvidenceHash:item.jobEvidenceHash,seriesId:item.series.id,seriesTitle:item.series.title,seriesType:item.series.seriesType,episodeFileId:item.file.episodeFileId,episodeIds:[...item.binding.episodeIds],episodes:item.episodes.map(value=>({...value})),settingsGeneration:settings.generation,settingsRevision:currentSettings.revision,strictProof:receipt.strictProof,info:technical,sourceProbe,resultProbe};
  tvWorkflowState.items[id]=record;
  return record;
 }
@@ -530,6 +532,8 @@ async function tvVerifyPaused(item){const fresh=await refreshTvReviewItem(item.i
 const tvPerformCore=createApprovalTransaction({
  getState:()=>tvWorkflowState,getConfig:()=>activeSettings?.libraries?.tv||{},recovery,reviewSessions:tvReviewSessions,
  files:{media:()=>activeSettings.libraries.tv.mediaRoot,review:()=>activeSettings.libraries.tv.reviewRoot,safeFile,hash,snapshotMatches:(item,a,b)=>hash(a.fp+'|'+b.fp)===item.fileSnapshot,probe:file=>probe(FFPROBE,file),inspect:(a,b)=>{const result=inspectTvReviewPair(a,b);if(!result.ok)throw new Error(result.reason);return {...result,durationMismatch:false}},unlink:file=>fs.unlink(file),captureReceipt:async(root,relative)=>safeFile(root,relative+'.tdarr-receipt.json').catch(()=>null),cleanupReviewed:async()=>{},
+  tvAuditContext:({action,item,journal})=>{if(action!=='approve'||!item.acceptedApproval?.approvedAt||!journal)throw Error('Instalace TV vyžaduje předem zaznamenané samostatné schválení.');return {version:1,transaction:path.basename(journal),context:{version:1,itemId:item.id,snapshot:item.snapshot,flowProofHash:item.flowProofHash,jobEvidenceHash:item.jobEvidenceHash,approvedAt:item.acceptedApproval.approvedAt,seriesId:item.seriesId,seriesTitle:typeof item.seriesTitle==='string'?item.seriesTitle.slice(0,180):'',seriesType:item.seriesType,episodeFileId:item.episodeFileId,episodeIds:[...item.episodeIds],episodes:item.episodes.map(({id,seasonNumber,episodeNumber,absoluteEpisodeNumber,airDate})=>({id,seasonNumber,episodeNumber,absoluteEpisodeNumber,airDate})),jobId:item.jobId,policy:'individual',profile:'tv-strict-review-v1',reviewRevision:item.reviewRevision,settingsGeneration:item.settingsGeneration,sourceBytes:item.originalBytes,resultBytes:item.reviewBytes}}},
+  beforeTvMediaMutation:({journal,record})=>tvInstallLedger.append({journal,record}),
   replaceChecked:options=>replaceChecked({...options,retainOriginal:{root:activeSettings.libraries.tv.quarantineRoot,path:path.join(activeSettings.libraries.tv.quarantineRoot,path.basename(options.journal,'.json')+'-'+path.basename(options.original))}}),
   newJournal:()=>path.join(DATA,'transactions','tv-'+crypto.randomUUID()+'.json'),readJournal:async journal=>JSON.parse(await fs.readFile(journal,'utf8').catch(()=>'{"phase":"unknown"}'))},
  tdarr:{nodes:()=>tdarr('/api/v2/get-nodes'),workerBusy:(nodes,item)=>tvWorkerBusy(nodes,item,activeSettings.libraries.tv),pauseDispatch:tvPauseDispatch,verifyPaused:tvVerifyPaused,resume,libraries:()=>dbRows('librarysettingsjsondb'),validateLibrary:validateTvLibraryRow,resolveLibrary:()=>validateTvLibraryRow(),rescan:data=>tdarr('/api/v2/rescan-file',data)},
@@ -558,6 +562,7 @@ async function refreshTvSonarrSeries(seriesId){
 async function performTvInstall(item){
  const outcome=await tvPerformCore('approve',item);
  if(outcome.status!=='incomplete_refresh'||outcome.refresh!=='pending')return outcome;
+ try{await tvInstallLedger.updateOutcome(outcome.transactionRef,{tdarr:outcome.tdarrRefreshFailed?'failed':'completed',sonarr:'pending'})}catch{logEvent('tv.install_ledger_outcome_failed',{transaction:outcome.transactionRef})}
  const tdarrFailed=!!outcome.tdarrRefreshFailed;active={id:item.id,action:'approve',library:'tv',stage:'Refreshing Sonarr series metadata',started:Date.now()};
  try{
   const refresh=await refreshTvSonarrSeries(item.seriesId);outcome.refresh=refresh.state;outcome.refreshCommandId=refresh.commandId;
@@ -567,6 +572,7 @@ async function performTvInstall(item){
  }catch{outcome.status='incomplete_refresh';outcome.refresh='failed';outcome.warning='Installed; Sonarr series metadata refresh failed.';if(tdarrFailed)outcome.tdarrRefresh='failed';}
  finally{
   state.tvReview.history=tvWorkflowState.history;const saved=tvWorkflowState.history.find(entry=>entry.id===item.id&&entry.action==='approve');if(saved)Object.assign(saved,{status:outcome.status,refresh:outcome.refresh,refreshCommandId:outcome.refreshCommandId,tdarrRefresh:outcome.tdarrRefresh,warning:outcome.warning});
+  try{await tvInstallLedger.updateOutcome(outcome.transactionRef,{tdarr:outcome.tdarrRefresh==='failed'?'failed':outcome.tdarrRefresh==='completed'?'completed':'unknown',sonarr:outcome.refresh==='completed'?'completed':outcome.refresh==='pending'?'pending':outcome.refresh==='failed'?'failed':'unknown'})}catch{logEvent('tv.install_ledger_outcome_failed',{transaction:outcome.transactionRef})}
   try{await save()}catch{logEvent('tv.refresh.persist_failed',{id:item.id});}
   active=null;
  }
@@ -595,7 +601,7 @@ const authTimer=setInterval(()=>{pruneAuthAttempts(authAttempts);if(pruneSession
 // Getters/setters keep the module variables above authoritative, so the scan,
 // transaction and preview code shares exactly the state the routes change.
 const ctx={
- ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,recoveryAttention,quarantineDelete,diagnosticExport,recoverySafeRestore,installedAssessment,tdarrHandoff,transcodeRetry,artwork,reviewSessions,tvReviewSessions,tvWorkflowState,refreshTvReviewItem,tvStrictBlockReason,performTvInstall,previewPairs,previewPlans,previewAttempts,previewIdentity,previewVersion,previewVersionFor,previewPreparation,planPreviewItem,prepareTvPreviewPlan,sharedSettings,sonarrSourceInspection,sonarrResultInspection,tvDiscovery,
+ ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,recoveryAttention,quarantineDelete,diagnosticExport,recoverySafeRestore,installedAssessment,tdarrHandoff,transcodeRetry,artwork,reviewSessions,tvReviewSessions,tvWorkflowState,tvInstallLedger,refreshTvReviewItem,tvStrictBlockReason,performTvInstall,previewPairs,previewPlans,previewAttempts,previewIdentity,previewVersion,previewVersionFor,previewPreparation,planPreviewItem,prepareTvPreviewPlan,sharedSettings,sonarrSourceInspection,sonarrResultInspection,tvDiscovery,
  get config(){return config},set config(value){config=value},
  get tvSettings(){return activeSettings?.libraries?.tv??null},safeFile,validateTvLibrary:validateTvLibraryRow,
  get previewSettings(){return previewSettings},set previewSettings(value){previewSettings=value},

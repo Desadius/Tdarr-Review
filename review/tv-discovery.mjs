@@ -174,6 +174,7 @@ export function createTvDiscovery({getSettings,getMovieRoots,getState,save,dbRow
       episodes:result.episodes.map(({id,...numbers})=>({id,...numbers})),binding:{seriesId:result.binding.seriesId,episodeFileId:result.binding.episodeFileId,episodeIds:[...result.binding.episodeIds]}});
      const candidate=list.find(value=>value.id===item.id);
      if(candidate){
+      Object.assign(item,{jobId:candidate.jobId,flowProofHash:candidate.flowProofHash,jobEvidenceHash:candidate.jobEvidenceHash});
       Object.defineProperty(item,'fileSnapshot',{value:candidate.fileSnapshot});
       item.snapshot=tvMode(tv)==='strict-review'?hash(JSON.stringify({file:candidate.fileSnapshot,flow:candidate.flowProofHash,settings:settingsGeneration??null,binding:item.binding,job:candidate.jobEvidenceHash})):candidate.fileSnapshot;
      }
