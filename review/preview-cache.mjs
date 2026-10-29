@@ -24,7 +24,8 @@ function normalizeLimits(next){
 }
 function normalizeRequest(input,rendererVersion){
  if(!object(input)||!/^[a-f0-9]{24}$/.test(input.itemId||'')||!/^[a-f0-9]{64}$/.test(input.snapshot||'')||!MODES.has(input.mode))fail('Neplatný požadavek ukázky.','INVALID_REQUEST');
- const value={itemId:input.itemId,snapshot:input.snapshot,mode:input.mode,originalIndex:input.originalIndex??null,reviewIndex:input.reviewIndex??null,seconds:input.seconds,profile:input.profile??null,rendererVersion:input.rendererVersion??rendererVersion};
+ if(input.library!==undefined&&input.library!==null&&input.library!=='tv')fail('Neplatný kontext ukázky.','INVALID_REQUEST');
+ const value={itemId:input.itemId,snapshot:input.snapshot,mode:input.mode,originalIndex:input.originalIndex??null,reviewIndex:input.reviewIndex??null,seconds:input.seconds,profile:input.profile??null,rendererVersion:input.rendererVersion??rendererVersion,library:input.library==='tv'?'tv':null};
  if(!['compact','detail',null].includes(value.profile)||typeof value.rendererVersion!=='string'||!value.rendererVersion.trim()||value.rendererVersion.length>128)fail('Neplatný profil nebo verze ukázky.','INVALID_REQUEST');
  if(typeof value.seconds!=='number'||!Number.isFinite(value.seconds)||value.seconds<0||value.seconds>604800)fail('Neplatný čas ukázky.','INVALID_REQUEST');
  for(const name of ['originalIndex','reviewIndex'])if(value[name]!==null&&(!Number.isInteger(value[name])||value[name]<0||value[name]>65535))fail('Neplatná zvuková stopa ukázky.','INVALID_REQUEST');
@@ -32,7 +33,7 @@ function normalizeRequest(input,rendererVersion){
  else if(value.originalIndex===null||value.reviewIndex===null)fail('Vyber obě zvukové stopy ukázky.','INVALID_REQUEST');
  return value;
 }
-function keyFor(request){return digest(JSON.stringify([1,request.itemId,request.snapshot,request.mode,request.originalIndex,request.reviewIndex,request.seconds,request.profile,request.rendererVersion]))}
+function keyFor(request){return digest(JSON.stringify([request.library==='tv'?2:1,...(request.library==='tv'?['tv']:[]),request.itemId,request.snapshot,request.mode,request.originalIndex,request.reviewIndex,request.seconds,request.profile,request.rendererVersion]))}
 export function previewCacheKey(request,rendererVersion){return keyFor(normalizeRequest(request,rendererVersion))}
 
 // A single owner controls this directory. Only hash.json and hash.nonce.tmp

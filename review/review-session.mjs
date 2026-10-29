@@ -110,10 +110,10 @@ export function updateReviewSession(previous,input,{duration,originalIndexes,rev
 
 // The revision comparison, validation and durable write share one queue. Two
 // clients submitting the same revision cannot both succeed, even across awaits.
-export function createReviewSessionStore({getState,save,verify,now=()=>new Date().toISOString()}){
+export function createReviewSessionStore({getState,save,verify,getItems=state=>state.items,getSessions=state=>state.reviewSessions,now=()=>new Date().toISOString()}){
  let queue=Promise.resolve(),pending=0;
  const current=(id,snapshot,requirements)=>{
-  const state=getState(),item=state.items?.[id],record=state.reviewSessions?.[id];
+  const state=getState(),item=getItems(state)?.[id],record=getSessions(state)?.[id];
   return publicReviewSession(record,snapshot,requirements||(record?.snapshot===snapshot?record.requirements:undefined)||(item?.snapshot===snapshot?item.info?.reviewRequirements:undefined)||{hdr:true});
  };
  const checkIdentity=(id,snapshot)=>{if(!ID.test(id)||!SNAPSHOT.test(snapshot))fail('review_identity_invalid',409)};
@@ -135,10 +135,10 @@ export function createReviewSessionStore({getState,save,verify,now=()=>new Date(
     if(!object(request))fail('review_request_not_object');
     checkIdentity(id,request.snapshot);
     if(!Number.isSafeInteger(request.revision)||request.revision<0)fail('review_revision_invalid',409);
-    const state=getState(),item=state.items?.[id];
+    const state=getState(),item=getItems(state)?.[id];
     if(!item||item.snapshot!==request.snapshot)fail('item_changed',409);
     const limits=await verify(item,{id,snapshot:request.snapshot,session:sanitizeReviewSession(request.session)});
-    if(getState()!==state||state.items[id]!==item||item.snapshot!==request.snapshot)fail('review_item_changed_during_save',409);
+    if(getState()!==state||getItems(state)?.[id]!==item||item.snapshot!==request.snapshot)fail('review_item_changed_during_save',409);
     const previous=current(id,request.snapshot);
     if(request.revision!==previous.revision)fail('review_saved_elsewhere',409);
     const session=updateReviewSession(previous,request.session,limits);
@@ -148,9 +148,9 @@ export function createReviewSessionStore({getState,save,verify,now=()=>new Date(
       observations[name]=previous.session.checks[name]&&previous.observations[name]?structuredClone(previous.observations[name]):{method:session.method,device:session.device,scope:structuredClone(session.scope),...(session.comparison?{comparison:structuredClone(session.comparison)}:{}),at:updated};
     }
     const record={snapshot:request.snapshot,revision:previous.revision+1,version:1,requirements:{hdr:limits?.requirements?.hdr!==false},session,observations,updated};
-    state.reviewSessions ||= {};
-    const prior=state.reviewSessions[id];state.reviewSessions[id]=record;
-    try{await save()}catch(error){if(state.reviewSessions[id]===record){if(prior===undefined)delete state.reviewSessions[id];else state.reviewSessions[id]=prior}throw error}
+    const sessions=getSessions(state);if(!sessions)fail('review_store_unavailable',409);
+    const prior=sessions[id];sessions[id]=record;
+    try{await save()}catch(error){if(sessions[id]===record){if(prior===undefined)delete sessions[id];else sessions[id]=prior}throw error}
     return current(id,request.snapshot,record.requirements);
    });
    queue=operation.catch(()=>{}).finally(()=>{pending--});

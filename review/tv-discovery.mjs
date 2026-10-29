@@ -9,14 +9,15 @@ import {matchReviewJob,ReviewJobMatchError} from './job-matching.mjs';
 import {mapSonarrSourcePath} from './sonarr-source-path.mjs';
 import {createEpisodeBindingResolver} from './episode-binding.mjs';
 import {createSonarrDiscoveryReader} from './sonarr-inspection.mjs';
-import {tvMode} from './library-paths.mjs';
+import {tvMode,tvDiscoveryEnabled} from './library-paths.mjs';
+import {validTvStrictProof,tvStrictProofMatchesFiles} from './tv-flow-proof.mjs';
 
 // Read-only discovery of TV results (#271). A result is bound only to its exact Tdarr job and exactly one Sonarr
 // EpisodeFile; everything else is unbound with a fixed reason. Nothing here writes to a library, Tdarr or Sonarr,
 // and nothing here can approve, reject, replace or retain a result.
 
 /** Why a result is unbound. Fixed codes, never free text; the UI owns the wording. */
-export const UNBOUND_REASONS=Object.freeze(['receipt_missing','receipt_invalid','job_missing','job_other_library','job_not_successful','job_mismatch','source_unmapped','files_changed','file_in_progress','duplicate_result','series_not_found','series_ambiguous','no_episode_file','multiple_episode_files','no_linked_episodes']);
+export const UNBOUND_REASONS=Object.freeze(['receipt_missing','receipt_invalid','flow_evidence_invalid','job_missing','job_other_library','job_not_successful','job_mismatch','source_unmapped','files_changed','file_in_progress','duplicate_result','series_not_found','series_ambiguous','no_episode_file','multiple_episode_files','no_linked_episodes']);
 /** Why binding could not be verified. These results are never shown as bound. */
 export const UNVERIFIED_REASONS=Object.freeze(['sonarr_not_configured','sonarr_unavailable','sonarr_inconsistent']);
 
@@ -50,8 +51,8 @@ const sameRecorded=(recorded,current)=>identity(recorded)&&current.size===record
  */
 export function createTvDiscovery({getSettings,getMovieRoots,getState,save,dbRows,fetchFn=globalThis.fetch,requestTimeoutMs=7000,sonarrBudgetMs=SONARR_BUDGET_MS,now=Date.now}){
  let cache=null,running=null;
- const configured=()=>{const settings=getSettings();return settings&&tvMode(settings.tv)==='discovery'?settings:null;};
- const signature=settings=>hash(JSON.stringify([settings.tv,settings.sonarr?.url||'',hash(settings.sonarr?.apiKey||'')]));
+ const configured=()=>{const settings=getSettings();return settings&&tvDiscoveryEnabled(settings.tv)?settings:null;};
+ const signature=settings=>hash(JSON.stringify([settings.tv,settings.generation??null,settings.sonarr?.url||'',hash(settings.sonarr?.apiKey||'')]));
 
  /** True when a result path belongs to the TV library, so the movie scan leaves it alone. Off mode owns nothing. */
  function ownsResult(reviewRelative){
@@ -65,7 +66,12 @@ export function createTvDiscovery({getSettings,getMovieRoots,getState,save,dbRow
   const movie=getMovieRoots();
   if(overlap(tv.mediaRoot,movie.mediaRoot)||overlap(tv.mediaRoot,movie.reviewRoot)||overlap(tv.reviewRoot,movie.mediaRoot))return true;
   if(tv.reviewRoot===movie.reviewRoot)return !tv.reviewPrefixes.length||tv.reviewPrefixes.some(prefix=>movie.reviewPrefixes.includes(prefix));
-  return overlap(tv.reviewRoot,movie.reviewRoot);
+  if(overlap(tv.reviewRoot,movie.reviewRoot))return true;
+  if(tvMode(tv)==='strict-review'){
+   const quarantine=tv.quarantineRoot;
+   if(!quarantine||[tv.mediaRoot,tv.reviewRoot,movie.mediaRoot,movie.reviewRoot,movie.quarantineRoot].some(root=>root&&overlap(quarantine,root)))return true;
+  }
+  return false;
  }
 
  // The file-side checks of one result: receipt, files, receipt identity and the exact Tdarr job. No Sonarr here.
@@ -79,13 +85,18 @@ export function createTvDiscovery({getSettings,getMovieRoots,getState,save,dbRow
   catch(error){return unbound(error?.code==='ENOENT'?'source_unmapped':'receipt_invalid');}
   const receipt=mapping.receipt;
   if(receipt===null)return unbound('receipt_missing');
-  if(!plain(receipt)||receipt.version!==1||typeof receipt.jobId!=='string'||!receipt.jobId||receipt.jobId!==receipt.jobId.trim()||receipt.jobId.length>512||!identity(receipt.source)||!identity(receipt.output))return unbound('receipt_invalid');
+  if(!plain(receipt)||![1,2].includes(receipt.version)||typeof receipt.jobId!=='string'||!receipt.jobId||receipt.jobId!==receipt.jobId.trim()||receipt.jobId.length>512||!identity(receipt.source)||!identity(receipt.output))return unbound('receipt_invalid');
+  if(receipt.version===2&&!validTvStrictProof(receipt))return unbound('flow_evidence_invalid');
   item.relative=mapping.relative;item.jobId=receipt.jobId;
   let original,result;
   try{original=await safeFile(tv.mediaRoot,mapping.relative);}catch{return unbound('source_unmapped');}
   try{result=await safeFile(tv.reviewRoot,reviewRelative);}catch{return unbound('files_changed');}
-  Object.assign(item,{originalBytes:original.stat.size,reviewBytes:result.stat.size});
+  const strictEvidence=receipt.version===2&&tvStrictProofMatchesFiles(receipt,original.stat,result.stat)?'passed':receipt.version===1?'legacy':'flow_evidence_invalid';
+  if(strictEvidence==='flow_evidence_invalid')return unbound('flow_evidence_invalid');
+  Object.assign(item,{originalBytes:original.stat.size,reviewBytes:result.stat.size,relative:mapping.relative,jobId:receipt.jobId});
+  Object.defineProperties(item,{sourceFP:{value:original.fp},resultFP:{value:result.fp}});
   const snapshot=hash(original.fp+'|'+result.fp);
+  item.snapshot=snapshot;
   if(result.stat.mtimeMs>now()-FRESH_MS)return unbound('file_in_progress');
   // The receipt recorded both files when Tdarr finished; any later change makes the result unbound.
   if(receipt.source.size!==original.stat.size||receipt.source.mtime!==Math.round(original.stat.mtimeMs)||receipt.output.size!==result.stat.size||receipt.output.mtime!==Math.round(result.stat.mtimeMs))return unbound('files_changed');
@@ -106,13 +117,15 @@ export function createTvDiscovery({getSettings,getMovieRoots,getState,save,dbRow
   if(job.status!=='Transcode success')return unbound('job_not_successful');
   const normalize=value=>String(value||'').replaceAll('\\','/');
   if(!tv.sourceRoots.some(root=>normalize(root).replace(/\/+$/,'')+'/'+mapping.relative===normalize(job.file)))return unbound('source_unmapped');
-  try{matchReviewJob(jobs,{receipt,libraryId:tv.libraryId,sourceRoots:tv.sourceRoots,relative:mapping.relative,sourceBytes:original.stat.size,outputBytes:result.stat.size});}
+  try{matchReviewJob(jobs,{receipt,receiptVersions:[1,2],libraryId:tv.libraryId,sourceRoots:tv.sourceRoots,relative:mapping.relative,sourceBytes:original.stat.size,outputBytes:result.stat.size});}
   catch(error){return unbound(error instanceof ReviewJobMatchError&&['INVALID_RECEIPT','INVALID_JOB_ID'].includes(error.code)?'receipt_invalid':'job_mismatch');}
-  return {item,candidate:{id,reviewRelative,relative:mapping.relative,jobId:receipt.jobId,stored:{reviewRelative,relative:mapping.relative,snapshot,receiptIdentity:true,jobId:receipt.jobId}}};
+  const jobEvidenceHash=hash(JSON.stringify({_id:job._id,DB:job.DB,status:job.status,file:job.file,fileSizeStartGB:job.fileSizeStartGB,fileSizeEndGB:job.fileSizeEndGB,start:job.start,end:job.end}));
+  const discovered={...item,strictEvidence};Object.defineProperties(discovered,{sourceFP:{value:original.fp},resultFP:{value:result.fp}});
+  return {item:discovered,candidate:{id,reviewRelative,relative:mapping.relative,jobId:receipt.jobId,strictEvidence,fileSnapshot:snapshot,flowProofHash:receipt.version===2?hash(JSON.stringify(receipt)):null,jobEvidenceHash,stored:{reviewRelative,relative:mapping.relative,snapshot,receiptIdentity:true,jobId:receipt.jobId}}};
  }
 
  // Sonarr stage for the results that passed the file-side checks. Reads only the series they belong to.
- async function bindWithSonarr(tv,sonarrConfig,candidates,items,observedAt){
+ async function bindWithSonarr(tv,sonarrConfig,candidates,items,observedAt,settingsGeneration){
   const info={status:'not_needed',observedAt:null,series:0};
   if(!candidates.length)return info;
   const unverify=(reason,list=candidates)=>{for(const candidate of list){const item=items.get(candidate.id);item.state='unverified';item.reason=reason;}};
@@ -158,7 +171,12 @@ export function createTvDiscovery({getSettings,getMovieRoots,getState,save,dbRow
      Object.assign(item,{state:'bound',reason:null,observedAt,
       series:{id:series.id,title:series.title,seriesType:series.seriesType},
       file:{episodeFileId:result.binding.episodeFileId,label:safeLabel(result.file.relativePath),seasonNumber:result.file.seasonNumber},
-      episodes:result.episodes.map(({id,...numbers})=>({id,...numbers}))});
+      episodes:result.episodes.map(({id,...numbers})=>({id,...numbers})),binding:{seriesId:result.binding.seriesId,episodeFileId:result.binding.episodeFileId,episodeIds:[...result.binding.episodeIds]}});
+     const candidate=list.find(value=>value.id===item.id);
+     if(candidate){
+      Object.defineProperty(item,'fileSnapshot',{value:candidate.fileSnapshot});
+      item.snapshot=tvMode(tv)==='strict-review'?hash(JSON.stringify({file:candidate.fileSnapshot,flow:candidate.flowProofHash,settings:settingsGeneration??null,binding:item.binding,job:candidate.jobEvidenceHash})):candidate.fileSnapshot;
+     }
     }else if(result.status==='unmapped'&&result.reason==='no-linked-episodes'){item.state='unbound';item.reason='no_linked_episodes';}
     else if(result.status==='ambiguous'&&result.reason==='duplicate-file-path'){item.state='unbound';item.reason='multiple_episode_files';}
     else{item.state='unverified';item.reason='sonarr_inconsistent';}
@@ -191,7 +209,7 @@ export function createTvDiscovery({getSettings,getMovieRoots,getState,save,dbRow
     seasons:[...seasons.entries()].sort(([a],[b])=>(a??Infinity)-(b??Infinity)).map(([seasonNumber,results])=>({seasonNumber,results:results.sort(order)}))};
   });
   const rest=state=>all.filter(item=>item.state===state).sort((a,b)=>a.reviewRelative.localeCompare(b.reviewRelative));
-  return {mode:'discovery',status:'ok',observedAt:new Date(observedAt).toISOString(),
+  return {mode:tvMode(settings.tv),status:'ok',observedAt:new Date(observedAt).toISOString(),
    sonarr:{status:sonarr.status,observedAt:sonarr.observedAt?new Date(sonarr.observedAt).toISOString():null,series:sonarr.series},
    totals:{results:all.length,bound:bound.length,unbound:rest('unbound').length,unverified:rest('unverified').length,episodes:series.reduce((s,e)=>s+e.totals.episodes,0),
     originalBytes:bound.reduce((s,i)=>s+i.originalBytes,0),reviewBytes:bound.reduce((s,i)=>s+i.reviewBytes,0)},
@@ -221,7 +239,7 @@ export function createTvDiscovery({getSettings,getMovieRoots,getState,save,dbRow
   const live=[];
   for(const candidate of candidates){if(dupes.has(candidate.id)){const item=items.get(candidate.id);item.state='unbound';item.reason='duplicate_result';}else live.push(candidate);}
   for(const candidate of candidates)stored[candidate.id]=candidate.stored;
-  const sonarr=await bindWithSonarr(tv,settings.sonarr,live,items,observedAt);
+  const sonarr=await bindWithSonarr(tv,settings.sonarr,live,items,observedAt,settings.generation);
   // Only the file-side evidence is kept (it avoids re-reading both files on every scan). A Sonarr binding never is.
   const next={version:1,settingsKey:key,items:stored};
   if(JSON.stringify(state.tv??null)!==JSON.stringify(next)){state.tv=next;await save();}
@@ -238,6 +256,6 @@ export function createTvDiscovery({getSettings,getMovieRoots,getState,save,dbRow
   running=scan(settings,key).catch(()=>({mode:'discovery',status:'unavailable',code:'tv_scan_failed'})).then(value=>{cache={key,at:now(),value};return value;}).finally(()=>{running=null;});
   return running;
  }
- const mode=()=>configured()?'discovery':'off';
+ const mode=()=>configured()?tvMode(configured().tv):'off';
  return {result,mode,ownsResult};
 }

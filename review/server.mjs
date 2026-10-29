@@ -4,10 +4,8 @@ import {RESUME_RETRY_TICK_MS,resumeRetryDelay} from './resume-retry.mjs';
 import {publishApproval} from '../recovery/quarantine-retention.mjs';
 import {extractListeningAudio} from './audio-listen.mjs';
 import {assessment} from './assessment.mjs';
-import {extractAudio,alignment} from './audio-compare.mjs';
 import {identityChange,unreadableIdentity,durationException} from './recheck.mjs';
 import {defaults,validate,mapReview} from './config.mjs';
-import {extractFrame} from './frames.mjs';
 import {lowPriorityCommand} from './low-priority.mjs';
 import http from 'node:http';
 import fs from 'node:fs/promises';
@@ -54,6 +52,8 @@ import {sharedSettingsRoutes} from './routes/shared-settings.mjs';
 import {sonarrRoutes} from './routes/sonarr.mjs';
 import {createSonarrSourceInspection} from './sonarr-source-inspection.mjs';
 import {createSonarrResultInspection} from './sonarr-result-inspection.mjs';
+import {inspectTvReviewPair,supportedTvReviewItem,tvReviewBlockCode} from './tv-review.mjs';
+import {validTvStrictProof,tvStrictProofMatchesFiles} from './tv-flow-proof.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 const DATA=process.env.DATA_ROOT||'/data',PORT=Number(process.env.PORT||8270),APP_VERSION=await appVersion();
@@ -94,6 +94,11 @@ import {createRecoverySafeRestore} from './recovery-safe-restore.mjs';
 import {createTranscodeRetry} from './transcode-retry.mjs';
 let state=JSON.parse(await fs.readFile(statefile,'utf8').catch(()=>'{"items":{},"history":[],"sessions":{},"pauses":[]}'));
 if(!state.reviewSessions||typeof state.reviewSessions!=='object'||Array.isArray(state.reviewSessions))state.reviewSessions={};
+if(!state.tvReview||typeof state.tvReview!=='object'||Array.isArray(state.tvReview))state.tvReview={};
+if(!state.tvReview.reviewSessions||typeof state.tvReview.reviewSessions!=='object'||Array.isArray(state.tvReview.reviewSessions))state.tvReview.reviewSessions={};
+if(!state.tvReview.approvals||typeof state.tvReview.approvals!=='object'||Array.isArray(state.tvReview.approvals))state.tvReview.approvals={};
+if(!Array.isArray(state.tvReview.history))state.tvReview.history=[];
+let tvReviewSessions=null,tvPerform=null;
 // Confirmed replacements wait here while another replacement or batch runs (#155). After a restart
 // nothing queued runs by itself: the entries are kept as interrupted until the person confirms again.
 if(!Array.isArray(state.replacementQueue))state.replacementQueue=[];
@@ -139,7 +144,7 @@ async function drainQueue(){
  }finally{queueRunning=false;if(mutationOwner?.kind==='queue')mutationOwner=null}
 }
 function busyFor(kind,owner=null){
- return policyBusyFor(kind,{foreground:mutationOwner&&mutationOwner!==owner,active,batchRunning,resumeTask,previewBusy,settingsBusy,reviewSessions:reviewSessions.busy,recoveryRestore:recoveryRestoreBusy,scan:scanPromise,recovery:recovery.length,pauses:operationPauses()?0:state.pauses.length,statistics:statsTask,previewHolds:previewMutationHolds});
+ return policyBusyFor(kind,{foreground:mutationOwner&&mutationOwner!==owner,active,batchRunning,resumeTask,previewBusy,settingsBusy,reviewSessions:reviewSessions.busy||!!tvReviewSessions?.busy,scan:scanPromise,recovery:recovery.length,pauses:operationPauses()?0:state.pauses.length,statistics:statsTask,previewHolds:previewMutationHolds});
 }
 let saveChain=Promise.resolve();
 const save=()=>{const snapshot=structuredClone(state);saveChain=saveChain.catch(()=>{}).then(()=>atomicJSON(statefile,snapshot));return saveChain};
@@ -148,10 +153,18 @@ const previewSettingsFile=path.join(DATA,'preview-settings.json');
 let previewSettings=validatePreviewSettings({...defaultPreviewSettings(),...JSON.parse(await fs.readFile(previewSettingsFile,'utf8').catch(e=>{if(e.code!=='ENOENT')throw e;return '{}'}))});
 const previewCodeVersion=await readPreviewCodeVersion();
 const previewVersion=()=>hash(previewCodeVersion+'|'+JSON.stringify([MEDIA,REVIEW,FFPROBE,config.ffmpeg]));
+const previewVersionFor=library=>library==='tv'?hash(previewVersion()+'|tv|'+activeSettings?.generation+'|'+JSON.stringify(activeSettings?.libraries?.tv||null)):previewVersion();
 const previewPairs=new Map(),previewPlans=new Map(),previewAttempts=new Map();
 let previewMutationHolds=0,previewPlanning=null;
 async function previewIdentity(request){
- if(request.rendererVersion!==previewVersion())throw new ReviewSessionError('preview_settings_changed',409);
+ if(request.rendererVersion!==previewVersionFor(request.library))throw new ReviewSessionError('preview_settings_changed',409);
+ if(request.library==='tv'){
+  if(tvDiscovery.mode()!=='strict-review')throw new ReviewSessionError('preview_files_unavailable',409);
+  const item=await refreshTvReviewItem(request.itemId);if(item.snapshot!==request.snapshot)throw new ReviewSessionError('preview_files_changed',409);
+  let a,b;try{[a,b]=await Promise.all([safeFile(activeSettings.libraries.tv.mediaRoot,item.relative),safeFile(activeSettings.libraries.tv.reviewRoot,item.reviewRelative)])}catch{throw new ReviewSessionError('preview_files_unavailable',409)}
+  if(hash(a.fp+'|'+b.fp)!==item.fileSnapshot)throw new ReviewSessionError('preview_files_changed',409);
+  return {a,b};
+ }
  const item=state.items[request.itemId];
  if(!item||item.snapshot!==request.snapshot)throw new ReviewSessionError('preview_files_changed',409);
  let a,b;try{a=await safeFile(MEDIA,item.relative);b=await safeFile(REVIEW,item.reviewRelative)}catch{throw new ReviewSessionError('preview_files_unavailable',409)}
@@ -175,23 +188,36 @@ const previews=await createPreviewCache({directory:path.join(DATA,'preview-cache
  allowBackground:()=>previewSettings.enabled&&!busyFor('background'),
  onError:error=>{if(!['CANCELLED','STALE'].includes(error.code))console.error('Preview preparation: '+error.message)}
 });
-function previewPreparation(id,snapshot){
- const plan=previewPlans.get(id),updated=Date.now();
+const previewPlanKey=(id,library='movies')=>library==='tv'?'tv:'+id:id;
+function previewPreparation(id,snapshot,library='movies'){
+ const plan=previewPlans.get(previewPlanKey(id,library)),updated=Date.now();
  if(!plan||plan.snapshot!==snapshot)return {snapshot,updated,state:previewSettings.enabled?'waiting':'disabled',ready:0,total:0,error:null,defaultScope:null,jobs:[]};
  const jobs=plan.requests.map(request=>({mode:request.mode,seconds:request.seconds,originalIndex:request.originalIndex,reviewIndex:request.reviewIndex,previewProfile:request.profile,status:previews.status(request)}));
  const ready=jobs.filter(job=>job.status==='ready').length,failed=jobs.some(job=>job.status==='error'),running=jobs.some(job=>job.status==='running'),queued=jobs.some(job=>job.status==='queued');
  const quota=previews.stats().backgroundBudgetBlocked&&ready<jobs.length;
  return {snapshot,updated,state:!previewSettings.enabled?'disabled':running?'running':ready===jobs.length&&jobs.length&&!plan.unavailableReason?'ready':failed||quota?'error':ready?'partial':queued?'waiting':plan.unavailableReason?'unavailable':'waiting',ready,total:jobs.length,error:plan.unavailableReason||(quota?'Příprava čeká na místo v mezipaměti. Zvyš její limit nebo použij vytvoření ukázky na požádání.':failed?'Některé ukázky se nepodařilo předpřipravit. Zkus je vytvořit ručně nebo použij vlastní přehrávač.':null),defaultScope:plan.defaultScope,chosenAudioLanguage:plan.chosenAudioLanguage||null,jobs};
 }
-async function planPreviewItem(id,snapshot,background=false){
- const pair=await previewPair({itemId:id,snapshot,rendererVersion:previewVersion()},{background});
- const scope={...reviewSessions.get(id,snapshot).session.scope,seconds:null};
- const plan=defaultPreviewPlan({itemId:id,snapshot,durationA:Number(pair.pa.format?.duration),durationB:Number(pair.pb.format?.duration),originalTracks:(pair.pa.streams||[]).filter(s=>s.codec_type==='audio'),reviewTracks:(pair.pb.streams||[]).filter(s=>s.codec_type==='audio'),scope,rendererVersion:previewVersion(),...previewSettings});
- const prior=previewPlans.get(id);
+async function planPreviewItem(id,snapshot,background=false,library='movies'){
+ const rendererVersion=previewVersionFor(library),libraryField=library==='tv'?{library:'tv'}:{};
+ const pair=await previewPair({itemId:id,snapshot,rendererVersion,...libraryField},{background});
+ const store=library==='tv'?tvReviewSessions:reviewSessions,scope={...store.get(id,snapshot).session.scope,seconds:null};
+ const base=defaultPreviewPlan({itemId:id,snapshot,durationA:Number(pair.pa.format?.duration),durationB:Number(pair.pb.format?.duration),originalTracks:(pair.pa.streams||[]).filter(s=>s.codec_type==='audio'),reviewTracks:(pair.pb.streams||[]).filter(s=>s.codec_type==='audio'),scope,rendererVersion,...previewSettings});
+ const plan={...base,requests:base.requests.map(request=>({...request,...libraryField}))};
+ const planKey=previewPlanKey(id,library),prior=previewPlans.get(planKey);
  if(prior?.snapshot===snapshot&&(prior.defaultScope?.originalIndex!==plan.defaultScope.originalIndex||prior.defaultScope?.reviewIndex!==plan.defaultScope.reviewIndex)){
   await previews.cancelBackground({itemId:id,wait:true});for(const [key,request] of previewAttempts)if(request.itemId===id)previewAttempts.delete(key);
  }
- previewPlans.set(id,{...plan,snapshot});return plan;
+ previewPlans.set(planKey,{...plan,snapshot,library});return plan;
+}
+async function prepareTvPreviewPlan(id,snapshot){
+ const plan=await planPreviewItem(id,snapshot,false,'tv');
+ if(!previewSettings.enabled)return plan;
+ for(const request of plan.requests){
+  const key=previewCacheKey(request,previewVersionFor('tv'));if(previewAttempts.has(key)||previews.status(request)==='ready')continue;
+  const record={...request,expiresAt:null};previewAttempts.set(key,record);
+  void previews.request(request,{priority:'background'}).then(()=>{const stored=previews.entryInfo(request);if(stored&&previewAttempts.get(key)===record)record.expiresAt=stored.created+previewSettings.retentionDays*86400000}).catch(error=>{if(error.code==='CANCELLED')previewAttempts.delete(key)});
+ }
+ return plan;
 }
 // The film last opened for review; its successors are prepared next while it is being reviewed.
 let previewFocus=null;
@@ -200,7 +226,7 @@ async function preparePreviews(items=cache||[]){
  if(previewPlanning)return previewPlanning;
  previewPlanning=(async()=>{
   const valid=new Map(items.filter(item=>item.snapshot&&state.items[item.id]?.snapshot===item.snapshot).map(item=>[item.id,item.snapshot]));
-  for(const [id,plan] of previewPlans)if(valid.get(id)!==plan.snapshot){previewPlans.delete(id);await previews.invalidate({itemId:id})}
+  for(const [id,plan] of previewPlans)if(!id.startsWith('tv:')&&valid.get(id)!==plan.snapshot){previewPlans.delete(id);await previews.invalidate({itemId:id})}
   for(const [key,request] of previewAttempts)if(valid.get(request.itemId)!==request.snapshot||request.expiresAt&&Date.now()>=request.expiresAt)previewAttempts.delete(key);
   await previews.prune();
   if(!previewSettings.enabled)return;
@@ -220,11 +246,11 @@ async function preparePreviews(items=cache||[]){
  })().finally(()=>{previewPlanning=null});return previewPlanning;
 }
 async function forgetPreviews(id){
- previewPlans.delete(id);for(const [key,request] of previewAttempts)if(request.itemId===id)previewAttempts.delete(key);
+ previewPlans.delete(id);previewPlans.delete('tv:'+id);for(const [key,request] of previewAttempts)if(request.itemId===id)previewAttempts.delete(key);
  for(const key of previewPairs.keys())if(key.startsWith(id+'|'))previewPairs.delete(key);
  try{await previews.invalidate({itemId:id})}catch(error){console.error('Preview cleanup: '+error.message)}
 }
-function reviewMutationBlocked(){return busyFor('reviewSession')}
+function reviewMutationBlocked(owner=null){return busyFor('reviewSession',owner)}
 async function verifyReviewItem(item,{id,snapshot},guard=true){
  if(guard&&reviewMutationBlocked())throw new ReviewSessionError('finish_action_or_recovery',409);
  if(typeof item.reviewRelative!=='string'||hash(item.reviewRelative).slice(0,24)!==id||state.items[id]!==item||item.snapshot!==snapshot)throw new ReviewSessionError('review_item_unmapped',409);
@@ -257,7 +283,51 @@ async function readRows(table,cfg=config){
 }
 const dbRows=table=>readRows(table);
 // Read-only TV discovery (#271). It works from the applied settings only and keeps its state under state.tv.
-const tvDiscovery=createTvDiscovery({getSettings:()=>activeSettings?{tv:activeSettings.libraries?.tv??null,sonarr:activeSettings.sonarr??null}:null,getMovieRoots:()=>({mediaRoot:MEDIA,reviewRoot:REVIEW,reviewPrefixes:config.reviewPrefixes}),getState:()=>state,save,dbRows});
+const tvDiscovery=createTvDiscovery({getSettings:()=>activeSettings?{tv:activeSettings.libraries?.tv??null,sonarr:activeSettings.sonarr??null,generation:activeSettings.generation??null}:null,getMovieRoots:()=>({mediaRoot:MEDIA,reviewRoot:REVIEW,reviewPrefixes:config.reviewPrefixes,quarantineRoot:activeSettings?.radarr?.quarantineRoot||''}),getState:()=>state,save,dbRows});
+const tvWorkflowState={items:{},reviewSessions:state.tvReview.reviewSessions,approvals:state.tvReview.approvals,history:state.tvReview.history};
+const tvReviewInspector=createSonarrResultInspection({getSnapshot:async revision=>{
+ const current=await sharedSettings.current();if(current.revision!==revision)throw Object.assign(Error('Settings changed'),{code:'settings_conflict'});
+ if(!activeSettings||current.generation!==activeSettings.generation)throw Object.assign(Error('Applied settings changed'),{code:'settings_conflict'});
+ return {revision,sonarr:activeSettings.sonarr??null,tv:activeSettings.libraries?.tv??null,review:{database:activeSettings.review?.database??'',ffprobe:activeSettings.review?.ffprobe??''}};
+}});
+async function refreshTvReviewItem(id){
+ const settings=activeSettings,tv=settings?.libraries?.tv;
+ if(!settings||tv?.mode!=='strict-review')throw new ReviewSessionError('tv_review_disabled',409);
+ const overview=await tvDiscovery.result({force:true});
+ const item=(overview.series||[]).flatMap(series=>(series.seasons||[]).flatMap(season=>season.results||[])).find(result=>result.id===id);
+ if(!item)throw new Error('TV result is no longer exactly bound. Refresh the TV overview.');
+ const eligible=supportedTvReviewItem(item);if(!eligible.ok)throw new ReviewSessionError(tvReviewBlockCode(eligible.reason),409);
+ const currentSettings=await sharedSettings.current();
+ const inspection=await tvReviewInspector.inspect(currentSettings.revision,item.series.id,item.file.episodeFileId);
+ if(inspection.status!=='matched'||inspection.binding?.seriesId!==item.binding?.seriesId||inspection.binding?.episodeFileId!==item.binding?.episodeFileId||JSON.stringify(inspection.binding?.episodeIds)!==JSON.stringify(item.binding?.episodeIds))throw new Error('Sonarr binding or strict result evidence changed. Refresh the TV overview.');
+ const [a,b]=await Promise.all([safeFile(tv.mediaRoot,item.relative),safeFile(tv.reviewRoot,item.reviewRelative)]);
+ if(a.fp!==item.sourceFP||b.fp!==item.resultFP||hash(a.fp+'|'+b.fp)!==item.fileSnapshot)throw new Error('TV files changed. Refresh the overview before review.');
+ const receiptFile=await safeFile(tv.reviewRoot,item.reviewRelative+'.tdarr-receipt.json');
+ if(receiptFile.stat.size>65536)throw new Error('Strict TV flow evidence is too large.');
+ const receipt=JSON.parse(await fs.readFile(receiptFile.path,'utf8'));
+ if(!validTvStrictProof(receipt)||receipt.jobId!==item.jobId||!tvStrictProofMatchesFiles(receipt,a.stat,b.stat))throw new Error('Strict TV flow evidence is missing or changed.');
+ const [sourceProbe,resultProbe]=await Promise.all([probe(FFPROBE,a.path),probe(FFPROBE,b.path)]),technical=inspectTvReviewPair(sourceProbe,resultProbe);
+ if(!technical.ok)throw new ReviewSessionError(tvReviewBlockCode(technical.reason),409);
+ const [a2,b2]=await Promise.all([safeFile(tv.mediaRoot,item.relative),safeFile(tv.reviewRoot,item.reviewRelative)]);
+ if(a2.fp!==a.fp||b2.fp!==b.fp)throw new Error('TV file changed during technical inspection.');
+ const record={id,title:item.series.title+' · '+item.episodes.map(e=>'S'+String(e.seasonNumber??0).padStart(2,'0')+'E'+String(e.episodeNumber??0).padStart(2,'0')).join(', '),relative:item.relative,outputRelative:item.relative,reviewRelative:item.reviewRelative,snapshot:item.snapshot,fileSnapshot:item.fileSnapshot,originalFP:a.fp,reviewFP:b.fp,originalBytes:a.stat.size,reviewBytes:b.stat.size,jobId:item.jobId,flowProofHash:hash(JSON.stringify(receipt)),jobEvidenceHash:item.jobEvidenceHash,seriesId:item.series.id,episodeFileId:item.file.episodeFileId,episodeIds:[...item.binding.episodeIds],settingsGeneration:settings.generation,settingsRevision:currentSettings.revision,strictProof:receipt.strictProof,info:technical,sourceProbe,resultProbe};
+ tvWorkflowState.items[id]=record;
+ return record;
+}
+async function tvStrictBlockReason(item){
+ const eligible=supportedTvReviewItem(item);if(!eligible.ok)return eligible.reason;
+ try{
+  const tv=activeSettings.libraries.tv,[source,result]=await Promise.all([safeFile(tv.mediaRoot,item.relative),safeFile(tv.reviewRoot,item.reviewRelative)]);
+  if(item.sourceFP&&source.fp!==item.sourceFP||item.resultFP&&result.fp!==item.resultFP)return 'files_changed';
+  const [a,b]=await Promise.all([probe(FFPROBE,source.path),probe(FFPROBE,result.path)]),technical=inspectTvReviewPair(a,b);
+  return technical.ok?null:tvReviewBlockCode(technical.reason);
+ }catch{return 'tv_technical_facts_unavailable'}
+}
+tvReviewSessions=createReviewSessionStore({getState:()=>tvWorkflowState,save:async()=>{state.tvReview.reviewSessions=tvWorkflowState.reviewSessions;state.tvReview.approvals=tvWorkflowState.approvals;state.tvReview.history=tvWorkflowState.history;await save()},getItems:state=>state.items,getSessions:state=>state.reviewSessions,verify:async item=>{
+ const fresh=await refreshTvReviewItem(item.id);if(fresh.snapshot!==item.snapshot||fresh.settingsGeneration!==item.settingsGeneration)throw new ReviewSessionError('review_item_changed_during_save',409);
+ tvWorkflowState.items[item.id]=item;
+ return {duration:fresh.info.durationA,originalIndexes:fresh.sourceProbe.streams.filter(s=>s.codec_type==='audio').map(s=>s.index),reviewIndexes:fresh.resultProbe.streams.filter(s=>s.codec_type==='audio').map(s=>s.index),requirements:{hdr:false}};
+}});
 async function tdarr(route,data){const r=await fetch(TDARR+route,{method:data?'POST':'GET',headers:{'content-type':'application/json'},body:data?JSON.stringify({data}):undefined,signal:AbortSignal.timeout(12000)});if(!r.ok)throw new Error('Tdarr neodpovídá: '+r.status);const t=await r.text();let value;try{value=t?JSON.parse(t):null}catch{value=t}if(route==='/api/v2/get-nodes'&&(!value||typeof value!=='object'||Array.isArray(value)))throw new Error('Tdarr vrátil neplatný seznam nodů.');return value}
 function canonical(p,node){p=String(p||'').replaceAll('\\','/');for(const t of node.config?.pathTranslators||[]){const from=t.node.replaceAll('\\','/').replace(/\/$/,'');if(from&&(p===from||p.startsWith(from+'/')))return t.server+p.slice(from.length)}return p}
 function workerBusy(nodes,item){
@@ -437,6 +507,71 @@ const perform=createApprovalTransaction({
  log:logEvent,forgetPreviews,invalidateStats:()=>{statsCache=null},save,
  next:()=>void drainQueue().catch(e=>console.error('Replacement queue: '+e.message)),
 });
+function tvWorkerBusy(nodes,item,tv){
+ const paths=new Set([...tv.sourceRoots.map(root=>root.replaceAll('\\','/').replace(/\/$/,'')+'/'+item.relative),tv.tdarrReviewRoot.replaceAll('\\','/').replace(/\/$/,'')+'/'+item.reviewRelative]);
+ for(const node of Object.values(nodes||{}))for(const worker of Object.values(node.workers||{}))if(!worker.idle&&worker.file&&paths.has(canonical(worker.file,node).replaceAll('\\','/')))return true;
+ return false;
+}
+async function tvPauseDispatch(item){
+ const nodes=await tdarr('/api/v2/get-nodes');if(tvWorkerBusy(nodes,item,activeSettings.libraries.tv))throw new Error('Tdarr is actively processing this TV episode. Try again after it finishes.');
+ for(const node of Object.values(nodes))if(!node.nodePaused){await tdarr('/api/v2/update-node',{nodeID:node._id,nodeUpdates:{nodePaused:true}});state.pauses.push({name:node.nodeName,at:Date.now()});await save()}
+}
+const normalizeTdarrFolder=value=>typeof value==='string'?value.replaceAll('\\','/').replace(/\/+$/,''):'';
+function tvLibraryUnavailable(){return Object.assign(new Error('Configured TV Tdarr library is missing or changed.'),{code:'tv_tdarr_library_unavailable'});}
+async function validateTvLibraryRow(){
+ const tv=activeSettings?.libraries?.tv;if(!tv||typeof tv.libraryId!=='string'||!tv.libraryId||!Array.isArray(tv.sourceRoots))throw tvLibraryUnavailable();
+ const rows=await dbRows('librarysettingsjsondb'),matches=rows.filter(row=>row?._id===tv.libraryId);
+ if(matches.length!==1)throw tvLibraryUnavailable();
+ const folder=normalizeTdarrFolder(matches[0].folder),roots=tv.sourceRoots.map(normalizeTdarrFolder);
+ if(!folder||!roots.includes(folder)||rows.filter(row=>normalizeTdarrFolder(row?.folder)===folder).length!==1)throw tvLibraryUnavailable();
+ return matches[0];
+}
+async function tvVerifyPaused(item){const fresh=await refreshTvReviewItem(item.id);if(fresh.snapshot!==item.snapshot||fresh.settingsGeneration!==item.settingsGeneration||fresh.flowProofHash!==item.flowProofHash||fresh.jobEvidenceHash!==item.jobEvidenceHash||fresh.seriesId!==item.seriesId||fresh.episodeFileId!==item.episodeFileId||JSON.stringify(fresh.episodeIds)!==JSON.stringify(item.episodeIds))throw new Error('TV files, binding, flow evidence or applied settings changed before commit.');const nodes=await tdarr('/api/v2/get-nodes');if(tvWorkerBusy(nodes,item,activeSettings.libraries.tv)||Object.values(nodes).some(node=>!node.nodePaused))throw new Error('Tdarr dispatch is no longer safely paused.');const evidence=tvReviewSessions.approval(item.id,item.snapshot,item.reviewRevision),approval=tvWorkflowState.approvals[item.id];if(evidence.revision!==item.reviewRevision||!item.acceptedApproval||!approval||JSON.stringify(approval)!==JSON.stringify(item.acceptedApproval)||approval.reviewRevision!==evidence.revision||approval.snapshot!==item.snapshot||approval.settingsGeneration!==item.settingsGeneration||approval.flowProofHash!==item.flowProofHash||approval.jobEvidenceHash!==item.jobEvidenceHash||approval.seriesId!==item.seriesId||approval.episodeFileId!==item.episodeFileId||JSON.stringify(approval.episodeIds)!==JSON.stringify(item.episodeIds))throw new Error('TV review or approval changed before commit.');await validateTvLibraryRow();}
+const tvPerformCore=createApprovalTransaction({
+ getState:()=>tvWorkflowState,getConfig:()=>activeSettings?.libraries?.tv||{},recovery,reviewSessions:tvReviewSessions,
+ files:{media:()=>activeSettings.libraries.tv.mediaRoot,review:()=>activeSettings.libraries.tv.reviewRoot,safeFile,hash,snapshotMatches:(item,a,b)=>hash(a.fp+'|'+b.fp)===item.fileSnapshot,probe:file=>probe(FFPROBE,file),inspect:(a,b)=>{const result=inspectTvReviewPair(a,b);if(!result.ok)throw new Error(result.reason);return {...result,durationMismatch:false}},unlink:file=>fs.unlink(file),captureReceipt:async(root,relative)=>safeFile(root,relative+'.tdarr-receipt.json').catch(()=>null),cleanupReviewed:async()=>{},
+  replaceChecked:options=>replaceChecked({...options,retainOriginal:{root:activeSettings.libraries.tv.quarantineRoot,path:path.join(activeSettings.libraries.tv.quarantineRoot,path.basename(options.journal,'.json')+'-'+path.basename(options.original))}}),
+  newJournal:()=>path.join(DATA,'transactions','tv-'+crypto.randomUUID()+'.json'),readJournal:async journal=>JSON.parse(await fs.readFile(journal,'utf8').catch(()=>'{"phase":"unknown"}'))},
+ tdarr:{nodes:()=>tdarr('/api/v2/get-nodes'),workerBusy:(nodes,item)=>tvWorkerBusy(nodes,item,activeSettings.libraries.tv),pauseDispatch:tvPauseDispatch,verifyPaused:tvVerifyPaused,resume,libraries:()=>dbRows('librarysettingsjsondb'),validateLibrary:validateTvLibraryRow,resolveLibrary:()=>validateTvLibraryRow(),rescan:data=>tdarr('/api/v2/rescan-file',data)},
+ records:{publishApproval:async()=>{},recordRejection:async()=>{},recordDecision:async entry=>{logEvent('tv.action.audit',{library:'tv',id:entry.id,action:entry.action,outcome:entry.outcome,jobId:entry.jobId})}},
+ activity:{start:entry=>{active={...entry,library:'tv'}},progress,measured,finish:()=>{const postCommitPending=active?.library==='tv'&&active.action==='approve'&&tvWorkflowState.history[0]?.id===active.id&&tvWorkflowState.history[0]?.status==='incomplete_refresh'&&tvWorkflowState.history[0]?.refresh==='pending';if(!postCommitPending)active=null;cache=null}},log:logEvent,forgetPreviews:async()=>{},invalidateStats:()=>{},save:async()=>{
+  const latest=tvWorkflowState.history[0];if(active?.library==='tv'&&active.action==='approve'&&latest?.id===active.id&&latest.action==='approve'&&latest.status==='success'&&Date.parse(latest.time)>=active.started){latest.status='incomplete_refresh';latest.refresh='pending';latest.warning=latest.tdarrRefreshFailed?'Installed; Tdarr metadata rescan failed.':latest.warning||'Installed; metadata refresh is pending.';}
+  await save();
+ },next:()=>{}
+});
+async function refreshTvSonarrSeries(seriesId){
+ if(!Number.isSafeInteger(seriesId)||seriesId<=0)throw Error('sonarr_command_mismatch');
+ const connection=activeSettings?.sonarr;if(!connection?.url||!connection.apiKey)throw Error('sonarr_response_unavailable');
+ const boundedJson=async(response,status)=>{
+  if(response.status!==status||response.redirected)throw Error('sonarr_response_unavailable');
+  const mime=response.headers.get('content-type')||'';if(!/^application\/json(?:\s*;|$)/i.test(mime)||!response.body)throw Error('sonarr_response_unavailable');
+  const declared=Number(response.headers.get('content-length'));if(Number.isFinite(declared)&&declared>256*1024)throw Error('sonarr_response_too_large');
+  const chunks=[];let size=0;for await(const chunk of response.body){size+=chunk.length;if(size>256*1024){await response.body.cancel();throw Error('sonarr_response_too_large')}chunks.push(Buffer.from(chunk))}
+  try{return JSON.parse(Buffer.concat(chunks,size).toString('utf8'))}catch{throw Error('sonarr_response_unavailable')}
+ };
+ const base=connection.url.replace(/\/$/,''),response=await fetch(base+'/api/v3/command',{method:'POST',redirect:'error',headers:{'content-type':'application/json','X-Api-Key':connection.apiKey},body:JSON.stringify({name:'RescanSeries',seriesId}),signal:AbortSignal.timeout(7000)});
+ const commandRecord=await boundedJson(response,201);if(!Number.isSafeInteger(commandRecord?.id)||commandRecord.id<=0||commandRecord.name!=='RescanSeries'||commandRecord.body?.seriesId!==seriesId)throw Error('sonarr_command_mismatch');
+ const deadline=Date.now()+20000;
+ while(Date.now()<deadline){await new Promise(resolve=>setTimeout(resolve,500));const status=await fetch(base+'/api/v3/command/'+commandRecord.id,{redirect:'error',headers:{'X-Api-Key':connection.apiKey},signal:AbortSignal.timeout(5000)});const value=await boundedJson(status,200);if(value.id!==commandRecord.id||value.name!=='RescanSeries'||value.body?.seriesId!==seriesId)throw Error('sonarr_command_mismatch');if(value.status==='completed'){if(value.result==='successful')return {state:'completed',commandId:commandRecord.id};throw Error('sonarr_command_unsuccessful');}if(['failed','aborted','cancelled','orphaned'].includes(value.status))throw Error('sonarr_command_unsuccessful');}
+ return {state:'pending',commandId:commandRecord.id};
+}
+async function performTvInstall(item){
+ const outcome=await tvPerformCore('approve',item);
+ if(outcome.status!=='incomplete_refresh'||outcome.refresh!=='pending')return outcome;
+ const tdarrFailed=!!outcome.tdarrRefreshFailed;active={id:item.id,action:'approve',library:'tv',stage:'Refreshing Sonarr series metadata',started:Date.now()};
+ try{
+  const refresh=await refreshTvSonarrSeries(item.seriesId);outcome.refresh=refresh.state;outcome.refreshCommandId=refresh.commandId;
+  if(refresh.state==='pending')outcome.warning='Installed; Sonarr series rescan remains pending.';
+  else if(!tdarrFailed){outcome.status='success';outcome.warning=undefined;}
+  if(tdarrFailed){outcome.status='incomplete_refresh';outcome.tdarrRefresh='failed';outcome.warning='Installed; Tdarr metadata rescan failed.';}else outcome.tdarrRefresh='completed';
+ }catch{outcome.status='incomplete_refresh';outcome.refresh='failed';outcome.warning='Installed; Sonarr series metadata refresh failed.';if(tdarrFailed)outcome.tdarrRefresh='failed';}
+ finally{
+  state.tvReview.history=tvWorkflowState.history;const saved=tvWorkflowState.history.find(entry=>entry.id===item.id&&entry.action==='approve');if(saved)Object.assign(saved,{status:outcome.status,refresh:outcome.refresh,refreshCommandId:outcome.refreshCommandId,tdarrRefresh:outcome.tdarrRefresh,warning:outcome.warning});
+  try{await save()}catch{logEvent('tv.refresh.persist_failed',{id:item.id});}
+  active=null;
+ }
+ return outcome;
+}
 async function performBatch(items){
   batchRunning=true;
   state.batch={id:crypto.randomUUID(),status:'running',total:items.length,finished:0,failed:0,started:new Date().toISOString(),results:[],remaining:items.map(x=>({id:x.id,title:x.title}))};
@@ -460,8 +595,9 @@ const authTimer=setInterval(()=>{pruneAuthAttempts(authAttempts);if(pruneSession
 // Getters/setters keep the module variables above authoritative, so the scan,
 // transaction and preview code shares exactly the state the routes change.
 const ctx={
- ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,recoveryAttention,quarantineDelete,diagnosticExport,recoverySafeRestore,installedAssessment,tdarrHandoff,transcodeRetry,artwork,reviewSessions,previewPairs,previewPlans,previewAttempts,sharedSettings,sonarrSourceInspection,sonarrResultInspection,tvDiscovery,
+ ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,recoveryAttention,quarantineDelete,diagnosticExport,recoverySafeRestore,installedAssessment,tdarrHandoff,transcodeRetry,artwork,reviewSessions,tvReviewSessions,tvWorkflowState,refreshTvReviewItem,tvStrictBlockReason,performTvInstall,previewPairs,previewPlans,previewAttempts,previewIdentity,previewVersion,previewVersionFor,previewPreparation,planPreviewItem,prepareTvPreviewPlan,sharedSettings,sonarrSourceInspection,sonarrResultInspection,tvDiscovery,
  get config(){return config},set config(value){config=value},
+ get tvSettings(){return activeSettings?.libraries?.tv??null},safeFile,validateTvLibrary:validateTvLibraryRow,
  get previewSettings(){return previewSettings},set previewSettings(value){previewSettings=value},
  get state(){return state},
  get REVIEW(){return REVIEW},
@@ -488,10 +624,11 @@ function assessInvalidation(candidate){
 // Without a level (an adopted ambiguous commit) everything is cleared, as before levels existed.
 let pendingInvalidation='all';
 const activateSettings=(value,invalidation={level:'all'})=>{
- const tvModeBefore=tvDiscovery.mode();
- activeSettings=value;config=value.review;applyConfig();pendingInvalidation=invalidation.level;
+ const tvModeBefore=tvDiscovery.mode(),tvGenerationBefore=activeSettings?.generation;
+ activeSettings={...value,generation:invalidation.generation??value.generation};config=value.review;applyConfig();pendingInvalidation=invalidation.level;
  // Turning TV discovery on or off changes which result files the movie list owns.
  if(tvDiscovery.mode()!==tvModeBefore){cache=null;cacheAt=0;}
+ if(tvGenerationBefore!==value.generation){tvWorkflowState.items={};tvWorkflowState.reviewSessions={};tvWorkflowState.approvals={};state.tvReview.reviewSessions=tvWorkflowState.reviewSessions;state.tvReview.approvals=tvWorkflowState.approvals;}
  if(invalidation.level==='all'){statsCache=null;state.items={};state.reviewSessions={};state.approvals={};cache=null;cacheAt=0;}
  if(invalidation.level!=='none'){previewPairs.clear();previewPlans.clear();previewAttempts.clear();}
  logEvent('settings.activated',{generation:invalidation.generation,invalidation:invalidation.level,fields:invalidation.fields,reviews:invalidation.cleared?.reviews,approvals:invalidation.cleared?.approvals});
@@ -512,7 +649,7 @@ const server=http.createServer(async(req,res)=>{
     }
     if(await login(ctx,req,res,url))return;
     if(url.pathname.startsWith('/api/')&&!authenticated(ctx,req))return respond(res,401,apiError('login_required'));
-    const kind=mutationKind(req.method,url.pathname);
+  const kind=mutationKind(req.method,url.pathname);
     if(kind){
       const blocked=busyFor(kind);
       // A replacement confirmed while another one runs is queued instead of refused (#155).
@@ -520,7 +657,7 @@ const server=http.createServer(async(req,res)=>{
       else if(blocked)return respond(res,409,apiError(['recovery','pauses'].includes(blocked)?'finish_action_or_recovery':'busy'));
       // Claim before any await, including draining previews or reading a body.
       // Review writes retain their existing revision-aware serialization queue.
-      if(kind!=='reviewSession'&&!request.queueOnly)mutationOwner=request.mutation={kind};
+      if((kind!=='reviewSession'||url.pathname.startsWith('/api/tv/'))&&!request.queueOnly)mutationOwner=request.mutation={kind};
       previewMutationHolds++;releasePreviewBackground=true;await previews.pauseBackground({wait:true});
     }
     for(const route of routes)if(await route(ctx,req,res,url,request))return;

@@ -116,11 +116,12 @@ test('TV receipt helper runs against synthetic files and never changes the sourc
   assert.equal(completed.outputFileObj._id,output);
   assert.deepEqual(await fs.readFile(output),await fs.readFile(working));
   const receipt=JSON.parse(await fs.readFile(`${output}.tdarr-receipt.json`,'utf8'));
-  assert.equal(receipt.version,1);
+  assert.equal(receipt.version,2);
   assert.equal(receipt.relative,relative);
   assert.equal(receipt.outputRelative,relative);
   assert.equal(receipt.jobId,'synthetic-current-job');
-  assert.deepEqual(Object.keys(receipt).sort(),['createdAt','jobId','output','outputRelative','relative','source','version'].sort());
+  assert.deepEqual(Object.keys(receipt).sort(),['createdAt','jobId','output','outputRelative','relative','source','strictProof','version'].sort());
+  assert.deepEqual(receipt.strictProof.profile,{id:'tv-review-staging-v1-template',version:1});assert.equal(receipt.strictProof.decode,'complete');assert.equal(receipt.strictProof.preservation,'passed');assert.equal(receipt.strictProof.stagedCopy,'verified');
   assert.deepEqual(Object.keys(receipt.source).sort(),['mtime','sample','size']);
   assert.deepEqual(Object.keys(receipt.output).sort(),['mtime','sample','size']);
   const job={_id:'synthetic-current-job',DB:'synthetic-library',status:'Transcode success',file:source,fileSizeStartGB:receipt.source.size/2**30,fileSizeEndGB:receipt.output.size/2**30};
@@ -131,8 +132,8 @@ test('TV receipt helper runs against synthetic files and never changes the sourc
   assert.equal(worker.status,0,'Review result worker must complete');
   const inspected=JSON.parse(worker.stdout);
   assert.equal(inspected.status,'present','Review result reader must accept the real file identity and v1 receipt');
-  assert.equal(matchReviewJob([job],{receipt,libraryId:'synthetic-library',sourceRoots:[sourceRoot],relative,sourceBytes:receipt.source.size,outputBytes:receipt.output.size}),job);
-  assert.throws(()=>matchReviewJob([job],{receipt:{...receipt,jobId:'different-job'},libraryId:'synthetic-library',sourceRoots:[sourceRoot],relative,sourceBytes:receipt.source.size,outputBytes:receipt.output.size}),ReviewJobMatchError);
+  assert.equal(matchReviewJob([job],{receipt,receiptVersions:[1,2],libraryId:'synthetic-library',sourceRoots:[sourceRoot],relative,sourceBytes:receipt.source.size,outputBytes:receipt.output.size}),job);
+  assert.throws(()=>matchReviewJob([job],{receipt:{...receipt,jobId:'different-job'},receiptVersions:[1,2],libraryId:'synthetic-library',sourceRoots:[sourceRoot],relative,sourceBytes:receipt.source.size,outputBytes:receipt.output.size}),ReviewJobMatchError);
  }finally{
   await fs.rm(temp,{recursive:true,force:true});
  }

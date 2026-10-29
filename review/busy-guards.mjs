@@ -77,6 +77,9 @@ export function mutationKind(method,pathname){
  if(/^\/api\/recovery\/cases\/[a-f0-9]{24}\/handoff$/.test(pathname))return 'replace';
  // The one Review retry of a failed replacement transcode (#232).
  if(/^\/api\/recovery\/cases\/[a-f0-9]{24}\/retry$/.test(pathname))return 'replace';
+ const tvAction=/^\/api\/tv\/[a-f0-9]{24}\/(review-session|approval|install)$/.exec(pathname)?.[1];
+ if(tvAction==='review-session'||tvAction==='approval')return 'reviewSession';
+ if(tvAction==='install')return 'approve';
  const action=/^\/api\/items\/[a-f0-9]{24}\/(approve|reject|replace|recheck|review-session|approval)$/.exec(pathname)?.[1];
  // Approval without replacement writes review state only, like a saved review.
  return action==='review-session'||action==='approval'?'reviewSession':action||null;

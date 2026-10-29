@@ -7,7 +7,7 @@ test('every mutating route has an explicit concurrency policy',()=>{
  // Apply owns its independent asynchronous coordinator; cancel must remain available while it waits.
  assert.equal(mutationKind('POST','/api/shared-settings/apply'),null);assert.equal(mutationKind('POST','/api/shared-settings/cancel'),null);
  const id='a'.repeat(24);
- const routes={settings:['/api/settings','/api/settings/test'],radarrSettings:['/api/radarr/settings','/api/radarr/settings/test'],previewSettings:['/api/preview-settings'],batch:['/api/approve-batch'],restore:[`/api/radarr/requests/${id}/restore`],reviewSession:[`/api/items/${id}/review-session`,`/api/items/${id}/approval`]};
+ const routes={settings:['/api/settings','/api/settings/test'],radarrSettings:['/api/radarr/settings','/api/radarr/settings/test'],previewSettings:['/api/preview-settings'],batch:['/api/approve-batch'],restore:[`/api/radarr/requests/${id}/restore`],reviewSession:[`/api/items/${id}/review-session`,`/api/items/${id}/approval`,`/api/tv/${id}/review-session`,`/api/tv/${id}/approval`],approve:[`/api/tv/${id}/install`]};
  for(const action of ['approve','reject','replace','recheck'])routes[action]=[`/api/items/${id}/${action}`];
  routes.deferral=[`/api/recovery/cases/${id}/defer`,`/api/recovery/cases/${id}/defer/reopen`];
  routes.replace.push(`/api/recovery/cases/${id}/replace-source`);

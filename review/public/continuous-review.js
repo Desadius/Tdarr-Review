@@ -1,5 +1,6 @@
 // Single pass over three excerpts: the image fills the workspace and the checks, prompts and decisions are an overlay
 // driven by keys. Playback never confirms anything; every check is one explicit key press or click (docs/GUIDED-COMPARISON.md).
+import {translateAudioTrackLabel} from './i18n.js?v=__APP_VERSION__';
 export const SEGMENT_SYNC=Object.freeze(['syncStart','syncMiddle','syncEnd']);
 const SEGMENT_TITLES=['Začátek filmu','Střed filmu','Konec filmu'];
 const CHIP_KEYS=[['image','1','Obraz'],['audio','2','Zvuk'],['sync','3','Synchronizace']];
@@ -20,7 +21,7 @@ const editable=target=>!!target?.isContentEditable||!!target?.closest?.('input:n
 const clock=value=>{const seconds=Math.max(0,Math.floor(Number(value)||0)),h=Math.floor(seconds/3600),m=Math.floor(seconds%3600/60),s=seconds%60;return (h?h+':'+String(m).padStart(2,'0'):String(m))+':'+String(s).padStart(2,'0')};
 
 export function mountContinuousReview(host,{item,session,hdrRequired=false,tr=x=>x,openGuidedComparison,playerOptions={},formatBytes=x=>String(x),
- onConfirm=()=>{},onUnconfirm=()=>{},onDevice=()=>{},onNote=()=>{},onSaveNote=async()=>{},onDefer=async()=>{},onReject=()=>{},onApprove=()=>{},onApproveOnly=()=>{},onNext=()=>{},onChrome=()=>{},onScope=()=>{},onComparison=()=>{},onPreparation=()=>{},onExternalReview=()=>{}}={}){
+ onConfirm=()=>{},onUnconfirm=()=>{},onDevice=()=>{},onNote=()=>{},onSaveNote=async()=>{},onDefer=async()=>{},onReject=()=>{},onApprove=()=>{},onApproveOnly=()=>{},onNext=()=>{},onChrome=()=>{},onScope=()=>{},onComparison=()=>{},onPreparation=()=>{},onExternalReview=()=>{},capabilities={reject:true,next:true,approveReplace:true}}={}){
  const doc=host.ownerDocument||document;
  const make=(tag,cls,text)=>{const node=doc.createElement(tag);if(cls)node.className=cls;if(text!==undefined)node.textContent=tr(text);return node};
  const action=(label,key,fn,cls='secondary')=>{const node=make('button',cls);node.type='button';if(key)node.append(make('kbd','',key));node.append(make('span','',label));node.setAttribute('aria-label',tr(label)+(key?' ('+key+')':''));node.onclick=fn;return node};
@@ -30,14 +31,14 @@ export function mountContinuousReview(host,{item,session,hdrRequired=false,tr=x=
  const corner=make('div','single-pass-corner'),saved=make('output','single-pass-saved');saved.setAttribute('aria-live','polite');
  corner.append(saved,action('Stopy a časy','T',()=>toggleOptions()),action('Detail filmu','',()=>onChrome(true)),action('Nápověda','?',()=>setHelp(true)));
  const legend=make('p','single-pass-legend');legend.setAttribute('aria-hidden','true');
- for(const [key,label]of [['Space','přehrát'],['A','zvuk'],['W','čára'],['[ ]','úsek'],['1 2 3','potvrdit'],['Enter','dál'],['R','znovu'],['X','problém'],['?','nápověda']])legend.append(make('kbd','',key),make('span','',label));
+ for(const [key,label]of [['Space','přehrát'],['A','zvuk'],['W','čára'],['[ ]','úsek'],['1 2 3','potvrdit'],['Enter','dál'],['R','znovu'],['X','problém'],...(capabilities.reject?[['Z','zamítnout']]:[]),['?','nápověda']])legend.append(make('kbd','',key),make('span','',label));
  const prompt=make('div','single-pass-prompt');prompt.setAttribute('role','dialog');prompt.setAttribute('aria-modal','false');prompt.hidden=true;
  const help=make('div','single-pass-help');help.setAttribute('role','dialog');help.setAttribute('aria-label',tr('Nápověda k posouzení'));help.hidden=true;
  root.append(stage,hud,corner,legend,prompt,help);host.replaceChildren(root);
  let state={session,baseline:session,allowed:true,saving:false,conflict:false,dirty:false,revision:0};
  let segment=0,overlay='none',hidden=false,dead=false,playback={status:'idle'},deviceInput=null;
  const tracks=playerOptions.tracks;
- const trackLabel=(list,index)=>list?.find(track=>track.index===index)?.label||(Number.isInteger(index)?String(index):'—');
+ const trackLabel=(list,index)=>translateAudioTrackLabel(list?.find(track=>track.index===index)?.label||(Number.isInteger(index)?String(index):'—'),tr);
  const pairText=()=>{const scope=state.session.scope||{};return trackLabel(tracks?.original,scope.originalIndex)+' ↔ '+trackLabel(tracks?.review,scope.reviewIndex)};
  const excerpts=()=>state.session.comparison?.excerpts||playerOptions.comparison?.excerpts||[0,0,0];
  const checkKey=name=>name==='sync'?SEGMENT_SYNC[segment]:name;
@@ -96,7 +97,7 @@ export function mountContinuousReview(host,{item,session,hdrRequired=false,tr=x=
    title.textContent=tr('Co je špatně?');
    const label=make('label','workflow-field','Poznámka k posouzení'),note=make('textarea');note.rows=3;note.maxLength=2000;note.value=state.session.note||'';note.placeholder=tr('Co jsi zjistil nebo co zbývá ověřit?');note.oninput=()=>{onNote(note.value);renderDeferState()};label.append(note);prompt.append(label);
    const defer=action('Odložit posouzení','',()=>{if(!defer.disabled)void onDefer()});defer.dataset.singlePassDefer='';
-   row.append(defer,action('Uložit poznámku','',()=>void onSaveNote()),action('Zamítnout převod','Z',()=>onReject(),'reject'),action('Zpět','Esc',()=>show(after())));
+   row.append(defer,action('Uložit poznámku','',()=>void onSaveNote()));if(capabilities.reject)row.append(action('Zamítnout převod','Z',()=>onReject(),'reject'));row.append(action('Zpět','Esc',()=>show(after())));
    void Promise.resolve().then(()=>note.focus?.());
   }else if(overlay==='decision'){
    title.textContent=tr('Rozhodnutí');
@@ -105,17 +106,18 @@ export function mountContinuousReview(host,{item,session,hdrRequired=false,tr=x=
    prompt.append(facts);
    if(hdrRequired){const hdr=action('HDR/Dolby Vision ověřeno na zařízení','D',()=>{if(state.session.checks.hdr!==true)onConfirm(['hdr'],segment);render()},'single-pass-chip');hdr.dataset.chip='hdr';hdr.append(make('span','',' · '+(state.session.device||'')));prompt.append(hdr)}
    if(!item.canApproveDuration){const only=action('Schválit','S',()=>{if(!only.disabled)onApproveOnly()},'primary');only.dataset.workflowApproveOnly='';row.append(only)}
-   const approve=action(item.canApproveDuration?'Posoudit rozdíl délky':'Schválit a nahradit','Shift+S',()=>{if(!approve.disabled)onApprove()},item.canApproveDuration?'primary':'secondary');approve.dataset.workflowApprove='';
-   row.append(approve,action('Zamítnout','Z',()=>onReject(),'reject'),action('Další film','N',()=>onNext()),action('Problém','X',()=>show('problem')));
+   if(capabilities.approveReplace){const approve=action(item.canApproveDuration?'Posoudit rozdíl délky':'Schválit a nahradit','Shift+S',()=>{if(!approve.disabled)onApprove()},item.canApproveDuration?'primary':'secondary');approve.dataset.workflowApprove='';row.append(approve)}
+   if(capabilities.reject)row.append(action('Zamítnout','Z',()=>onReject(),'reject'));if(capabilities.next)row.append(action('Další film','N',()=>onNext()));row.append(action('Problém','X',()=>show('problem')));
   }
   prompt.append(row);render();
  }
  function renderDeferState(){const defer=prompt.querySelector('[data-single-pass-defer]');if(defer)defer.disabled=!state.allowed||!String(state.session.note||'').trim()}
  function renderHelp(){
   help.replaceChildren(make('h3','','Nápověda k posouzení'),action('Zavřít','Esc',()=>setHelp(false)));
-  for(const text of ['Tři úseky ze začátku, středu a konce filmu se přehrají za sebou, každý jednou. Po každém úseku potvrdíš, co jsi ověřil. Přehrání ani technická kontrola nic nepotvrzuje.','Obraz a zvuk stačí potvrdit jednou, synchronizaci v každém úseku. Každé potvrzení se hned uloží a váže se ke zvoleným stopám a času úseku. Při dalším otevření pokračuješ prvním nepotvrzeným úsekem.','Schválit uloží rozhodnutí bez nahrazení. Schválit a nahradit otevře potvrzení nahrazení. Zamítnutí odstraní jen review kopii.','Meze náhledu: ztrátový SDR náhled a mono zvuk nedokládají původní rozlišení, prostorový mix ani HDR. HDR/Dolby Vision ověř na pojmenovaném vhodném zařízení.'])help.append(make('p','details',text));
+  const explanation=['Tři úseky ze začátku, středu a konce filmu se přehrají za sebou, každý jednou. Po každém úseku potvrdíš, co jsi ověřil. Přehrání ani technická kontrola nic nepotvrzuje.','Obraz a zvuk stačí potvrdit jednou, synchronizaci v každém úseku. Každé potvrzení se hned uloží a váže se ke zvoleným stopám a času úseku. Při dalším otevření pokračuješ prvním nepotvrzeným úsekem.','Schválit uloží rozhodnutí bez nahrazení.', 'Meze náhledu: ztrátový SDR náhled a mono zvuk nedokládají původní rozlišení, prostorový mix ani HDR. HDR/Dolby Vision ověř na pojmenovaném vhodném zařízení.'];
+  if(capabilities.approveReplace)explanation.splice(3,0,'Schválit a nahradit otevře potvrzení nahrazení.');if(capabilities.reject)explanation.splice(capabilities.approveReplace?4:3,0,'Zamítnutí odstraní jen review kopii.');for(const text of explanation)help.append(make('p','details',text));
   const list=make('ul');
-  for(const [key,label]of [['Space / K','Přehrát nebo pozastavit'],['A','Zvuk originál ↔ převod'],['W','Dělicí čára: 50 %, automaticky, vypnuto'],['← / →','Posunout o 1 sekundu'],['[ / ]','Předchozí nebo další úsek'],['1 · 2 · 3','Potvrdit obraz, zvuk, synchronizaci úseku'],['Enter','Potvrdit nepotvrzené v úseku a pokračovat'],['R','Přehrát úsek znovu'],['X','Problém: poznámka, odložení, zamítnutí'],['S','Schválit'],['Shift+S','Schválit a nahradit'],['Z','Zamítnout'],['N','Další film'],['T','Stopy a časy'],['F','Celá obrazovka'],['M','Ztlumit'],['H','Skrýt nebo zobrazit překryv'],['?','Nápověda'],['Esc','Zavřít; potom zobrazit detail filmu'],...(hdrRequired?[['D','Potvrdit HDR/Dolby Vision na zařízení']]:[])]){const li=make('li');li.append(make('kbd','',key),make('span','',label));list.append(li)}
+  for(const [key,label]of [['Space / K','Přehrát nebo pozastavit'],['A','Zvuk originál ↔ převod'],['W','Dělicí čára: 50 %, automaticky, vypnuto'],['← / →','Posunout o 1 sekundu'],['[ / ]','Předchozí nebo další úsek'],['1 · 2 · 3','Potvrdit obraz, zvuk, synchronizaci úseku'],['Enter','Potvrdit nepotvrzené v úseku a pokračovat'],['R','Přehrát úsek znovu'],['X',capabilities.reject?'Problém: poznámka, odložení, zamítnutí':'Problém: poznámka nebo odložení'],['S','Schválit'],...(capabilities.approveReplace?[['Shift+S','Schválit a nahradit']]:[]),...(capabilities.reject?[['Z','Zamítnout']]:[]),...(capabilities.next?[['N','Další film']]:[]),['T','Stopy a časy'],['F','Celá obrazovka'],['M','Ztlumit'],['H','Skrýt nebo zobrazit překryv'],['?','Nápověda'],['Esc','Zavřít; potom zobrazit detail filmu'],...(hdrRequired?[['D','Potvrdit HDR/Dolby Vision na zařízení']]:[])]){const li=make('li');li.append(make('kbd','',key),make('span','',label));list.append(li)}
   help.append(list);
  }
  function render(){
@@ -152,8 +154,8 @@ export function mountContinuousReview(host,{item,session,hdrRequired=false,tr=x=
    case 'r':play(segment);break;
    case 'x':show('problem');break;
    case 's':if(overlay==='decision'){const node=prompt.querySelector(event.shiftKey?'[data-workflow-approve]':'[data-workflow-approve-only]');if(node&&!node.disabled)node.onclick()}break;
-   case 'z':onReject();break;
-   case 'n':onNext();break;
+   case 'z':if(capabilities.reject)onReject();else return;break;
+   case 'n':if(capabilities.next)onNext();else return;break;
    case 't':toggleOptions();break;
    case 'f':if(doc.fullscreenElement===root)void doc.exitFullscreen?.();else void root.requestFullscreen?.()?.catch?.(()=>{});break;
    case 'm':void command('mute');break;

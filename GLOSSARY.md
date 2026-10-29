@@ -41,12 +41,20 @@ The device, inode, size and modification times that show a file on disk is still
 _Avoid_: fingerprint, stamp, Recovery case ID (a different value derived from the path and the file identity by `caseId()` in `recovery/policy.mjs`)
 
 **TV library**:
-The optional second library Review knows about, with its own media, result and quarantine paths, Tdarr library and Sonarr root. It never shares a movie id or movie record, and nothing is approved or replaced in it yet.
+The optional second library Review knows about, with its own media, result and retained-original quarantine paths, Tdarr library and Sonarr root. Its items, reviews and decisions are separate from movie IDs and records.
 _Avoid_: TV plan (that is only its saved settings), series library
 
 **Discovery mode**:
-The `libraries.tv.mode` value `discovery` (the other value is `off`, the default). Review then scans and shows TV results read-only; it never approves, rejects, replaces or retains one and never writes to Tdarr or Sonarr.
-_Avoid_: enabled, TV processing (`enabled: true` stays refused)
+The `libraries.tv.mode` value `discovery`. Review scans and shows TV results read-only; it never approves, rejects, installs or retains one.
+_Avoid_: strict review
+
+**Strict TV review**:
+An explicit manual assessment and decision for one exactly bound supported TV source/result pair. Installation is a separate action and keeps the original in TV quarantine.
+_Avoid_: automatic approval, batch review
+
+**Retained TV original**:
+The verified original copy kept in the dedicated TV quarantine after installation, with its durable transaction record.
+_Avoid_: backup (which could imply temporary retention)
 
 **Bound TV result**:
 A TV result whose receipt names a successful Tdarr job in the TV library, whose source maps exactly through the TV source paths, whose files still match the receipt and for which Sonarr has exactly one episode file with its episodes. Nothing is guessed from names.

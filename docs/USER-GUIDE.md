@@ -264,17 +264,25 @@ Before restarting or updating, wait for an original decode or a mutating Recover
 
 Transaction recovery handles Review's unfinished file-exchange transactions separately from Recovery. Those transactions still require inspection and block further changes. Recovery warnings also appear in the container health log without making Review unhealthy; see [Container health](OPERATIONS.md#container-health).
 
-## TV series (discovery mode)
+## TV series (discovery and strict review)
 
-The optional TV library has a mode, set under the TV paths in the shared settings: **Off** (the default) or **Discovery (read-only)**. Like every setting it is saved as a draft, tested and then applied; see [Add TV paths](ADD-TV-PATHS.md). In Off mode Review does not scan TV results and never contacts Sonarr for them, and no **TV series** entry appears in the navigation.
+The optional TV library has a mode under shared settings: **Off** (the default), **Discovery (read-only)** or **Strict review**. Like every setting it is saved as a draft, tested and then applied; see [Add TV paths](ADD-TV-PATHS.md). In Off mode Review does not scan TV results or contact Sonarr for them, and no **TV series** entry appears in the navigation.
 
-In Discovery mode the **TV series** section lists the TV results Tdarr has written, as series, then season, then episode, with the number of files and episodes and the sizes of originals and results. It is read-only: **there is no approve, reject, replace or retain action for a TV result**, and nothing here changes a library, Tdarr or Sonarr. Approval of TV results comes later.
+In Discovery mode the **TV series** section lists the TV results Tdarr has written, as series, then season, then episode, with the number of files and episodes and the sizes of originals and results. It remains read-only: there is no assessment, approval or installation action, and nothing here changes a library, Tdarr or Sonarr.
 
 A result is **bound** only when all of these hold: a conversion receipt with a Tdarr job ID lies next to it; that job is "Transcode success" in the TV library; the source maps exactly through the TV source paths; the receipt still matches both files; and Sonarr has exactly one episode file for that source path, with its episodes. Multi-episode files, specials (season 0), anime (absolute numbers) and daily shows (air dates) show the numbering Sonarr holds, without mixing them up. Names of folders and files are never used to guess a match.
 
 Anything else is **unbound**, listed apart from the series with one of these reasons: the receipt is missing or has no job ID; the job is unknown, in another library, not successful or does not match the file sizes; the source does not map through the TV source paths; the files changed since the receipt; the result is still being written; two results claim the same source or job; Sonarr has no series, no episode file, several episode files, or an episode file without episodes. If Sonarr is not configured, unavailable, too slow or answers inconsistently, the affected results are shown as **binding not verified** and are not treated as bound. Review reads Sonarr's series list once per scan (Sonarr cannot filter it by path) and then asks only about the series the found results belong to, with read-only requests and a time limit (a hung Sonarr delays the section by about 30 seconds at most), and keeps the answer in memory with its time of observation.
 
-Turning the mode back to Off stops scanning and Sonarr reads. While Discovery is on, the movie overview no longer lists the files under the TV result subfolders; every movie, review, approval and history record is left as it was.
+Turning the mode back to Off stops scanning and Sonarr reads. While Discovery or Strict review is on, the movie overview no longer lists files under the TV result subfolders; movie reviews, approvals and history remain separate.
+
+### Strict review
+
+Strict review explicitly enables manual assessment for a narrow supported pair: exactly one Sonarr episode, `.mkv`, progressive 8-bit SDR Matroska, and a v2 receipt from the strict Tdarr flow. The receipt is written only after the flow finishes its full decode, track/flag/chapter preservation checks and verified staging copy. V1 receipts stay visible in Discovery but are blocked from strict review. Multi-episode results, HDR, unknown technical facts and unsupported formats show a reason and cannot be assessed or installed.
+
+Choose **Assess** to open the normal three-excerpt guided A/B comparison and external-player option. The checklist saves explicit confirmations. **Approve** records the decision only and leaves both files unchanged. **Install approved result** is a separate action. Before commit Review rechecks the current settings, Sonarr binding, Tdarr job, files and flow proof, pauses Tdarr, and stores a verified copy of the original in the separate TV quarantine. Every installed original is retained there indefinitely. The quarantine must be on the same filesystem as the media and have enough verified free space for both the result copy and retained original. Unknown capacity or ownership/mode preservation blocks installation.
+
+After the file is installed, Review updates Tdarr's exact file record and requests a Sonarr `RescanSeries` for the positive series ID. Sonarr rescans that series' files, not only the episode that changed. Review waits for bounded command readback; a queued, failed, or interrupted command is reported as pending/incomplete. Restart does not repeat installation. No TV action calls Radarr.
 
 ## Statistics
 

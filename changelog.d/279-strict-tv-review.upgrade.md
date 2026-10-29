@@ -1,0 +1,1 @@
+- **Keep TV Off or in Discovery until the dedicated quarantine and v2 Tdarr flow are ready.** Existing v1 receipts remain visible as legacy records but are not eligible for Strict review. The v2 template contract differs from v1; review the documented compatibility impact before updating or importing a flow. No production flow import or update is part of this change.

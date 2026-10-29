@@ -1,6 +1,6 @@
 # Add TV paths
 
-This guide prepares an optional, inactive TV path plan in Review. The foundation checks configured paths and access. The optional **TV library mode** can additionally switch on read-only discovery (see below). Neither discovers anything that can be approved, replaced or retained: TV processing cannot be enabled until the separate safety safeguards are complete. An absent TV plan does not block movie review.
+This guide prepares the optional TV paths in Review. The TV library mode is **Off** by default, with read-only **Discovery** and an explicit **Strict review** mode. Strict review supports only the first documented one-episode SDR profile; do not infer support for other formats or layouts. An absent TV plan does not block movie review.
 
 The optional `libraries` field remains in the shared settings generation. Older builds may not understand TV path plans, so make a private backup of settings and the container template before applying a generation that includes one. Do not start an older build with the TV-extended `shared-settings.json`. Any rollback must preserve current state and journals; restore a configuration compatible with the older build only after Review is quiescent and the saved state has been manually reviewed. There is no safe automatic rollback for this change.
 
@@ -28,7 +28,7 @@ The shared settings document may include a top-level `libraries` object with an 
 }
 ```
 
-These values are paths as each service sees them. `enabled` remains `false`; the setting is reserved and does not turn on TV processing. `mode` is `off` (the default; an absent `mode` means off) or `discovery`. Tdarr on Windows may use paths such as `Z:/TV`, while Review sees `/media/tvshows` and Sonarr may see `/tv`. They are different namespaces. Matching strings or a shared host folder do not prove file identity or episode identity.
+These values are paths as each service sees them. `enabled` remains `false`; `mode` is `off` (the default; an absent `mode` means off), `discovery` or `strict-review`. Tdarr on Windows may use paths such as `Z:/TV`, while Review sees `/media/tvshows` and Sonarr may see `/tv`. They are different namespaces. Matching strings or a shared host folder do not prove file identity or episode identity.
 
 The common `/media` parent bind may already make both `/media/movies` and `/media/tvshows` visible. Check the actual contents and access using the container's configured UID 99 and GID 100. If a folder exists on the host but is missing inside Review, that is a Docker mount/access issue. If it is visible but the TV plan is empty, that is missing TV configuration. Resolve these as separate findings.
 
@@ -45,7 +45,7 @@ One shared mount is simplest where its full host scope is intended. Otherwise us
 | `reviewPrefixes` | Result prefixes used only for TV. Keep `TV` separate from the movie prefix `PROD-Movies`; never reuse the movie prefix for TV. |
 | `libraryId` | Tdarr TV library identifier, if known. It does not prove a result's episode identity. |
 | `sonarrRoot` | TV root as Sonarr sees it. |
-| `quarantineRoot` | Dedicated TV quarantine path, outside the TV originals root and on a compatible mounted filesystem. |
+| `quarantineRoot` | Dedicated TV quarantine path, separate from movie recovery quarantine and outside media, result and preview-cache roots. Originals are retained indefinitely. |
 | `reports` | Tdarr reports path for the TV plan. Keep Tdarr DB2, including WAL/SHM, and reports read-only. |
 
 The current movie result mapping `/review` may already expose `/review/PROD-Movies` and `/review/TV`. `/review/movies` in examples is not a required migration target. Preserve existing result paths and transactions while planning any future change.
@@ -58,7 +58,7 @@ The current movie result mapping `/review` may already expose `/review/PROD-Movi
 4. Preview each proposed mapping and check for overlap with movie originals, movie results, existing TV results, quarantine, application data and reports. Do not move or rename existing results as part of this path draft.
 5. Save the optional TV paths as a draft with processing disabled. Use **Check library paths** to inspect the saved revision. This GET-only check reads path metadata and permissions; it creates no files and makes no Tdarr or Sonarr API calls. It cannot guarantee a future write or transaction, and it cannot prove that paths refer to the same episode.
 6. Resolve each reported issue by checking the actual mount and configured path. A folder visible under `/media` can still have no corresponding TV configuration. A configured path can also be missing because its Docker bind is absent.
-7. Keep TV processing inactive. Episode identity, source/result matching and every future write or replacement require their own safeguards and fresh access checks.
+7. Keep the TV mode Off or Discovery until the path, flow, and quarantine configuration is reviewed. Strict review is opt-in and only supports the single-episode profile below.
 
 Changing a bind in Unraid or Compose requires a manually reviewed container recreation coordinated with active work. Do not recreate the container during an approval, transaction, pending replacement, session or other active operation. A mapping edit requires manual review; this guide does not authorize deployment. Obtain separate explicit deployment authorization before changing a production container.
 
@@ -66,11 +66,19 @@ Keep the existing movie paths, pending transactions and review sessions intact. 
 
 ## Discovery mode
 
-`mode: "discovery"` makes Review scan the TV result folders and show each result in the **TV series** section, bound to its exact Tdarr job and Sonarr episode file or listed as unbound with a reason ([User guide](USER-GUIDE.md#tv-series-discovery-mode)). It is read-only: no approval, rejection, replacement or retention exists for TV results, and `enabled: true` is still refused.
+`mode: "discovery"` makes Review scan the TV result folders and show each result in the **TV series** section, bound to its exact Tdarr job and Sonarr episode file or listed as unbound with a reason ([User guide](USER-GUIDE.md#tv-series-discovery-and-strict-review)). It is read-only: no approval, installation or retention occurs, and `enabled: true` remains refused.
 
 - The settings are validated when saved: discovery needs `mediaRoot`, `reviewRoot`, `libraryId`, at least one `sourceRoots` entry and `sonarrRoot`. Sonarr's address and API key are the shared Sonarr settings. The mode takes effect only after the usual save, test and apply; switching back to `off` stops scanning and Sonarr reads.
 - Results are found under `reviewRoot`, in the `reviewPrefixes` subfolders (or the whole root when there are none). If `reviewRoot` is also the movie review root, the TV prefix must differ from every movie prefix; overlapping roots make the section report that it is unavailable instead of scanning. While discovery is on, the movie overview skips the TV prefixes.
 - Each result needs the Tdarr receipt (`<result>.tdarr-receipt.json`) with a `jobId` written by the TV flow. Without it the result stays unbound.
 - Sonarr's series folders, as Sonarr spells them, must lie under `sonarrRoot`; a result's relative path under `mediaRoot` must equal the relative path of exactly one Sonarr episode file under `sonarrRoot`.
 - Do not point the TV paths at real media for tests. Use synthetic files and a loopback Sonarr.
+
+## Strict review mode
+
+Strict review is a separate, explicit applied mode. Only one exactly bound episode in an `.mkv` file can be offered for review. The current profile accepts progressive 8-bit SDR Matroska with one video stream and matching supported source/result technical facts. The flow must have emitted a v2 receipt after full decode, preservation checks and verified staging. A legacy v1 receipt remains visible in discovery but is never accepted for strict review. Multi-episode files, HDR, unknown metadata, other containers and unsupported layouts remain visibly blocked.
+
+The review uses the shared three-excerpt guided A/B comparison and external-player option. Explicit approval records a decision only; installation is separate. Installation rechecks the binding, settings, job and v2 proof, pauses Tdarr, uses the shared durable replacement transaction, and retains the original indefinitely in `quarantineRoot`. Insufficient verified capacity blocks the operation. Keep that root outside every media, result, cache and Movie quarantine path and allow the configured Review user to create files there with the original owner, group and mode preserved.
+
+After installation Review rescans the affected Tdarr file and posts Sonarr `RescanSeries` with its positive series ID. Sonarr rescans that series' files, not only the installed episode. Review reports completion only after bounded command readback reaches `completed` with `successful`; queued, failed or interrupted metadata work remains pending/incomplete and never causes an installation replay. The command contract is source-verified and synthetic-tested; no installed Sonarr production version was probed.
 

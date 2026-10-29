@@ -7,7 +7,7 @@ const normalized=p=>String(p||'').replaceAll('\\','/');
 function jobBytes(gib){
   return typeof gib==='number'&&Number.isFinite(gib)&&gib>=0?Math.round(gib*2**30):null;
 }
-export function matchReviewJob(jobs,{receipt=null,libraryId='',sourceRoots,relative,sourceBytes,outputBytes}){
+export function matchReviewJob(jobs,{receipt=null,receiptVersions=[1],libraryId='',sourceRoots,relative,sourceBytes,outputBytes}){
   if(!Array.isArray(jobs))fail('INVALID_JOBS','Tdarr vrátil neplatný seznam úloh.');
   if(!Array.isArray(sourceRoots)||!sourceRoots.length||sourceRoots.some(r=>typeof r!=='string'||!r))fail('INVALID_ROOTS','Chybí zdrojové cesty pro přiřazení úlohy.');
   if(typeof relative!=='string'||relative.replaceAll('\\','/').split('/').some(x=>!x||x==='.'||x==='..'))fail('INVALID_PATH','Neplatná relativní cesta filmu.');
@@ -15,7 +15,7 @@ export function matchReviewJob(jobs,{receipt=null,libraryId='',sourceRoots,relat
   if(typeof libraryId!=='string')fail('INVALID_LIBRARY','Neplatná knihovna Tdarr.');
   let exactJobId=null;
   if(receipt!==null&&receipt!==undefined){
-    if(typeof receipt!=='object'||Array.isArray(receipt)||receipt.version!==1||receipt.relative!==relative)fail('INVALID_RECEIPT','Záznam převodu neodpovídá tomuto originálu.');
+    if(typeof receipt!=='object'||Array.isArray(receipt)||!Array.isArray(receiptVersions)||!receiptVersions.includes(receipt.version)||receipt.relative!==relative)fail('INVALID_RECEIPT','Záznam převodu neodpovídá tomuto originálu.');
     if(Object.hasOwn(receipt,'jobId')){
       if(typeof receipt.jobId!=='string'||!receipt.jobId.trim()||receipt.jobId!==receipt.jobId.trim())fail('INVALID_JOB_ID','Záznam převodu má neplatné ID úlohy Tdarr.');
       exactJobId=receipt.jobId;

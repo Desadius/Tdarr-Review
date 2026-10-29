@@ -13,14 +13,14 @@ export const sampleOf=bytes=>{
 export const LIBRARY='tv-library',SOURCE_ROOT='Z:\\Tdarr\\TV',SONARR_ROOT='Z:\\Sonarr\\TV',API_KEY='synthetic-tv-discovery-key';
 
 /** Writes one source, one result and its receipt; returns the matching Tdarr job. */
-export async function addTvResult({mediaRoot,reviewRoot,prefix='TV',relative,jobId,libraryId=LIBRARY,sourceRoot=SOURCE_ROOT,receipt:receiptOverrides={},job:jobOverrides={},ageMs=300000,withReceipt=true,sourceBytes,resultBytes}){
+export async function addTvResult({mediaRoot,reviewRoot,prefix='TV',relative,jobId,libraryId=LIBRARY,sourceRoot=SOURCE_ROOT,receipt:receiptOverrides={},job:jobOverrides={},ageMs=300000,withReceipt=true,receiptVersion=1,sourceBytes,resultBytes}){
  const sourcePath=path.join(mediaRoot,...relative.split('/')),resultPath=path.join(reviewRoot,prefix,...relative.split('/'));
  await fs.mkdir(path.dirname(sourcePath),{recursive:true});await fs.mkdir(path.dirname(resultPath),{recursive:true});
  sourceBytes??=Buffer.from('synthetic source '+relative+' '.repeat(40));resultBytes??=Buffer.from('synthetic result '+relative);
  await fs.writeFile(sourcePath,sourceBytes);await fs.writeFile(resultPath,resultBytes);
  const old=new Date(Date.now()-ageMs);await fs.utimes(resultPath,old,old);await fs.utimes(sourcePath,old,old);
  const [a,b]=await Promise.all([fs.stat(sourcePath),fs.stat(resultPath)]);
- const receipt={version:1,relative,outputRelative:relative,source:{size:a.size,mtime:Math.round(a.mtimeMs),sample:sampleOf(sourceBytes)},output:{size:b.size,mtime:Math.round(b.mtimeMs),sample:sampleOf(resultBytes)},jobId,createdAt:Date.now(),...receiptOverrides};
+ const receipt={version:receiptVersion,relative,outputRelative:relative,source:{size:a.size,mtime:Math.round(a.mtimeMs),sample:sampleOf(sourceBytes)},output:{size:b.size,mtime:Math.round(b.mtimeMs),sample:sampleOf(resultBytes)},jobId,createdAt:Date.now(),...(receiptVersion===2?{strictProof:{profile:{id:'tv-review-staging-v1-template',version:1},jobId,sourceIdentity:{dev:a.dev,ino:a.ino,ctime:a.ctimeMs},outputIdentity:{dev:b.dev,ino:b.ino,ctime:b.ctimeMs},preservation:'passed',decode:'complete',stagedCopy:'verified'}}:{}),...receiptOverrides};
  const receiptPath=resultPath+'.tdarr-receipt.json';
  if(withReceipt)await fs.writeFile(receiptPath,typeof receipt==='string'?receipt:JSON.stringify(receipt));
  const job={_id:jobId,DB:libraryId,file:sourceRoot+'\\'+relative.replaceAll('/','\\'),status:'Transcode success',fileSizeStartGB:a.size/2**30,fileSizeEndGB:b.size/2**30,start:1000,end:2000,...jobOverrides};
@@ -32,11 +32,19 @@ export const fileRecord=(id,seriesId,relative,extra={})=>({id,seriesId,path:SONA
 
 /** A loopback Sonarr v3 mock that records every request. `data` and the behaviour switches can change between calls. */
 export async function sonarrMock(data={series:[],files:{},episodes:{}}){
- const calls=[],mock={data,calls,delayMs:0,status:200,mixSeries:false};
+ const calls=[],commands=new Map(),mock={data,calls,commands,delayMs:0,status:200,mixSeries:false,autoCompleteCommands:true};
+ mock.pauseNext=pathname=>{let arrive,release;const reached=new Promise(resolve=>{arrive=resolve}),held=new Promise(resolve=>{release=resolve});mock.requestGate={pathname,arrive,held};return {reached,release:()=>release()}};
  const server=http.createServer(async(req,res)=>{
-  const url=new URL(req.url,'http://localhost');calls.push({method:req.method,path:url.pathname,query:url.search,key:req.headers['x-api-key']});
+  let raw='';for await(const chunk of req)raw+=chunk;const input=raw?JSON.parse(raw):null;
+  const url=new URL(req.url,'http://localhost');calls.push({method:req.method,path:url.pathname,query:url.search,key:req.headers['x-api-key'],input});
+  if(mock.requestGate?.pathname===url.pathname){const gate=mock.requestGate;mock.requestGate=null;gate.arrive();await gate.held;}
   if(mock.delayMs)await new Promise(resolve=>setTimeout(resolve,mock.delayMs));
   if(mock.status!==200){res.writeHead(mock.status);res.end('{}');return;}
+  if(req.method==='POST'&&url.pathname==='/api/v3/command'){
+   const command={id:commands.size+1,name:input?.name,body:{seriesId:input?.seriesId},status:'queued',result:'unknown'};commands.set(command.id,mock.autoCompleteCommands?{...command,status:'completed',result:'successful'}:command);
+   res.writeHead(201,{'content-type':'application/json'});res.end(JSON.stringify(command));return;
+  }
+  const commandId=Number(url.pathname.split('/').at(-1));if(req.method==='GET'&&/^\/api\/v3\/command\/\d+$/.test(url.pathname)&&commands.has(commandId)){res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify(commands.get(commandId)));return;}
   const seriesId=Number(url.searchParams.get('seriesId'));
   const value=url.pathname==='/api/v3/series'?mock.data.series:url.pathname==='/api/v3/episodefile'?(mock.mixSeries?[{id:999,seriesId:seriesId+1000,path:'/x'}]:mock.data.files[seriesId]):url.pathname==='/api/v3/episode'?mock.data.episodes[seriesId]:null;
   if(!value){res.writeHead(404);res.end('{}');return;}

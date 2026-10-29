@@ -1,7 +1,9 @@
-// TV series section (#271): read-only discovery of TV results, series → season → episode.
-// There is deliberately no approve, reject, replace or retain control anywhere in this module.
-import {tr} from '/i18n.js?v=__APP_VERSION__';
+// TV series discovery and explicit strict-review workspace, series → season → episode.
+// Discovery stays read-only; only supported strict-review rows open the separate assessment.
+import {tr,translateAudioTrackLabel} from '/i18n.js?v=__APP_VERSION__';
 import {$,el,fmt,date,button} from '/ui-kit.js?v=__APP_VERSION__';
+import {mountReviewWorkflow} from '/review-workflow.js?v=__APP_VERSION__';
+import {openComparison,openAudioComparison,openGuidedComparison} from '/comparison.js?v=__APP_VERSION__';
 
 const unboundReasons={
  receipt_missing:'Vedle výsledku chybí záznam převodu.',receipt_invalid:'Záznam převodu je neplatný nebo neobsahuje ID úlohy Tdarru.',
@@ -28,12 +30,18 @@ export function episodeLabel(episode,seriesType){
 const seasonTitle=season=>season===null?tr('Sezóna není určena'):season===0?tr('Speciály (sezóna 0)'):tr('Sezóna')+' '+season;
 const counts=(results,episodes)=>tr('Soubory')+': '+results+' · '+tr('Epizody')+': '+episodes;
 
-function resultRow(result,seriesType){
+const strictBlocked={multi_episode_file:'Jeden soubor obsahuje více epizod.',unsupported_format:'Podporovány jsou pouze soubory Matroska .mkv.',strict_flow_evidence_missing:'Chybí důkaz dokončené přísné kontroly Tdarru.',flow_evidence_invalid:'Důkaz přísné kontroly Tdarru je neplatný.',binding_not_verified:'Vazba na jednu epizodu není ověřená.',files_changed:'Soubory se od poslední kontroly změnily.',tv_technical_facts_unavailable:'Technické údaje zdroje nebo výsledku chybí či nejsou úplné.',tv_unsupported_video_stream_count:'Podporován je právě jeden obrazový stream bez přiloženého obrázku.',tv_unsupported_container_or_scan:'Podporováno je pouze progresivní video v kontejneru Matroska.',tv_unsupported_bit_depth:'Podporováno je pouze 8bitové SDR video.',tv_hdr_or_unknown_color:'HDR nebo neznámý barevný formát není podporován.',tv_unsupported_result_codec:'Výsledek přísného TV profilu musí používat kodek HEVC.',tv_duration_mismatch:'Délka zdroje a výsledku se neshoduje v povolené toleranci.'};
+function resultRow(result,seriesType,strict=false){
  const row=el('li','tv-result');row.dataset.tvResult=result.id;
  row.append(el('strong','tv-result-name',result.file?.label||baseName(result.reviewRelative),true));
  const list=el('span','tv-episodes');
  list.append(el('span','details',result.episodes.map(episode=>episodeLabel(episode,seriesType)).join(', '),true));
  row.append(list,el('span','details',fmt(result.originalBytes)+' → '+fmt(result.reviewBytes),true));
+ if(strict){
+  const reason=result.episodes?.length!==1?'multi_episode_file':!String(result.reviewRelative||'').toLowerCase().endsWith('.mkv')?'unsupported_format':result.strictEvidence==='passed'?result.strictBlockReason:result.strictEvidence==='legacy'?'strict_flow_evidence_missing':'flow_evidence_invalid';
+  if(reason)row.append(el('span','details tv-blocked',tr(strictBlocked[reason]||reason),true));
+  else{const review=button('Posoudit',()=>{} ,'primary');review.dataset.tvReview=result.id;review.setAttribute('aria-label',tr('Posoudit '+(result.file?.label||baseName(result.reviewRelative))));row.append(review)}
+ }
  return row;
 }
 function problemList(title,intro,items,reasons,kind){
@@ -70,7 +78,7 @@ export function renderTv(data){
   for(const season of series.seasons){
    const block=el('section','tv-season');block.dataset.tvSeason=String(season.seasonNumber);
    block.append(el('h3','',seasonTitle(season.seasonNumber),true));
-   const list=el('ul','tv-result-list');for(const result of season.results)list.append(resultRow(result,series.seriesType));
+   const list=el('ul','tv-result-list');for(const result of season.results)list.append(resultRow(result,series.seriesType,data.mode==='strict-review'));
    block.append(list);details.append(block);
   }
   box.append(details);
@@ -80,14 +88,20 @@ export function renderTv(data){
  return box;
 }
 
-let app=null,mode='off',loading=false,loadedAt=0;
-export const tvEnabled=()=>mode==='discovery';
+let app=null,mode='off',loading=false,loadedAt=0,reviewDialog=null,reviewWorkspace=null,activeReview=null,reviewApproval=null,reviewRevision=0;
+export const tvEnabled=()=>mode==='discovery'||mode==='strict-review';
+function updateTvModeCopy(){
+ const eyebrow=$('tvModeEyebrow'),intro=$('tvModeIntro');if(!eyebrow||!intro)return;
+ eyebrow.textContent=tr(mode==='strict-review'?'Přísné posouzení · ruční kontrola a oddělená instalace':'Pouze čtení · žádná akce schválení, zamítnutí ani nahrazení');
+ intro.textContent=tr(mode==='strict-review'?'Přesně vázané podporované epizody lze ručně posoudit a samostatně nainstalovat po schválení. Instalace uchová původní soubor v oddělené TV karanténě.':'Seriály jsou zatím jen k prohlížení. Schválení, zamítnutí ani nahrazení výsledků seriálů zatím neexistuje a nic se tu nemění v knihovně, Tdarru ani Sonarru.');
+}
 /** Asks the server whether TV discovery is on, and shows or hides the navigation entry. Failures keep the section hidden. */
 export async function refreshTvMode(){
  if(!app?.authenticated)return mode;
- try{const value=await app.api('/api/tv/status');mode=value?.mode==='discovery'?'discovery':'off';}catch{mode='off';}
- const link=$('tvNav');if(link)link.hidden=mode!=='discovery';
- if(mode!=='discovery'&&app.ui.view==='tv')location.hash='#attention';
+ try{const value=await app.api('/api/tv/status');mode=['discovery','strict-review'].includes(value?.mode)?value.mode:'off';}catch{mode='off';}
+ const link=$('tvNav');if(link)link.hidden=mode==='off';
+ updateTvModeCopy();
+ if(mode==='off'&&app.ui.view==='tv')location.hash='#attention';
  return mode;
 }
 export async function loadTv(force=false){
@@ -95,8 +109,9 @@ export async function loadTv(force=false){
  loading=true;const box=$('tvContent');
  try{
   const data=await app.api('/api/tv'+(force?'?refresh=1':''));
-  if(data.mode!=='discovery'){mode='off';$('tvNav').hidden=true;return;}
-  loadedAt=Date.now();box.replaceChildren(renderTv(data));$('tvCount').textContent=tr(data.totals?.results??'—');
+  if(!['discovery','strict-review'].includes(data.mode)){mode='off';$('tvNav').hidden=true;return;}
+  mode=data.mode;updateTvModeCopy();loadedAt=Date.now();app.refreshGuards?.();const content=renderTv(data);box.replaceChildren(content);$('tvCount').textContent=tr(data.totals?.results??'—');
+  content.querySelectorAll('[data-tv-review]').forEach(control=>control.addEventListener('click',()=>void openTvReview(control.dataset.tvReview)));
  }catch{
   const note=el('p','alert','Seriály nelze načíst. Zobrazené údaje mohou být zastaralé.');note.setAttribute('role','status');box.prepend(note);
  }finally{loading=false;}
@@ -104,7 +119,41 @@ export async function loadTv(force=false){
 export const tvLoadedAt=()=>loadedAt;
 export function installTv(context){
  app=context;
+ reviewDialog=el('dialog','comparison tv-review-dialog');document.body.append(reviewDialog);
  $('tvRefresh').onclick=()=>loadTv(true);
  setInterval(()=>{if(app.ui.view==='tv')void loadTv();},30000);
  setInterval(()=>{void refreshTvMode();},15000);
+}
+
+async function openTvReview(id){
+ if(mode!=='strict-review'||!app.authenticated)return;
+ const listing=await app.api('/api/tv?refresh=1'),item=listing.series?.flatMap(s=>s.seasons.flatMap(season=>season.results)).find(value=>value.id===id);
+ if(!item)return;
+ try{
+  const record=await app.api(`/api/tv/${id}/review-session?snapshot=${encodeURIComponent(item.snapshot)}`);
+  activeReview={...record.item,snapshot:item.snapshot,videoUrl:`/api/tv/${id}/video`};reviewApproval=record.approval;reviewRevision=record.revision;
+  reviewWorkspace?.destroy();reviewDialog.replaceChildren();
+  const heading=el('div','comparison-head'),close=button('Zavřít',()=>reviewDialog.close());heading.append(el('h2','',activeReview.title,true),close);
+  const notice=el('p','details','Posouzení ukládá tvoje ruční potvrzení. Schválení pouze zaznamená rozhodnutí; instalace je samostatná akce.');notice.setAttribute('role','status');
+  const host=el('div','tv-review-host'),install=button(tr('Nainstalovat schválený výsledek'),()=>void installTvResult(),'primary');install.disabled=true;install.dataset.tvInstall='';
+  const status=el('p','details','');status.setAttribute('role','status');
+  reviewDialog.append(heading,notice,host,install,status);reviewDialog.showModal();
+  const rewrite=(route,value)=>app.api(route.replace('/api/items/'+id,'/api/tv/'+id),value);
+  const isCurrent=()=>!!reviewDialog.open&&mode==='strict-review'&&activeReview?.snapshot===item.snapshot;
+  const updateInstall=()=>{install.disabled=!reviewApproval||reviewApproval.snapshot!==activeReview.snapshot||reviewApproval.reviewRevision!==reviewRevision||!isCurrent()};
+  const retireReviewWorkspace=()=>{reviewWorkspace?.destroy();reviewWorkspace=null;host.hidden=true};
+  const t=key=>{
+   const television={'Délka filmu':'Délka epizody','Začátek filmu':'Začátek epizody','Střed filmu':'Střed epizody','Konec filmu':'Konec epizody','Synchronizace na začátku filmu':'Synchronizace na začátku epizody','Synchronizace uprostřed filmu':'Synchronizace uprostřed epizody','Synchronizace na konci filmu':'Synchronizace na konci epizody','Detail filmu':'Detail epizody','Posouzení filmu v jednom průchodu':'Posouzení epizody v jednom průchodu','Tři úseky ze začátku, středu a konce filmu se přehrají za sebou, každý jednou. Po každém úseku potvrdíš, co jsi ověřil. Přehrání ani technická kontrola nic nepotvrzuje.':'Tři úseky ze začátku, středu a konce epizody se přehrají za sebou, každý jednou. Po každém úseku potvrdíš, co jsi ověřil. Přehrání ani technická kontrola nic nepotvrzuje.'};
+   return translateAudioTrackLabel(tr(television[key]||key),tr);
+  };
+  reviewWorkspace=mountReviewWorkflow(host,activeReview,{api:rewrite,comparisonApi:rewrite,isCurrent,canWrite:isCurrent,openComparison,openAudioComparison,openGuidedComparison,tr:t,formatBytes:fmt,canApprove:()=>false,showInstall:false,decisionText:'Schválení uloží rozhodnutí pro tuto přesně vázanou epizodu. Žádný soubor se tímto tlačítkem nemění.',decisionCapabilities:{reject:false,next:false,approveReplace:false},canApproveOnly:()=>true,isApproved:()=>reviewApproval?.snapshot===activeReview.snapshot&&reviewApproval.reviewRevision===reviewRevision,
+   onSession:value=>{reviewRevision=value.revision;if(value.approval)reviewApproval=value.approval;updateInstall()},
+   onApproveOnly:async revision=>{try{const result=await app.api(`/api/tv/${id}/approval`,{snapshot:activeReview.snapshot,reviewRevision:revision});reviewApproval=result.approval;status.textContent=tr('Schválení uloženo. Soubory zůstaly beze změny.');updateInstall();reviewWorkspace?.refreshGuard()}catch(error){status.textContent=tr(error.message)}}});
+  async function installTvResult(){
+   if(install.disabled)return;install.disabled=true;status.textContent=tr('Ověřuji aktuální vazbu a připravuji bezpečnou instalaci…');
+   try{await app.api(`/api/tv/${id}/install`,{snapshot:activeReview.snapshot,reviewRevision});status.textContent=tr('Instalace spuštěna. Obnovuji pouze příslušnou knihovnu TV a sérii Sonarru.');
+    const poll=async()=>{if(!reviewDialog.open)return;try{const value=await app.api('/api/tv/status');const outcome=value.history?.find(entry=>entry.id===id);if(value.active?.id===id){status.textContent=tr('Instalace probíhá…');setTimeout(poll,1000);return}if(outcome){status.textContent=tr(outcome.status==='success'?'Výsledek je nainstalován a obě metadata jsou aktualizovaná.':outcome.status==='incomplete_refresh'?'Výsledek je nainstalován, ale aktualizace metadat zůstává nedokončená.':'Instalace nebyla dokončena. Zkontroluj stav TV a obnovy.');if(['success','incomplete_refresh'].includes(outcome.status))retireReviewWorkspace();return}setTimeout(poll,1000)}catch{setTimeout(poll,1500)}};setTimeout(poll,750)
+   }catch(error){status.textContent=tr(error.message);updateInstall()}
+  }
+ }catch(error){app.error(error)}
 }

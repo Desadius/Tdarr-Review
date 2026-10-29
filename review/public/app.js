@@ -14,6 +14,7 @@ initializeLocale();
 
 const busy=d=>!!d?.active||!!d?.batchRunning;
 let latest=null,pending=null,loading=false,lastRender='',receivedAt=0,serverAt=Date.now();
+const TV_DISPLAY_FRESH_MS=45_000;
 let recoveryConfig=null,recoveryRuntime=null,authenticated=false,actionInFlight=false,requests=[],requestsReceived=0,requestsLoading=false,requestsError='',dataError='',confirmOrigin=null;
 const selected=new Set();
 const ui={view:'attention',filter:'running',tab:'review',detail:null,selection:false,layout:'work',historyPage:0};
@@ -440,8 +441,9 @@ $('filmDetail').addEventListener('close',()=>{reviewWorkspace?.destroy();reviewW
 
 function updateGuards(){
  if(!latest)return;const c=context();
- $('connection').textContent=tr(!authenticated?'Přihlášení vypršelo':dataError?'Spojení přerušeno':c.fresh?'Připojeno':'Čekám na aktuální údaje');$('connection').classList.toggle('failure',!authenticated||!!dataError||!c.fresh);
- $('freshness').hidden=c.fresh&&authenticated;$('freshness').textContent=tr(!authenticated?'Přihlas se znovu. Zobrazené údaje jsou poslední načtený stav; změny jsou zablokované.':`Údaje nejsou aktuální. Poslední načtení ${date(receivedAt)}. Změny jsou zablokované.${dataError?' '+dataError:''}`);
+ const displayFresh=ui.view==='tv'?!!tvLoadedAt()&&Date.now()-tvLoadedAt()<TV_DISPLAY_FRESH_MS:c.fresh,displayLoadedAt=ui.view==='tv'?tvLoadedAt():receivedAt;
+ $('connection').textContent=tr(!authenticated?'Přihlášení vypršelo':dataError?'Spojení přerušeno':displayFresh?'Připojeno':'Čekám na aktuální údaje');$('connection').classList.toggle('failure',!authenticated||!!dataError||!displayFresh);
+ $('freshness').hidden=displayFresh&&authenticated;$('freshness').textContent=tr(!authenticated?'Přihlas se znovu. Zobrazené údaje jsou poslední načtený stav; změny jsou zablokované.':`Údaje nejsou aktuální. Poslední načtení ${date(displayLoadedAt)}. Změny jsou zablokované.${dataError?' '+dataError:''}`);
  updateSelection();
  if(ui.detail){const item=ui.detail.record,current=ui.detail.kind==='review'?latest.items.find(x=>x.id===item.id):requests.find(x=>x.id===item.id&&x.source===item.source),changed=!current||(ui.detail.kind==='review'?current.snapshot!==item.snapshot:JSON.stringify(current)!==JSON.stringify(item));
   $('detailChanged').hidden=!changed;$('detailChanged').textContent=tr('Stav tohoto filmu se změnil. Zavři detail a otevři aktuální údaje.');
@@ -534,6 +536,6 @@ if(document.modelContext?.registerTool){
 }
 
 // The one context handed to the UI modules; getters keep app.js state authoritative.
-const appContext={api,error,load,loadRequests,openDetail,ui,forceRender:()=>{lastRender=''},get latest(){return latest},get requests(){return requests},get authenticated(){return authenticated}};
+const appContext={api,error,load,loadRequests,openDetail,refreshGuards:updateGuards,ui,forceRender:()=>{lastRender=''},get latest(){return latest},get requests(){return requests},get authenticated(){return authenticated}};
 installComparisons(appContext);installSettingsDialogs(appContext);installQuarantine(appContext);installStatistics(appContext);installTv(appContext);
 start();

@@ -2,9 +2,9 @@
 
 This repository supplies the Review application and the optional Recovery worker. It does **not** export the entire personal encoding flow or install a universal HDR/codec policy. Keep your existing tested encoding, audio-language and health-check policy.
 
-For the separate TV staging template, see [TV Review flow template v1](TV-FLOW.md). It is an offline, unimported flow definition with a bounded supported profile; TV library activation and production use remain separate decisions.
+For the separate TV staging template, see [TV Review flow template v1](TV-FLOW.md). Strict review accepts only the template's v2 receipt, emitted after full decode, preservation and staged-copy verification. The template remains an offline definition: no Tdarr instance import or production flow edit was performed. Its receipt contract changed from v1 to v2; existing v1 jobs remain discoverable but never qualify for strict review. Production import and pilot work remain separate decisions.
 
-Šablona TV workflowu je pouze offline návrh a zůstává neimportovaná i neaktivní. Podporuje jen konzervativně ověřený SDR profil; nepodporovaný nebo neznámý vstup skončí k ruční kontrole. Její import ani pilot na originálních médiích nejsou součástí této změny; případný pilot se řeší samostatně v úkolu #270.
+Šablona TV workflowu zůstává pouze offline návrhem a nebyla importována ani upravena v Tdarru. Přísné posouzení přijímá pouze její v2 důkaz po dokončeném dekódování, kontrole zachování stop a ověření kopie. Stávající v1 úlohy zůstávají viditelné pro objevování, ale nikdy nesplní podmínku přísného posouzení. Import do produkčního Tdarru ani pilot na originálních médiích nejsou součástí této změny; případný pilot se řeší samostatně v úkolu #270.
 
 Required behavior: preserve the original in the Plex library, write the finished result to the separate Review tree, retain the relative film/file path, and run the intended Tdarr health check. Avoid a Tdarr step that replaces/deletes the original before Review approves it.
 

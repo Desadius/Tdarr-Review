@@ -4,7 +4,8 @@ const constants=require('node:fs').constants;
 const path=require('node:path').posix;
 const spawn=require('node:child_process').spawn;
 
-const stateKey='tvReviewProofV1';
+const stateKey='tvReviewProofV2';
+const flowProfile=Object.freeze({id:'tv-review-staging-v1-template',version:1});
 const sampleSize=1024*1024;
 const maxDecodeMs=6*60*60*1000;
 const maxDecodeError=128*1024;
@@ -181,7 +182,7 @@ async function finish(args,spawnChild=spawn){
   if(!sameIdentity(await identity(source),proof.source)||!sameIdentity(await identity(working),workingIdentity))throw Error('input-changed-during-stage');
   const outputRelative=path.relative(reviewRoot,destination);
   if(!validRelative(outputRelative)||outputRelative!==relative)throw Error('output-path-mismatch');
-  const receipt={version:1,relative,outputRelative,source:{size:sourceIdentity.size,mtime:sourceIdentity.mtime,sample:sourceIdentity.sample},output:{size:stagedIdentity.size,mtime:stagedIdentity.mtime,sample:stagedIdentity.sample},jobId,createdAt:Date.now()};
+  const receipt={version:2,relative,outputRelative,source:{size:sourceIdentity.size,mtime:sourceIdentity.mtime,sample:sourceIdentity.sample},output:{size:stagedIdentity.size,mtime:stagedIdentity.mtime,sample:stagedIdentity.sample},jobId,createdAt:Date.now(),strictProof:{profile:flowProfile,jobId,sourceIdentity:{dev:sourceIdentity.dev,ino:sourceIdentity.ino,ctime:sourceIdentity.ctime},outputIdentity:{dev:stagedIdentity.dev,ino:stagedIdentity.ino,ctime:stagedIdentity.ctime},preservation:'passed',decode:'complete',stagedCopy:'verified'}};
   await syncDirectoryChain(staged);
   receiptFile=await openFileUnder(reviewRoot,`${outputRelative}.tdarr-receipt.json`,{create:true,mode:0o600});
   await receiptFile.handle.writeFile(JSON.stringify(receipt));await receiptFile.handle.sync();

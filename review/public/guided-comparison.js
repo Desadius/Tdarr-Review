@@ -1,6 +1,7 @@
 import {createGuidedPlayer} from './guided-player.js?v=__APP_VERSION__';
 import {mountPlayerControls} from './player-controls.js?v=__APP_VERSION__';
 import {guidedExcerptTimes,prepareGuidedExcerpts} from './guided-preparation.js?v=__APP_VERSION__';
+import {translateAudioTrackLabel} from './i18n.js?v=__APP_VERSION__';
 
 const modeName=routing=>routing==='ears'?'guided-ears':routing==='switch'?'guided-switch':'guided-sequential';
 /** A bounded preview workspace. Playback never invokes a review-session write. With stage the media fills the
@@ -153,7 +154,7 @@ export function mountGuidedComparison(host,item,{api,current=()=>true,scope={},e
  divider.onpointerdown=event=>{if(event.button!==undefined&&event.button!==0)return;event.preventDefault();dragging=true;divider.focus();divider.setPointerCapture?.(event.pointerId);moveWipe(event)};divider.onpointermove=event=>{if(dragging)moveWipe(event)};divider.onpointerup=divider.onpointercancel=()=>{dragging=false};divider.onkeydown=event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();event.stopPropagation();wipe=event.key==='Home'?0:event.key==='End'?100:Math.max(0,Math.min(100,wipe+(event.key==='ArrowLeft'?-1:1)));wipeInput.value=String(wipe);setView('wipe')};
  const focusPlayer=event=>{if(!event.target.closest?.('button,input,select,textarea,summary,a,[role="slider"]'))root.focus({preventScroll:true})};root.addEventListener('pointerdown',focusPlayer);
  void api('/api/items/'+item.id+'/audio-compare',{snapshot:item.snapshot,mode:'tracks'}).then(data=>{
-  if(!valid())return;for(const [i,list,key]of [[0,data.original,'originalIndex'],[1,data.review,'reviewIndex']]){const empty=make('option','Vyber zvukovou stopu');empty.value='';selectors[i].append(empty);for(const track of list||[]){const option=make('option');option.textContent=track.label;option.value=String(track.index);selectors[i].append(option)}selectors[i].value=scope[key]===null||scope[key]===undefined?'':String(scope[key])}
+  if(!valid())return;for(const [i,list,key]of [[0,data.original,'originalIndex'],[1,data.review,'reviewIndex']]){const empty=make('option','Vyber zvukovou stopu');empty.value='';selectors[i].append(empty);for(const track of list||[]){const option=make('option');option.textContent=translateAudioTrackLabel(track.label,tr);option.value=String(track.index);selectors[i].append(option)}selectors[i].value=scope[key]===null||scope[key]===undefined?'':String(scope[key])}
  }).catch(error=>{if(valid())errorText(error)});
  const cleanup=()=>{if(dead)return;dead=true;epoch++;root.removeEventListener('pointerdown',focusPlayer);player?.destroy();cleanupControls();releaseVideo();void context?.close();observers.clear();host.replaceChildren()};
  cleanup.controller={...facade,setWipeMode,get wipeMode(){return wipeMode},options(open){fields.hidden=!open;fields.open=!!open;if(open)(selectors[0]||fields).focus?.()},get optionsOpen(){return !fields.hidden},pairLabels:()=>selectors.map(select=>select.selectedIndex>0?select.options?.[select.selectedIndex]?.textContent||'':'')};

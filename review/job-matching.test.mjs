@@ -39,6 +39,11 @@ test('malformed or blank explicit job ID cannot silently use legacy fallback',()
 test('receipt for another file is rejected even when job otherwise matches',()=>{
  assert.throws(()=>matchReviewJob([job],{...config,receipt:{...config.receipt,relative:'Other/a.mkv'}}),code('INVALID_RECEIPT'));
 });
+test('Movie/default matching remains v1-only; a caller must explicitly allow TV receipt v2',()=>{
+ const v2={...config,receipt:{...config.receipt,version:2}};
+ assert.throws(()=>matchReviewJob([job],v2),code('INVALID_RECEIPT'));
+ assert.equal(matchReviewJob([job],{...v2,receiptVersions:[1,2]}),job);
+});
 test('Windows separators in server job paths and trailing configured root normalize',()=>{
  assert.equal(matchReviewJob([{...job,file:'\\media\\movies\\Film (2000)\\a.mkv'}],{...config,sourceRoots:['/media/movies/']} )._id,'old');
 });
