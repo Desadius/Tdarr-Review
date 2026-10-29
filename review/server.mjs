@@ -51,6 +51,7 @@ import {createRecoveryControlClient} from './recovery-control.mjs';
 import {sharedSettingsRoutes} from './routes/shared-settings.mjs';
 import {sonarrRoutes} from './routes/sonarr.mjs';
 import {createSonarrSourceInspection} from './sonarr-source-inspection.mjs';
+import {createSonarrReconciliation} from './sonarr-reconciliation.mjs';
 import {createSonarrResultInspection} from './sonarr-result-inspection.mjs';
 import {inspectTvReviewPair,supportedTvReviewItem,tvReviewBlockCode} from './tv-review.mjs';
 import {validTvStrictProof,tvStrictProofMatchesFiles} from './tv-flow-proof.mjs';
@@ -66,6 +67,10 @@ const sonarrSourceInspection=createSonarrSourceInspection({getSnapshot:async rev
  const current=await sharedSettings.current();if(current.revision!==revision)throw Object.assign(Error('Settings changed'),{code:'settings_conflict'});
  const sonarr=await sharedSettings.sonarrConnection(revision);
  return {revision,sonarr,tv:current.draft.libraries?.tv??null};
+}});
+const sonarrReconciliation=createSonarrReconciliation({getSnapshot:async revision=>{
+ const current=await sharedSettings.current();if(current.revision!==revision)throw Object.assign(Error('Settings changed'),{code:'settings_conflict'});
+ return current;
 }});
 const sonarrResultInspection=createSonarrResultInspection({getSnapshot:async revision=>{
  const current=await sharedSettings.current();if(current.revision!==revision)throw Object.assign(Error('Settings changed'),{code:'settings_conflict'});
@@ -601,7 +606,7 @@ const authTimer=setInterval(()=>{pruneAuthAttempts(authAttempts);if(pruneSession
 // Getters/setters keep the module variables above authoritative, so the scan,
 // transaction and preview code shares exactly the state the routes change.
 const ctx={
- ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,recoveryAttention,quarantineDelete,diagnosticExport,recoverySafeRestore,installedAssessment,tdarrHandoff,transcodeRetry,artwork,reviewSessions,tvReviewSessions,tvWorkflowState,tvInstallLedger,refreshTvReviewItem,tvStrictBlockReason,performTvInstall,previewPairs,previewPlans,previewAttempts,previewIdentity,previewVersion,previewVersionFor,previewPreparation,planPreviewItem,prepareTvPreviewPlan,sharedSettings,sonarrSourceInspection,sonarrResultInspection,tvDiscovery,
+ ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,recoveryAttention,quarantineDelete,diagnosticExport,recoverySafeRestore,installedAssessment,tdarrHandoff,transcodeRetry,artwork,reviewSessions,tvReviewSessions,tvWorkflowState,tvInstallLedger,refreshTvReviewItem,tvStrictBlockReason,performTvInstall,previewPairs,previewPlans,previewAttempts,previewIdentity,previewVersion,previewVersionFor,previewPreparation,planPreviewItem,prepareTvPreviewPlan,sharedSettings,sonarrSourceInspection,sonarrReconciliation,sonarrResultInspection,tvDiscovery,
  get config(){return config},set config(value){config=value},
  get tvSettings(){return activeSettings?.libraries?.tv??null},safeFile,validateTvLibrary:validateTvLibraryRow,
  get previewSettings(){return previewSettings},set previewSettings(value){previewSettings=value},
@@ -687,5 +692,5 @@ for(const signal of ['SIGTERM','SIGINT'])process.once(signal,()=>{
  // An open browser tab or a streaming preview must not hold the stop until the container is killed; running
  // work is still awaited below, only its sockets close.
  setTimeout(()=>server.closeAllConnections(),SHUTDOWN_GRACE_MS).unref();
- void Promise.all([previews.close(),sonarrSourceInspection.close(),sonarrResultInspection.close(),drained]).then(async()=>{while(active||batchRunning||reviewSessions.busy||settingsBusy||resumeTask)await new Promise(resolve=>setTimeout(resolve,50));await saveChain;process.exit(0)}).catch(error=>{console.error('Review shutdown: '+error.message);process.exit(1)});
+ void Promise.all([previews.close(),sonarrSourceInspection.close(),sonarrReconciliation.close(),sonarrResultInspection.close(),drained]).then(async()=>{while(active||batchRunning||reviewSessions.busy||settingsBusy||resumeTask)await new Promise(resolve=>setTimeout(resolve,50));await saveChain;process.exit(0)}).catch(error=>{console.error('Review shutdown: '+error.message);process.exit(1)});
 });

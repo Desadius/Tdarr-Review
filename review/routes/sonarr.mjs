@@ -5,6 +5,21 @@ import {logEvent} from '../log.mjs';
 const revisionPattern=/^[a-f0-9]{64}$/;
 
 export async function sonarrRoutes(ctx,req,res,url){
+ if(url.pathname==='/api/sonarr/reconcile'){
+  if(req.method!=='GET')return reply(res,404,apiError('not_found'));
+  const keys=['revision','seriesId'];
+  if([...url.searchParams.keys()].some(key=>!keys.includes(key))||keys.some(key=>url.searchParams.getAll(key).length!==1)||!revisionPattern.test(url.searchParams.get('revision')||'')||!/^[1-9]\d*$/.test(url.searchParams.get('seriesId')||'')||!Number.isSafeInteger(Number(url.searchParams.get('seriesId'))))return reply(res,400,apiError('sonarr_invalid_request'));
+  const controller=new AbortController(),abort=()=>controller.abort(),closed=()=>{if(!res.writableEnded)controller.abort()};
+  req.once('aborted',abort);res.once('close',closed);
+  try{
+   const result=await ctx.sonarrReconciliation.inspect(url.searchParams.get('revision'),Number(url.searchParams.get('seriesId')),{signal:controller.signal});
+   logEvent('sonarr.inspection',{kind:'reconciliation',seriesId:Number(url.searchParams.get('seriesId')),result:result.status,reason:result.reason||null});
+   return reply(res,200,result);
+  }catch(error){
+   if(error?.code==='settings_conflict')return reply(res,409,apiError('settings_conflict'));
+   return reply(res,503,apiError('sonarr_unavailable'));
+  }finally{req.removeListener('aborted',abort);res.removeListener('close',closed);}
+ }
  if(url.pathname==='/api/sonarr/technical-facts'&&req.method==='POST'){
   const input=await body(req),keys=['revision','seriesId','episodeFileId'];
   if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(key=>!keys.includes(key))||Object.keys(input).length!==keys.length||!revisionPattern.test(input.revision||'')||!Number.isSafeInteger(input.seriesId)||input.seriesId<=0||!Number.isSafeInteger(input.episodeFileId)||input.episodeFileId<=0)return reply(res,400,apiError('sonarr_invalid_request'));
