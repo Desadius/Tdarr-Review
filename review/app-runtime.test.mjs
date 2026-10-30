@@ -772,6 +772,39 @@ for(const language of ['cs','en'])test('Needs attention says what the user is as
   const f=await appFixture('en',{routes:{'/api/tv/status':{data:{mode:'discovery'}},'/api/tv':{data:{mode:'discovery',status:'unavailable',code:'tv_tdarr_unavailable'}}}});await f.hash('tv');
   assert.match(f.document.getElementById('tvContent').textContent,/the Tdarr database cannot be read/);
  });
+ const planContext={settingsRevision:'settings-revision-64hex',discoveryRevision:'d'.repeat(64)};
+ const planOverview={...tvOverview,mode:'strict-review',planContext};
+ const roleFlags={comment:false,original:false,dub:false,hearing_impaired:false,visual_impaired:false,clean_effects:false,attached_pic:false,timed_thumbnails:false,captions:false,descriptions:false,metadata:false,dependent:false,still_image:false,non_diegetic:false,multilayer:false};
+ const videoSignature=(codec,width,height)=>({codec,dimensions:{width,height},frameRateFps:23.976,fieldOrder:'progressive',pixelFormat:'yuv420p',bitDepth:8,color:{primaries:'bt709',transfer:'bt709',space:'bt709',range:'tv'},hdrMetadata:{dolbyVision:null,hdr10Plus:null,masteringDisplay:null,contentLightLevel:null},encoderTag:{state:'not_reported'}});
+ const audioTrack=(language,channels,channelLayout,defaultValue,forced,roles={})=>({codec:'aac',language,channels,channelLayout,default:defaultValue,forced,roles:{...roleFlags,...roles}});
+ const subtitleTrack=(language,defaultValue,forced,roles={})=>({codec:'subrip',language,default:defaultValue,forced,roles:{...roleFlags,...roles}});
+ const signature=(sourceVideo,resultVideo,sourceAudio,resultAudio,sourceSubtitles,resultSubtitles)=>({source:{container:'matroska',video:sourceVideo,audio:sourceAudio,subtitles:sourceSubtitles},result:{container:'matroska',video:resultVideo,audio:resultAudio,subtitles:resultSubtitles},profile:{id:'tv-review-staging-v1-template',version:1},flowVersion:2});
+ const member=(episodeFileId,episodeNumber,sampled=true)=>({episodeFileId,episodeIds:[episodeFileId*10],episodes:[{id:episodeFileId*10,seasonNumber:1,episodeNumber}],label:`S01E${String(episodeNumber).padStart(2,'0')}.mkv`,sourceBytes:1000,resultBytes:500,sampled});
+ const samplePlan={version:1,algorithmVersion:1,seriesId:7,seasonNumber:1,settingsRevision:planContext.settingsRevision,settingsGeneration:3,observedAt:'2026-10-30T10:00:00.000Z',complete:true,status:'complete',authorization:'none',batchReady:false,cohorts:[
+  {id:'cohort-01',signatureVersion:1,signatureHash:'e'.repeat(64),declaredReleaseGroup:'Declared Group',sourceFamilyVerified:false,count:2,estimatedSourceBytes:2000,estimatedResultBytes:1000,sampleEpisodeFileIds:[101],signature:signature(videoSignature('h264',1920,1080),videoSignature('hevc',1920,1080),[audioTrack('eng',2,'stereo',true,false)],[audioTrack('eng',2,'stereo',true,false)],[subtitleTrack('ces',false,true)],[subtitleTrack('ces',false,true)]),members:[member(101,1),member(102,2,false)]},
+  {id:'cohort-02',signatureVersion:1,signatureHash:'f'.repeat(64),declaredReleaseGroup:'Declared Group',sourceFamilyVerified:false,count:1,estimatedSourceBytes:1000,estimatedResultBytes:500,sampleEpisodeFileIds:[103],signature:signature(videoSignature('h264',1280,720),videoSignature('hevc',1280,720),[audioTrack('zxx',6,'5.1',false,true,{dub:true,hearing_impaired:true})],[audioTrack('zxx',6,'5.1',false,true,{dub:true,hearing_impaired:true})],[],[]),members:[member(103,3)]}
+ ],unknown:[],exceptions:[],limits:{physicalPairs:50,publicRows:256,responseBytes:1048576},policy:{sampleCount:'min(N, max(3, ceil(0.10 * N)))',selection:'early-middle-late-evenly-distributed',smallCohort:'review-all-when-N-below-3'}};
+ for(const language of ['cs','en'])test('strict TV season sample plan is manual, read-only, localized and tied to the displayed revisions in '+language,async()=>{
+  const planRoute='/api/tv/season-sample-plan?settingsRevision='+planContext.settingsRevision+'&discoveryRevision='+planContext.discoveryRevision+'&seriesId=7&seasonNumber=1';
+  const f=await appFixture(language,{routes:{'/api/tv/status':{data:{mode:'strict-review'}},'/api/tv':{data:planOverview},[planRoute]:{data:samplePlan}}}),dom=f.document;
+  await f.hash('tv');const control=dom.querySelectorAll('[data-tv-sample-plan]').find(value=>value.dataset.seasonNumber==='1'&&value.dataset.seriesId==='7');assert.ok(control,'an explicit season-level plan action is offered');
+  await control.emit('click');for(let i=0;i<8;i++)await flush();const text=dom.getElementById('tvContent').textContent;
+  assert.match(text,language==='en'?/Prepare sample plan/:/Vytvořit plán vzorku/);assert.match(text,language==='en'?/technical grouping and a sample suggestion/:/technické seskupení a návrh vzorku/);
+  assert.match(text,language==='en'?/Stream-declared facts/:/Údaje deklarované streamem/);assert.match(text,language==='en'?/Encoder build is not declared/:/Kodér není deklarován/);assert.match(text,language==='en'?/Stream declarations and encoder settings are not verified/:/Deklarace streamu a nastavení kodéru nejsou ověřeny/);
+  assert.match(text,language==='en'?/Technical grouping details/:/Podrobnosti technického seskupení/);
+  for(const value of ['matroska','1920×1080','1280×720','bt709','yuv420p','23.976','eng','zxx','stereo','5.1','tv-review-staging-v1-template','v2'])assert.ok(text.includes(value),'the rendered comparison exposes signature fact '+value);
+  assert.ok(text.includes(language==='en'?'Hearing impaired':'Pro neslyšící'),'track roles are rendered in the selected language');
+  assert.match(text,language==='en'?/HDR side data:.*not reported/i:/HDR vedlejší údaje:.*nehlášeno/i);
+  assert.match(text,/S01E01/);assert.deepEqual(f.calls.filter(call=>call.route.startsWith('/api/tv/season-sample-plan')).map(call=>call.route),[planRoute]);
+  assert.equal(f.calls.find(call=>call.route===planRoute).method,'GET');assert.equal(f.calls.some(call=>call.method==='POST'),false,'planning creates no approval, review or file mutation');
+ });
+ test('a late season-plan response is discarded after the user leaves the TV overview',async()=>{
+  let release;const pending=new Promise(resolve=>{release=resolve});const planRoute='/api/tv/season-sample-plan?settingsRevision='+planContext.settingsRevision+'&discoveryRevision='+planContext.discoveryRevision+'&seriesId=7&seasonNumber=1';
+  const f=await appFixture('en',{routes:{'/api/tv/status':{data:{mode:'strict-review'}},'/api/tv':{data:planOverview},[planRoute]:async()=>pending}}),dom=f.document;
+  await f.hash('tv');const control=dom.querySelectorAll('[data-tv-sample-plan]').find(value=>value.dataset.seasonNumber==='1'&&value.dataset.seriesId==='7'),block=control.closest('.tv-season');const action=control.emit('click');for(let i=0;i<4;i++)await flush();
+  await f.hash('attention');release({data:samplePlan});await action;for(let i=0;i<4;i++)await flush();
+  assert.equal(block.querySelector('.tv-sample-plan'),null,'a response for a no-longer-selected view is not rendered');
+ });
  test('strict TV continuous review keeps the guided player and preview calls in the TV library context',async()=>{
   const id='1'.repeat(24),snapshot='s'.repeat(64),item={id,snapshot,title:'Synthetic Episode',durationA:60,durationB:60,originalBytes:1000,reviewBytes:500,strictEvidence:'passed',strictBlockReason:null,reviewRelative:'TV/Synthetic Show/Season 01/S01E01.mkv',episodes:[{id:42,seasonNumber:1,episodeNumber:1}],file:{label:'Season 01/S01E01.mkv'}};
   const overview={mode:'strict-review',status:'ok',totals:{results:1,bound:1,unbound:0,unverified:0,episodes:1,originalBytes:1000,reviewBytes:500},sonarr:{status:'verified'},series:[{id:7,title:'Synthetic Show',seriesType:'standard',totals:{results:1,episodes:1,originalBytes:1000,reviewBytes:500},seasons:[{seasonNumber:1,results:[item]}]}],unbound:[],unverified:[]};

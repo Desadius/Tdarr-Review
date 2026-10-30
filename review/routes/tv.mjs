@@ -9,6 +9,22 @@ function publicReviewItem(item){
 // TV discovery remains read-only; strict-review routes expose only separate assessment,
 // approval and installation operations for supported, freshly bound episodes.
 export async function tvRoutes(ctx,req,res,url,httpRequest={}){
+ if(req.method==='GET'&&url.pathname==='/api/tv/season-sample-plan'){
+  const keys=[...url.searchParams.keys()];
+  if(keys.some(key=>!['settingsRevision','discoveryRevision','seriesId','seasonNumber'].includes(key))||keys.some(key=>url.searchParams.getAll(key).length!==1))return reply(res,400,apiError('tv_invalid_request'));
+  const seriesId=url.searchParams.get('seriesId'),seasonNumber=url.searchParams.get('seasonNumber');
+  if(!/^[1-9]\d{0,14}$/.test(seriesId||'')||!/^(?:0|[1-9]\d{0,8})$/.test(seasonNumber||''))return reply(res,400,apiError('tv_invalid_request'));
+  const controller=new AbortController();
+  const cancel=()=>{if(!res.writableFinished)controller.abort()};res.once('close',cancel);
+  try{
+   const plan=await ctx.tvSeasonSampleService.create({settingsRevision:url.searchParams.get('settingsRevision'),discoveryRevision:url.searchParams.get('discoveryRevision'),seriesId:Number(seriesId),seasonNumber:Number(seasonNumber)},{signal:controller.signal});
+   return reply(res,200,plan);
+  }catch(error){
+   const codes=new Set(['tv_plan_busy','settings_conflict','settings_not_applied','tv_plan_stale_discovery','tv_plan_sonarr_unavailable','tv_plan_sonarr_inconsistent','tv_plan_series_root_unsafe','tv_plan_pair_limit','tv_plan_row_limit','tv_plan_deadline','tv_plan_cancelled','tv_plan_evidence_unavailable','tv_plan_probe_incomplete','tv_plan_sonarr_changed','tv_plan_job_changed','tv_plan_files_changed','tv_plan_unavailable']);
+   const status=error.code==='tv_plan_pair_limit'||error.code==='tv_plan_row_limit'?413:['settings_conflict','settings_not_applied','tv_plan_stale_discovery','tv_plan_sonarr_changed','tv_plan_job_changed','tv_plan_files_changed'].includes(error.code)?409:503;
+   return reply(res,status,apiError(codes.has(error.code)?error.code:'tv_plan_unavailable'));
+  }finally{res.removeListener('close',cancel)}
+ }
  const video=/^\/api\/tv\/([a-f0-9]{24})\/video$/.exec(url.pathname);
  if(video&&req.method==='GET'){
   if(ctx.tvDiscovery.mode()!=='strict-review')return reply(res,409,apiError('tv_review_disabled'));
@@ -81,5 +97,7 @@ export async function tvRoutes(ctx,req,res,url,httpRequest={}){
  if(keys.some(key=>key!=='refresh')||url.searchParams.getAll('refresh').length>1||!['',null,'1'].includes(url.searchParams.get('refresh')))return reply(res,400,apiError('tv_invalid_request'));
  const overview=await ctx.tvDiscovery.result({force:url.searchParams.get('refresh')==='1'}),publicOverview=structuredClone(overview);
  if(publicOverview.status!=='unavailable'&&ctx.tvDiscovery.mode()==='strict-review')for(const series of publicOverview.series||[])for(const season of series.seasons||[])for(const item of season.results||[])item.strictBlockReason=await ctx.tvStrictBlockReason(item);
- return reply(res,200,{...publicOverview,active:ctx.active?.library==='tv'?{id:ctx.active.id,action:ctx.active.action,stage:ctx.active.stage}:null,history:ctx.tvWorkflowState.history.slice(0,20).map(value=>({id:value.id,status:value.status,time:value.time,refresh:value.refresh}))});
+ const canPlan=ctx.tvDiscovery.mode()==='strict-review'&&publicOverview.status==='ok';
+ const planContext=canPlan?await ctx.pinTvDiscovery(publicOverview):null;
+ return reply(res,200,{...publicOverview,...(planContext?{planContext}:{}),active:ctx.active?.library==='tv'?{id:ctx.active.id,action:ctx.active.action,stage:ctx.active.stage}:null,history:ctx.tvWorkflowState.history.slice(0,20).map(value=>({id:value.id,status:value.status,time:value.time,refresh:value.refresh}))});
 }

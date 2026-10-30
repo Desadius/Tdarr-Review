@@ -30,23 +30,41 @@ function metadataPresence(streams,matcher){
 }
 function video(stream){
  const sideData=Array.isArray(stream.side_data_list);
+ const pixelFormat=typeof stream.pix_fmt==='string'&&/^[a-zA-Z0-9_]{1,40}$/.test(stream.pix_fmt)?stream.pix_fmt:null;
+ const rawDepth=positiveInteger(stream.bits_per_raw_sample,64)||positiveInteger(stream.bits_per_coded_sample,64);
+ const suffix=pixelFormat?.match(/(?:^|p)(9|10|12|14|16)(?:le|be|$)/i);
+ const bitDepth=rawDepth||(suffix?Number(suffix[1]):pixelFormat&&!/(?:9|10|12|14|16)(?:le|be)/i.test(pixelFormat)?8:null);
+ const encoder=stream.tags?.encoder??stream.tags?.ENCODER;
  return {
   index:Number.isSafeInteger(stream.index)&&stream.index>=0?stream.index:null,
   codec:codec(stream.codec_name,videoCodecs),
   dimensions:{width:positiveInteger(stream.width,32768),height:positiveInteger(stream.height,32768)},
   frameRateFps:frameRate(stream),
+  fieldOrder:['progressive','tt','bb','tb','bt'].includes(stream.field_order)?stream.field_order:null,
+  pixelFormat,
+  bitDepth,
+  declaredEncoderTag:typeof encoder==='string'&&encoder.length<=120&&/^[a-zA-Z0-9 ._()+-]+$/.test(encoder.trim())?encoder.trim():null,
   color:{primaries:token(stream.color_primaries,colorValues.primaries),transfer:token(stream.color_transfer,colorValues.transfer),space:token(stream.color_space,colorValues.space),range:token(stream.color_range,colorValues.range)},
   hdrMetadata:{dolbyVision:sideData?metadataPresence([stream],/^(?:DOVI configuration record|Dolby Vision Metadata)$/):null,hdr10Plus:sideData?metadataPresence([stream],/HDR10\+|SMPTE2094-40/i):null,masteringDisplay:sideData?metadataPresence([stream],/^Mastering display metadata$/):null,contentLightLevel:sideData?metadataPresence([stream],/^Content light level metadata$/):null},
  };
 }
-function audio(stream){return {index:Number.isSafeInteger(stream.index)&&stream.index>=0?stream.index:null,codec:codec(stream.codec_name,audioCodecs),language:language(stream.tags),channels:positiveInteger(stream.channels,256),default:flag(stream.disposition,'default'),forced:flag(stream.disposition,'forced')};}
-function subtitle(stream){return {index:Number.isSafeInteger(stream.index)&&stream.index>=0?stream.index:null,codec:codec(stream.codec_name,subtitleCodecs),language:language(stream.tags),default:flag(stream.disposition,'default'),forced:flag(stream.disposition,'forced')};}
+const roleNames=['comment','original','dub','hearing_impaired','visual_impaired','clean_effects','attached_pic','timed_thumbnails','captions','descriptions','metadata','dependent','still_image','non_diegetic','multilayer'];
+function roles(disposition){return Object.fromEntries(roleNames.map(key=>[key,flag(disposition,key)]))}
+function audio(stream){return {index:Number.isSafeInteger(stream.index)&&stream.index>=0?stream.index:null,codec:codec(stream.codec_name,audioCodecs),language:language(stream.tags),channels:positiveInteger(stream.channels,256),channelLayout:typeof stream.channel_layout==='string'&&/^[a-zA-Z0-9_]{1,40}$/.test(stream.channel_layout)?stream.channel_layout:null,default:flag(stream.disposition,'default'),forced:flag(stream.disposition,'forced'),roles:roles(stream.disposition)};}
+function subtitle(stream){return {index:Number.isSafeInteger(stream.index)&&stream.index>=0?stream.index:null,codec:codec(stream.codec_name,subtitleCodecs),language:language(stream.tags),default:flag(stream.disposition,'default'),forced:flag(stream.disposition,'forced'),roles:roles(stream.disposition)};}
 
 /** Return only allowlisted, bounded technical facts; missing source fields remain null. */
-export function projectTechnicalFacts(probe){
+export function projectSeasonTechnicalFacts(probe){
  if(!plain(probe)||!Array.isArray(probe.streams)||probe.streams.length>64||probe.streams.some(stream=>!plain(stream)))return null;
  const streams=probe.streams;
- return {durationSeconds:duration(probe.format?.duration),video:streams.filter(stream=>stream.codec_type==='video').map(video),audio:streams.filter(stream=>stream.codec_type==='audio').map(audio),subtitles:streams.filter(stream=>stream.codec_type==='subtitle').map(subtitle)};
+ const formatName=typeof probe.format?.format_name==='string'&&probe.format.format_name.length<=120?probe.format.format_name.split(',').find(value=>['matroska','webm'].includes(value))??null:null;
+ return {container:formatName,durationSeconds:duration(probe.format?.duration),video:streams.filter(stream=>stream.codec_type==='video').map(video),audio:streams.filter(stream=>stream.codec_type==='audio').map(audio),subtitles:streams.filter(stream=>stream.codec_type==='subtitle').map(subtitle)};
+}
+
+/** Existing inspector projection remains unchanged; season planning uses the richer private variant above. */
+export function projectTechnicalFacts(probe){
+ const facts=projectSeasonTechnicalFacts(probe);if(!facts)return null;
+ return {durationSeconds:facts.durationSeconds,video:facts.video.map(({index,codec,dimensions,frameRateFps,color,hdrMetadata})=>({index,codec,dimensions,frameRateFps,color,hdrMetadata})),audio:facts.audio.map(({index,codec,language,channels,default:defaultValue,forced})=>({index,codec,language,channels,default:defaultValue,forced})),subtitles:facts.subtitles.map(({index,codec,language,default:defaultValue,forced})=>({index,codec,language,default:defaultValue,forced}))};
 }
 
 const exact=(value,keys)=>plain(value)&&Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key));

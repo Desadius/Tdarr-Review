@@ -53,7 +53,7 @@ async function tvServer(t,{strict=false}={}){
   while(Date.now()<stop){const value=await f.get('/api/shared-settings/status');if(value.id===id&&['succeeded','failed','cancelled'].includes(value.state)){assert.equal(value.state,'succeeded',JSON.stringify(value));return;}await new Promise(r=>setTimeout(r,20));}
   assert.fail('apply did not settle');
  };
- f.setProbe((file,output)=>{if(!file.startsWith(tv.mediaRoot)&&!file.startsWith(tv.reviewRoot+path.sep+'TV'+path.sep))return output;return {...output,format:{...output.format,format_name:'matroska,webm'},streams:output.streams.map(stream=>stream.codec_type==='video'?{...stream,field_order:'progressive',pix_fmt:'yuv420p',color_transfer:'bt709',color_primaries:'bt709',color_space:'bt709'}:stream)}});
+ f.setProbe((file,output)=>{if(!file.startsWith(tv.mediaRoot)&&!file.startsWith(tv.reviewRoot+path.sep+'TV'+path.sep))return output;const roles={comment:0,original:0,dub:0,hearing_impaired:0,visual_impaired:0,clean_effects:0,attached_pic:0,timed_thumbnails:0,captions:0,descriptions:0,metadata:0,dependent:0,still_image:0,non_diegetic:0,multilayer:0};return {...output,format:{...output.format,format_name:'matroska,webm'},streams:output.streams.map(stream=>stream.codec_type==='video'?{...stream,field_order:'progressive',pix_fmt:'yuv420p',color_transfer:'bt709',color_primaries:'bt709',color_space:'bt709',color_range:'tv'}:stream.codec_type==='audio'?{...stream,disposition:{...roles,default:1,forced:0},channel_layout:'stereo'}:stream)}});
  return {f,sonarr,results,tv,apply};
 }
 const flat=value=>[...value.series.flatMap(s=>s.seasons.flatMap(x=>x.results)),...value.unbound,...value.unverified];
@@ -84,6 +84,7 @@ test('HTTP: discovery binds exact results, lists unbound ones with reasons and l
  assert.deepEqual(await f.get('/api/tv/status'),appliedStatus('discovery'));
  const value=await f.get('/api/tv?refresh=1');
  assert.equal(value.status,'ok');assert.equal(value.sonarr.status,'verified');
+ assert.equal(Object.hasOwn(value,'planContext'),false,'discovery mode does not pin revisions for an unavailable strict-review action');
  assert.equal(value.totals.bound,3);assert.equal(value.totals.unbound,3);assert.equal(value.totals.unverified,0);assert.equal(value.totals.episodes,4);
  const show=value.series.find(s=>s.title==='Synthetic Show'),anime=value.series.find(s=>s.title==='Synthetic Anime');
  assert.deepEqual(show.seasons.map(s=>s.seasonNumber),[0,1]);assert.deepEqual(show.seasons[1].results[0].episodes.map(e=>e.episodeNumber),[1,2]);
@@ -105,6 +106,22 @@ test('HTTP: discovery binds exact results, lists unbound ones with reasons and l
  for(const id of Object.keys(state.tv.items))assert.equal(id in state.items,false);
  for(const [index,r] of Object.values(results).entries()){assert.deepEqual(await fs.readFile(r.sourcePath),files[index*2]);assert.deepEqual(await fs.readFile(r.resultPath),files[index*2+1]);}
  await f.preserved();
+});
+
+test('HTTP strict review: one manual season plan uses the pinned revisions, exact v2 evidence and no write action',linuxServer,async t=>{
+ const {f,sonarr,results,apply}=await tvServer(t,{strict:true});sonarr.data.files[7].find(value=>value.id===103).releaseGroup='Synthetic Declared Group';await apply('strict-review');
+ const overview=await f.get('/api/tv?refresh=1'),context=overview.planContext;assert.equal(overview.status,'ok');assert.ok(context?.settingsRevision);assert.match(context?.discoveryRevision,/^[a-f0-9]{64}$/);
+ let planProbeCount=0;const dispositions={comment:0,original:0,dub:0,hearing_impaired:0,visual_impaired:0,clean_effects:0,attached_pic:0,timed_thumbnails:0,captions:0,descriptions:0,metadata:0,dependent:0,still_image:0,non_diegetic:0,multilayer:0};
+ f.setProbe((file,output)=>{if(file!=='/proc/self/fd/3')return output;const codec=planProbeCount++%2===0?'h264':'hevc';return {format:{format_name:'matroska,webm',duration:'60'},streams:[{index:0,codec_type:'video',codec_name:codec,width:320,height:180,avg_frame_rate:'24/1',field_order:'progressive',pix_fmt:'yuv420p',bits_per_raw_sample:'8',color_primaries:'bt709',color_transfer:'bt709',color_space:'bt709',color_range:'tv',side_data_list:[],disposition:{},tags:{}},{index:1,codec_type:'audio',codec_name:'aac',channels:2,channel_layout:'stereo',tags:{language:'eng'},disposition:{...dispositions,default:1,forced:0}}]}});
+ const route='/api/tv/season-sample-plan?settingsRevision='+context.settingsRevision+'&discoveryRevision='+context.discoveryRevision+'&seriesId=7&seasonNumber=1';
+ assert.equal((await f.request(route,{headers:{cookie:'review-session=invalid'}})).status,401,'the route is authenticated');
+ const sonarrReads=sonarr.calls.length,bad=await f.request(route+'&sourcePath=%2Fprivate%2Fmedia');assert.equal(bad.status,400);assert.equal(sonarr.calls.length,sonarrReads,'caller paths are rejected before Sonarr or worker reads');
+ const duplicate=await f.request(route+'&seriesId=8');assert.equal(duplicate.status,400,'duplicate query keys are rejected');assert.equal(sonarr.calls.length,sonarrReads);
+ const plan=await f.get(route);assert.equal(plan.authorization,'none');assert.equal(plan.batchReady,false);assert.equal(plan.complete,true);
+ const cohort=plan.cohorts.find(value=>value.members.some(member=>member.episodeFileId===103));assert.ok(cohort,JSON.stringify(plan));assert.equal(cohort.declaredReleaseGroup,'Synthetic Declared Group');assert.equal(cohort.sourceFamilyVerified,false);assert.equal(cohort.signature.source.video.encoderTag.state,'not_reported');assert.deepEqual(cohort.sampleEpisodeFileIds,[103]);assert.deepEqual(cohort.members[0].episodeIds,[1030]);assert.deepEqual(cohort.members[0].episodes.map(value=>value.episodeNumber),[3]);
+ assert.equal(JSON.stringify(plan).includes(f.root),false);assert.equal(JSON.stringify(plan).includes(SONARR_ROOT),false);assert.equal(JSON.stringify(plan).includes(SOURCE_ROOT),false);assert.ok(sonarr.calls.every(call=>call.method==='GET'),'the plan reads Sonarr only');
+ const sideEffects=sonarr.calls.length;assert.equal(f.calls.some(call=>call.route.includes('/api/tv/season-sample-plan')&&call.method==='POST'),false);assert.equal(sonarr.calls.length,sideEffects);
+ await f.preserved();void results;
 });
 
 test('HTTP: no route approves, rejects, replaces or retains a TV result',linuxServer,async t=>{
