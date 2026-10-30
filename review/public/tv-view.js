@@ -29,6 +29,59 @@ export function episodeLabel(episode,seriesType){
 }
 const seasonTitle=season=>season===null?tr('Sezóna není určena'):season===0?tr('Speciály (sezóna 0)'):tr('Sezóna')+' '+season;
 const counts=(results,episodes)=>tr('Soubory')+': '+results+' · '+tr('Epizody')+': '+episodes;
+const sampleReasons={not_acquired:'Epizoda není v Sonarru získaná.',season_membership_unknown:'Zařazení epizody do sezóny není známé.',episode_binding_unknown:'Vazba souboru epizody není známá.',source_path_unmapped:'Zdroj není bezpečně namapovaný do TV knihovny.',result_path_unmapped:'Cestu výsledku nelze bezpečně namapovat.',outside_series_root:'Soubor epizody je mimo bezpečně vymezený kořen série.',stale_discovery_result:'Dříve zobrazený výsledek už není ve snímku Sonarru.',multiple_staged_results:'K souboru epizody odpovídá více výsledků.',staged_result_unsafe:'Cesta výsledku není bezpečná nebo dostupná.',staged_result_unverified:'Výsledek existuje, ale jeho soubor nebo doklad nelze ověřit.',no_staged_result:'Výsledek zatím není připravený.',sonarr_order_unknown:'Číslování Sonarru nestačí k určení pořadí.',sonarr_order_ambiguous:'Více souborů má stejné číslování Sonarru; jejich pořadí nelze určit.',multi_episode_file:'Jeden fyzický soubor obsahuje více epizod.',unsupported_format:'Soubor je mimo aktuální podporovaný přísný profil.',strict_flow_unverified:'Přísný doklad převodu nelze ověřit.',job_unverified:'Přesnou úspěšnou úlohu Tdarru nelze ověřit.',release_group_unknown:'Sonarr neuvedl použitelnou skupinu vydání.',essential_evidence_unknown:'Chybí některý povinný technický údaj.',metadata_unavailable:'Technická metadata nejsou dostupná.',unsupported_streams:'Rozložení obrazových streamů není podporované.',unsupported_video:'Obrazový formát není podporovaný.',unknown_or_hdr_color:'Barevné nebo HDR údaje nejsou známé nebo nejsou podporované.',essential_video_fact_unknown:'Povinné údaje o obrazu nejsou známé.',essential_track_fact_unknown:'Povinné údaje zvuku nebo titulků nejsou známé.',unsupported_result_codec:'Výsledek je mimo přísný profil.',duration_mismatch:'Délka zdroje a výsledku překračuje toleranci přísného profilu.',metadata_changed:'Identita souboru nebo dokladu se během čtení změnila.'};
+const shownSignatureValue=value=>value===null||value===undefined?tr('Nehlášeno'):typeof value==='boolean'?tr(value?'Ano':'Ne'):String(value);
+const roleNames={comment:'Komentář',original:'Původní',dub:'Dabing',hearing_impaired:'Pro neslyšící',visual_impaired:'Pro nevidomé',clean_effects:'Čisté efekty',attached_pic:'Přiložený obrázek',timed_thumbnails:'Časové náhledy',captions:'Skryté titulky',descriptions:'Zvukový popis',metadata:'Metadata',dependent:'Závislá stopa',still_image:'Statický obraz',non_diegetic:'Nediegetický zvuk',multilayer:'Více vrstev'};
+const trackSignature=(kind,tracks)=>{
+ const heading=kind==='audio'?'Zvuk':'Titulky',list=el('ul','tv-signature-tracks');
+ if(!tracks?.length)list.append(el('li','details',tr('Bez stop')));
+ for(const track of tracks||[]){
+  const details=[tr('Kodek')+': '+shownSignatureValue(track.codec),tr('Jazyk')+': '+shownSignatureValue(track.language)];
+  if(kind==='audio')details.push(tr('Počet kanálů')+': '+shownSignatureValue(track.channels),tr('Rozložení kanálů')+': '+shownSignatureValue(track.channelLayout));
+  details.push(tr('Výchozí')+': '+shownSignatureValue(track.default),tr('Vynucené')+': '+shownSignatureValue(track.forced));
+  const roles=Object.entries(track.roles||{}).filter(([,value])=>value!==false).map(([name,value])=>tr(roleNames[name]||name)+': '+shownSignatureValue(value));
+  details.push(tr('Role')+': '+(roles.length?roles.join(', '):tr('Bez zvláštních příznaků')));
+  list.append(el('li','details',details.join(' · '),true));
+ }
+ const box=el('div','tv-signature-track-group');box.append(el('h5','',tr(heading)),list);return box;
+};
+function signatureSide(name,side){
+ const box=el('section','tv-signature-side');box.append(el('h4','',tr(name)));
+ const video=side?.video;
+ if(video){
+  box.append(el('p','details',[tr('Video'),tr('Kontejner')+': '+shownSignatureValue(side.container),tr('Kodek')+': '+shownSignatureValue(video.codec),video.dimensions?.width+'×'+video.dimensions?.height,shownSignatureValue(video.frameRateFps)+' fps',tr('Pořadí polí')+': '+shownSignatureValue(video.fieldOrder),tr('Formát pixelů')+': '+shownSignatureValue(video.pixelFormat),tr('Bitová hloubka')+': '+shownSignatureValue(video.bitDepth)].join(' · '),true));
+  const color=video.color||{};box.append(el('p','details',tr('Barva')+': '+['Primární složky','Přenos','Barevný prostor','Rozsah'].map(key=>tr(key)+': '+shownSignatureValue(color[{ 'Primární složky':'primaries','Přenos':'transfer','Barevný prostor':'space','Rozsah':'range'}[key]])).join(' · '),true));
+  const hdr=video.hdrMetadata||{},hdrLabels={dolbyVision:'Dolby Vision',hdr10Plus:'HDR10+',masteringDisplay:'Mastering display',contentLightLevel:'Content light level'};
+  box.append(el('p','details',tr('HDR vedlejší údaje')+': '+Object.entries(hdrLabels).map(([key,label])=>tr(label)+': '+(hdr[key]===null||hdr[key]===undefined?tr('Nehlášeno'):hdr[key]?tr('Přítomno'):tr('Nezjištěno'))).join(' · '),true));
+  box.append(el('p','details',tr('Deklarace kodéru ve video streamu')+': '+shownSignatureValue(video.encoderTag?.state==='declared'?video.encoderTag.value:null),true));
+ }
+ box.append(trackSignature('audio',side?.audio),trackSignature('subtitle',side?.subtitles));return box;
+}
+function signatureDetails(signature){
+ const details=el('details','tv-signature-details');details.append(el('summary','',tr('Podrobnosti technického seskupení')));
+ details.append(el('p','details',tr('Metadata zobrazují pozorované vlastnosti, neověřují kvalitu ani původ. Neuvedené HDR vedlejší údaje neprokazují, že HDR chybí.')));
+ details.append(signatureSide('Zdroj',signature?.source),signatureSide('Výsledek',signature?.result));
+ const profile=signature?.profile;details.append(el('p','details',tr('Profil')+': '+shownSignatureValue(profile?.id)+' v'+shownSignatureValue(profile?.version)+' · '+tr('Verze toku')+': v'+shownSignatureValue(signature?.flowVersion),true));return details;
+}
+function renderSamplePlan(plan,seriesType){
+ const section=el('section','tv-sample-plan');
+ section.append(el('h3','',tr(plan.status==='complete'?'Plán vzorku je úplný':plan.status==='complete_with_exclusions'?'Plán je úplný s vyloučenými položkami':'Plán je neúplný')));
+ section.append(el('p','details',tr('Jde o technické seskupení a návrh vzorku, nikoli o ověření původu či kvality ani o schválení dávky. Uvedená úspora je pouze odhad velikosti souborů.')));
+ section.append(el('p','details',tr('Vzorec')+': '+plan.policy.sampleCount+'. '+tr('Výběr používá skutečné číslování Sonarru. Autorita dávky: žádná.')));
+ for(const cohort of plan.cohorts){
+  const card=el('article','tv-sample-cohort');card.append(el('h4','',tr('Skupina')+' '+cohort.id+' · '+cohort.count+' '+tr('fyzických souborů')));
+  card.append(el('p','details',tr('Skupina vydání uvedená Sonarr')+': '+cohort.declaredReleaseGroup+'. '+tr('Původ ani kvalita vydání nejsou ověřené.')));
+  const source=cohort.signature?.source?.video,result=cohort.signature?.result?.video,encoderLabel=value=>value?.state==='declared'?value.value:tr('Kodér není deklarován');if(source&&result)card.append(el('p','details',tr('Údaje deklarované streamem')+': '+source.codec+' '+source.dimensions.width+'×'+source.dimensions.height+' '+source.frameRateFps+' fps ('+encoderLabel(source.encoderTag)+') → '+result.codec+' '+result.dimensions.width+'×'+result.dimensions.height+' '+result.frameRateFps+' fps ('+encoderLabel(result.encoderTag)+'). '+tr('Deklarace streamu a nastavení kodéru nejsou ověřeny.')));
+  card.append(signatureDetails(cohort.signature));
+  card.append(el('p','details',tr('Odhadované velikosti')+': '+fmt(cohort.estimatedSourceBytes)+' → '+fmt(cohort.estimatedResultBytes)+'; '+tr('nejde o instalovanou úsporu')));
+  const list=el('ul','tv-sample-members');
+  for(const member of cohort.members){const row=el('li',member.sampled?'tv-sample-selected':'',member.label+' · '+member.episodes.map(value=>episodeLabel(value,seriesType)).join(', '));if(member.sampled)row.append(el('strong','details',' · '+tr('Doporučený vzorek')));list.append(row)}
+  card.append(list);section.append(card);
+ }
+ if(plan.unknown?.length){const list=el('ul','tv-sample-exceptions');for(const item of plan.unknown)list.append(el('li','',tr('Soubor epizody')+' '+item.episodeFileId+': '+tr(sampleReasons[item.reason]||item.reason)));section.append(el('h4','',tr('Nezařazené položky')),list)}
+ if(plan.exceptions?.length){const list=el('ul','tv-sample-exceptions');for(const item of plan.exceptions)list.append(el('li','',(item.kind==='episode'?tr('Epizoda'):tr('Soubor epizody'))+' '+(item.id??'—')+': '+tr(sampleReasons[item.reason]||item.reason)));section.append(list)}
+ return section;
+}
 
 const strictBlocked={multi_episode_file:'Jeden soubor obsahuje více epizod.',unsupported_format:'Podporovány jsou pouze soubory Matroska .mkv.',strict_flow_evidence_missing:'Chybí důkaz dokončené přísné kontroly Tdarru.',flow_evidence_invalid:'Důkaz přísné kontroly Tdarru je neplatný.',binding_not_verified:'Vazba na jednu epizodu není ověřená.',files_changed:'Soubory se od poslední kontroly změnily.',tv_technical_facts_unavailable:'Technické údaje zdroje nebo výsledku chybí či nejsou úplné.',tv_unsupported_video_stream_count:'Podporován je právě jeden obrazový stream bez přiloženého obrázku.',tv_unsupported_container_or_scan:'Podporováno je pouze progresivní video v kontejneru Matroska.',tv_unsupported_bit_depth:'Podporováno je pouze 8bitové SDR video.',tv_hdr_or_unknown_color:'HDR nebo neznámý barevný formát není podporován.',tv_unsupported_result_codec:'Výsledek přísného TV profilu musí používat kodek HEVC.',tv_duration_mismatch:'Délka zdroje a výsledku se neshoduje v povolené toleranci.'};
 function resultRow(result,seriesType,strict=false){
@@ -78,6 +131,9 @@ export function renderTv(data){
   for(const season of series.seasons){
    const block=el('section','tv-season');block.dataset.tvSeason=String(season.seasonNumber);
    block.append(el('h3','',seasonTitle(season.seasonNumber),true));
+   if(data.mode==='strict-review'&&data.planContext&&Number.isSafeInteger(season.seasonNumber)){
+    const planButton=button('Vytvořit plán vzorku',()=>{},'secondary');planButton.dataset.tvSamplePlan='';planButton.dataset.seriesId=String(series.id);planButton.dataset.seasonNumber=String(season.seasonNumber);block.append(planButton);
+   }
    const list=el('ul','tv-result-list');for(const result of season.results)list.append(resultRow(result,series.seriesType,data.mode==='strict-review'));
    block.append(list);details.append(block);
   }
@@ -88,7 +144,7 @@ export function renderTv(data){
  return box;
 }
 
-let app=null,mode='off',installationsAvailable=false,loading=false,ledgerLoading=false,loadedAt=0,ledgerLoadedAt=0,ledgerCursors=[],ledgerPage=0,currentLedgerPage=null,reviewDialog=null,reviewWorkspace=null,activeReview=null,reviewApproval=null,reviewRevision=0;
+let app=null,mode='off',installationsAvailable=false,loading=false,ledgerLoading=false,loadedAt=0,ledgerLoadedAt=0,ledgerCursors=[],ledgerPage=0,currentLedgerPage=null,reviewDialog=null,reviewWorkspace=null,activeReview=null,reviewApproval=null,reviewRevision=0,tvPlanContext=null;
 export const tvEnabled=()=>mode==='discovery'||mode==='strict-review';
 export const tvLedgerEnabled=()=>installationsAvailable;
 function updateTvModeCopy(){
@@ -107,15 +163,29 @@ export async function refreshTvMode(){
 }
 export async function loadTv(force=false){
  if(loading||!tvEnabled()||!app.authenticated)return;
- loading=true;const box=$('tvContent');
+ loading=true;tvPlanContext=null;const box=$('tvContent');
  try{
   const data=await app.api('/api/tv'+(force?'?refresh=1':''));
   if(!['discovery','strict-review'].includes(data.mode)){mode='off';$('tvNav').hidden=true;return;}
-  mode=data.mode;updateTvModeCopy();loadedAt=Date.now();app.refreshGuards?.();const content=renderTv(data);box.replaceChildren(content);$('tvCount').textContent=tr(data.totals?.results??'—');
+  mode=data.mode;tvPlanContext=data.planContext||null;updateTvModeCopy();loadedAt=Date.now();app.refreshGuards?.();const content=renderTv(data);box.replaceChildren(content);$('tvCount').textContent=tr(data.totals?.results??'—');
   content.querySelectorAll('[data-tv-review]').forEach(control=>control.addEventListener('click',()=>void openTvReview(control.dataset.tvReview)));
+  content.querySelectorAll('[data-tv-sample-plan]').forEach(control=>control.addEventListener('click',()=>void createSeasonSamplePlan(control,data.planContext,data.series.find(series=>String(series.id)===control.dataset.seriesId)?.seriesType||'standard')));
  }catch{
   const note=el('p','alert','Seriály nelze načíst. Zobrazené údaje mohou být zastaralé.');note.setAttribute('role','status');box.prepend(note);
  }finally{loading=false;}
+}
+async function createSeasonSamplePlan(control,context,seriesType){
+ const block=control.closest('.tv-season');if(!block||!context?.settingsRevision||!context?.discoveryRevision)return;
+ const settingsRevision=context.settingsRevision,discoveryRevision=context.discoveryRevision,seriesId=control.dataset.seriesId,seasonNumber=control.dataset.seasonNumber;
+ control.disabled=true;block.querySelector('.tv-sample-plan')?.remove();
+ const waiting=el('p','details',tr('Ověřuji aktuální metadata a vazby. Soubory zůstanou beze změny.'));block.append(waiting);
+ try{
+  const query=new URLSearchParams({settingsRevision,discoveryRevision,seriesId,seasonNumber});
+  const plan=await app.api('/api/tv/season-sample-plan?'+query.toString());
+  if(!control.isConnected||app.ui?.view!=='tv'||mode!=='strict-review'||tvPlanContext?.settingsRevision!==settingsRevision||tvPlanContext?.discoveryRevision!==discoveryRevision)return;
+  waiting.remove();block.append(renderSamplePlan(plan,seriesType));
+ }catch(error){if(control.isConnected&&app.ui?.view==='tv'&&tvPlanContext?.settingsRevision===settingsRevision&&tvPlanContext?.discoveryRevision===discoveryRevision)waiting.textContent=tr(error.message||'Plán vzorku nelze sestavit.');}
+ finally{control.disabled=false;}
 }
 export const tvLoadedAt=()=>loadedAt;
 export const tvHistoryLoadedAt=()=>ledgerLoadedAt;

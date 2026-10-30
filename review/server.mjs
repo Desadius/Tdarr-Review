@@ -56,6 +56,7 @@ import {createSonarrResultInspection} from './sonarr-result-inspection.mjs';
 import {inspectTvReviewPair,supportedTvReviewItem,tvReviewBlockCode} from './tv-review.mjs';
 import {validTvStrictProof,tvStrictProofMatchesFiles} from './tv-flow-proof.mjs';
 import {createTvInstallLedger} from './tv-install-ledger.mjs';
+import {createTvSeasonSampleService} from './tv-season-sample-service.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 const DATA=process.env.DATA_ROOT||'/data',PORT=Number(process.env.PORT||8270),APP_VERSION=await appVersion();
@@ -291,6 +292,18 @@ async function readRows(table,cfg=config){
 const dbRows=table=>readRows(table);
 // Read-only TV discovery (#271). It works from the applied settings only and keeps its state under state.tv.
 const tvDiscovery=createTvDiscovery({getSettings:()=>activeSettings?{tv:activeSettings.libraries?.tv??null,sonarr:activeSettings.sonarr??null,generation:activeSettings.generation??null}:null,getMovieRoots:()=>({mediaRoot:MEDIA,reviewRoot:REVIEW,reviewPrefixes:config.reviewPrefixes,quarantineRoot:activeSettings?.radarr?.quarantineRoot||''}),getState:()=>state,save,dbRows});
+const tvPlanPins=new Map();
+function trimTvPlanPins(){const cutoff=Date.now()-120000;for(const [key,value] of tvPlanPins)if(value.at<cutoff)tvPlanPins.delete(key);while(tvPlanPins.size>8)tvPlanPins.delete(tvPlanPins.keys().next().value)}
+async function pinTvDiscovery(overview){
+ const current=await sharedSettings.current(),generation=activeSettings?.generation??null;
+ const discoveryRevision=hash(JSON.stringify({overview,generation,settingsRevision:current.revision}));
+ trimTvPlanPins();tvPlanPins.set(discoveryRevision,{overview,generation,settingsRevision:current.revision,discoveryRevision,at:Date.now()});
+ return {settingsRevision:current.revision,discoveryRevision,generation};
+}
+const tvSeasonSampleService=createTvSeasonSampleService({
+ getContext:async(settingsRevision,discoveryRevision)=>({active:activeSettings,current:await sharedSettings.current(),pin:tvPlanPins.get(discoveryRevision)||null,requestedRevision:settingsRevision}),
+ dbRows,
+});
 const tvWorkflowState={items:{},reviewSessions:state.tvReview.reviewSessions,approvals:state.tvReview.approvals,history:state.tvReview.history};
 const tvReviewInspector=createSonarrResultInspection({getSnapshot:async revision=>{
  const current=await sharedSettings.current();if(current.revision!==revision)throw Object.assign(Error('Settings changed'),{code:'settings_conflict'});
@@ -606,7 +619,7 @@ const authTimer=setInterval(()=>{pruneAuthAttempts(authAttempts);if(pruneSession
 // Getters/setters keep the module variables above authoritative, so the scan,
 // transaction and preview code shares exactly the state the routes change.
 const ctx={
- ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,recoveryAttention,quarantineDelete,diagnosticExport,recoverySafeRestore,installedAssessment,tdarrHandoff,transcodeRetry,artwork,reviewSessions,tvReviewSessions,tvWorkflowState,tvInstallLedger,refreshTvReviewItem,tvStrictBlockReason,performTvInstall,previewPairs,previewPlans,previewAttempts,previewIdentity,previewVersion,previewVersionFor,previewPreparation,planPreviewItem,prepareTvPreviewPlan,sharedSettings,sonarrSourceInspection,sonarrReconciliation,sonarrResultInspection,tvDiscovery,
+ ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,recoveryAttention,quarantineDelete,diagnosticExport,recoverySafeRestore,installedAssessment,tdarrHandoff,transcodeRetry,artwork,reviewSessions,tvReviewSessions,tvWorkflowState,tvInstallLedger,refreshTvReviewItem,tvStrictBlockReason,performTvInstall,previewPairs,previewPlans,previewAttempts,previewIdentity,previewVersion,previewVersionFor,previewPreparation,planPreviewItem,prepareTvPreviewPlan,sharedSettings,sonarrSourceInspection,sonarrReconciliation,sonarrResultInspection,tvDiscovery,tvSeasonSampleService,pinTvDiscovery,
  get config(){return config},set config(value){config=value},
  get tvSettings(){return activeSettings?.libraries?.tv??null},safeFile,validateTvLibrary:validateTvLibraryRow,
  get previewSettings(){return previewSettings},set previewSettings(value){previewSettings=value},
@@ -635,6 +648,7 @@ function assessInvalidation(candidate){
 // Without a level (an adopted ambiguous commit) everything is cleared, as before levels existed.
 let pendingInvalidation='all';
 const activateSettings=(value,invalidation={level:'all'})=>{
+ tvPlanPins.clear();
  const tvModeBefore=tvDiscovery.mode(),tvGenerationBefore=activeSettings?.generation;
  activeSettings={...value,generation:invalidation.generation??value.generation};config=value.review;applyConfig();pendingInvalidation=invalidation.level;
  // Turning TV discovery on or off changes which result files the movie list owns.
