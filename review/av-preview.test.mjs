@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {previewArgs,previewProfile,canRetryPreviewSeek,withPreviewSeekRetry} from './av-preview.mjs';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import {previewArgs,previewProfile,canRetryPreviewSeek,withPreviewSeekRetry,extractPreview} from './av-preview.mjs';
 test('AV preview preserves stream differences by subtracting one container origin',()=>{
  const args=previewArgs('/source.mkv',3,300,5,{index:0,color_transfer:'bt709'}),f=args[args.indexOf('-filter_complex')+1];
  assert.match(f,/\[0:0\]trim=start=305:end=317,setpts=PTS-\(305\)\/TB/);
@@ -64,4 +67,14 @@ test('eligible retry runs once; failure never becomes readiness and abort never 
  for(const error of [Error('Permission denied'),Error('timeout'),seekError(decoderErrors+'\n[libx264 @ 0x123abc] invalid encoder quality')]){let calls=0;await assert.rejects(withPreviewSeekRetry(async()=>{calls++;throw error},seekContext),value=>value===error);assert.equal(calls,1)}
  const controller=new AbortController();let calls=0;await assert.rejects(withPreviewSeekRetry(async()=>{calls++;controller.abort();throw seekError(decoderErrors)},{...seekContext,signal:controller.signal}));assert.equal(calls,1);
  const aborted=new AbortController();aborted.abort();await assert.rejects(withPreviewSeekRetry(async()=>{calls++;return 'must not render'},{...seekContext,signal:aborted.signal}));assert.equal(calls,1);
+});
+test('a DV7 FEL original previews despite the enhancement-layer PPS message; other sources still fail (#300)',{skip:process.platform==='win32'&&'needs an executable decoder stub'},async t=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'preview-dv7-test-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ const decoder=async(name,exit)=>{const exe=path.join(root,name);await fs.writeFile(exe,'#!'+process.execPath+"\nprocess.stderr.write('[hevc @ 0x55a9af27eec0] PPS changed between slices.\\n    Last message repeated 6 times\\n');const b=Buffer.alloc(64);b.write('ftyp',4,'ascii');process.stdout.write(b);process.exitCode="+exit+";",{mode:0o700});return exe};
+ const fel={index:0,codec_name:'hevc',color_transfer:'smpte2084',avg_frame_rate:'24000/1001',side_data_list:[{side_data_type:'DOVI configuration record',dv_profile:7,el_present_flag:1}]};
+ const ok=await decoder('ok',0);
+ assert.ok(Buffer.from(await extractPreview(ok,'/source.mkv',1,60,0,fel),'base64').toString('ascii',4,8)==='ftyp');
+ await assert.rejects(extractPreview(ok,'/source.mkv',1,60,0,{...fel,side_data_list:[{side_data_type:'DOVI configuration record',dv_profile:7,el_present_flag:0}]}),/PPS changed between slices/);
+ await assert.rejects(extractPreview(ok,'/source.mkv',1,60,0,{...fel,side_data_list:[]}),/PPS changed between slices/);
+ await assert.rejects(extractPreview(await decoder('exit1',1),'/source.mkv',1,60,0,fel),/Nelze připravit náhled/);
 });
