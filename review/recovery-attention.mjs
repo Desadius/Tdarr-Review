@@ -5,7 +5,7 @@ import {classifyRecovery,recoveryFollowup,RECOVERY_STALE_MS} from './public/revi
 import {readRecoveryCaseState} from './recovery-snapshot.mjs';
 import {withReviewPaths} from './recovery-case-alias.mjs';
 import {deletedQuarantineCases} from '../recovery/quarantine-deletion.mjs';
-import {compareIdentity,identityOf} from '../recovery/file-identity.mjs';
+import {compareIdentity,identityOf,REMOUNT_CHANGES} from '../recovery/file-identity.mjs';
 import {createTdarrFileState} from '../recovery/tdarr-file-state.mjs';
 import {readRecoveryConfiguration,readRecoveryRestoreBinding} from '../recovery/recovery-authority.mjs';
 import {inspectRadarrImport,radarrQueueUrl} from './recovery-import-diagnostics.mjs';
@@ -20,6 +20,8 @@ import {diagnoseRetentionEvidence,hasMatchingReviewRetentionError} from './recov
 // Locations carry state codes, never paths or values.
 
 const SAME=new Set(['same','ctime-changed']);
+// Where the film is shown: a remount (ADR 0002) leaves it present.
+const PRESENT=new Set([...SAME,...REMOUNT_CHANGES,'remounted-ctime-changed']);
 const UNRESOLVED=new Set(['running','waiting','attention','unverified']);
 const at=value=>typeof value==='string'&&Number.isFinite(Date.parse(value))?value:null;
 const object=value=>!!value&&typeof value==='object'&&!Array.isArray(value);
@@ -55,7 +57,7 @@ const BLOCKERS={
 async function fileState(file,recorded){
  if(typeof file!=='string'||!path.isAbsolute(file))return {status:'not-used'};
  try{const st=await fs.lstat(file);if(!st.isFile()||st.isSymbolicLink())return {status:'verified',detail:'changed'};
-  const current=identityOf(st);return {status:'verified',detail:recorded&&!SAME.has(compareIdentity(recorded,current))?'changed':'present',identity:current};}
+  const current=identityOf(st);return {status:'verified',detail:recorded&&!PRESENT.has(compareIdentity(recorded,current))?'changed':'present',identity:current};}
  catch(e){return e?.code==='ENOENT'?{status:'verified',detail:'missing'}:{status:'unverified'};}
 }
 // The current library copy of a Recovery case: the imported replacement when there is one, else the original.

@@ -1,8 +1,9 @@
 import fs from 'node:fs/promises';
 import {constants as fsConstants} from 'node:fs';
 import path from 'node:path';
-import {approvalEvidencePath,approvalKey} from '../recovery/quarantine-retention.mjs';
-import {compareIdentity,identityOf} from '../recovery/file-identity.mjs';
+import {approvalEvidencePath,approvalKey,approvedCopyState} from '../recovery/quarantine-retention.mjs';
+import {compareIdentity,identityOf,REMOUNT_CHANGES} from '../recovery/file-identity.mjs';
+import {remountedContentMatches} from '../recovery/content-sample.mjs';
 import {readRecoveryCaseState} from './recovery-snapshot.mjs';
 import {readRecoveryRestoreBinding} from '../recovery/recovery-authority.mjs';
 
@@ -70,7 +71,7 @@ async function quarantineReason(c,binding,source,reviewConfig){
  if(source==='recovery'){
   const file=c.quarantine||c.originalQuarantine,fp=c.preservedSourceFP||c.fp||c.originalFP;
   if(typeof file!=='string'||!path.isAbsolute(file)||!validIdentity(fp)||typeof binding?.quarantineRoot!=='string'||!path.isAbsolute(binding.quarantineRoot))return 'quarantine-binding-unavailable';
-  targets.push({file,fp,root:binding.quarantineRoot,id:c.id});
+  targets.push({file,fp,root:binding.quarantineRoot,id:c.id,sample:fp===c.fp?c.evidence?.sampleSHA256:null});
  }else{
   const radarr=reviewConfig?.radarr;
   const originalRoot=radarr?.quarantineRoot||path.join(path.dirname(reviewConfig.mediaRoot),'.tdarr-review-quarantine');
@@ -86,7 +87,8 @@ async function quarantineReason(c,binding,source,reviewConfig){
   const actual=await regularIdentity(target.file);if(actual.reason)return actual.reason==='file-missing'?'quarantine-file-missing':'quarantine-file-unavailable';
   const difference=compareIdentity(target.fp,actual.identity);
   if(difference==='invalid')return 'quarantine-identity-unavailable';
-  if(!['same','ctime-changed'].includes(difference))return 'quarantine-file-changed';
+  // The same remount rule as retention (ADR 0002).
+  if(!['same','ctime-changed'].includes(difference)&&!([...REMOUNT_CHANGES,'remounted-ctime-changed'].includes(difference)&&await remountedContentMatches(target.file,target.sample)))return 'quarantine-file-changed';
  }
  return null;
 }
@@ -120,7 +122,7 @@ export async function diagnoseRetentionEvidence({data,mode='off',record,reviewCo
   if(usable){
    const file=within(reviewConfig.mediaRoot,evidenceValue.installedRelative);if(!file)return unavailable('approval-binding-unavailable');
    const actual=await regularIdentity(file);let reason=actual.reason==='file-missing'?'approved-copy-missing':actual.reason?'approved-copy-unavailable':null;
-   if(!reason){const change=compareIdentity(evidenceValue.installedFP,actual.identity);reason=change==='ctime-changed'?'approved-copy-metadata-changed':change==='invalid'?'approved-identity-unavailable':change!=='same'?'approved-copy-changed':null;}
+   if(!reason){const copy=await approvedCopyState(evidenceValue,file,actual.identity);reason=copy==='metadata-changed'?'approved-copy-metadata-changed':copy==='invalid'?'approved-identity-unavailable':copy!=='same'?'approved-copy-changed':null;}
    if(result.reason.startsWith('approved-copy-')){if(reason!==result.reason)return unavailable('approved-copy-unavailable');}
    else if(reason)return unavailable('case-binding-changed');
    if(result.reason.startsWith('quarantine-')||result.reason==='retention-error-unresolved'){
@@ -155,10 +157,10 @@ export async function diagnoseRetentionEvidence({data,mode='off',record,reviewCo
  if(!installed)return unavailable('approval-binding-unavailable');
  const current=await regularIdentity(installed);
  if(current.reason)return finish(verified(current.reason==='file-missing'?'approved-copy-missing':'approved-copy-unavailable'));
- const difference=compareIdentity(approval.installedFP,current.identity);
- if(difference==='invalid')return unavailable('approved-identity-unavailable');
- if(difference==='ctime-changed')return finish(verified('approved-copy-metadata-changed'));
- if(difference!=='same')return finish(verified('approved-copy-changed'));
+ const copy=await approvedCopyState(approval,installed,current.identity);
+ if(copy==='invalid')return unavailable('approved-identity-unavailable');
+ if(copy==='metadata-changed')return finish(verified('approved-copy-metadata-changed'));
+ if(copy!=='same')return finish(verified('approved-copy-changed'));
  const quarantine=await quarantineReason(c,binding?.binding,record.source,reviewConfig);
  if(quarantine)return quarantine.endsWith('-unavailable')||quarantine==='quarantine-identity-unavailable'?unavailable(quarantine):finish(verified(quarantine));
  return finish(verified('retention-error-unresolved'));

@@ -34,6 +34,9 @@ test('a file without a case can be deleted after confirmation; the deletion is r
  assert.equal(await userDeletedQuarantine({data:f.data,file:path.join('/storage/.tdarr-corrupt',ID,'old.mkv'),identity}),true,'accepted under another mount of the share');
  assert.equal(await userDeletedQuarantine({data:f.data,file:path.join('/storage/.tdarr-corrupt',ID,'other.mkv'),identity}),false);
  assert.equal(await userDeletedQuarantine({data:f.data,file:path.join('/storage/.tdarr-corrupt',ID,'old.mkv'),identity:'9:9:9:9:9'}),false,'another file of the same name');
+ const [dev,ino,size,mtime,ctime]=identity.split(':'),remounted=[Number(dev)+1,Number(ino)+1,size,mtime,ctime].join(':');
+ assert.equal(await userDeletedQuarantine({data:f.data,file:path.join('/storage/.tdarr-corrupt',ID,'old.mkv'),identity:remounted}),true,'a remount keeps size and modification time (ADR 0002)');
+ assert.equal(await userDeletedQuarantine({data:f.data,file:path.join('/storage/.tdarr-corrupt',ID,'old.mkv'),identity:[Number(dev)+1,Number(ino)+1,Number(size)+1,mtime,ctime].join(':')}),false,'a remounted file of another size');
  assert.deepEqual([...await deletedQuarantineCases({data:f.data})],[ID]);
 });
 

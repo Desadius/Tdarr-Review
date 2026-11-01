@@ -37,7 +37,7 @@ The settings that decide which Tdarr library, files and technical data a saved r
 _Avoid_: identity (that is file identity)
 
 **File identity**:
-The device, inode, size and modification times that show a file on disk is still the exact file that was checked, reviewed or recorded as evidence. A file whose identity no longer matches is never treated as the one that was checked; an unreadable recorded identity matches nothing.
+The device, inode, size and modification times that show a file on disk is still the exact file that was checked, reviewed or recorded as evidence. A file whose identity no longer matches is never treated as the one that was checked; an unreadable recorded identity matches nothing. After a remount (a new device or inode number with the same size and modification time, for example after an Unraid reboot) some checks accept the file when its recorded content sample matches ([ADR 0002](docs/adr/0002-file-identity-after-remount.md)).
 _Avoid_: fingerprint, stamp, Recovery case ID (a different value derived from the path and the file identity by `caseId()` in `recovery/policy.mjs`)
 
 **TV library**:

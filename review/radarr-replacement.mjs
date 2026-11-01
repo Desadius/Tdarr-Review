@@ -3,7 +3,8 @@ import {readRecoveryRuntime,readRecoveryStatus as readRecoveryStatusFile,readRec
 import {ensureHandoff,preservesHold} from '../recovery/replacement-handoff.mjs';
 import {retainCase,quarantineRetention} from '../recovery/quarantine-retention.mjs';
 import {userDeletedQuarantine} from '../recovery/quarantine-deletion.mjs';
-import {identityOf,compareIdentity} from '../recovery/file-identity.mjs';
+import {identityOf,compareIdentity,REMOUNT_CHANGES} from '../recovery/file-identity.mjs';
+import {remountedContentMatches} from '../recovery/content-sample.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -119,7 +120,9 @@ export function createReplacement({data,getConfig,getConnection,safeFile,hash,at
   const c=(await recoveryCases())[caseId];
   if(!c||c.id!==caseId||c.status!=='manual'||!BINDING_FAILURES.includes(c.bindingFailure?.code)||!c.fp||c.evidence?.sourceFP!==c.fp||c.evidence.checks?.length!==2||!Number.isInteger(c.movieId)||typeof c.relative!=='string')throw Error('Tento případ Recovery nenabízí ruční náhradu.');
   const a=await safeFile(getConfig().mediaRoot,c.relative);
-  if(compareIdentity(c.fp,a.fp)!=='same')throw Error('Originál se od potvrzení vady změnil. Ruční náhrada není dostupná, dokud ho Recovery znovu neověří.');
+  // After a remount (ADR 0002) the confirmed original is recognised by its recorded content sample.
+  const change=compareIdentity(c.fp,a.fp);
+  if(change!=='same'&&!(REMOUNT_CHANGES.includes(change)&&typeof c.evidence.sampleSHA256==='string'&&await remountedContentMatches(a.path,c.evidence.sampleSHA256)))throw Error('Originál se od potvrzení vady změnil. Ruční náhrada není dostupná, dokud ho Recovery znovu neověří.');
   return {id:caseId,title:c.relative.split('/')[0]||'Film',relative:c.relative,reviewRelative:'',outputRelative:c.relative,sourceOnly:true,recoveryCaseId:caseId,movieId:c.movieId,bindingFailure:c.bindingFailure.code,snapshot:hash('source-only|'+caseId+'|'+c.movieId+'|'+a.fp)};
  }
  async function prepare(item,reason){

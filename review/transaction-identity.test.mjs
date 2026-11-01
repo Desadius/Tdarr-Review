@@ -26,7 +26,7 @@ async function interrupted(variant,phase){
 
 // Malformed or missing recorded identities: refused with their own reason, nothing moves.
 const invalid=new Set(['fourFields','emptyCtime','textCtime','textDevice','sixFields','missing']);
-const accepted={same:true,ctimeChanged:true,deviceChanged:false,deviceAndCtimeChanged:false,inodeChanged:false,fourFields:false,emptyCtime:false,textCtime:false,textDevice:false,sixFields:false,missing:false};
+const accepted={same:true,ctimeChanged:true,deviceChanged:false,deviceAndCtimeChanged:false,inodeChanged:false,remounted:false,remountedCtimeChanged:false,sizeChanged:false,mtimeChanged:false,fourFields:false,emptyCtime:false,textCtime:false,textDevice:false,sixFields:false,missing:false};
 
 test('rollback of a backed-up original follows the recorded identity',async()=>{
  for(const [variant,restores] of Object.entries(accepted)){

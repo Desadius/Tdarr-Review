@@ -1,7 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import {identityOf,compareIdentity} from './file-identity.mjs';
+import {identityOf,compareIdentity,REMOUNT_CHANGES} from './file-identity.mjs';
+import {contentSample,remountedContentMatches} from './content-sample.mjs';
 // Single source for the retention rules; the Review UI reads them from /api/quarantine.
 export const quarantineRetention=Object.freeze({retentionDays:7,cleanupEnabled:true});
 const unreadable=()=>Object.assign(Error('Recorded file identity is unreadable; quarantine preserved'),{code:'FILE_IDENTITY_INVALID'});
@@ -35,10 +36,25 @@ export function approvalKey(c){
 export async function publishApproval({mediaRoot,relative,sourceFP,installedRelative,atomic}){
  const parent=path.dirname(await fs.realpath(mediaRoot)),directory=path.join(parent,'.tdarr-approvals');await fs.mkdir(directory,{recursive:true,mode:0o770});if(await fs.realpath(directory)!==directory)throw Error('Approval directory symlink');
  const installed=under(mediaRoot,installedRelative),st=await regular(installed);
- const record={version:1,relative,sourceFP,installedRelative,installedFP:identityOf(st),approvedAt:new Date().toISOString()};
+ // The content sample lets retention recognise the approved copy after a remount (ADR 0002).
+ const record={version:1,relative,sourceFP,installedRelative,installedFP:identityOf(st),installedSample:await contentSample(installed),approvedAt:new Date().toISOString()};
  const target=path.join(directory,key(relative,sourceFP));try{await fs.access(target);throw Error('Approval evidence already exists')}catch(e){if(e.code!=='ENOENT')throw e;}
  await atomic(target,record);return record;
 }
+/**
+ * How the installed copy compares with its approval: 'same', 'metadata-changed', 'changed' or 'invalid'. A remount
+ * (ADR 0002) keeps size and modification time: the recorded content sample confirms it, and an approval made before
+ * samples were kept accepts it as it is. A ctime change on top of a remount needs a matching sample.
+ */
+export async function approvedCopyState(approval,file,current){
+ if(current===approval.installedFP)return 'same';
+ const change=compareIdentity(approval.installedFP,current);
+ if(change==='invalid')return 'invalid';
+ if(change==='ctime-changed')return 'metadata-changed';
+ if(REMOUNT_CHANGES.includes(change)||change==='remounted-ctime-changed'&&approval.installedSample)return await remountedContentMatches(file,approval.installedSample)?'same':'changed';
+ return 'changed';
+}
+const QUARANTINE_REMOUNT=new Set([...REMOUNT_CHANGES,'remounted-ctime-changed']);
 const preserved=c=>[[c.quarantine||c.originalQuarantine,c.fp||c.originalFP],[c.reviewQuarantine,c.reviewFP]].filter(v=>v[0]);
 async function absent(file){try{await fs.lstat(file);return false;}catch(e){if(e.code==='ENOENT')return true;throw e;}}
 /**
@@ -53,12 +69,10 @@ export async function retainCase(c,{mediaRoot,reviewRoot,quarantineRoot,reviewQu
  let a;try{const f=await approvalEvidencePath(mediaRoot,approval.relative,approval.sourceFP);await regular(f);a=JSON.parse(await fs.readFile(f,'utf8'));}catch(e){if(e.code==='ENOENT')return;throw e;}
  if(a.version!==1||a.relative!==approval.relative||a.sourceFP!==approval.sourceFP||!Number.isFinite(Date.parse(a.approvedAt))||Date.parse(a.approvedAt)>now)throw Error('Invalid approval evidence');
  const installed=under(mediaRoot,a.installedRelative);const installedNow=identityOf(await regular(installed));
- if(installedNow!==a.installedFP){
-  const change=compareIdentity(a.installedFP,installedNow);
-  if(change==='invalid')throw unreadable();
-  if(change==='ctime-changed')throw Error('Approved replacement metadata timestamp changed; content identity is not reverified; quarantine preserved');
-  throw Error('Approved replacement changed; quarantine preserved');
- }
+ const copy=await approvedCopyState(a,installed,installedNow);
+ if(copy==='invalid')throw unreadable();
+ if(copy==='metadata-changed')throw Error('Approved replacement metadata timestamp changed; content identity is not reverified; quarantine preserved');
+ if(copy!=='same')throw Error('Approved replacement changed; quarantine preserved');
  if(!c.cleanup){c.cleanup={approvedAt:a.approvedAt,deleteAfter:new Date(Date.parse(a.approvedAt)+quarantineRetention.retentionDays*86400000).toISOString(),files:[]};await atomicCase(c);}
  if(now<Date.parse(c.cleanup.deleteAfter))return;
  const targets=preserved(c).map(([file,expected],i)=>[file,expected,i?reviewQuarantineRoot:quarantineRoot]);
@@ -70,11 +84,12 @@ export async function retainCase(c,{mediaRoot,reviewRoot,quarantineRoot,reviewQu
    if(e.code==='ENOENT'&&await deletedByUser?.(file,expected)){c.cleanup.files.push({path:file,fp:expected,userDeleted:true,purged:true,time:new Date(now).toISOString()});await atomicCase(c);continue;}
    throw e;
   }
-  // Moving the original into quarantine changes its ctime.
+  // Moving the original into quarantine changes its ctime. A remount (ADR 0002) is accepted with the recorded
+  // sample of the confirmed original where there is one, otherwise by the unchanged size and modification time.
   const change=compareIdentity(expected,identityOf(st));if(change==='invalid')throw unreadable();
-  if(!['same','ctime-changed'].includes(change))throw Error('Quarantine file changed; preserved');
+  if(!['same','ctime-changed'].includes(change)&&!(QUARANTINE_REMOUNT.has(change)&&await remountedContentMatches(file,expected===c.fp?c.evidence?.sampleSHA256:null)))throw Error('Quarantine file changed; preserved');
   if(!entry){entry={path:file,fp:identityOf(st),intent:true};c.cleanup.files.push(entry);await atomicCase(c);}
-  if(identityOf(await regular(installed))!==a.installedFP||identityOf(await regular(file))!==entry.fp)throw Error('Retention identity changed');
+  if(identityOf(await regular(installed))!==installedNow||identityOf(await regular(file))!==entry.fp)throw Error('Retention identity changed');
   await fs.unlink(file);entry.purged=true;entry.time=new Date(now).toISOString();await atomicCase(c);
   try{await fs.rmdir(path.dirname(file))}catch(e){if(!['ENOTEMPTY','ENOENT','EEXIST'].includes(e.code))throw e;}
  }

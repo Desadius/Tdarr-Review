@@ -9,6 +9,7 @@ import {validateConnection,matchMovie,titleRegex,replacementProfile,canResume,cr
 import {publishApproval} from '../recovery/quarantine-retention.mjs';
 import {classifyRecovery} from './public/review-model.js';
 import {identityVariants} from './test-helpers/identity-variants.mjs';
+import {contentSample} from '../recovery/content-sample.mjs';
 const profile={id:6,name:'HD',items:[{quality:{id:1,resolution:720},allowed:true},{quality:{id:2,resolution:1080},allowed:true},{quality:{id:3,resolution:2160},allowed:true}],formatItems:[{format:1,score:5},{format:2,score:-10000}],minFormatScore:1};
 test('connection forbids embedded credentials, query, unsafe root and empty key',()=>{
  const c={url:'http://radarr:7878/base',apiKey:'secret',mediaRoot:'/media/movies',preferCzechEnglish:true};assert.equal(validateConnection(c).url,c.url);
@@ -295,7 +296,7 @@ test('Review preserves Verify pause and original-location fields from the shared
 });
 
 // Recorded identities are compared without ctime: quarantine renames change it.
-const identityAccepted={same:true,ctimeChanged:true,deviceChanged:false,deviceAndCtimeChanged:false,inodeChanged:false,fourFields:false,emptyCtime:false,textCtime:false,textDevice:false,sixFields:false,missing:false};
+const identityAccepted={same:true,ctimeChanged:true,deviceChanged:false,deviceAndCtimeChanged:false,inodeChanged:false,remounted:false,remountedCtimeChanged:false,sizeChanged:false,mtimeChanged:false,fourFields:false,emptyCtime:false,textCtime:false,textDevice:false,sixFields:false,missing:false};
 const statIdentity=s=>[s.dev,s.ino,s.size,s.mtimeMs,s.ctimeMs].join(':');
 const unreadableIdentity=new Set(['fourFields','emptyCtime','textCtime','textDevice','sixFields','missing']),unreadableMessage='Zaznamenaná identita souboru je nečitelná; karanténa zůstává zachovaná.';
 
@@ -447,4 +448,15 @@ test('a confirmed Hold of the original is read back before quarantine',async()=>
   await f.service.run(f.item,'reason');assert.equal(f.sourceRow.TranscodeDecisionMaker,'Hold');
   const write=f.tdcalls.findIndex(v=>v.p==='/api/v2/bulk-update-files');assert.deepEqual(f.tdcalls[write+1],{p:'/api/v2/cruddb',b:{collection:'FileJSONDB',mode:'getById',docID:'/media/movies/Film/a.mkv'}});
  }finally{await f.cleanup()}
+});
+
+test('after a remount the source-only replacement recognises the confirmed original only by its recorded content sample (ADR 0002)',async()=>{
+ for(const [name,offered] of [['matching',true],['different',false],['none',false]]){const f=await fixture();try{
+  const fp=identityVariants(statIdentity(await fs.stat(f.source))).remounted;
+  const sampleSHA256=name==='matching'?await contentSample(f.source):name==='different'?'0'.repeat(64):undefined;
+  await bindingCase(f,{fp,evidence:{sourceFP:fp,checks:[{},{}],...(sampleSHA256?{sampleSHA256}:{})}});
+  if(!offered){await assert.rejects(()=>f.service.sourceCandidate(caseId),/změnil/,name);assert(!f.calls.some(v=>v.method!=='GET'),name);continue}
+  const item=await f.service.sourceCandidate(caseId);
+  const result=await f.service.run(item,'Potvrzená vada originálu');assert.equal(result.phase,'waiting',name);
+ }finally{await f.cleanup()}}
 });
