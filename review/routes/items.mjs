@@ -5,6 +5,7 @@ import {unresolvedTransactions} from '../unresolved-transactions.mjs';
 import {createReadStream} from 'node:fs';
 import {safeFile} from '../core.mjs';
 import {rejectionReason} from '../rejection-audit.mjs';
+import {recordDecision} from '../decision-audit.mjs';
 import {body,reply,apiError} from './http.mjs';
 
 // Review items: listing, saved review sessions and the approve/reject/replace/recheck actions.
@@ -17,6 +18,23 @@ export async function itemRoutes(ctx,req,res,url,request){
   const b=await body(req);let reason;try{reason=rejectionReason(b.reason)}catch(e){return reply(res,400,{error:e.message})}
   const item=(await ctx.scan(true,null,request.mutation)).find(v=>v.id===replaceRequest[1]);
   if(!item?.snapshot||item.snapshot!==b.snapshot)return reply(res,409,apiError('item_changed'));
+  if(ctx.busyFor('replace',request.mutation))return reply(res,409,apiError('busy'));
+  void ctx.replacementAction(item,reason);return reply(res,202,{ok:true});
+ }
+ // A source the flow refused to encode (#299): only a Radarr replacement request or Keep, never an approval.
+ const advisoryAction=/^\/api\/advisories\/([a-f0-9]{24})\/(replace|keep)$/.exec(url.pathname);
+ if(advisoryAction&&req.method==='POST'){
+  const b=await body(req);if(typeof b?.snapshot!=='string')return reply(res,409,apiError('advisory_changed'));
+  const refused=e=>reply(res,409,apiError(['advisory_changed','advisory_source_changed'].includes(e?.code)?e.code:'advisory_changed'));
+  if(advisoryAction[2]==='keep'){
+   let item;try{item=await ctx.advisories.keep(advisoryAction[1],b.snapshot)}catch(e){return refused(e)}
+   await recordDecision(ctx.DATA,{event:'advisory-keep',id:item.id,title:item.title,relative:item.relative,snapshot:item.snapshot,reason:item.reason,jobId:item.jobId});
+   return reply(res,200,{ok:true});
+  }
+  let reason;try{reason=rejectionReason(b.reason)}catch(e){return reply(res,400,{error:e.message})}
+  let item;try{item=await ctx.advisories.candidate(advisoryAction[1],b.snapshot)}catch(e){return refused(e)}
+  // A Review result for the same original would be left without its original.
+  if((await ctx.scan(true,null,request.mutation)).some(v=>v.relative===item.relative))return reply(res,409,apiError('item_has_review_result'));
   if(ctx.busyFor('replace',request.mutation))return reply(res,409,apiError('busy'));
   void ctx.replacementAction(item,reason);return reply(res,202,{ok:true});
  }
@@ -34,7 +52,8 @@ export async function itemRoutes(ctx,req,res,url,request){
  }
  if(url.pathname==='/api/items'&&req.method==='GET'){
   const items=await ctx.scan();
-  return reply(res,200,{version:ctx.APP_VERSION,label:ctx.config.label,serverTime:Date.now(),items,previews:Object.fromEntries(items.filter(item=>item.snapshot).map(item=>[item.id,ctx.previewPreparation(item.id,item.snapshot)])),reviewSessions:ctx.reviewSessions.list(items.filter(item=>!item.identityChanged)),approvals:publicApprovals(ctx.state,items.filter(item=>!item.identityChanged),ctx.reviewSessions.list(items.filter(item=>!item.identityChanged))),active:ctx.active,batch:ctx.state.batch||null,batchRunning:ctx.batchRunning,history:ctx.state.history,recovery:unresolvedTransactions(ctx.recovery,items,ctx.config.mediaRoot),replacementQueue:ctx.state.replacementQueue.map(({id,title,queuedAt})=>({id,title,queuedAt})),queueInterrupted:ctx.state.queueInterrupted.map(({id,title,queuedAt,interruptedAt})=>({id,title,queuedAt,interruptedAt})),restorePending:ctx.state.pauses.length,pendingRestores:ctx.pendingRestores()});
+  const advisories=await ctx.advisories.list().catch(e=>{console.error('Advisories: '+e.message);return []});
+  return reply(res,200,{version:ctx.APP_VERSION,label:ctx.config.label,serverTime:Date.now(),items,advisories,previews:Object.fromEntries(items.filter(item=>item.snapshot).map(item=>[item.id,ctx.previewPreparation(item.id,item.snapshot)])),reviewSessions:ctx.reviewSessions.list(items.filter(item=>!item.identityChanged)),approvals:publicApprovals(ctx.state,items.filter(item=>!item.identityChanged),ctx.reviewSessions.list(items.filter(item=>!item.identityChanged))),active:ctx.active,batch:ctx.state.batch||null,batchRunning:ctx.batchRunning,history:ctx.state.history,recovery:unresolvedTransactions(ctx.recovery,items,ctx.config.mediaRoot),replacementQueue:ctx.state.replacementQueue.map(({id,title,queuedAt})=>({id,title,queuedAt})),queueInterrupted:ctx.state.queueInterrupted.map(({id,title,queuedAt,interruptedAt})=>({id,title,queuedAt,interruptedAt})),restorePending:ctx.state.pauses.length,pendingRestores:ctx.pendingRestores()});
  }
  const reviewSession=/^\/api\/items\/([a-f0-9]{24})\/review-session$/.exec(url.pathname);
  if(reviewSession&&req.method==='GET'){

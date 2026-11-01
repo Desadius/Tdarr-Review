@@ -22,6 +22,7 @@ import {appVersion} from './app-version.mjs';
 import {logEvent} from './log.mjs';
 import {createApprovalTransaction,outcomeLog,auditFailed} from './approval-transaction.mjs';
 import {recordDecision} from './decision-audit.mjs';
+import {createAdvisories} from './advisory.mjs';
 import {isLoopback,recoveryStatusHealth,healthSummary} from './health-status.mjs';
 import {readRecoveryRuntime,recoveryStatusFile} from './recovery-snapshot.mjs';
 import {captureReceipt,cleanupReviewed} from './cleanup.mjs';
@@ -392,7 +393,9 @@ async function keepNodePaused(name){
 const pendingRestores=()=>state.pauses.map(p=>({name:p.name,pausedAt:p.pausedAt||null,title:p.for?.title||null}));
 async function verifyPaused(item){const nodes=await tdarr('/api/v2/get-nodes');if(Object.values(nodes).some(n=>!n.nodePaused)||workerBusy(nodes,item))throw new Error('Během výměny se změnil stav nodů. Originál nebyl vyměněn.');}
 
-const replacements=createReplacement({data:DATA,getConfig:()=>config,getConnection:activeConnection,safeFile,hash,atomicJSON,tdarr,pauseDispatch,verifyPaused,isWorkerBusy:async item=>workerBusy(await tdarr('/api/v2/get-nodes'),item),resume,onProgress:stage=>progress(stage)});
+const replacements=createReplacement({data:DATA,getConfig:()=>config,getConnection:activeConnection,safeFile,hash,atomicJSON,tdarr,pauseDispatch,verifyPaused,isWorkerBusy:async item=>workerBusy(await tdarr('/api/v2/get-nodes'),item),resume,onProgress:stage=>progress(stage),advisoryCandidate:id=>advisories.candidate(id)});
+// Sources the flow refused to encode (#299); an open replacement request for the same original hides its marker.
+const advisories=createAdvisories({data:DATA,getConfig:()=>config,safeFile,hash,atomicJSON,openRequestRelatives:()=>replacements.openRelatives()});
 // Needs attention projection plus Review-owned deferral metadata; the projection never writes Recovery state.
 const installedAssessment=createInstalledAssessment({data:DATA,getConfig:()=>config,getItems:()=>state.items,tdarr,readRows:table=>dbRows(table),probe:file=>probe(FFPROBE,file),atomicJSON,recordDecision:entry=>recordDecision(DATA,entry)});
 const tdarrHandoff=createTdarrHandoff({data:DATA,getConfig:()=>config,tdarr,readRows:table=>dbRows(table),isWorkerBusy:async item=>workerBusy(await tdarr('/api/v2/get-nodes'),item),atomicJSON});
@@ -619,7 +622,7 @@ const authTimer=setInterval(()=>{pruneAuthAttempts(authAttempts);if(pruneSession
 // Getters/setters keep the module variables above authoritative, so the scan,
 // transaction and preview code shares exactly the state the routes change.
 const ctx={
- ROOT,DATA,APP_VERSION,KEY,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,recoveryAttention,quarantineDelete,diagnosticExport,recoverySafeRestore,installedAssessment,tdarrHandoff,transcodeRetry,artwork,reviewSessions,tvReviewSessions,tvWorkflowState,tvInstallLedger,refreshTvReviewItem,tvStrictBlockReason,performTvInstall,previewPairs,previewPlans,previewAttempts,previewIdentity,previewVersion,previewVersionFor,previewPreparation,planPreviewItem,prepareTvPreviewPlan,sharedSettings,sonarrSourceInspection,sonarrReconciliation,sonarrResultInspection,tvDiscovery,tvSeasonSampleService,pinTvDiscovery,
+ ROOT,DATA,APP_VERSION,KEY,advisories,configfile,previewSettingsFile,sessions,authAttempts,recovery,previews,replacements,recoveryAttention,quarantineDelete,diagnosticExport,recoverySafeRestore,installedAssessment,tdarrHandoff,transcodeRetry,artwork,reviewSessions,tvReviewSessions,tvWorkflowState,tvInstallLedger,refreshTvReviewItem,tvStrictBlockReason,performTvInstall,previewPairs,previewPlans,previewAttempts,previewIdentity,previewVersion,previewVersionFor,previewPreparation,planPreviewItem,prepareTvPreviewPlan,sharedSettings,sonarrSourceInspection,sonarrReconciliation,sonarrResultInspection,tvDiscovery,tvSeasonSampleService,pinTvDiscovery,
  get config(){return config},set config(value){config=value},
  get tvSettings(){return activeSettings?.libraries?.tv??null},safeFile,validateTvLibrary:validateTvLibraryRow,
  get previewSettings(){return previewSettings},set previewSettings(value){previewSettings=value},

@@ -70,7 +70,7 @@ async function readRecoveryCases(file){
  if(read.error)throw Error('Stav Recovery nelze ověřit; předání Tdarru čeká a Hold zůstává.');
  return read.cases;
 }
-export function createReplacement({data,getConfig,getConnection,safeFile,hash,atomicJSON,tdarr,pauseDispatch,verifyPaused=async()=>{},isWorkerBusy=async()=>false,resume,onProgress}){
+export function createReplacement({data,getConfig,getConnection,safeFile,hash,atomicJSON,tdarr,pauseDispatch,verifyPaused=async()=>{},isWorkerBusy=async()=>false,resume,onProgress,advisoryCandidate=async()=>{throw Error('Doporučení náhrady není dostupné.')}}){
  // A preserved file the user deleted through Review's Quarantine dialog is not a retention error (#280).
  const deletedByUser=(file,identity)=>userDeletedQuarantine({data,file,identity});
  const connectionFile=path.join(data,'radarr.json'),directory=path.join(data,'radarr-replacements'),recoveryCases=()=>readRecoveryCases(path.join(data,'recovery','state.json'));let observing=false,mutating=false;
@@ -128,10 +128,10 @@ export function createReplacement({data,getConfig,getConnection,safeFile,hash,at
  async function prepare(item,reason){
   if(typeof reason!=='string'||!reason.trim()||reason.length>1000)throw Error('Uveď důvod žádosti o jinou kopii (nejvýše 1000 znaků).');
   const cfg=getConfig(),a=await safeFile(cfg.mediaRoot,item.relative),b=item.sourceOnly?null:await safeFile(cfg.reviewRoot,item.reviewRelative);
-  if(item.sourceOnly){const current=await sourceCandidate(item.recoveryCaseId);if(current.snapshot!==item.snapshot||current.relative!==item.relative)throw Error('Soubory se změnily. Obnov přehled.');}
+  if(item.sourceOnly){const current=item.advisoryId?await advisoryCandidate(item.advisoryId):await sourceCandidate(item.recoveryCaseId);if(current.snapshot!==item.snapshot||current.relative!==item.relative)throw Error('Soubory se změnily. Obnov přehled.');}
   else if(hash(a.fp+'|'+b.fp)!==item.snapshot)throw Error('Soubory se změnily. Obnov přehled.');
   const con=await connection(),m=matchMovie(await api(con,'/movie'),con.mediaRoot,item.relative,a.stat.size),all=await list();
-  if(item.sourceOnly&&m.id!==item.movieId)throw Error('Film v Radarru neodpovídá případu Recovery.');
+  if(item.sourceOnly&&!item.advisoryId&&m.id!==item.movieId)throw Error('Film v Radarru neodpovídá případu Recovery.');
   const sourceRoot=await fs.realpath(cfg.mediaRoot),quarantine=con.quarantineRoot||path.join(path.dirname(sourceRoot),'.tdarr-review-quarantine');
   await checkManualQuarantine({mediaRoot:sourceRoot,quarantineRoot:quarantine,source:a.path});
   if(all.some(c=>c.movieId===m.id&&!['restored','imported'].includes(c.phase)))throw Error('Pro tento film už existuje neuzavřená žádost o náhradu.');
@@ -145,7 +145,7 @@ export function createReplacement({data,getConfig,getConnection,safeFile,hash,at
   let c;
   try{
    onProgress('Ověřuji vazbu filmu na Radarr');const {con,m,profile,a,b,reason:why}=await prepare(item,reason),cfg=clone(getConfig());
-   c={id:crypto.randomBytes(12).toString('hex'),itemId:item.id,title:item.title,reason:why,created:new Date().toISOString(),movieId:m.id,oldFileId:m.movieFileId,sourceTitle:m.movieFile.sceneName,originalQuality:m.movieFile.quality.quality.name,relative:item.relative,reviewRelative:b?item.reviewRelative:null,sourcePath:a.path,reviewPath:b?.path??null,originalFP:a.fp,reviewFP:b?.fp??null,sourceSize:a.stat.size,reviewSize:b?.stat.size??null,...(item.sourceOnly?{sourceOnly:true,recoveryCaseId:item.recoveryCaseId,bindingFailure:item.bindingFailure}:{}),originalProfile:profile,originalProfileId:profile.id,radarrRoot:con.mediaRoot,radarrUrl:con.url,libraryId:cfg.libraryId,tdarrSource:cfg.sourceRoots[0]+'/'+item.relative,mediaRoot:cfg.mediaRoot,reviewRoot:cfg.reviewRoot};
+   c={id:crypto.randomBytes(12).toString('hex'),itemId:item.id,title:item.title,reason:why,created:new Date().toISOString(),movieId:m.id,oldFileId:m.movieFileId,sourceTitle:m.movieFile.sceneName,originalQuality:m.movieFile.quality.quality.name,relative:item.relative,reviewRelative:b?item.reviewRelative:null,sourcePath:a.path,reviewPath:b?.path??null,originalFP:a.fp,reviewFP:b?.fp??null,sourceSize:a.stat.size,reviewSize:b?.stat.size??null,...(item.sourceOnly?{sourceOnly:true,...(item.advisoryId?{advisoryId:item.advisoryId,advisoryReason:item.advisoryReason}:{recoveryCaseId:item.recoveryCaseId,bindingFailure:item.bindingFailure})}:{}),originalProfile:profile,originalProfileId:profile.id,radarrRoot:con.mediaRoot,radarrUrl:con.url,libraryId:cfg.libraryId,tdarrSource:cfg.sourceRoots[0]+'/'+item.relative,mediaRoot:cfg.mediaRoot,reviewRoot:cfg.reviewRoot};
    await fs.mkdir(directory,{recursive:true});await persist(c,'preparing','Připravuji profil náhrady a zákaz původního vydání.');
    await pauseDispatch(item);
    const fresh=await api(con,'/movie/'+m.id);if(fresh.movieFileId!==c.oldFileId||fresh.movieFile?.path!==con.mediaRoot+'/'+c.relative||fresh.movieFile.size!==c.sourceSize||fresh.movieFile.sceneName!==c.sourceTitle)throw Error('Radarr mezitím změnil originál.');
@@ -269,5 +269,7 @@ export function createReplacement({data,getConfig,getConnection,safeFile,hash,at
   const own=(await list()).map(visible);if(statusError)throw statusError;
   return {requests:[...own,...await recoveryPublic(status)],recoveryConfig:configNotice(status),recoveryRuntime:await readRecoveryRuntime(path.join(data,'recovery','runtime-state.json'))};
  }
- return {cleanup,settings,publicSettings,prepare,sourceCandidate,run,restore,observe,overview,recoveryConfig:async()=>configNotice(await readRecoveryStatus().catch(()=>null)),list:async()=>(await overview()).requests,recover:async()=>{for(const c of await list())if(!canResume(c))await persist(c,'manual','Operace byla přerušená ve fázi '+c.phase+'. Neopakuj ji bez kontroly; zachované kopie nebyly smazané.');}};
+ // Originals with a replacement request that was not restored; their advisory markers (#299) stay hidden.
+ const openRelatives=async()=>new Set((await list()).filter(c=>c.phase!=='restored').map(c=>c.relative));
+ return {cleanup,settings,publicSettings,prepare,sourceCandidate,openRelatives,run,restore,observe,overview,recoveryConfig:async()=>configNotice(await readRecoveryStatus().catch(()=>null)),list:async()=>(await overview()).requests,recover:async()=>{for(const c of await list())if(!canResume(c))await persist(c,'manual','Operace byla přerušená ve fázi '+c.phase+'. Neopakuj ji bez kontroly; zachované kopie nebyly smazané.');}};
 }

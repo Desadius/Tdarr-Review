@@ -146,7 +146,7 @@ function runAttentionAction(record,action){
  if(action.id==='reopen')return (async()=>{try{await api('/api/recovery/cases/'+record.id+'/defer/reopen',{confirm:true,revision:action.revision});await loadRequests(true)}catch(e){error(e)}})();
 }
 $('rejectReason').addEventListener('input',()=>{$('rejectReason').setCustomValidity(tr(''));if(pending?.item)drafts.set(pending.item.id+':'+pending.action,$('rejectReason').value)});
-$('commit').addEventListener('click',e=>{if(['reject','replace','replaceSource'].includes(pending?.action)&&!$('rejectReason').value.trim()){e.preventDefault();$('rejectReason').setCustomValidity(tr('Uveď důvod rozhodnutí.'));$('rejectReason').reportValidity();}});
+$('commit').addEventListener('click',e=>{if(['reject','replace','replaceSource','advisoryReplace'].includes(pending?.action)&&!$('rejectReason').value.trim()){e.preventDefault();$('rejectReason').setCustomValidity(tr('Uveď důvod rozhodnutí.'));$('rejectReason').reportValidity();}});
 $('confirm').addEventListener('cancel',()=>{$('confirm').returnValue='cancel'});
 $('confirm').addEventListener('close',async()=>{
  const request=pending,confirmed=$('confirm').returnValue==='confirm',reason=$('rejectReason').value.trim();pending=null;$('confirm').returnValue='';if(!confirmed||!request){if(confirmOrigin?.isConnected&&!confirmOrigin.disabled)confirmOrigin.focus({preventScroll:true});else if($('filmDetail').open)$('detailClose').focus();return;}
@@ -161,6 +161,7 @@ $('confirm').addEventListener('close',async()=>{
   else if(request.action==='handoff'){const current=requests.find(r=>r.id===request.record.id&&r.source==='recovery');if(!current?.attention?.actions?.some(a=>a.id==='handoffTdarr'))throw Error('Stav případu se změnil. Obnov údaje.');}
   else if(request.action==='installedApprove'){const current=requests.find(r=>r.id===request.record.id&&r.source==='recovery');if(!current?.attention?.actions?.some(a=>a.id==='assessInstalled'))throw Error('Stav případu se změnil. Obnov údaje.');}
   else if(request.action==='replaceSource'){const current=requests.find(r=>r.id===request.record.id&&r.source==='recovery');if(!current||!caps(current).replaceSource||current.sourceReplacement.snapshot!==request.record.sourceReplacement.snapshot)throw Error('Stav případu se změnil. Obnov údaje.');}
+  else if(['advisoryReplace','advisoryKeep'].includes(request.action)){const current=latest?.advisories?.find(a=>a.id===request.advisory.id);if(!current||current.snapshot!==request.advisory.snapshot||current.status!=='ready')throw Error('Doporučení se změnilo. Obnov přehled.');}
   else if(request.action==='defer'){const current=requests.find(r=>r.id===request.record.id&&r.source==='recovery');if(!current?.attention?.actions?.some(a=>a.id==='defer'&&a.revision===request.revision))throw Error('Vazba případu se změnila. Obnov údaje.');}
   else writeItem(request.item,request.action);
   if(request.action==='approve'&&latest?.reviewSessions?.[request.item.id]?.revision!==request.reviewRevision)throw Error('Posouzení se od otevření potvrzení změnilo. Znovu ověř uložené kontroly.');
@@ -175,6 +176,8 @@ $('confirm').addEventListener('close',async()=>{
   else if(request.action==='handoff')await api('/api/recovery/cases/'+request.record.id+'/handoff',{snapshot:request.snapshot,confirm:true,...(request.uncertain?{acknowledgeUncertain:true}:{})});
   else if(request.action==='installedApprove')await api('/api/recovery/cases/'+request.record.id+'/installed/approve',{snapshot:request.snapshot,confirm:true});
   else if(request.action==='replaceSource')await api('/api/recovery/cases/'+request.record.id+'/replace-source',{snapshot:request.record.sourceReplacement.snapshot,reason});
+  else if(request.action==='advisoryReplace')await api('/api/advisories/'+request.advisory.id+'/replace',{snapshot:request.advisory.snapshot,reason});
+  else if(request.action==='advisoryKeep')await api('/api/advisories/'+request.advisory.id+'/keep',{snapshot:request.advisory.snapshot});
   else if(request.action==='defer')await api('/api/recovery/cases/'+request.record.id+'/defer',{confirm:true,revision:request.revision,note:reason});
   else await api(`/api/items/${request.item.id}/${request.action}`,{snapshot:request.item.snapshot,reviewRevision:request.action==='approve'?request.reviewRevision:undefined,acceptDuration:request.acceptDuration===true,reason:['reject','replace'].includes(request.action)?reason:undefined});
   if(request.item)drafts.delete(request.item.id+':'+request.action);
@@ -238,6 +241,26 @@ function renderTransactions(){
  const rows=el('ul','transaction-list');for(const t of list){const li=el('li'),film=latest.items.find(x=>x.id===t.itemId);li.append(el('strong','',t.title||'Film nelze určit',!!t.title),el('span','details',tr('Fáze')+': '+tr(TX_PHASES[t.phase]||TX_PHASES.unknown),true),el('p','',TX_REASONS[t.reason]||TX_REASONS.unreadable),el('span','details',tr('Záznam výměny')+': '+(t.journal||'—'),true));if(film){const open=button('Otevřít film',()=>openDetail('review',film.id));open.setAttribute('aria-label',tr('Otevřít film '+film.title));li.append(open)}rows.append(li)}
  box.replaceChildren(title,el('p','','Schválení, zamítnutí a dávky jsou zablokované, dokud záznam výměny ručně neprověříš. Review tu nic neopravuje ani nemaže; oba soubory a záznam zůstávají zachované.'),rows,el('p','details','Postup kontroly: docs/OPERATIONS.md, oddíl „Unresolved exchange transaction“.'));
 }
+// Sources the flow refused to encode (#299): no result to review, only a Radarr replacement request or Keep.
+const ADVISORY_REASONS={container_crop:'Kontejnerový ořez (Matroska PixelCrop)',non_square_sar:'Nečtvercové pixely (SAR)'};
+function advisoryDetail(a){
+ const m=a.measured||{},crop=m.crop;
+ return [tr(ADVISORY_REASONS[a.reason]||a.reason),m.width&&m.height?m.width+'×'+m.height:'',m.sampleAspectRatio?'SAR '+m.sampleAspectRatio:'',crop&&(crop.top||crop.bottom||crop.left||crop.right)?tr('ořez')+' '+[crop.top,crop.bottom,crop.left,crop.right].join('/'):''].filter(Boolean).join(' · ');
+}
+function renderAdvisories(){
+ const list=Array.isArray(latest?.advisories)?latest.advisories:[],box=$('advisories');box.hidden=!list.length;if(!list.length){box.replaceChildren();return}
+ box.replaceChildren(el('h2','','Doporučeno stáhnout lepší release'),el('p','','Flow tyto originály nepřevedl, protože převod by nezachoval jejich obraz. Nejde o výsledek ke schválení: můžeš požádat Radarr o jinou kopii, nebo originál ponechat.'),...list.map(a=>{
+  const row=el('div','advisory-row');row.append(el('p','',a.title,true),el('p','details',advisoryDetail(a),true));
+  if(a.status==='ready')row.append(button('Požádat o náhradu',()=>askAdvisory(a,'advisoryReplace')),button('Ponechat',()=>askAdvisory(a,'advisoryKeep')));
+  else row.append(el('p','details','Originál se od doporučení změnil; akce nejsou dostupné.'));
+  return row}));
+}
+function askAdvisory(advisory,action){
+ pending={advisory,action};
+ if(action==='advisoryReplace')confirmSetup('NÁHRADA PŘES RADARR',advisory.title,'Flow tento originál nepřevedl. Originál se zachová v karanténě a dočasně zmizí z knihovny; v Tdarru dostane Hold. Radarr dostane vlastní profil se stejnou nebo vyšší kvalitou a zákaz přesně tohoto vydání.','Požádat o náhradu',true);
+ else confirmSetup('PONECHAT ORIGINÁL',advisory.title,'Doporučení se pro tento přesný originál skryje. Soubor, Tdarr ani Radarr se nemění.','Ponechat');
+ $('rejectReason').value=action==='advisoryReplace'?tr(ADVISORY_REASONS[advisory.reason]||'')+' – '+tr('doporučeno stáhnout lepší release'):'';$('confirm').showModal();
+}
 // Queued replacements that a restart interrupted are never run by themselves; they need a new confirmation.
 function renderQueueInterrupted(){
  const list=Array.isArray(latest?.queueInterrupted)?latest.queueInterrupted:[],box=$('queueInterrupted');box.hidden=!list.length;if(!list.length){box.replaceChildren();return}
@@ -252,7 +275,7 @@ function renderAttention(){
  $('events').hidden=!warnings.length&&!attention.length;
  const events=[];if(warnings.length)events.push({kind:'history',count:warnings.length});if(attention.length)events.push({kind:'recovery',count:attention.length});
  keyed($('events'),events,x=>x.kind,x=>{const row=el('div'),b=button(x.kind==='history'?'Historie':'Obnovy',()=>navigate(x.kind,{filter:x.kind==='history'?'warning':'attention'}));b.dataset.focus='event:'+x.kind;row.append(el('span','',x.kind==='history'?`${x.count} upozornění v historii`:`${x.count} obnov k ověření`),b);return row});
- renderTransactions();renderQueueInterrupted();updateSelection();if(ui.detail)renderFilmStrip();
+ renderTransactions();renderQueueInterrupted();renderAdvisories();updateSelection();if(ui.detail)renderFilmStrip();
 }
 function recoveryRow(projected){
  const r=projected.record||projected.raw||projected,cl=projected.classification||classifyRecovery(r,Date.now()),row=el('article','recovery-row'),info=el('div','row-info');

@@ -54,7 +54,7 @@ Reads use bounded, descriptor-relative no-follow access to regular single-link j
 | Module | Routes |
 | --- | --- |
 | `auth.mjs` | Login and session check |
-| `items.mjs` | Item list, review sessions, approve, reject, batch, recheck, Radarr replacement request, review-file download |
+| `items.mjs` | Item list, review sessions, approve, reject, batch, recheck, Radarr replacement request, advisory replacement/keep (#299, `review/advisory.mjs`), review-file download |
 | `previews.mjs` | Sample preparation settings and status, on-demand frames, audio and AV samples |
 | `settings.mjs` | Tdarr connection and path settings |
 | `library.mjs` | Posters, statistics, quarantine listing, Radarr settings, requests and restore, Recovery runtime diagnostics |

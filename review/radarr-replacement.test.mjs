@@ -39,7 +39,7 @@ test('restart permits observation only, never repeats mutating phases',()=>{
  for(const phase of ['waiting','imported','restored','manual'])assert(canResume({phase}));
  for(const phase of ['search_intent','quarantine_intent','queue_intent','restore_intent','preparing'])assert(!canResume({phase}));
 });
-async function fixture(){
+async function fixture({advisoryCandidate}={}){
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'review-radarr-test-')),data=path.join(root,'data'),media=path.join(root,'media'),review=path.join(root,'review');
  for(const p of [data,path.join(media,'Film'),path.join(review,'PROD/Film')])await fs.mkdir(p,{recursive:true});
  const source=path.join(media,'Film/a.mkv'),output=path.join(review,'PROD/Film/a.mkv');await fs.writeFile(source,'ORIGINAL');await fs.writeFile(output,'TRANSCODE');
@@ -68,7 +68,7 @@ async function fixture(){
  const cfg={mediaRoot:media,reviewRoot:review,libraryId:'library',sourceRoots:['/media/movies']},tdcalls=[];
  // The original's Tdarr row keeps the state written to it (unless writes are ignored); other files use tdrow.
  const sourceRow={_id:'/media/movies/Film/a.mkv',DB:'library',TranscodeDecisionMaker:'Transcode success'};let ignoreSourceWrites=false;
- let tdrow=null,tdfailure=null;const service=createReplacement({data,getConfig:()=>cfg,safeFile,hash,atomicJSON,tdarr:async(p,b)=>{tdcalls.push({p,b});if(p==='/api/v2/cruddb'&&b.docID===sourceRow._id)return structuredClone(sourceRow);if(p==='/api/v2/bulk-update-files'&&b.fileIds.includes(sourceRow._id)){if(!ignoreSourceWrites)Object.assign(sourceRow,b.updatedObj);return 'OK'}if(p==='/api/v2/cruddb'){if(tdfailure)throw tdfailure;return tdrow;}if(p==='/api/v2/rescan-file')tdrow={_id:b._id,DB:b.DB,TranscodeDecisionMaker:'Queued'};return 'OK'},pauseDispatch:async()=>{if(pauseFail)throw Error('worker busy')},resume:async()=>{resumes++},onProgress:()=>{}});
+ let tdrow=null,tdfailure=null;const service=createReplacement({data,getConfig:()=>cfg,safeFile,hash,atomicJSON,tdarr:async(p,b)=>{tdcalls.push({p,b});if(p==='/api/v2/cruddb'&&b.docID===sourceRow._id)return structuredClone(sourceRow);if(p==='/api/v2/bulk-update-files'&&b.fileIds.includes(sourceRow._id)){if(!ignoreSourceWrites)Object.assign(sourceRow,b.updatedObj);return 'OK'}if(p==='/api/v2/cruddb'){if(tdfailure)throw tdfailure;return tdrow;}if(p==='/api/v2/rescan-file')tdrow={_id:b._id,DB:b.DB,TranscodeDecisionMaker:'Queued'};return 'OK'},pauseDispatch:async()=>{if(pauseFail)throw Error('worker busy')},resume:async()=>{resumes++},onProgress:()=>{},...(advisoryCandidate?{advisoryCandidate:id=>advisoryCandidate(id,{source})}:{})});
  const a=await safeFile(media,'Film/a.mkv'),b=await safeFile(review,'PROD/Film/a.mkv');const item={id:'a'.repeat(24),title:'Film',relative:'Film/a.mkv',reviewRelative:'PROD/Film/a.mkv',snapshot:hash(a.fp+'|'+b.fp)};
  return {service,item,source,output,data,media,review,movie,cfg,calls,tdcalls,formats,profiles,atomicJSON,sourceRow,ignoreSourceWrites:()=>ignoreSourceWrites=true,setTdrow:row=>tdrow=row,setTdfailure:error=>tdfailure=error,setQueue:q=>queue=q,setFailSearch:()=>failSearch=true,setPauseFail:()=>pauseFail=true,resumes:()=>resumes,cleanup:async()=>{server.closeAllConnections();await new Promise(r=>server.close(r));await fs.rm(root,{recursive:true,force:true})}};
 }
@@ -459,4 +459,18 @@ test('after a remount the source-only replacement recognises the confirmed origi
   const item=await f.service.sourceCandidate(caseId);
   const result=await f.service.run(item,'Potvrzená vada originálu');assert.equal(result.phase,'waiting',name);
  }finally{await f.cleanup()}}
+});
+
+// A source the flow refused to encode (#299) uses the same source-only request, bound to its advisory marker.
+test('an advisory replacement runs as a source-only request bound to the current advisory candidate',async()=>{
+ let current;const f=await fixture({advisoryCandidate:async id=>{if(!current||current.advisoryId!==id)throw Error('advisory_changed');return current}});try{
+  const id='c'.repeat(24);current={id,title:'Film',relative:'Film/a.mkv',reviewRelative:'',outputRelative:'Film/a.mkv',sourceOnly:true,advisoryId:id,advisoryReason:'container_crop',snapshot:'s'.repeat(64)};
+  await assert.rejects(()=>f.service.run({...current,snapshot:'stale'},'Kontejnerový ořez'),/Soubory se změnily/,'a stale advisory snapshot is refused');
+  const result=await f.service.run(current,'Kontejnerový ořez');assert.equal(result.phase,'waiting');
+  const journal=JSON.parse(await fs.readFile(path.join(f.data,'radarr-replacements',result.id+'.json')));
+  assert.deepEqual([journal.sourceOnly,journal.advisoryId,journal.advisoryReason,journal.recoveryCaseId,journal.reviewPath],[true,id,'container_crop',undefined,null]);
+  assert.equal(await fs.readFile(journal.originalQuarantine,'utf8'),'ORIGINAL');assert.equal(await fs.readFile(f.output,'utf8'),'TRANSCODE','an unrelated Review file is never moved');
+  assert.deepEqual([...await f.service.openRelatives()],['Film/a.mkv'],'the open request hides the advisory marker');
+  const restored=await f.service.restore(result.id);assert.equal(restored.phase,'restored');assert.deepEqual([...await f.service.openRelatives()],[]);
+ }finally{await f.cleanup()}
 });
