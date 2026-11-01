@@ -124,3 +124,19 @@ test('advisory actions start only for the current advisory snapshot',async()=>{
  const noReason=await run({candidate:offered,reason:''});assert.deepEqual([noReason.status,noReason.started],[400,[]]);
  const staleKeep=await run({action:'keep',candidate:offered,snapshot:'old'});assert.deepEqual([staleKeep.status,staleKeep.body.code,staleKeep.kept],[409,'advisory_changed',[]]);
 });
+
+// The item list and the state in one /api/items reply come from the same moment: nothing may be awaited
+// between the scan and the reply, or a client sees a finished batch next to items from before it (#299).
+test('the item list reply reads its state right after the scan',async()=>{
+ const state={items:{},history:[],batch:null,pauses:[],replacementQueue:[],queueInterrupted:[],approvals:{}},out={};
+ const ctx={APP_VERSION:'test',config:{label:'',mediaRoot:'/media'},state,recovery:[],active:null,batchRunning:false,pendingRestores:()=>[],previewPreparation:()=>null,reviewSessions:{list:()=>({})},
+  scan:async()=>[{id:'a'.repeat(24),title:'Before'}],
+  // A batch that finishes while advisories are read must not appear beside items scanned before it.
+  advisories:{list:async()=>{await new Promise(r=>setImmediate(r));state.history=[{status:'success'}];return []}}};
+ const res={writeHead(status){out.status=status;return this},end(text){out.body=JSON.parse(text)},on(){},setHeader(){}};
+ assert.equal(await itemRoutes(ctx,{method:'GET',headers:{}},res,new URL('/api/items','http://review.test'),{mutation:null}),true);
+ assert.equal(out.status,200);assert.equal(out.body.history.length,1);
+ const order=[];ctx.advisories.list=async()=>{order.push('advisories');return []};ctx.scan=async()=>{order.push('scan');return []};
+ await itemRoutes(ctx,{method:'GET',headers:{}},res,new URL('/api/items','http://review.test'),{mutation:null});
+ assert.deepEqual(order,['advisories','scan'],'the scan is the last await before the reply');
+});

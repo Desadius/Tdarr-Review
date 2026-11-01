@@ -45,14 +45,15 @@ async function markers(dir,prefix='',out=[]){
  * @param {{data:string,getConfig:()=>any,safeFile:Function,hash:(s:string)=>string,atomicJSON:Function,openRequestRelatives?:()=>Promise<Set<string>>}} deps
  */
 export function createAdvisories({data,getConfig,safeFile,hash,atomicJSON,openRequestRelatives=async()=>new Set()}){
- const file=path.join(data,'advisory-decisions.json');
+ const file=path.join(data,'advisory-decisions.json');let reported='0|0';
  async function decisions(){
   const raw=await fs.readFile(file,'utf8').catch(e=>{if(e.code==='ENOENT')return null;throw e});
   if(raw===null)return {version:1,kept:{}};
   const d=JSON.parse(raw);if(d?.version!==1||!plainObject(d.kept))throw Error('Záznam rozhodnutí o doporučeních je nečitelný.');
   return d;
  }
- // One marker with the current identity of the marker and its original. A missing original hides it.
+ // One marker with the current identity of the marker and its original. A missing original hides it, and so does
+ // a changed one: Radarr replaced or someone edited it, so the recommendation no longer applies.
  async function read(markerRelative){
   const cfg=getConfig(),relative=mapReview(markerRelative.slice(0,-ADVISORY_SUFFIX.length),cfg.reviewPrefixes);
   if(!relative)throw new AdvisoryError('advisory_invalid');
@@ -61,27 +62,31 @@ export function createAdvisories({data,getConfig,safeFile,hash,atomicJSON,openRe
   const parsed=parseAdvisory(await fs.readFile(marker.path,'utf8'));
   if(parsed.source.relative!==relative)throw new AdvisoryError('advisory_invalid');
   let source;try{source=await safeFile(cfg.mediaRoot,relative)}catch(e){if(e?.code==='ENOENT')return null;throw e}
-  const unchanged=source.stat.size===parsed.source.size&&Math.abs(source.stat.mtimeMs-parsed.source.mtimeMs)<=MTIME_TOLERANCE_MS;
+  if(source.stat.size!==parsed.source.size||Math.abs(source.stat.mtimeMs-parsed.source.mtimeMs)>MTIME_TOLERANCE_MS)return {stale:true};
   return {
    id:hash('advisory|'+markerRelative).slice(0,24),title:relative.split('/')[0],relative,markerRelative,
    reason:parsed.reason,measured:parsed.measured,jobId:parsed.jobId,createdAt:parsed.createdAt,originalBytes:source.stat.size,
-   status:unchanged?'ready':'changed',snapshot:hash('advisory|'+marker.fp+'|'+source.fp),
+   status:'ready',snapshot:hash('advisory|'+marker.fp+'|'+source.fp),
+   // Keep must survive a reboot (shfs changes device and inode, ADR 0002) and the flow rewriting the same marker:
+   // it is bound to the original as the flow recorded it and to the reason, never to file-system identities.
+   keepKey:hash('advisory-keep|'+relative+'|'+parsed.reason+'|'+parsed.source.size+'|'+Math.round(parsed.source.mtimeMs)),
   };
  }
  async function list(){
-  const cfg=getConfig(),kept=(await decisions()).kept,open=await openRequestRelatives(),items=[],invalid=[];
+  const cfg=getConfig(),kept=(await decisions()).kept,open=await openRequestRelatives(),items=[];let invalid=0,stale=0;
   for(const rel of await markers(cfg.reviewRoot)){
-   try{const item=await read(rel);if(item&&!kept[item.snapshot]&&!open.has(item.relative))items.push(item)}
-   catch{invalid.push(rel)}
+   try{const item=await read(rel);if(item?.stale)stale++;else if(item&&!kept[item.keepKey]&&!open.has(item.relative))items.push(item)}
+   catch{invalid++}
   }
-  if(invalid.length)console.error('Advisory markers refused: '+invalid.length);
-  return items.sort((a,b)=>a.title.localeCompare(b.title));
+  // The overview polls this list; report only a change of the counts.
+  const counts=invalid+'|'+stale;if(counts!==reported){reported=counts;if(invalid)console.error('Advisory markers refused: '+invalid);if(stale)console.error('Advisory markers for changed originals: '+stale)}
+  return items.sort((a,b)=>a.title.localeCompare(b.title)).map(({keepKey,...item})=>item);
  }
  async function find(id,snapshot){
   if(typeof id!=='string'||!/^[a-f0-9]{24}$/.test(id))throw new AdvisoryError('advisory_changed');
-  const item=(await list()).find(x=>x.id===id);
-  if(!item||typeof snapshot==='string'&&item.snapshot!==snapshot)throw new AdvisoryError('advisory_changed');
-  if(item.status!=='ready')throw new AdvisoryError('advisory_source_changed');
+  const rel=(await markers(getConfig().reviewRoot)).find(r=>hash('advisory|'+r).slice(0,24)===id);
+  const item=rel?await read(rel).catch(()=>null):null;
+  if(!item||item.stale||typeof snapshot==='string'&&item.snapshot!==snapshot)throw new AdvisoryError('advisory_changed');
   return item;
  }
  /** The replacement candidate: the same source-only request as #153, bound to this marker and original. */
@@ -91,7 +96,7 @@ export function createAdvisories({data,getConfig,safeFile,hash,atomicJSON,openRe
  }
  async function keep(id,snapshot){
   const item=await find(id,snapshot),d=await decisions();
-  d.kept[item.snapshot]={relative:item.relative,reason:item.reason,time:new Date().toISOString()};
+  d.kept[item.keepKey]={relative:item.relative,reason:item.reason,time:new Date().toISOString()};
   const entries=Object.entries(d.kept).sort((a,b)=>String(a[1].time).localeCompare(String(b[1].time)));
   d.kept=Object.fromEntries(entries.slice(-MAX_KEPT));
   await atomicJSON(file,d);

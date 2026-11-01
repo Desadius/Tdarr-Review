@@ -11,7 +11,6 @@ export default {
     "ořez": "crop",
     "Požádat o náhradu": "Ask for a replacement",
     "Ponechat": "Keep",
-    "Originál se od doporučení změnil; akce nejsou dostupné.": "The original changed since the recommendation; no action is available.",
     "Flow tento originál nepřevedl. Originál se zachová v karanténě a dočasně zmizí z knihovny; v Tdarru dostane Hold. Radarr dostane vlastní profil se stejnou nebo vyšší kvalitou a zákaz přesně tohoto vydání.": "The flow did not transcode this original. The original is kept in quarantine and temporarily leaves the library; Tdarr puts it on Hold. Radarr gets its own profile with the same or higher quality and a block on exactly this release.",
     "PONECHAT ORIGINÁL": "KEEP ORIGINAL",
     "Doporučení se pro tento přesný originál skryje. Soubor, Tdarr ani Radarr se nemění.": "The recommendation is hidden for this exact original. The file, Tdarr and Radarr do not change.",

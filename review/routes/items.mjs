@@ -51,8 +51,10 @@ export async function itemRoutes(ctx,req,res,url,request){
   void ctx.replacementAction(item,reason);return reply(res,202,{ok:true});
  }
  if(url.pathname==='/api/items'&&req.method==='GET'){
-  const items=await ctx.scan();
+  // Advisories first: the scanned items and the state in the reply must come from the same moment, with no
+  // await between them, or a client can see a finished action next to items from before it (#299).
   const advisories=await ctx.advisories.list().catch(e=>{console.error('Advisories: '+e.message);return []});
+  const items=await ctx.scan();
   return reply(res,200,{version:ctx.APP_VERSION,label:ctx.config.label,serverTime:Date.now(),items,advisories,previews:Object.fromEntries(items.filter(item=>item.snapshot).map(item=>[item.id,ctx.previewPreparation(item.id,item.snapshot)])),reviewSessions:ctx.reviewSessions.list(items.filter(item=>!item.identityChanged)),approvals:publicApprovals(ctx.state,items.filter(item=>!item.identityChanged),ctx.reviewSessions.list(items.filter(item=>!item.identityChanged))),active:ctx.active,batch:ctx.state.batch||null,batchRunning:ctx.batchRunning,history:ctx.state.history,recovery:unresolvedTransactions(ctx.recovery,items,ctx.config.mediaRoot),replacementQueue:ctx.state.replacementQueue.map(({id,title,queuedAt})=>({id,title,queuedAt})),queueInterrupted:ctx.state.queueInterrupted.map(({id,title,queuedAt,interruptedAt})=>({id,title,queuedAt,interruptedAt})),restorePending:ctx.state.pauses.length,pendingRestores:ctx.pendingRestores()});
  }
  const reviewSession=/^\/api\/items\/([a-f0-9]{24})\/review-session$/.exec(url.pathname);

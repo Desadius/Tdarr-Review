@@ -251,8 +251,7 @@ function renderAdvisories(){
  const list=Array.isArray(latest?.advisories)?latest.advisories:[],box=$('advisories');box.hidden=!list.length;if(!list.length){box.replaceChildren();return}
  box.replaceChildren(el('h2','','Doporučeno stáhnout lepší release'),el('p','','Flow tyto originály nepřevedl, protože převod by nezachoval jejich obraz. Nejde o výsledek ke schválení: můžeš požádat Radarr o jinou kopii, nebo originál ponechat.'),...list.map(a=>{
   const row=el('div','advisory-row');row.append(el('p','',a.title,true),el('p','details',advisoryDetail(a),true));
-  if(a.status==='ready')row.append(button('Požádat o náhradu',()=>askAdvisory(a,'advisoryReplace')),button('Ponechat',()=>askAdvisory(a,'advisoryKeep')));
-  else row.append(el('p','details','Originál se od doporučení změnil; akce nejsou dostupné.'));
+  row.append(button('Požádat o náhradu',()=>askAdvisory(a,'advisoryReplace')),button('Ponechat',()=>askAdvisory(a,'advisoryKeep')));
   return row}));
 }
 function askAdvisory(advisory,action){
