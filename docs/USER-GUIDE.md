@@ -147,6 +147,12 @@ Configure Radarr first. In the film's recovery panel, enter the reason and confi
 
 A confirmed faulty original that Recovery could not bind to its Radarr release (**Faulty original without a release binding**) has no Review result to reject. Its case offers **Request another copy through Radarr** on the Recovery tab instead: the same request, but only the original moves to quarantine. The offer disappears when the original changes or a request for the case is open; see [Operations](OPERATIONS.md#faulty-original-without-a-release-binding).
 
+### Better release recommended
+
+Some releases keep a picture shape that a transcode cannot reproduce, for example a Matroska container crop (`PixelCrop`) or non-square pixels. A flow can refuse such a source and leave a small marker `<file>.mkv.tdarr-advisory.json` in the Review folder where the result would be. The overview then lists the film under **Better release recommended** (**Doporučeno stáhnout lepší release**) with the reason and the measured values.
+
+It is not a result: there is nothing to compare or approve, and batch approval never includes it. **Ask for a replacement** (**Požádat o náhradu**) needs a reason and starts the same request as **Request another copy through Radarr** above: the original is kept in quarantine, Tdarr puts it on Hold, and Radarr gets a profile with the same or higher quality and a block on exactly this release. **Keep** (**Ponechat**) only records your decision in Review and hides the recommendation for this exact original; the file, Tdarr and Radarr do not change. If the original changed since the marker was written, both actions are unavailable. A marker that is malformed, larger than 8 KiB or does not match its original's path is ignored. An open replacement request hides the marker until it is restored.
+
 The optional automatic Recovery worker is stricter: it must independently confirm a recognised decoding error in the **original** twice before requesting a replacement. Permissions, network, disk I/O, timeout and generic encoder errors are not sufficient. An unacceptable transcode or uncertain waveform correlation does not itself prove that the original is damaged.
 
 If automatic Recovery finds no suitable release, it can preserve a quarantined original link/copy back in the library, hold that edition out of Tdarr and search again after six hours. Review displays the exclusion, next search and a Radarr link for independent searching. The manual Review-request workflow does not currently perform that same automatic restore/search loop.

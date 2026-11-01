@@ -70,6 +70,9 @@ export function mutationKind(method,pathname){
  if(/^\/api\/recovery\/cases\/[a-f0-9]{24}\/defer(?:\/reopen)?$/.test(pathname))return 'deferral';
  // Manual replacement of a confirmed faulty original without a Review result (#153).
  if(/^\/api\/recovery\/cases\/[a-f0-9]{24}\/replace-source$/.test(pathname))return 'replace';
+ // A source the flow refused to encode (#299): the same source-only replacement; Keep only records a decision.
+ if(/^\/api\/advisories\/[a-f0-9]{24}\/replace$/.test(pathname))return 'replace';
+ if(/^\/api\/advisories\/[a-f0-9]{24}\/keep$/.test(pathname))return 'deferral';
  // Assessment of an installed result (#230): the draft is review state; approval publishes retention evidence.
  if(/^\/api\/recovery\/cases\/[a-f0-9]{24}\/installed$/.test(pathname))return 'reviewSession';
  if(/^\/api\/recovery\/cases\/[a-f0-9]{24}\/installed\/approve$/.test(pathname))return 'replace';

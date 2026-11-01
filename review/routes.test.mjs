@@ -23,7 +23,7 @@ const ROUTES=[
  ['GET','/api/radarr/settings','libraryRoutes'],['POST','/api/radarr/settings','libraryRoutes'],['POST','/api/radarr/settings/test','libraryRoutes'],
  ['GET','/api/radarr/requests','libraryRoutes'],['POST','/api/radarr/requests/'+ID+'/restore','libraryRoutes'],
  ['GET','/api/recovery/runtime','libraryRoutes'],
- ['GET','/api/items','itemRoutes'],['POST','/api/items/'+ID+'/replace','itemRoutes'],['POST','/api/recovery/cases/'+ID+'/replace-source','itemRoutes'],
+ ['GET','/api/items','itemRoutes'],['POST','/api/items/'+ID+'/replace','itemRoutes'],['POST','/api/recovery/cases/'+ID+'/replace-source','itemRoutes'],['POST','/api/advisories/'+ID+'/replace','itemRoutes'],['POST','/api/advisories/'+ID+'/keep','itemRoutes'],
  ['GET','/api/items/'+ID+'/review-session','itemRoutes'],['POST','/api/items/'+ID+'/review-session','itemRoutes'],
  ['POST','/api/approve-batch','itemRoutes'],['POST','/api/items/'+ID+'/recheck','itemRoutes'],['POST','/api/items/'+ID+'/approval','itemRoutes'],
  ['POST','/api/items/'+ID+'/approve','itemRoutes'],['POST','/api/items/'+ID+'/reject','itemRoutes'],['GET','/api/items/'+ID+'/video','itemRoutes'],
@@ -102,4 +102,25 @@ test('a source-only replacement starts only for the current candidate snapshot o
  const reviewed=await run({candidate:offered,items:[{id:'e'.repeat(24),relative:'Film/a.mkv'}]});assert.deepEqual([reviewed.status,reviewed.started],[409,[]]);assert.equal(reviewed.body.code,'item_has_review_result');
  const busy=await run({candidate:offered,busy:true});assert.deepEqual([busy.status,busy.started],[409,[]]);
  const noReason=await run({candidate:offered,reason:''});assert.deepEqual([noReason.status,noReason.started],[400,[]]);
+});
+
+// A source the flow refused to encode (#299): replacement or Keep only for the current advisory snapshot,
+// never beside a Review result for the same original, while busy or without a reason.
+test('advisory actions start only for the current advisory snapshot',async()=>{
+ const run=async({action='replace',candidate,snapshot='s1',busy=false,reason='Kontejnerový ořez',items=[]})=>{
+  const started=[],kept=[],out={};
+  const pick=(id,snap)=>{if(!candidate||snap!==candidate.snapshot)throw Object.assign(Error('changed'),{code:'advisory_changed'});return {...candidate,id}};
+  const ctx={advisories:{candidate:async(id,snap)=>pick(id,snap),keep:async(id,snap)=>{const item=pick(id,snap);kept.push(id);return item}},scan:async()=>items,busyFor:()=>busy?'active':null,replacementAction:async(item,why)=>{started.push([item.id,why])}};
+  const req={method:'POST',headers:{},async *[Symbol.asyncIterator](){yield JSON.stringify({snapshot,reason})}};
+  const res={writeHead(status){out.status=status;return this},end(text){out.body=JSON.parse(text)},on(){}};
+  assert.equal(await itemRoutes(ctx,req,res,new URL('/api/advisories/'+ID+'/'+action,'http://review.test'),{mutation:null}),true);
+  return {...out,started,kept};
+ };
+ const offered={snapshot:'s1',sourceOnly:true,advisoryId:ID,relative:'Film/a.mkv'};
+ assert.deepEqual(await run({candidate:offered}),{status:202,body:{ok:true},started:[[ID,'Kontejnerový ořez']],kept:[]});
+ const stale=await run({candidate:offered,snapshot:'old'});assert.deepEqual([stale.status,stale.body.code,stale.started],[409,'advisory_changed',[]]);
+ const reviewed=await run({candidate:offered,items:[{id:'e'.repeat(24),relative:'Film/a.mkv'}]});assert.deepEqual([reviewed.status,reviewed.body.code,reviewed.started],[409,'item_has_review_result',[]]);
+ const busy=await run({candidate:offered,busy:true});assert.deepEqual([busy.status,busy.started],[409,[]]);
+ const noReason=await run({candidate:offered,reason:''});assert.deepEqual([noReason.status,noReason.started],[400,[]]);
+ const staleKeep=await run({action:'keep',candidate:offered,snapshot:'old'});assert.deepEqual([staleKeep.status,staleKeep.body.code,staleKeep.kept],[409,'advisory_changed',[]]);
 });

@@ -11,6 +11,8 @@ test('every mutating route has an explicit concurrency policy',()=>{
  for(const action of ['approve','reject','replace','recheck'])routes[action]=[`/api/items/${id}/${action}`];
  routes.deferral=[`/api/recovery/cases/${id}/defer`,`/api/recovery/cases/${id}/defer/reopen`];
  routes.replace.push(`/api/recovery/cases/${id}/replace-source`);
+ // A source the flow refused to encode (#299): a source-only replacement, or Keep as a recorded decision.
+ routes.replace.push(`/api/advisories/${id}/replace`);routes.deferral.push(`/api/advisories/${id}/keep`);
  // The installed-result assessment (#230): its draft is review state, its approval publishes retention evidence.
  routes.replace.push(`/api/recovery/cases/${id}/installed/approve`,`/api/recovery/cases/${id}/handoff`,`/api/recovery/cases/${id}/retry`);routes.reviewSession.push(`/api/recovery/cases/${id}/installed`);
  for(const [kind,paths] of Object.entries(routes))for(const route of paths){assert.equal(mutationKind('POST',route),kind);assert.ok(BUSY_POLICIES[kind]);assert.equal(mutationKind('GET',route),null)}
