@@ -6,6 +6,22 @@ Changes merged since the last release are listed under Unreleased below and as f
 
 ## Unreleased
 
+## 2.6.1 — 2026-11-01
+
+### Before updating
+
+- **Expect former reboot alarms to clear.** After the update, cases blocked only because a reboot renumbered their files (for example "Approved replacement changed") continue at Recovery's next check, and quarantine retention may delete originals whose seven days have already passed. Approvals made before this version have no content sample and are recognised by size and modification time alone.
+
+### Changes
+
+- **Keep the current copy** now also reaches older Recovery cases that recorded only Radarr's path of the imported replacement: the replacement is the file Radarr names in the film's own folder. See the [user guide](docs/USER-GUIDE.md#assess-an-installed-copy).
+
+- Review and Recovery recognise an unchanged film file after a reboot of the Unraid server, which gives every file on the user share a new device and inode number: quarantine retention, the record of a deleted quarantine file, the manual replacement of a confirmed original and the checks of an imported replacement accept the file when its size and modification time are unchanged and, where one was recorded, its content sample matches. A changed review item offers **Znovu ověřit soubory** after such a reboot. New approvals record a content sample of the installed copy ([ADR 0002](docs/adr/0002-file-identity-after-remount.md)).
+
+- Review lists sources that a flow refused to encode (Matroska container crop, non-square pixels) under **Better release recommended**, from a `.tdarr-advisory.json` marker the flow leaves in the Review folder. Such an entry cannot be approved: it offers only a Radarr replacement request (the original stays in quarantine) or **Keep**, which records the decision for that exact original ([user guide](docs/USER-GUIDE.md#better-release-recommended)).
+
+- The A/V preview of a Dolby Vision profile 7 original with an enhancement layer (for example a dual-layer UHD remux) no longer fails on the FFmpeg message "PPS changed between slices" printed after seeking. The message is tolerated only for such an original, only after a successful decoder exit and a valid preview; any other diagnostic still fails ([A/V comparison](docs/AV-COMPARISON.md)).
+
 ## 2.6.0 — 2026-11-01
 
 ### Before updating
