@@ -1,6 +1,6 @@
 import {validateRecoveredPreview,validateAlignedStart} from './preview-validation.mjs';
 import {withMpeg2Initialization} from './mpeg2-initialization.mjs';
-import {previewErrors} from './preview-diagnostics.mjs';
+import {previewErrors,hasDolbyVisionEnhancementLayer} from './preview-diagnostics.mjs';
 import {spawnPreview} from './preview-process.mjs';
 export const CLIP_SECONDS=12;
 // Per-attempt ceiling and the shared deadline of one original/Review AV pair, validation included (#183).
@@ -75,7 +75,7 @@ function extractPreviewOnce(exe,args,options){
   child.stdout.on('data',b=>{size+=b.length;if(size>20*1024*1024)stop('Náhled překročil limit velikosti. Zvol rychlý profil nebo porovnej původní snímky v rozlišení 1 : 1.');else chunks.push(b)});
   child.stderr.on('data',b=>{stderr=(stderr+b).slice(-16384)});
   child.on('error',e=>{failure=e;});
-  child.on('close',code=>{clearTimeout(timer);const data=Buffer.concat(chunks);if(failure)return reject(failure);if(code||previewErrors(stderr).trim()||data.length<32||data.toString('ascii',4,8)!=='ftyp'){const error=Error('Nelze připravit náhled: '+stderr);error.previewDiagnostics=stderr;error.previewExitCode=code;return reject(error)}resolve(data.toString('base64'))});
+  child.on('close',code=>{clearTimeout(timer);const data=Buffer.concat(chunks);if(failure)return reject(failure);if(code||previewErrors(stderr,{dolbyVisionEnhancementLayer:options.dolbyVisionEnhancementLayer}).trim()||data.length<32||data.toString('ascii',4,8)!=='ftyp'){const error=Error('Nelze připravit náhled: '+stderr);error.previewDiagnostics=stderr;error.previewExitCode=code;return reject(error)}resolve(data.toString('base64'))});
  });
 }
 // options.deadline is the shared deadline of the original/Review pair; every subprocess gets at
@@ -87,7 +87,7 @@ export function extractPreview(exe,file,index,seconds,startTime,video,profileNam
  return withMpeg2Initialization(file,async input=>{
   // Output after an earlier seek for the audio failure must decode completely and start aligned.
   const recovered=async data=>{await validateRecoveredPreview(exe,data,{...spawnOptions,deadline:pairDeadline,frameRate});await validateAlignedStart(exe,data,{...spawnOptions,deadline:pairDeadline});return data};
-  const result=await withPreviewSeekRetry(preroll=>extractPreviewOnce(exe,previewArgs(input,index,seconds,startTime,video,profileName,preroll),{...spawnOptions,timeoutMs:Math.min(ATTEMPT_MS,left()),pairLimited:Number.isFinite(options.deadline)&&left()<ATTEMPT_MS}),{seconds,video,index,signal:options.signal,deadline:pairDeadline,recovered});
+  const result=await withPreviewSeekRetry(preroll=>extractPreviewOnce(exe,previewArgs(input,index,seconds,startTime,video,profileName,preroll),{...spawnOptions,timeoutMs:Math.min(ATTEMPT_MS,left()),pairLimited:Number.isFinite(options.deadline)&&left()<ATTEMPT_MS,dolbyVisionEnhancementLayer:hasDolbyVisionEnhancementLayer(video)}),{seconds,video,index,signal:options.signal,deadline:pairDeadline,recovered});
   return input===file?result:validateRecoveredPreview(exe,result,{...spawnOptions,deadline:pairDeadline,frameRate});
  },{signal:options.signal,budgetMs:Math.max(1,pairDeadline-Date.now())});
 }
