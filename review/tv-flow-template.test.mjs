@@ -33,10 +33,10 @@ test('versioned TV flow is a closed, non-destructive transcode graph with review
  const summarizeNode=node=>({keys:Object.keys(node).sort(),id:node.id,name:node.name,position:node.position,pluginName:node.pluginName,sourceRepo:node.sourceRepo,version:node.version,fpEnabled:node.fpEnabled,inputsDB:node.inputsDB?Object.fromEntries(Object.entries(node.inputsDB).map(([key,value])=>[key,key==='code'?'__reviewed-helper__':value])):null});
  const expectedNodes=[
   {id:'tv-input',name:'TV source file',pluginName:'inputFile',version:'1.0.0',inputsDB:null},
-  {id:'tv-preflight',name:'TV source and exception preflight',pluginName:'customFunction',version:'1.0.0',inputsDB:{code:'__reviewed-helper__'}},
   {id:'tv-start',name:'Begin transcode',pluginName:'ffmpegCommandStart',version:'1.0.0',inputsDB:null},
   {id:'tv-encoder',name:'Software HEVC encode',pluginName:'ffmpegCommandSetVideoEncoder',version:'1.0.0',inputsDB:{outputCodec:'hevc',enableFFmpegPreset:'true',ffmpegPreset:'slow',enableFFmpegQuality:'true',ffmpegQuality:'22',hardwareEncoding:'false',hardwareType:'auto',hardwareDecoding:'false',forceEncoding:'false'}},
   {id:'tv-container',name:'Matroska output without forced stream removal',pluginName:'ffmpegCommandSetContainer',version:'1.0.0',inputsDB:{container:'mkv',forceConform:'false'}},
+  {id:'tv-preflight',name:'TV source and exception preflight',pluginName:'customFunction',version:'1.0.0',inputsDB:{code:'__reviewed-helper__'}},
   {id:'tv-execute',name:'Execute transcode',pluginName:'ffmpegCommandExecute',version:'1.0.0',inputsDB:null},
   {id:'tv-duration',name:'Duration sanity gate',pluginName:'compareFileDurationRatio',version:'1.0.0',inputsDB:{greaterThan:'99.5',lessThan:'100.5'}},
   {id:'tv-size',name:'Output size sanity gate',pluginName:'compareFileSizeRatio',version:'2.0.0',inputsDB:{greaterThan:'25',lessThan:'150'}},
@@ -45,8 +45,8 @@ test('versioned TV flow is a closed, non-destructive transcode graph with review
  ].map((node,index)=>({keys:['fpEnabled','id','name','pluginName','position','sourceRepo','version',...(node.inputsDB?['inputsDB']:[])].sort(),sourceRepo:'Community',fpEnabled:true,position:{x:index*250,y:0},...node}));
  assert.deepEqual(flow.flowPlugins.map(summarizeNode),expectedNodes,'node identities, plugin versions, settings, and all node keys are closed to review');
  const expectedEdges=[
-  ['tv-edge-1','tv-input','tv-preflight','1',null],['tv-edge-2','tv-preflight','tv-start','1',null],['tv-edge-3','tv-preflight','tv-fail','2',null],
-  ['tv-edge-4','tv-start','tv-encoder','1',null],['tv-edge-5','tv-encoder','tv-container','1',null],['tv-edge-6','tv-container','tv-execute','1',null],
+  ['tv-edge-1','tv-input','tv-start','1',null],['tv-edge-2','tv-start','tv-encoder','1',null],['tv-edge-3','tv-encoder','tv-container','1',null],
+  ['tv-edge-4','tv-container','tv-preflight','1',null],['tv-edge-5','tv-preflight','tv-execute','1',null],['tv-edge-6','tv-preflight','tv-fail','2',null],
   ['tv-edge-7','tv-execute','tv-duration','1',null],['tv-edge-8','tv-duration','tv-size','1',null],['tv-edge-9','tv-duration','tv-fail','2',null],
   ['tv-edge-10','tv-duration','tv-fail','3',null],['tv-edge-11','tv-size','tv-receipt','1',null],['tv-edge-12','tv-size','tv-fail','2',null],
   ['tv-edge-13','tv-size','tv-fail','3',null],['tv-edge-14','tv-receipt','tv-fail','2',null],
@@ -93,11 +93,12 @@ test('TV receipt helper runs against synthetic files and never changes the sourc
   const sourceBytes=await fs.readFile(source);
   const args={
    inputFileObj:{_id:source,ffProbeData:{format:{format_name:'matroska',duration:'60.0'},streams:[{index:0,codec_type:'video',codec_name:'h264',width:1280,height:720,field_order:'progressive',avg_frame_rate:'24/1',pix_fmt:'yuv420p',bits_per_raw_sample:'8',sample_aspect_ratio:'1:1',display_aspect_ratio:'16:9',color_transfer:'bt709',color_primaries:'bt709',color_space:'bt709',color_range:'tv',disposition:{default:1,forced:0}},{index:1,codec_type:'audio',codec_name:'aac',tags:{language:'ces'},channels:2,channel_layout:'stereo',disposition:{default:1,forced:0}},{index:2,codec_type:'subtitle',codec_name:'subrip',tags:{language:'eng'},disposition:{default:0,forced:0}}],chapters:[{start_time:'0',end_time:'60',tags:{title:'Chapter 1'}}]}},
-   originalLibraryFile:{_id:source},workDir:cacheRoot,ffmpegPath:'/usr/bin/ffmpeg',job:{jobId:'synthetic-current-job'},variables:{inFlow:{}},
+   originalLibraryFile:{_id:source},workDir:cacheRoot,ffmpegPath:'/usr/bin/ffmpeg',job:{jobId:'synthetic-current-job'},variables:{inFlow:{},ffmpegCommand:{init:true,overallOuputArguments:[]}},
    userVariables:{library:{tvSourceRoot:sourceRoot,tvReviewRoot:reviewRoot,tvCacheRoot:cacheRoot}},
   };
   const preflight=await preflightHelper(args);
   assert.equal(preflight.outputNumber,1);
+  assert.deepEqual(preflight.variables.ffmpegCommand.overallOuputArguments,['-color_primaries:v:0','bt709','-color_trc:v:0','bt709','-colorspace:v:0','bt709','-color_range:v:0','tv'],'the encode tags the result with the source colour');
   const privateState=JSON.stringify(preflight.variables);
   for(const value of [source,sourceRoot,reviewRoot,cacheRoot,relative,'Chapter 1'])assert.ok(!privateState.includes(value),'flow state must not persist paths or chapter titles');
   args.variables=preflight.variables;
@@ -121,7 +122,7 @@ test('TV receipt helper runs against synthetic files and never changes the sourc
   assert.equal(receipt.outputRelative,relative);
   assert.equal(receipt.jobId,'synthetic-current-job');
   assert.deepEqual(Object.keys(receipt).sort(),['createdAt','jobId','output','outputRelative','relative','source','strictProof','version'].sort());
-  assert.deepEqual(receipt.strictProof.profile,{id:'tv-review-staging-v1-template',version:1});assert.equal(receipt.strictProof.decode,'complete');assert.equal(receipt.strictProof.preservation,'passed');assert.equal(receipt.strictProof.stagedCopy,'verified');
+  assert.deepEqual(receipt.strictProof.profile,{id:'tv-review-staging-v1-template',version:2});assert.equal(receipt.strictProof.decode,'complete');assert.equal(receipt.strictProof.preservation,'passed');assert.equal(receipt.strictProof.stagedCopy,'verified');
   assert.deepEqual(Object.keys(receipt.source).sort(),['mtime','sample','size']);
   assert.deepEqual(Object.keys(receipt.output).sort(),['mtime','sample','size']);
   const job={_id:'synthetic-current-job',DB:'synthetic-library',status:'Transcode success',file:source,fileSizeStartGB:receipt.source.size/2**30,fileSizeEndGB:receipt.output.size/2**30};
@@ -146,7 +147,7 @@ test('TV helper blocks root aliases, unknown/HDR inputs, missing job IDs and des
  const sourceRoot=path.join(temp,'source'),reviewRoot=path.join(temp,'review'),cacheRoot=path.join(reviewRoot,'.cache');
  const relative='Series/Season 01/Episode 02.mkv',source=path.join(sourceRoot,relative),output=path.join(reviewRoot,relative),working=path.join(cacheRoot,'worker.mkv');
  const metadata=(overrides={})=>({format:{format_name:'matroska',duration:'120.0'},streams:[{index:0,codec_type:'video',codec_name:'h264',width:1280,height:720,field_order:'progressive',avg_frame_rate:'24/1',pix_fmt:'yuv420p',bits_per_raw_sample:'8',sample_aspect_ratio:'1:1',display_aspect_ratio:'16:9',color_transfer:'bt709',color_primaries:'bt709',color_space:'bt709',color_range:'tv',disposition:{default:1,forced:0},...overrides},{index:1,codec_type:'audio',codec_name:'aac',tags:{language:'ces'},channels:2,channel_layout:'stereo',disposition:{default:1,forced:0}}],chapters:[]});
- const base=()=>({inputFileObj:{_id:source,ffProbeData:metadata()},originalLibraryFile:{_id:source},workDir:cacheRoot,ffmpegPath:'/usr/bin/ffmpeg',job:{jobId:'synthetic-job'},variables:{inFlow:{}},userVariables:{library:{tvSourceRoot:sourceRoot,tvReviewRoot:reviewRoot,tvCacheRoot:cacheRoot}}});
+ const base=()=>({inputFileObj:{_id:source,ffProbeData:metadata()},originalLibraryFile:{_id:source},workDir:cacheRoot,ffmpegPath:'/usr/bin/ffmpeg',job:{jobId:'synthetic-job'},variables:{inFlow:{},ffmpegCommand:{init:true,overallOuputArguments:[]}},userVariables:{library:{tvSourceRoot:sourceRoot,tvReviewRoot:reviewRoot,tvCacheRoot:cacheRoot}}});
  try{
   await fs.mkdir(path.dirname(source),{recursive:true});await fs.mkdir(cacheRoot,{recursive:true});await fs.writeFile(source,'source bytes');
   const aliased=base();aliased.userVariables.library.tvReviewRoot=sourceRoot;
@@ -154,7 +155,31 @@ test('TV helper blocks root aliases, unknown/HDR inputs, missing job IDs and des
   const hdr=base();hdr.inputFileObj.ffProbeData=metadata({color_transfer:'smpte2084',color_primaries:'bt2020'});
   assert.equal((await helper(hdr)).outputNumber,2,'HDR must be routed to manual handling');
   const unknown=base();unknown.inputFileObj.ffProbeData=metadata({color_transfer:undefined});
-  assert.equal((await helper(unknown)).outputNumber,2,'unknown color metadata must not pass as SDR');
+  assert.equal((await helper(unknown)).outputNumber,2,'partially unknown color metadata must not pass as SDR');
+  const untaggedSd=base();untaggedSd.inputFileObj.ffProbeData=metadata({width:720,height:576,color_transfer:undefined,color_primaries:'unknown',color_space:undefined,color_range:undefined});
+  assert.equal((await helper(untaggedSd)).outputNumber,2,'untagged SD video has no single safe default and must fail closed');
+  const untaggedUhd=base();untaggedUhd.inputFileObj.ffProbeData=metadata({width:3840,height:2160,color_transfer:undefined,color_primaries:undefined,color_space:undefined});
+  assert.equal((await helper(untaggedUhd)).outputNumber,2,'untagged video above 1080p must fail closed');
+  const noCommand=base();delete noCommand.variables.ffmpegCommand;
+  assert.equal((await helper(noCommand)).outputNumber,2,'preflight must run after the FFmpeg command is built so it can tag colour');
+
+  const untagged=base();untagged.inputFileObj.ffProbeData=metadata({width:1920,height:1080,color_transfer:'unknown',color_primaries:undefined,color_space:'unknown',color_range:undefined});
+  const untaggedPreflight=await helper(untagged);
+  assert.equal(untaggedPreflight.outputNumber,1,'untagged 8-bit HD video is treated as BT.709 SDR');
+  assert.deepEqual(untaggedPreflight.variables.ffmpegCommand.overallOuputArguments,['-color_primaries:v:0','bt709','-color_trc:v:0','bt709','-colorspace:v:0','bt709','-color_range:v:0','tv']);
+  assert.equal(JSON.parse(untaggedPreflight.variables.inFlow.tvReviewProofV2).profile.colorInferred,true);
+  const encodedStreams=(probe,overrides)=>({...probe,streams:[{...probe.streams[0],codec_name:'hevc',...overrides},...probe.streams.slice(1)]});
+  const untaggedResult={...untagged,variables:untaggedPreflight.variables,inputFileObj:{_id:working,ffProbeData:encodedStreams(untagged.inputFileObj.ffProbeData,{})}};
+  await fs.writeFile(working,'untagged encoded bytes');
+  let untaggedDecodes=0;
+  const countingSpawn=()=>{untaggedDecodes++;const child=new EventEmitter();child.stderr=new EventEmitter();child.pid=process.pid;queueMicrotask(()=>child.emit('close',0));return child;};
+  assert.equal((await helper(untaggedResult,{spawnChild:countingSpawn})).outputNumber,2,'a result that is still untagged must not be staged');
+  assert.equal(untaggedDecodes,0);
+  await assert.rejects(fs.stat(output),{code:'ENOENT'});
+  const taggedResult={...untaggedResult,inputFileObj:{_id:working,ffProbeData:encodedStreams(untagged.inputFileObj.ffProbeData,{color_transfer:'bt709',color_primaries:'bt709',color_space:'bt709',color_range:'tv'})}};
+  assert.equal((await helper(taggedResult,{spawnChild:countingSpawn})).outputNumber,1,'an explicitly tagged BT.709 result of an untagged HD source is staged');
+  assert.equal(untaggedDecodes,1);
+  await fs.rm(output);await fs.rm(`${output}.tdarr-receipt.json`);
   const contradictoryDepth=base();contradictoryDepth.inputFileObj.ffProbeData=metadata({bits_per_raw_sample:'10'});
   assert.equal((await helper(contradictoryDepth)).outputNumber,2,'an explicit non-8-bit depth must fail even when pix_fmt looks 8-bit');
 

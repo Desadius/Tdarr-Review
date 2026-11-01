@@ -7,7 +7,7 @@ export function validTvStrictProof(receipt){
  const expected=['profile','jobId','sourceIdentity','outputIdentity','preservation','decode','stagedCopy'];
  const proof=receipt?.strictProof;
  return receipt?.version===2&&exact(proof,expected)&&exact(proof.profile,['id','version'])&&
-  proof.profile.id==='tv-review-staging-v1-template'&&proof.profile.version===1&&typeof receipt.jobId==='string'&&receipt.jobId.length>0&&proof.jobId===receipt.jobId&&
+  proof.profile.id==='tv-review-staging-v1-template'&&[1,2].includes(proof.profile.version)&&typeof receipt.jobId==='string'&&receipt.jobId.length>0&&proof.jobId===receipt.jobId&&
   identity(proof.sourceIdentity)&&identity(proof.outputIdentity)&&
   proof.preservation==='passed'&&proof.decode==='complete'&&proof.stagedCopy==='verified';
 }
