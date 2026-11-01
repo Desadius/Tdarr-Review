@@ -1,1 +1,0 @@
-- The Sonarr inspector can compare the current files of one selected TV series with a complete Sonarr snapshot using a bounded, read-only filesystem observation.
