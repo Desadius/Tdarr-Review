@@ -70,7 +70,7 @@ test('eligible retry runs once; failure never becomes readiness and abort never 
 });
 test('a DV7 FEL original previews despite the enhancement-layer PPS message; other sources still fail (#300)',{skip:process.platform==='win32'&&'needs an executable decoder stub'},async t=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'preview-dv7-test-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
- const decoder=async(name,exit)=>{const exe=path.join(root,name);await fs.writeFile(exe,'#!'+process.execPath+"\nprocess.stderr.write('[hevc @ 0x55a9af27eec0] PPS changed between slices.\n    Last message repeated 6 times\n');const b=Buffer.alloc(64);b.write('ftyp',4,'ascii');process.stdout.write(b);process.exitCode="+exit+";",{mode:0o700});return exe};
+ const decoder=async(name,exit)=>{const exe=path.join(root,name);await fs.writeFile(exe,'#!'+process.execPath+"\nprocess.stderr.write('[hevc @ 0x55a9af27eec0] PPS changed between slices.\\n    Last message repeated 6 times\\n');const b=Buffer.alloc(64);b.write('ftyp',4,'ascii');process.stdout.write(b);process.exitCode="+exit+";",{mode:0o700});return exe};
  const fel={index:0,codec_name:'hevc',color_transfer:'smpte2084',avg_frame_rate:'24000/1001',side_data_list:[{side_data_type:'DOVI configuration record',dv_profile:7,el_present_flag:1}]};
  const ok=await decoder('ok',0);
  assert.ok(Buffer.from(await extractPreview(ok,'/source.mkv',1,60,0,fel),'base64').toString('ascii',4,8)==='ftyp');
