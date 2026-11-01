@@ -182,3 +182,15 @@ for(const [name,options,change,blocker]of [
  const f=await fixture(t,options);if(change){const c=structuredClone({...f.c,replacement:{movieFileId:11,path:'/radarr/movies/Film/new.mkv',size:'IMPORTED REPLACEMENT'.length}});delete c.replacementSourceFP;change(c);await f.writeCase(c);}
  assert.deepEqual((await f.assessment.view(ID)).blockers,[blocker]);
 });
+test('a legacy case without replacementRelative finds the replacement Radarr names in the original\'s movie folder',async t=>{
+ const f=await fixture(t,{legacy:true,transcode:false,row:{TranscodeDecisionMaker:'Not required'},jobs:[{file:TDARR,status:'Not required',end:Date.now()+1000}]});
+ const c={...f.c};delete c.replacementRelative;await f.writeCase(c);
+ const view=await f.assessment.view(ID);assert.equal(view.eligible,true,JSON.stringify(view));assert.equal(view.untranscoded,true);
+ await f.assessment.save(ID,{snapshot:view.snapshot,device:'TV',checks:done,note:'Plays well.'});
+ const {approvedAt}=await f.assessment.approve(ID,{snapshot:view.snapshot,confirm:true});let saved=null;
+ await retainCase(c,{mediaRoot:f.media,quarantineRoot:f.quarantine,atomicCase:async v=>{saved=structuredClone(v);},now:Date.now()});
+ assert.equal(saved.cleanup.approvedAt,approvedAt,'Recovery retention derives the same key');
+ const moved=await fixture(t,{legacy:true,transcode:false,row:{TranscodeDecisionMaker:'Not required'},jobs:[{file:TDARR,status:'Not required',end:Date.now()+1000}]});
+ const other={...moved.c,replacement:{...moved.c.replacement,path:'/radarr/movies/Renamed/new.mkv'}};delete other.replacementRelative;await moved.writeCase(other);
+ assert.deepEqual((await moved.assessment.view(ID)).blockers,['installed-not-applicable'],'a replacement in another folder is not bound');
+});

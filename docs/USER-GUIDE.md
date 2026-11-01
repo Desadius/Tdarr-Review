@@ -227,7 +227,7 @@ Sometimes the transcoded result is already in the library, for example because i
 - Tdarr reports *Transcode success* for that file (or *Not required*, when Tdarr rescanned its own result) and its history has a successful transcode of it after the import;
 - no Review result waits for it and no other action is running.
 
-Cases created before Recovery recorded the exact identity of the imported replacement are checked against Radarr's record of the imported file instead: its path and size, and a Tdarr decision that ended after the current copy was written.
+Cases created before Recovery recorded the exact identity of the imported replacement are checked against Radarr's record of the imported file instead: its path (in the film's folder) and size, and a Tdarr decision that ended after the current copy was written.
 
 If anything cannot be read, the action is not offered and the case says what blocks it. The assessment is also offered for an untranscoded replacement that Tdarr has finished with; see [A failed or skipped transcode](#a-failed-or-skipped-transcode).
 

@@ -1,0 +1,1 @@
+- **Keep the current copy** now also reaches older Recovery cases that recorded only Radarr's path of the imported replacement: the replacement is the file Radarr names in the film's own folder. See the [user guide](docs/USER-GUIDE.md#assess-an-installed-copy).
