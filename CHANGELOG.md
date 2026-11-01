@@ -6,6 +6,28 @@ Changes merged since the last release are listed under Unreleased below and as f
 
 ## Unreleased
 
+## 2.6.0 — 2026-11-01
+
+### Before updating
+
+- **Keep TV Off or in Discovery until the dedicated quarantine and v2 Tdarr flow are ready.** Existing v1 receipts remain visible as legacy records but are not eligible for Strict review. The v2 template contract differs from v1; review the documented compatibility impact before updating or importing a flow. No production flow import or update is part of this change.
+
+- **Older cases may offer Keep the current copy after the update.** Approving one writes approval evidence keyed by Radarr's file record. If you return to 2.5.0, Recovery ignores that evidence and keeps the quarantined original until you delete it yourself.
+
+### Changes
+
+- Add an explicit Strict review mode for exactly bound single-episode SDR Matroska results, with the shared guided comparison, separate approval and installation, and an indefinitely retained original in the dedicated TV quarantine. V2 flow proof is required; legacy v1 receipts remain visible in read-only discovery but are blocked from strict review. After installation Review refreshes the exact Tdarr file and the affected Sonarr series, reporting pending metadata work without replaying the installation. See the [TV setup guide](docs/ADD-TV-PATHS.md) and [user guide](docs/USER-GUIDE.md#tv-series-discovery-and-strict-review).
+
+- **Keep the current copy** is now offered for replacements imported before Recovery recorded their exact file identity, checked against Radarr's record of the imported file, and for a transcoded copy that Tdarr later rescanned as *Not required*. Stopping the container no longer waits for an open browser tab until it is killed. See the [user guide](docs/USER-GUIDE.md#assess-an-installed-copy).
+
+- Review accepts the Dolby Vision 7 to 8.1 result profile (`tdarr-dv7to81-crf21-v1`): a Dolby Vision 7 dual-layer original converted to Dolby Vision 8.1 (base layer and RPU, no enhancement layer) with the same picture size and HDR10 static metadata is no longer blocked as an unknown HDR profile; any other combination stays blocked ([checks](docs/USER-GUIDE.md#why-a-film-is-blocked)).
+
+- Add a read-only TV installation history with durable episode/approval associations, bounded pagination and retained-original identity observations. New installations persist their journal context and exact index reference before touching media; old or incomplete records remain explicitly unverified. History is available with TV processing Off and does not contact upstream services.
+
+- The Sonarr inspector can compare the current files of one selected TV series with a complete Sonarr snapshot using a bounded, read-only filesystem observation.
+
+- Add an explicit, read-only TV season cohort and sample proposal based on current bounded Sonarr, strict-flow and technical metadata, with localized signature details. Missing supplementary HDR side-data remains unreported rather than being treated as absent; uncertain season or language metadata cannot establish a representative sample. The proposal never authorizes a batch or changes media.
+
 ## 2.5.0 — 2026-10-28
 
 ### Before updating
