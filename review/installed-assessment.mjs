@@ -57,7 +57,7 @@ export function createInstalledAssessment({data,getConfig,getItems,tdarr,readRow
   // The evidence must land where Recovery's retention reads it: beside Review's own library root.
   const root=libraryRoot(c);if(!root||!getConfig()?.mediaRoot||path.resolve(root)!==path.resolve(getConfig().mediaRoot))return fail('installed-unverified');
   try{await fs.lstat(await approvalEvidencePath(root,key.relative,key.sourceFP));return fail('installed-evidence-exists');}catch(e){if(e.code!=='ENOENT')return fail('installed-unverified');}
-  let copy;try{copy=await installedCopy(root,c.replacementRelative);}catch{return fail('installed-unverified');}
+  let copy;try{copy=await installedCopy(root,key.relative);}catch{return fail('installed-unverified');}
   if(!copy)return fail('installed-file-missing');
   if(copy.ambiguous)return fail('installed-ambiguous');
   if(copy.unsafe)return fail('installed-file-unsafe');
@@ -67,7 +67,7 @@ export function createInstalledAssessment({data,getConfig,getItems,tdarr,readRow
   // copy at the imported path with the imported size is the replacement itself, and Tdarr's decisions count once
   // they end after the current copy was written.
   const written=Number(copy.identity.split(':')[3]),size=Number(copy.identity.split(':')[2]);
-  const untranscoded=key.legacy?copy.relative===c.replacementRelative&&size===c.replacement.size:SAME.has(compareIdentity(c.replacementSourceFP,copy.identity));
+  const untranscoded=key.legacy?copy.relative===key.relative&&size===c.replacement.size:SAME.has(compareIdentity(c.replacementSourceFP,copy.identity));
   const tdarrPath=path.posix.join(path.posix.dirname(c.file),path.posix.basename(copy.relative));
   let row,jobs;
   try{row=await createTdarrFileState(tdarr,{libraryId:getConfig()?.libraryId}).read(tdarrPath);jobs=await readRows('jobsjsondb');}catch{return fail('installed-unverified');}

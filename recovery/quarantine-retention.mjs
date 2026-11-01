@@ -12,16 +12,25 @@ function key(relative,sourceFP){return crypto.createHash('sha256').update(relati
 export async function approvalEvidencePath(mediaRoot,relative,sourceFP){return path.join(path.dirname(await fs.realpath(mediaRoot)),'.tdarr-approvals',key(relative,sourceFP));}
 /**
  * What an approval of an imported replacement is keyed by: the replacement's recorded identity, or for a case
- * recorded before Recovery kept that identity, Radarr's record of the imported file (#280). Null when neither binds.
+ * recorded before Recovery kept that identity, Radarr's record of the imported file (#280). Such a case may also
+ * lack replacementRelative; the replacement is then the file Radarr names in the original's movie folder. Null when
+ * neither binds.
  * @param {any} c The case.
  * @returns {{relative:string,sourceFP:string,legacy?:true}|null}
  */
 export function approvalKey(c){
- if(typeof c?.replacementRelative!=='string'||!c.replacementRelative)return null;
- if(c.replacementSourceFP)return {relative:c.replacementRelative,sourceFP:c.replacementSourceFP};
- const r=c.replacement;
- if(!Number.isSafeInteger(r?.movieFileId)||r.movieFileId<=0||!Number.isSafeInteger(r?.size)||r.size<=0||typeof r.path!=='string'||!r.path.replaceAll('\\','/').endsWith('/'+c.replacementRelative))return null;
- return {relative:c.replacementRelative,sourceFP:'radarr-file:'+r.movieFileId+':'+r.size,legacy:true};
+ if(c?.replacementSourceFP)return typeof c.replacementRelative==='string'&&c.replacementRelative?{relative:c.replacementRelative,sourceFP:c.replacementSourceFP}:null;
+ const r=c?.replacement;
+ if(!Number.isSafeInteger(r?.movieFileId)||r.movieFileId<=0||!Number.isSafeInteger(r?.size)||r.size<=0||typeof r.path!=='string')return null;
+ const radarrPath=r.path.replaceAll('\\','/');
+ let relative=c.replacementRelative;
+ if(!relative){
+  const folder=typeof c.relative==='string'?path.posix.dirname(c.relative):'.',name=path.posix.basename(radarrPath);
+  if(folder==='.'||folder.split('/').some(part=>!part||part==='.'||part==='..')||!name||name==='.'||name==='..')return null;
+  relative=folder+'/'+name;
+ }
+ if(typeof relative!=='string'||!radarrPath.endsWith('/'+relative))return null;
+ return {relative,sourceFP:'radarr-file:'+r.movieFileId+':'+r.size,legacy:true};
 }
 export async function publishApproval({mediaRoot,relative,sourceFP,installedRelative,atomic}){
  const parent=path.dirname(await fs.realpath(mediaRoot)),directory=path.join(parent,'.tdarr-approvals');await fs.mkdir(directory,{recursive:true,mode:0o770});if(await fs.realpath(directory)!==directory)throw Error('Approval directory symlink');
