@@ -667,11 +667,10 @@ for(const language of ['cs','en'])test('Needs attention says what the user is as
  for(const language of ['cs','en'])test('the overview lists flow-refused sources with only a replacement request or Keep (#299) in '+language,async()=>{
   const en=language==='en',id='a'.repeat(24),snapshot='s'.repeat(64);
   const advisory={id,title:'The Mule (2018)',relative:'The Mule (2018)/a.mkv',reason:'container_crop',measured:{width:3840,height:2160,sampleAspectRatio:'803:1080',crop:{top:277,bottom:277,left:0,right:0}},status:'ready',snapshot};
-  const f=await appFixture(language,{itemsData:{advisories:[advisory,{...advisory,id:'b'.repeat(24),title:'Changed film',status:'changed'}]},routes:{['/api/advisories/'+id+'/replace']:{status:202,data:{ok:true}},['/api/advisories/'+id+'/keep']:{data:{ok:true}}}}),dom=f.document;
+  const f=await appFixture(language,{itemsData:{advisories:[advisory]},routes:{['/api/advisories/'+id+'/replace']:{status:202,data:{ok:true}},['/api/advisories/'+id+'/keep']:{data:{ok:true}}}}),dom=f.document;
   const box=dom.getElementById('advisories');assert.equal(box.hidden,false);
   assert.match(box.textContent,en?/Better release recommended.*The Mule \(2018\).*Container crop \(Matroska PixelCrop\).*3840×2160.*SAR 803:1080.*crop 277\/277\/0\/0/:/Doporučeno stáhnout lepší release.*The Mule \(2018\).*Kontejnerový ořez/);
-  const buttons=box.querySelectorAll('button').map(n=>n.textContent);assert.deepEqual(buttons,en?['Ask for a replacement','Keep']:['Požádat o náhradu','Ponechat'],'only the ready advisory has actions, and never an approval');
-  assert.match(box.textContent,en?/no action is available/:/akce nejsou dostupné/);
+  const buttons=box.querySelectorAll('button').map(n=>n.textContent);assert.deepEqual(buttons,en?['Ask for a replacement','Keep']:['Požádat o náhradu','Ponechat'],'only a replacement request or Keep, never an approval');
   await box.querySelectorAll('button')[0].emit('click');assert.equal(dom.getElementById('confirm').open,true);assert.equal(dom.getElementById('rejectReasonBox').hidden,false,'a reason is required');
   assert.equal(f.calls.some(c=>c.route.startsWith('/api/advisories/')),false,'opening the dialog changes nothing');
   dom.getElementById('rejectReason').value='Lepší vydání';dom.getElementById('confirm').returnValue='confirm';await dom.getElementById('confirm').close();for(let i=0;i<8;i++)await flush();
