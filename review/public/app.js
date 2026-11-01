@@ -299,7 +299,7 @@ async function recheckItem(item){try{writeItem(item,'recheck');actionInFlight=tr
 function changedFilesView(item){
  const box=el('div','changed-files');box.append(el('h3','','Soubory se od zařazení změnily'),el('p','alert inline-warning',item.reason||'Soubory se od zařazení do review změnily. Vyžadují kontrolu.'),el('p','','Posouzení změněných souborů není k dispozici. Dosavadní potvrzení a rozhodnutí se na ně nevztahují.'));
  if(item.recheck==='verify')box.append(el('p','details','Ověření zkontroluje vazbu na úlohu Tdarr, technické údaje z FFprobe a to, že se soubory během ověření nezmění. Shodu obsahu neprokazuje: po úspěchu začne nové posouzení od prvního kroku.'),guardedButton(item,'recheck','Ověřit soubory a začít nové posouzení',()=>recheckItem(item),'primary'));
- else if(item.recheck==='remount')box.append(el('p','details','Změnilo se jen zařízení (například po připojení disku). Ověření porovná ostatní údaje souborů.'),guardedButton(item,'recheck','Znovu ověřit soubory',()=>recheckItem(item)));
+ else if(item.recheck==='remount')box.append(el('p','details','Změnilo se jen číslo zařízení nebo souboru (například po restartu serveru nebo připojení disku). Ověření porovná ostatní údaje souborů.'),guardedButton(item,'recheck','Znovu ověřit soubory',()=>recheckItem(item)));
  else box.append(el('p','details','Tuto změnu nelze ověřit automaticky (změnila se velikost, obsah nebo umístění souboru). Oba soubory zůstávají zachované; zkontroluj je ručně podle docs/OPERATIONS.md.'));
  return box;
 }

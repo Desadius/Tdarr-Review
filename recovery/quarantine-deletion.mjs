@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {compareIdentity} from './file-identity.mjs';
+import {compareIdentity,REMOUNT_CHANGES} from './file-identity.mjs';
 
 // Evidence that the user deleted one exact quarantined file through Review (#280). Review writes it durably
 // before the unlink, in its own data directory; Recovery's and Review's quarantine retention then accept that
@@ -35,13 +35,15 @@ export async function writeQuarantineDeletion({data,caseId,name,identity,bytes,n
  return value;
 }
 
-/** Whether the user deleted exactly this quarantined file: same case folder, name and (allowing a ctime change) identity. */
+// A deletion after a remount recorded the file's new numbers; its size and modification time still bind it (ADR 0002).
+const DELETED_MATCH=new Set(['same','ctime-changed',...REMOUNT_CHANGES,'remounted-ctime-changed']);
+/** Whether the user deleted exactly this quarantined file: same case folder, name and (allowing a ctime change or a remount) identity. */
 export async function userDeletedQuarantine({data,file,identity}){
  if(typeof data!=='string'||typeof file!=='string')return false;
  const caseId=path.basename(path.dirname(file)),name=path.basename(file);
  if(!idPattern.test(caseId)||!validName(name))return false;
  const value=await read(target(data,caseId,name));
- return !!value&&value.caseId===caseId&&value.name===name&&(!identity||['same','ctime-changed'].includes(compareIdentity(identity,value.identity)));
+ return !!value&&value.caseId===caseId&&value.name===name&&(!identity||DELETED_MATCH.has(compareIdentity(identity,value.identity)));
 }
 
 /** The case folders in which the user deleted a quarantined file. */

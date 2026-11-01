@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {readRecoveryCaseState,readRecoveryRuntime} from './recovery-snapshot.mjs';
 import {withReviewPaths} from './recovery-case-alias.mjs';
-import {compareIdentity,identityOf} from '../recovery/file-identity.mjs';
+import {compareIdentity,identityOf,REMOUNT_CHANGES} from '../recovery/file-identity.mjs';
 import {createTdarrFileState} from '../recovery/tdarr-file-state.mjs';
 import {classify,originalFailureReport} from '../recovery/policy.mjs';
 import {caseLibraryRoot,replacementTdarrFile,importTime} from './recovery-case-paths.mjs';
@@ -15,7 +15,8 @@ import {caseLibraryRoot,replacementTdarrFile,importTime} from './recovery-case-p
 // The retry re-queues that one row after revalidation, with its intent journalled in Review's own data
 // first. Only the cause category and a value-free decoder message reach the browser.
 
-const SAME=new Set(['same','ctime-changed']);
+// The imported replacement keeps its size and modification time across a remount (ADR 0002); no content sample was recorded for it.
+const SAME=new Set(['same','ctime-changed',...REMOUNT_CHANGES]);
 const RUNNING=new Set(['Queued','Transcoding']);
 const token=value=>crypto.createHash('sha256').update(value).digest('hex');
 const object=v=>!!v&&typeof v==='object'&&!Array.isArray(v);

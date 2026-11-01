@@ -35,8 +35,8 @@ test('Recovery case IDs derived from a file identity keep their value',()=>{
  assert.equal(caseId('/media/movies/Film/a.mkv',golden[1][1]),'abd45ac0b0cd275f01c3603f');
 });
 
-test('comparison names a lone ctime or device change and calls every other difference different',()=>{
- const expected={same:'same',ctimeChanged:'ctime-changed',deviceChanged:'device-changed',deviceAndCtimeChanged:'different',inodeChanged:'different',fourFields:'invalid',emptyCtime:'invalid',textCtime:'invalid',textDevice:'invalid',sixFields:'invalid',missing:'invalid'};
+test('comparison names a lone ctime or device change, a remount that keeps size and modification time, and calls every other difference different',()=>{
+ const expected={same:'same',ctimeChanged:'ctime-changed',deviceChanged:'device-changed',deviceAndCtimeChanged:'remounted-ctime-changed',inodeChanged:'remounted',remounted:'remounted',remountedCtimeChanged:'remounted-ctime-changed',sizeChanged:'different',mtimeChanged:'different',fourFields:'invalid',emptyCtime:'invalid',textCtime:'invalid',textDevice:'invalid',sixFields:'invalid',missing:'invalid'};
  for(const [,current] of golden)for(const [variant,stored] of Object.entries(identityVariants(current))){
   assert.equal(compareIdentity(stored,current),expected[variant],variant+' recorded');
   assert.equal(compareIdentity(current,stored),expected[variant],variant+' current');

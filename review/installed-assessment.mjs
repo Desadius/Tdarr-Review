@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {readRecoveryCaseState} from './recovery-snapshot.mjs';
 import {withReviewPaths} from './recovery-case-alias.mjs';
-import {compareIdentity,identityOf} from '../recovery/file-identity.mjs';
+import {compareIdentity,identityOf,REMOUNT_CHANGES} from '../recovery/file-identity.mjs';
 import {createTdarrFileState} from '../recovery/tdarr-file-state.mjs';
 import {approvalEvidencePath,approvalKey,publishApproval} from '../recovery/quarantine-retention.mjs';
 import {deviceSatisfied} from './public/review-rules.js';
@@ -18,6 +18,8 @@ import {caseLibraryRoot as libraryRoot,importTime} from './recovery-case-paths.m
 // token derived from the current copy's identity, never a path or the identity itself.
 
 const SAME=new Set(['same','ctime-changed']);
+// The imported replacement keeps its size and modification time across a remount (ADR 0002).
+const UNTRANSCODED=new Set([...SAME,...REMOUNT_CHANGES]);
 const VIDEO=['.mkv','.mp4','.m4v','.avi','.ts'];
 export const ASSESSMENT_CHECKS=Object.freeze(['image','audio','syncStart','syncMiddle','syncEnd']);
 const token=identity=>crypto.createHash('sha256').update(identity).digest('hex');
@@ -67,7 +69,7 @@ export function createInstalledAssessment({data,getConfig,getItems,tdarr,readRow
   // copy at the imported path with the imported size is the replacement itself, and Tdarr's decisions count once
   // they end after the current copy was written.
   const written=Number(copy.identity.split(':')[3]),size=Number(copy.identity.split(':')[2]);
-  const untranscoded=key.legacy?copy.relative===c.replacementRelative&&size===c.replacement.size:SAME.has(compareIdentity(c.replacementSourceFP,copy.identity));
+  const untranscoded=key.legacy?copy.relative===c.replacementRelative&&size===c.replacement.size:UNTRANSCODED.has(compareIdentity(c.replacementSourceFP,copy.identity));
   const tdarrPath=path.posix.join(path.posix.dirname(c.file),path.posix.basename(copy.relative));
   let row,jobs;
   try{row=await createTdarrFileState(tdarr,{libraryId:getConfig()?.libraryId}).read(tdarrPath);jobs=await readRows('jobsjsondb');}catch{return fail('installed-unverified');}

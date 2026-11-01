@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {readRecoveryCaseState,readRecoveryRuntime} from './recovery-snapshot.mjs';
 import {withReviewPaths} from './recovery-case-alias.mjs';
-import {compareIdentity,identityOf} from '../recovery/file-identity.mjs';
+import {compareIdentity,identityOf,REMOUNT_CHANGES} from '../recovery/file-identity.mjs';
 import {createTdarrFileState} from '../recovery/tdarr-file-state.mjs';
 import {preservesHold} from '../recovery/replacement-handoff.mjs';
 import {caseLibraryRoot as libraryRoot,replacementTdarrFile as tdarrFile,importTime} from './recovery-case-paths.mjs';
@@ -15,7 +15,8 @@ import {caseLibraryRoot as libraryRoot,replacementTdarrFile as tdarrFile,importT
 // Review's own data before the first Tdarr call; an intent without a confirmed row is uncertain and a retry
 // needs the user's acknowledgement. Review never writes Recovery's files.
 
-const SAME=new Set(['same','ctime-changed']);
+// The imported replacement keeps its size and modification time across a remount (ADR 0002); no content sample was recorded for it.
+const SAME=new Set(['same','ctime-changed',...REMOUNT_CHANGES]);
 export const HANDOFF_STABLE_MS=600000;
 const token=value=>crypto.createHash('sha256').update(value).digest('hex');
 const object=v=>!!v&&typeof v==='object'&&!Array.isArray(v);

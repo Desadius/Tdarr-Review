@@ -16,11 +16,16 @@ function fields(value){
 
 /**
  * Names how a recorded identity differs from a current one. Only a lone ctime or device
- * change is named; any other difference is 'different'. An unreadable identity on either
- * side is 'invalid' and never a match. Callers decide which named change they accept.
+ * change is named, and a remount (ADR 0002): Unraid's user share gives every file a new
+ * inode (and device) number after a reboot while its size and modification time stay, so a
+ * changed inode or device with the same size and modification time is 'remounted', or
+ * 'remounted-ctime-changed' when the ctime changed too. Any other difference is 'different'.
+ * An unreadable identity on either side is 'invalid' and never a match. Callers decide which
+ * named change they accept; a caller that accepts a remount confirms the content first where
+ * a content sample was recorded (recovery/content-sample.mjs).
  * @param {unknown} stored
  * @param {unknown} current
- * @returns {'same'|'ctime-changed'|'device-changed'|'different'|'invalid'}
+ * @returns {'same'|'ctime-changed'|'device-changed'|'remounted'|'remounted-ctime-changed'|'different'|'invalid'}
  */
 export function compareIdentity(stored,current){
  const a=fields(stored),b=fields(current);
@@ -29,5 +34,8 @@ export function compareIdentity(stored,current){
  if(!changed.length)return 'same';
  if(changed.length===1&&changed[0]===4)return 'ctime-changed';
  if(changed.length===1&&changed[0]===0)return 'device-changed';
+ if(!changed.includes(2)&&!changed.includes(3)&&(changed.includes(0)||changed.includes(1)))return changed.includes(4)?'remounted-ctime-changed':'remounted';
  return 'different';
 }
+/** Changes that keep size and modification time and differ only in where the file system numbers it (ADR 0002). */
+export const REMOUNT_CHANGES=Object.freeze(['device-changed','remounted']);
