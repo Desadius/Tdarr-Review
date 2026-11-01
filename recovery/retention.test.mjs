@@ -64,3 +64,11 @@ test('a case recorded without the replacement identity is keyed by Radarr\'s rec
   await retainCase(s.c,{...s,now:Date.now()+8*86400000});await assert.rejects(fs.stat(s.file),{code:'ENOENT'});assert.ok((await fs.stat(s.installed)).isFile());
  }finally{await fs.rm(s.root,{recursive:true,force:true})}
 });
+
+test('a case recorded without replacementRelative is keyed by the file Radarr names in the original\'s movie folder (#280)',async()=>{
+ const {approvalKey}=await import('./quarantine-retention.mjs');
+ const replacement={movieFileId:11,path:'/radarr/movies/Film (2000)/new.mkv',size:13};
+ assert.deepEqual(approvalKey({relative:'Film (2000)/old.mkv',replacement}),{relative:'Film (2000)/new.mkv',sourceFP:'radarr-file:11:13',legacy:true});
+ assert.deepEqual(approvalKey({relative:'Film (2000)/old.mkv',replacement:{...replacement,path:'Z:\\Movies\\Film (2000)\\new.mkv'}}).relative,'Film (2000)/new.mkv');
+ for(const c of [{relative:'Film (2000)/old.mkv',replacement:{...replacement,path:'/radarr/movies/Other/new.mkv'}},{relative:'old.mkv',replacement},{replacement},{relative:'../Film (2000)/old.mkv',replacement},{relative:'Film (2000)/old.mkv',replacementSourceFP:'1:2:3:4:5',replacement}])assert.equal(approvalKey(c),null,JSON.stringify(c));
+});
