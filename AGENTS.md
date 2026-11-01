@@ -49,7 +49,7 @@ For red → green evidence, mutation checks (including CI) and PR verification c
 
 The production installation is the maintainer's Unraid server, reachable over SSH. Connection details are private and are not part of this repository.
 
-- Ask the maintainer before every access to production, even a read-only one.
+- Read-only access to production over SSH needs no separate approval. A login or any request that writes, including a Review POST, is not read-only.
 - When reading, never print configuration values, secrets or the contents of the approval registry. Report only what the maintainer asked for.
 - Never change anything on production (files, containers, configuration) unless the maintainer explicitly asks for that change in the current conversation.
 
