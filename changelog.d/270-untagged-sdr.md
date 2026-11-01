@@ -1,0 +1,1 @@
+- TV flow template: episodes without colour tags (common in WEB-DL) are treated as BT.709 SDR when they are 8-bit HD, and the result is tagged explicitly. Untagged SD and anything above 1080p still fail closed.

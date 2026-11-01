@@ -10,6 +10,10 @@ const TV_BLOCK_CODES=Object.freeze({
 });
 const videoOf=probe=>Array.isArray(probe?.streams)?probe.streams.filter(stream=>stream?.codec_type==='video'&&!stream.disposition?.attached_pic):[];
 const depth=stream=>stream.pix_fmt==='yuv420p'?8:stream.pix_fmt==='yuv420p10le'?10:null;
+const unsetColor=value=>value===undefined||value===null||value==='unknown'||value==='unspecified'||value==='reserved';
+// Mirrors the TV flow helper: untagged 8-bit HD sources count as BT.709; the flow tags the result explicitly.
+const inferredHdColor=stream=>[stream.color_primaries,stream.color_transfer,stream.color_space].every(unsetColor)&&(stream.width>=1280||stream.height>576)&&stream.width<=1920&&stream.height<=1080;
+const effectiveColor=stream=>inferredHdColor(stream)?{...stream,color_primaries:'bt709',color_transfer:'bt709',color_space:'bt709'}:stream;
 
 /** Strict first-slice technical gate; it never turns a probe into Tdarr health evidence. */
 export function inspectTvReviewPair(source,result){
@@ -17,14 +21,16 @@ export function inspectTvReviewPair(source,result){
  for(const [label,probe]of [['source',source],['result',result]]){
   const videos=videoOf(probe);
   if(videos.length!==1)return {ok:false,reason:'unsupported_video_stream_count'};
-  const stream=videos[0],format=String(probe.format?.format_name||'').split(',');
+  const stream=label==='source'?effectiveColor(videos[0]):videos[0],format=String(probe.format?.format_name||'').split(',');
   if(!format.includes('matroska')||stream.field_order!=='progressive')return {ok:false,reason:'unsupported_container_or_scan'};
   if(depth(stream)!==8)return {ok:false,reason:'unsupported_bit_depth'};
   if(HDR.has(stream.color_transfer)||!SDR.has(stream.color_transfer)||!SDR.has(stream.color_primaries)||!SDR.has(stream.color_space)||stream.side_data_list?.length)return {ok:false,reason:'hdr_or_unknown_color'};
   if(!Number.isSafeInteger(stream.width)||!Number.isSafeInteger(stream.height)||stream.width<1||stream.height<1)return {ok:false,reason:'technical_facts_unavailable'};
   if(label==='result'&&stream.codec_name!=='hevc')return {ok:false,reason:'unsupported_result_codec'};
  }
- const a=videoOf(source)[0],b=videoOf(result)[0],durationA=Number(source.format?.duration),durationB=Number(result.format?.duration);
+ const a=videoOf(source)[0],b=videoOf(result)[0];
+ if(inferredHdColor(a)&&[b.color_primaries,b.color_transfer,b.color_space].some(value=>value!=='bt709'))return {ok:false,reason:'hdr_or_unknown_color'};
+ const durationA=Number(source.format?.duration),durationB=Number(result.format?.duration);
  if(!Number.isFinite(durationA)||!Number.isFinite(durationB)||durationA<=0||durationB<=0||Math.abs(durationA-durationB)>Math.max(.5,durationA*.005))return {ok:false,reason:'duration_mismatch'};
  return {ok:true,reason:null,durationA,durationB,videoSummary:`${a.codec_name} → ${b.codec_name}, ${b.width}×${b.height}, 8-bit SDR Matroska`};
 }

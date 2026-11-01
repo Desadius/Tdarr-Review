@@ -5,7 +5,7 @@ const path=require('node:path').posix;
 const spawn=require('node:child_process').spawn;
 
 const stateKey='tvReviewProofV2';
-const flowProfile=Object.freeze({id:'tv-review-staging-v1-template',version:1});
+const flowProfile=Object.freeze({id:'tv-review-staging-v1-template',version:2});
 const sampleSize=1024*1024;
 const maxDecodeMs=6*60*60*1000;
 const maxDecodeError=128*1024;
@@ -29,6 +29,27 @@ function ratio(value){
  const match=/^(\d{1,8})[:/](\d{1,8})$/.exec(value);if(!match)return null;
  const numerator=Number(match[1]),denominator=Number(match[2]);
  return numerator>0&&denominator>0&&numerator/denominator<=100?numerator/denominator:null;
+}
+
+const sdrTransfer=new Set(['bt709','smpte170m','smpte240m','gamma22','gamma28','iec61966-2-1']);
+const sdrPrimaries=new Set(['bt709','smpte170m','smpte240m','bt470bg','bt470m']);
+const sdrSpace=new Set(['bt709','smpte170m','smpte240m','fcc','bt470bg']);
+const unsetColor=value=>value===undefined||value===null||value==='unknown'||value==='unspecified'||value==='reserved';
+// Untagged 8-bit HD video is interpreted as BT.709 limited range, as players do; SD, partial or HDR tags still fail closed.
+function videoColor(video){
+ let primaries=video.color_primaries,transfer=video.color_transfer,colorSpace=video.color_space,colorRange=video.color_range,inferred=false;
+ if([primaries,transfer,colorSpace].every(unsetColor)){
+  const hd=(video.width>=1280||video.height>576)&&video.width<=1920&&video.height<=1080;
+  if(!hd)throw Error('hdr-or-unknown-color-metadata');
+  primaries=transfer=colorSpace='bt709';inferred=true;
+  if(unsetColor(colorRange))colorRange='tv';
+ }
+ if(!sdrTransfer.has(transfer)||!sdrPrimaries.has(primaries)||!sdrSpace.has(colorSpace)||!['tv','pc'].includes(colorRange))throw Error('hdr-or-unknown-color-metadata');
+ return {primaries,transfer,colorSpace,colorRange,inferred};
+}
+function colorArguments(command,color){
+ if(!plain(command)||command.init!==true||!Array.isArray(command.overallOuputArguments)||command.overallOuputArguments.length>256)throw Error('missing-ffmpeg-command');
+ command.overallOuputArguments.push('-color_primaries:v:0',color.primaries,'-color_trc:v:0',color.transfer,'-colorspace:v:0',color.colorSpace,'-color_range:v:0',color.colorRange);
 }
 
 function rootsFrom(args){
@@ -61,10 +82,7 @@ function trackFacts(media){
  if(!Number.isFinite(duration)||duration<1||duration>14400||typeof rate!=='string'||!/^\d+(?:\/\d+)?$/.test(rate))throw Error('unsupported-timing');
  const [num,den=1]=rate.split('/').map(Number),fps=num/den;if(!Number.isFinite(fps)||fps<10||fps>60)throw Error('unsupported-timing');
  if(Array.isArray(video.side_data_list)&&video.side_data_list.length)throw Error('special-video-metadata');
- const sdrTransfer=new Set(['bt709','smpte170m','smpte240m','gamma22','gamma28','iec61966-2-1']);
- const sdrPrimaries=new Set(['bt709','smpte170m','smpte240m','bt470bg','bt470m']);
- const sdrSpace=new Set(['bt709','smpte170m','smpte240m','fcc','bt470bg']);
- if(!sdrTransfer.has(video.color_transfer)||!sdrPrimaries.has(video.color_primaries)||!sdrSpace.has(video.color_space)||!['tv','pc'].includes(video.color_range))throw Error('hdr-or-unknown-color-metadata');
+ const color=videoColor(video);
  const facts=[];
  for(const stream of streams){
   if(!plain(stream)||!['video','audio','subtitle'].includes(stream.codec_type))throw Error('unsupported-stream');
@@ -75,14 +93,14 @@ function trackFacts(media){
   if((stream.codec_type==='audio'&&!supportedAudio.has(stream.codec_name))||(stream.codec_type==='subtitle'&&!supportedSubtitles.has(stream.codec_name)))throw Error('unsupported-track');
   if(stream.codec_type==='audio'&&(!Number.isSafeInteger(stream.channels)||stream.channels<1||typeof stream.channel_layout!=='string'||!stream.channel_layout))throw Error('unknown-audio-layout');
   if(Array.isArray(stream.side_data_list)&&stream.side_data_list.length)throw Error('special-track-metadata');
-  facts.push({type:stream.codec_type,codec:stream.codec_name,language,default:Boolean(disposition.default),forced:Boolean(disposition.forced),channels:stream.channels??null,channelLayout:stream.channel_layout??null,width:stream.width??null,height:stream.height??null,fieldOrder:stream.field_order??null,frameRate:stream.avg_frame_rate||stream.r_frame_rate||null,pixelFormat:stream.pix_fmt??null,bitsPerRawSample:stream.codec_type==='video'?bitDepth:(stream.bits_per_raw_sample??null),sampleAspectRatio:stream.sample_aspect_ratio??null,displayAspectRatio:stream.display_aspect_ratio??null,primaries:stream.color_primaries??null,transfer:stream.color_transfer??null,colorSpace:stream.color_space??null,colorRange:stream.color_range??null});
+  facts.push({type:stream.codec_type,codec:stream.codec_name,language,default:Boolean(disposition.default),forced:Boolean(disposition.forced),channels:stream.channels??null,channelLayout:stream.channel_layout??null,width:stream.width??null,height:stream.height??null,fieldOrder:stream.field_order??null,frameRate:stream.avg_frame_rate||stream.r_frame_rate||null,pixelFormat:stream.pix_fmt??null,bitsPerRawSample:stream.codec_type==='video'?bitDepth:(stream.bits_per_raw_sample??null),sampleAspectRatio:stream.sample_aspect_ratio??null,displayAspectRatio:stream.display_aspect_ratio??null,primaries:stream.codec_type==='video'?color.primaries:(stream.color_primaries??null),transfer:stream.codec_type==='video'?color.transfer:(stream.color_transfer??null),colorSpace:stream.codec_type==='video'?color.colorSpace:(stream.color_space??null),colorRange:stream.codec_type==='video'?color.colorRange:(stream.color_range??null)});
  }
  const chapterFacts=chapters.map(chapter=>{
   const start=Number(chapter?.start_time),end=Number(chapter?.end_time);
   if(!Number.isFinite(start)||!Number.isFinite(end)||start<0||end<=start)throw Error('unsupported-chapter');
   return {start,end,titleHash:typeof chapter?.tags?.title==='string'?crypto.createHash('sha256').update(chapter.tags.title).digest('hex'):null};
  });
- return {duration,videoCount:videos.length,tracks:facts,chapters:chapterFacts};
+ return {duration,videoCount:videos.length,colorInferred:color.inferred,tracks:facts,chapters:chapterFacts};
 }
 function preserved(before,after){
  if(!plain(before)||!plain(after)||before.videoCount!==after.videoCount||before.tracks.length!==after.tracks.length||before.chapters.length!==after.chapters.length)return false;
@@ -143,10 +161,11 @@ async function preflight(args){
   workDirectory=await openDirectories(cache,workRelative==='.'?[]:workRelative.split('/'));
   const sourceIdentity=await identity(source),profile=trackFacts(args.inputFileObj?.ffProbeData);
   if(profile.tracks.some(track=>track.type==='video'&&track.codec==='hevc'))throw Error('already-target-codec');
-  if(profile.tracks.some(track=>track.type==='video'&&track.codec==='hevc'))throw Error('already-target-codec');
   const destination=safeRootPath(reviewRoot,relative);
   for(const candidate of [destination,`${destination}.tdarr-receipt.json`])try{await fs.lstat(candidate);throw Error('result-already-exists');}catch(error){if(error.code!=='ENOENT')throw error;}
   const proof={version:1,source:sourceIdentity,sourceRelativeHash:crypto.createHash('sha256').update(relative).digest('hex'),profile,roots:{source:{dev:source.root.stat.dev,ino:source.root.stat.ino},review:{dev:review.stat.dev,ino:review.stat.ino},cache:{dev:cache.stat.dev,ino:cache.stat.ino}}};
+  const video=profile.tracks.find(track=>track.type==='video');
+  colorArguments(args.variables?.ffmpegCommand,{primaries:video.primaries,transfer:video.transfer,colorSpace:video.colorSpace,colorRange:video.colorRange});
   const variables={...(plain(args.variables)?args.variables:{}),inFlow:{...(plain(args.variables?.inFlow)?args.variables.inFlow:{}),[stateKey]:JSON.stringify(proof)}};
   return continued(args,sourcePath,variables);
  }finally{for(const directory of workDirectory?.handles.reverse()||[])await directory.handle.close().catch(()=>{});await closeFile(source);await review?.handle.close().catch(()=>{});await cache?.handle.close().catch(()=>{});}
@@ -167,7 +186,7 @@ async function finish(args,spawnChild=spawn){
   const sourceIdentity=await identity(source),workingIdentity=await identity(working);
   if(!sameIdentity(sourceIdentity,proof.source))throw Error('source-changed');
   const jobId=args.job?.jobId;if(typeof jobId!=='string'||!jobId.trim()||jobId!==jobId.trim()||jobId.length>512)throw Error('missing-current-job-id');
-  const outputFacts=trackFacts(args.inputFileObj?.ffProbeData);if(!preserved(proof.profile,outputFacts))throw Error('preservation-check-failed');
+  const outputFacts=trackFacts(args.inputFileObj?.ffProbeData);if(outputFacts.colorInferred!==false||!preserved(proof.profile,outputFacts))throw Error('preservation-check-failed');
   await decodeCompletely(working,args.ffmpegPath,spawnChild);
   await verifyOpenFile(source);await verifyOpenFile(working);
   if(!sameIdentity(await identity(source),proof.source)||!sameIdentity(await identity(working),workingIdentity))throw Error('input-changed-during-decode');

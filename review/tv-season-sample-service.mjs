@@ -54,7 +54,7 @@ function sonarrOrder(episodes,type){
 }
 function supportedFacts(facts,profile){
  if(!facts?.source||!facts?.result)return 'metadata_unavailable';
- const currentSdrProfile=profile?.id==='tv-review-staging-v1-template'&&profile?.version===1;
+ const currentSdrProfile=profile?.id==='tv-review-staging-v1-template'&&[1,2].includes(profile?.version);
  const hdrKeys=['dolbyVision','hdr10Plus','masteringDisplay','contentLightLevel'];
  for(const side of [facts.source,facts.result]){
   if(side.container!=='matroska'||side.video.length!==1)return 'unsupported_streams';
