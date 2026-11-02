@@ -117,6 +117,16 @@ function preserved(before,after){
  return Math.abs(before.duration-after.duration)<=Math.max(0.5,before.duration*0.005);
 }
 function safeRootPath(rootPath,relative){if(!validRelative(relative)||!under(rootPath,path.join(rootPath,relative)))throw Error('unsafe-path');return path.join(rootPath,relative);}
+// Tdarr 3.03 passes ffmpegPath as the bare name "tdarr-ffmpeg" and no ffprobe path, so both tools come from a fixed list of
+// absolute locations inside the Tdarr node image; an absolute path passed by Tdarr is tried first.
+const toolCandidates=Object.freeze({ffmpeg:Object.freeze(['/usr/local/bin/tdarr-ffmpeg','/usr/lib/jellyfin-ffmpeg/ffmpeg']),ffprobe:Object.freeze(['/usr/local/bin/tdarr-ffprobe','/usr/lib/jellyfin-ffmpeg/ffprobe'])});
+async function resolveTool(kind,given,candidates=toolCandidates[kind]){
+ for(const candidate of [...(validAbsolute(given)?[given]:[]),...(Array.isArray(candidates)?candidates:[])]){
+  if(!validAbsolute(candidate))continue;
+  try{const real=await fs.realpath(candidate),stat=await fs.stat(real);if(stat.isFile()&&(stat.mode&0o111)){await fs.access(real,constants.X_OK);return real;}}catch{}
+ }
+ throw Error(kind==='ffmpeg'?'missing-decoder':'missing-probe');
+}
 // Tdarr 3.03 does not pass chapters in ffProbeData, so chapters are always read from the open file itself.
 async function probeChapters(file,ffprobePath,spawnChild=spawn){
  if(!validAbsolute(ffprobePath))throw Error('missing-probe');
@@ -165,7 +175,7 @@ async function copyFile(source,destination){
  await destination.handle.sync();
  if((await source.handle.stat()).size!==source.stat.size)throw Error('source-changed');
 }
-async function preflight(args,spawnChild=spawn){
+async function preflight(args,{spawnChild=spawn,tools}={}){
  const {sourceRoot,reviewRoot,cacheRoot}=rootsFrom(args);
  const sourcePath=args.originalLibraryFile?._id,workDir=args.workDir;
  if(!validAbsolute(sourcePath)||sourcePath!==args.inputFileObj?._id||!validAbsolute(workDir)||!under(sourceRoot,sourcePath)||!(workDir===cacheRoot||under(cacheRoot,workDir)))throw Error('source-or-cache-outside-binding');
@@ -178,7 +188,7 @@ async function preflight(args,spawnChild=spawn){
   cache=await openRoot(cacheRoot);
   review=await openRoot(reviewRoot);
   workDirectory=await openDirectories(cache,workRelative==='.'?[]:workRelative.split('/'));
-  const sourceIdentity=await identity(source),profile=trackFacts(args.inputFileObj?.ffProbeData,await probeChapters(source,args.ffProbePath,spawnChild));
+  const sourceIdentity=await identity(source),profile=trackFacts(args.inputFileObj?.ffProbeData,await probeChapters(source,await resolveTool('ffprobe',args.ffProbePath,tools?.ffprobe),spawnChild));
   if(profile.tracks.some(track=>track.type==='video'&&track.codec==='hevc'))throw Error('already-target-codec');
   const destination=safeRootPath(reviewRoot,relative);
   for(const candidate of [destination,`${destination}.tdarr-receipt.json`])try{await fs.lstat(candidate);throw Error('result-already-exists');}catch(error){if(error.code!=='ENOENT')throw error;}
@@ -189,7 +199,7 @@ async function preflight(args,spawnChild=spawn){
   return continued(args,sourcePath,variables);
  }finally{for(const directory of workDirectory?.handles.reverse()||[])await directory.handle.close().catch(()=>{});await closeFile(source);await review?.handle.close().catch(()=>{});await cache?.handle.close().catch(()=>{});}
 }
-async function finish(args,spawnChild=spawn){
+async function finish(args,{spawnChild=spawn,tools}={}){
  const {sourceRoot,reviewRoot,cacheRoot}=rootsFrom(args);
  const serialized=args.variables?.inFlow?.[stateKey];if(typeof serialized!=='string'||serialized.length>65536)throw Error('missing-source-proof');
  const proof=JSON.parse(serialized);if(!plain(proof)||proof.version!==1||!plain(proof.source)||!/^([a-f0-9]{64})$/.test(proof.sourceRelativeHash))throw Error('invalid-source-proof');
@@ -205,8 +215,8 @@ async function finish(args,spawnChild=spawn){
   const sourceIdentity=await identity(source),workingIdentity=await identity(working);
   if(!sameIdentity(sourceIdentity,proof.source))throw Error('source-changed');
   const jobId=args.job?.jobId;if(typeof jobId!=='string'||!jobId.trim()||jobId!==jobId.trim()||jobId.length>512)throw Error('missing-current-job-id');
-  const outputFacts=trackFacts(args.inputFileObj?.ffProbeData,await probeChapters(working,args.ffProbePath,spawnChild));if(outputFacts.colorInferred!==false||!preserved(proof.profile,outputFacts))throw Error('preservation-check-failed');
-  await decodeCompletely(working,args.ffmpegPath,spawnChild);
+  const outputFacts=trackFacts(args.inputFileObj?.ffProbeData,await probeChapters(working,await resolveTool('ffprobe',args.ffProbePath,tools?.ffprobe),spawnChild));if(outputFacts.colorInferred!==false||!preserved(proof.profile,outputFacts))throw Error('preservation-check-failed');
+  await decodeCompletely(working,await resolveTool('ffmpeg',args.ffmpegPath,tools?.ffmpeg),spawnChild);
   await verifyOpenFile(source);await verifyOpenFile(working);
   if(!sameIdentity(await identity(source),proof.source)||!sameIdentity(await identity(working),workingIdentity))throw Error('input-changed-during-decode');
   const destination=safeRootPath(reviewRoot,relative);
@@ -277,8 +287,8 @@ async function verifyOpenFile(record){
 }
 async function closeFile(record){await record.handle.close().catch(()=>{});for(const directory of record.chain.handles.reverse())await directory.handle.close().catch(()=>{});await record.root.handle.close().catch(()=>{});}
 module.exports=async function tvFlowHelper(args,testDependencies={}){
- const spawnChild=testDependencies.spawnChild||spawn;
- try{return args?.variables?.inFlow?.[stateKey]?await finish(args,spawnChild):await preflight(args,spawnChild);}
+ const dependencies={spawnChild:testDependencies.spawnChild||spawn,tools:testDependencies.tools};
+ try{return args?.variables?.inFlow?.[stateKey]?await finish(args,dependencies):await preflight(args,dependencies);}
  catch(error){
   const reason=typeof error?.message==='string'&&/^[a-z0-9-]{1,64}$/.test(error.message)?error.message:'unexpected-error';
   try{args?.jobLog?.(`TV Review helper refused: ${reason}`);}catch{}
