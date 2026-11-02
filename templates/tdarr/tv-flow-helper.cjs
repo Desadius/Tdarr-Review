@@ -67,8 +67,8 @@ async function identity(record){
  await verifyOpenFile(record);
  return {size:record.stat.size,mtime:Math.round(record.stat.mtimeMs),sample:hash.digest('hex'),dev:record.stat.dev,ino:record.stat.ino,ctime:record.stat.ctimeMs};
 }
-function trackFacts(media){
- const streams=media?.streams,chapters=media?.chapters;
+function trackFacts(media,chapters){
+ const streams=media?.streams;
  if(!Array.isArray(streams)||streams.length<1||streams.length>64||!Array.isArray(chapters)||chapters.length>256)throw Error('missing-stream-metadata');
  const videos=streams.filter(stream=>stream?.codec_type==='video');
  if(videos.length!==1)throw Error('video-stream-layout');
@@ -117,6 +117,25 @@ function preserved(before,after){
  return Math.abs(before.duration-after.duration)<=Math.max(0.5,before.duration*0.005);
 }
 function safeRootPath(rootPath,relative){if(!validRelative(relative)||!under(rootPath,path.join(rootPath,relative)))throw Error('unsafe-path');return path.join(rootPath,relative);}
+// Tdarr 3.03 does not pass chapters in ffProbeData, so chapters are always read from the open file itself.
+async function probeChapters(file,ffprobePath,spawnChild=spawn){
+ if(!validAbsolute(ffprobePath))throw Error('missing-probe');
+ const output=await new Promise((resolve,reject)=>{
+  const argv=['-nostdin','-v','error','-protocol_whitelist','file','-format_whitelist','matroska','-f','matroska','-show_chapters','-of','json','-i','/proc/self/fd/3'];
+  let child;try{child=spawnChild(ffprobePath,argv,{shell:false,detached:true,windowsHide:true,stdio:['ignore','pipe','pipe',file.handle.fd],env:{PATH:process.env.PATH||''}});}catch{return reject(Error('probe-start-failed'));}
+  const chunks=[];let stdoutBytes=0,stderrBytes=0,failed=false,closed=false;
+  const kill=()=>{try{if(child.pid)process.kill(-child.pid,'SIGKILL');else child.kill('SIGKILL');}catch{try{child.kill('SIGKILL');}catch{}}};
+  const deadline=setTimeout(()=>{failed=true;kill();},120000);deadline.unref?.();
+  child.stdout.on('data',chunk=>{stdoutBytes+=chunk.length;if(stdoutBytes>1024*1024){failed=true;kill();}else chunks.push(chunk);});
+  child.stderr.on('data',chunk=>{stderrBytes+=chunk.length;});
+  child.once('error',()=>{failed=true;});
+  child.once('close',code=>{closed=true;clearTimeout(deadline);if(code===0&&!failed&&stderrBytes===0)resolve(Buffer.concat(chunks).toString('utf8'));else reject(Error('chapter-probe-failed'));});
+ });
+ let parsed;try{parsed=JSON.parse(output);}catch{throw Error('chapter-probe-failed');}
+ const chapters=parsed?.chapters===undefined?[]:parsed.chapters;
+ if(!Array.isArray(chapters))throw Error('chapter-probe-failed');
+ return chapters;
+}
 async function decodeCompletely(file,ffmpegPath,spawnChild=spawn){
  if(!validAbsolute(ffmpegPath))throw Error('missing-decoder');
  return new Promise((resolve,reject)=>{
@@ -146,7 +165,7 @@ async function copyFile(source,destination){
  await destination.handle.sync();
  if((await source.handle.stat()).size!==source.stat.size)throw Error('source-changed');
 }
-async function preflight(args){
+async function preflight(args,spawnChild=spawn){
  const {sourceRoot,reviewRoot,cacheRoot}=rootsFrom(args);
  const sourcePath=args.originalLibraryFile?._id,workDir=args.workDir;
  if(!validAbsolute(sourcePath)||sourcePath!==args.inputFileObj?._id||!validAbsolute(workDir)||!under(sourceRoot,sourcePath)||!(workDir===cacheRoot||under(cacheRoot,workDir)))throw Error('source-or-cache-outside-binding');
@@ -159,7 +178,7 @@ async function preflight(args){
   cache=await openRoot(cacheRoot);
   review=await openRoot(reviewRoot);
   workDirectory=await openDirectories(cache,workRelative==='.'?[]:workRelative.split('/'));
-  const sourceIdentity=await identity(source),profile=trackFacts(args.inputFileObj?.ffProbeData);
+  const sourceIdentity=await identity(source),profile=trackFacts(args.inputFileObj?.ffProbeData,await probeChapters(source,args.ffProbePath,spawnChild));
   if(profile.tracks.some(track=>track.type==='video'&&track.codec==='hevc'))throw Error('already-target-codec');
   const destination=safeRootPath(reviewRoot,relative);
   for(const candidate of [destination,`${destination}.tdarr-receipt.json`])try{await fs.lstat(candidate);throw Error('result-already-exists');}catch(error){if(error.code!=='ENOENT')throw error;}
@@ -186,7 +205,7 @@ async function finish(args,spawnChild=spawn){
   const sourceIdentity=await identity(source),workingIdentity=await identity(working);
   if(!sameIdentity(sourceIdentity,proof.source))throw Error('source-changed');
   const jobId=args.job?.jobId;if(typeof jobId!=='string'||!jobId.trim()||jobId!==jobId.trim()||jobId.length>512)throw Error('missing-current-job-id');
-  const outputFacts=trackFacts(args.inputFileObj?.ffProbeData);if(outputFacts.colorInferred!==false||!preserved(proof.profile,outputFacts))throw Error('preservation-check-failed');
+  const outputFacts=trackFacts(args.inputFileObj?.ffProbeData,await probeChapters(working,args.ffProbePath,spawnChild));if(outputFacts.colorInferred!==false||!preserved(proof.profile,outputFacts))throw Error('preservation-check-failed');
   await decodeCompletely(working,args.ffmpegPath,spawnChild);
   await verifyOpenFile(source);await verifyOpenFile(working);
   if(!sameIdentity(await identity(source),proof.source)||!sameIdentity(await identity(working),workingIdentity))throw Error('input-changed-during-decode');
@@ -258,6 +277,11 @@ async function verifyOpenFile(record){
 }
 async function closeFile(record){await record.handle.close().catch(()=>{});for(const directory of record.chain.handles.reverse())await directory.handle.close().catch(()=>{});await record.root.handle.close().catch(()=>{});}
 module.exports=async function tvFlowHelper(args,testDependencies={}){
- try{return args?.variables?.inFlow?.[stateKey]?await finish(args,testDependencies.spawnChild||spawn):await preflight(args);}
- catch{return blocked(args);}
+ const spawnChild=testDependencies.spawnChild||spawn;
+ try{return args?.variables?.inFlow?.[stateKey]?await finish(args,spawnChild):await preflight(args,spawnChild);}
+ catch(error){
+  const reason=typeof error?.message==='string'&&/^[a-z0-9-]{1,64}$/.test(error.message)?error.message:'unexpected-error';
+  try{args?.jobLog?.(`TV Review helper refused: ${reason}`);}catch{}
+  return blocked(args);
+ }
 };
