@@ -1,0 +1,1 @@
+- TV flow template: the output size sanity gate now accepts results from 10 % of the source (was 25 %), because animation such as children's episodes compresses far below a quarter of its size. Strict decode and stream preservation checks are unchanged.

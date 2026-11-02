@@ -57,7 +57,7 @@ test('versioned TV flow is a closed, non-destructive transcode graph with review
   {id:'tv-preflight',name:'TV source and exception preflight',pluginName:'customFunction',version:'1.0.0',inputsDB:{code:'__reviewed-helper__'}},
   {id:'tv-execute',name:'Execute transcode',pluginName:'ffmpegCommandExecute',version:'1.0.0',inputsDB:null},
   {id:'tv-duration',name:'Duration sanity gate',pluginName:'compareFileDurationRatio',version:'1.0.0',inputsDB:{greaterThan:'99.5',lessThan:'100.5'}},
-  {id:'tv-size',name:'Output size sanity gate',pluginName:'compareFileSizeRatio',version:'2.0.0',inputsDB:{greaterThan:'25',lessThan:'150'}},
+  {id:'tv-size',name:'Output size sanity gate',pluginName:'compareFileSizeRatio',version:'2.0.0',inputsDB:{greaterThan:'10',lessThan:'150'}},
   {id:'tv-receipt',name:'Strict decode, exclusive TV Review stage, exact-job receipt',pluginName:'customFunction',version:'1.0.0',inputsDB:{code:'__reviewed-helper__'}},
   {id:'tv-fail',name:'Fail closed for manual review',pluginName:'failFlow',version:'1.0.0',inputsDB:null},
  ].map((node,index)=>({keys:['fpEnabled','id','name','pluginName','position','sourceRepo','version',...(node.inputsDB?['inputsDB']:[])].sort(),sourceRepo:'Community',fpEnabled:true,position:{x:index*250,y:0},...node}));
