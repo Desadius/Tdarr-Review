@@ -131,7 +131,7 @@ async function resolveTool(kind,given,candidates=toolCandidates[kind]){
 async function probeChapters(file,ffprobePath,spawnChild=spawn){
  if(!validAbsolute(ffprobePath))throw Error('missing-probe');
  const output=await new Promise((resolve,reject)=>{
-  const argv=['-nostdin','-v','error','-protocol_whitelist','file','-format_whitelist','matroska','-f','matroska','-show_chapters','-of','json','-i','/proc/self/fd/3'];
+  const argv=['-v','error','-protocol_whitelist','file','-format_whitelist','matroska','-f','matroska','-show_chapters','-of','json','-i','/proc/self/fd/3'];
   let child;try{child=spawnChild(ffprobePath,argv,{shell:false,detached:true,windowsHide:true,stdio:['ignore','pipe','pipe',file.handle.fd],env:{PATH:process.env.PATH||''}});}catch{return reject(Error('probe-start-failed'));}
   const chunks=[];let stdoutBytes=0,stderrBytes=0,failed=false,closed=false;
   const kill=()=>{try{if(child.pid)process.kill(-child.pid,'SIGKILL');else child.kill('SIGKILL');}catch{try{child.kill('SIGKILL');}catch{}}};
