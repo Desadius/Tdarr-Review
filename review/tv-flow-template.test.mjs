@@ -116,7 +116,7 @@ test('TV receipt helper runs against synthetic files and never changes the sourc
   };
   const preflight=await preflightHelper(args,{tools,spawnChild:probing()});
   assert.equal(preflight.outputNumber,1);
-  assert.deepEqual(preflight.variables.ffmpegCommand.overallOuputArguments,['-color_primaries:v:0','bt709','-color_trc:v:0','bt709','-colorspace:v:0','bt709','-color_range:v:0','tv'],'the encode tags the result with the source colour');
+  assert.deepEqual(preflight.variables.ffmpegCommand.overallOuputArguments,['-color_primaries:v:0','bt709','-color_trc:v:0','bt709','-colorspace:v:0','bt709','-color_range:v:0','tv','-x265-params:v:0','colorprim=bt709:transfer=bt709:colormatrix=bt709:range=limited'],'the encode tags the result with the source colour');
   const privateState=JSON.stringify(preflight.variables);
   for(const value of [source,sourceRoot,reviewRoot,cacheRoot,relative,'Chapter 1'])assert.ok(!privateState.includes(value),'flow state must not persist paths or chapter titles');
   args.variables=preflight.variables;
@@ -185,8 +185,13 @@ test('TV helper blocks root aliases, unknown/HDR inputs, missing job IDs and des
   const untagged=base();untagged.inputFileObj.ffProbeData=metadata({width:1920,height:1080,color_transfer:'unknown',color_primaries:undefined,color_space:'unknown',color_range:undefined});
   const untaggedPreflight=await helper(untagged,{tools,spawnChild:probing()});
   assert.equal(untaggedPreflight.outputNumber,1,'untagged 8-bit HD video is treated as BT.709 SDR');
-  assert.deepEqual(untaggedPreflight.variables.ffmpegCommand.overallOuputArguments,['-color_primaries:v:0','bt709','-color_trc:v:0','bt709','-colorspace:v:0','bt709','-color_range:v:0','tv']);
+  assert.deepEqual(untaggedPreflight.variables.ffmpegCommand.overallOuputArguments,['-color_primaries:v:0','bt709','-color_trc:v:0','bt709','-colorspace:v:0','bt709','-color_range:v:0','tv','-x265-params:v:0','colorprim=bt709:transfer=bt709:colormatrix=bt709:range=limited']);
   assert.equal(JSON.parse(untaggedPreflight.variables.inFlow.tvReviewProofV2).profile.colorInferred,true);
+  // FFmpeg 7.x ignores the per-stream colour options for libx265 primaries and transfer, so the x265 VUI names must match too.
+  const sdTagged=base();sdTagged.inputFileObj.ffProbeData=metadata({width:720,height:576,color_transfer:'gamma28',color_primaries:'bt470bg',color_space:'bt470bg',color_range:'pc'});
+  const sdTaggedPreflight=await helper(sdTagged,{tools,spawnChild:probing()});
+  assert.equal(sdTaggedPreflight.outputNumber,1);
+  assert.deepEqual(sdTaggedPreflight.variables.ffmpegCommand.overallOuputArguments.slice(-2),['-x265-params:v:0','colorprim=bt470bg:transfer=bt470bg:colormatrix=bt470bg:range=full'],'x265 uses its own names for FFmpeg gamma transfers and full range');
   const encodedStreams=(probe,overrides)=>({...probe,streams:[{...probe.streams[0],codec_name:'hevc',...overrides},...probe.streams.slice(1)]});
   const untaggedResult={...untagged,variables:untaggedPreflight.variables,inputFileObj:{_id:working,ffProbeData:encodedStreams(untagged.inputFileObj.ffProbeData,{})}};
   await fs.writeFile(working,'untagged encoded bytes');

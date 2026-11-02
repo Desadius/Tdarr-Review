@@ -49,7 +49,11 @@ function videoColor(video){
 }
 function colorArguments(command,color){
  if(!plain(command)||command.init!==true||!Array.isArray(command.overallOuputArguments)||command.overallOuputArguments.length>256)throw Error('missing-ffmpeg-command');
- command.overallOuputArguments.push('-color_primaries:v:0',color.primaries,'-color_trc:v:0',color.transfer,'-colorspace:v:0',color.colorSpace,'-color_range:v:0',color.colorRange);
+ // FFmpeg 7.x (Tdarr 3.03 jellyfin-ffmpeg) lets frame properties override these per-stream options, so libx265 would write
+ // only matrix and range to the VUI. The template encoder is libx265, so its own VUI parameters carry all four tags.
+ const x265Transfer={gamma22:'bt470m',gamma28:'bt470bg'}[color.transfer]||color.transfer,x265Range=color.colorRange==='pc'?'full':'limited';
+ command.overallOuputArguments.push('-color_primaries:v:0',color.primaries,'-color_trc:v:0',color.transfer,'-colorspace:v:0',color.colorSpace,'-color_range:v:0',color.colorRange,
+  '-x265-params:v:0',`colorprim=${color.primaries}:transfer=${x265Transfer}:colormatrix=${color.colorSpace}:range=${x265Range}`);
 }
 
 function rootsFrom(args){
