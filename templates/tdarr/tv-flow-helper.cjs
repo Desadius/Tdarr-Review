@@ -11,6 +11,8 @@ const maxDecodeMs=6*60*60*1000;
 const maxDecodeError=128*1024;
 const supportedVideo=new Set(['h264','hevc','mpeg2video','mpeg4','av1','vp9']);
 const supportedAudio=new Set(['aac','ac3','eac3','flac','mp2','mp3','opus','truehd','vorbis','dts','dts_hd','pcm_s16le','pcm_s24le']);
+// Track flags FFmpeg can write back; ffprobe reports them under the same names.
+const dispositionFlags=Object.freeze(['default','dub','original','comment','lyrics','karaoke','forced','hearing_impaired','visual_impaired','clean_effects','captions','descriptions','metadata','dependent']);
 const supportedSubtitles=new Set(['ass','ssa','subrip','srt','mov_text','webvtt','hdmv_pgs_subtitle','dvd_subtitle']);
 const plain=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const blocked=args=>({outputFileObj:args?.inputFileObj,outputNumber:2,variables:args?.variables});
@@ -46,6 +48,12 @@ function videoColor(video){
  }
  if(!sdrTransfer.has(transfer)||!sdrPrimaries.has(primaries)||!sdrSpace.has(colorSpace)||!['tv','pc'].includes(colorRange))throw Error('hdr-or-unknown-color-metadata');
  return {primaries,transfer,colorSpace,colorRange,inferred};
+}
+// FFmpeg marks the first track of each type as default when none is, so a subtitle without the default flag would gain
+// one. Every output track gets the source's flags explicitly; tracks keep their order (preserved() requires it).
+function dispositionArguments(command,tracks){
+ if(!plain(command)||!Array.isArray(command.overallOuputArguments)||command.overallOuputArguments.length+tracks.length*2>512)throw Error('missing-ffmpeg-command');
+ tracks.forEach((track,index)=>command.overallOuputArguments.push(`-disposition:${index}`,track.flags.length?track.flags.join('+'):'0'));
 }
 function colorArguments(command,color){
  if(!plain(command)||command.init!==true||!Array.isArray(command.overallOuputArguments)||command.overallOuputArguments.length>256)throw Error('missing-ffmpeg-command');
@@ -97,7 +105,8 @@ function trackFacts(media,chapters){
   if((stream.codec_type==='audio'&&!supportedAudio.has(stream.codec_name))||(stream.codec_type==='subtitle'&&!supportedSubtitles.has(stream.codec_name)))throw Error('unsupported-track');
   if(stream.codec_type==='audio'&&(!Number.isSafeInteger(stream.channels)||stream.channels<1||typeof stream.channel_layout!=='string'||!stream.channel_layout))throw Error('unknown-audio-layout');
   if(Array.isArray(stream.side_data_list)&&stream.side_data_list.length)throw Error('special-track-metadata');
-  facts.push({type:stream.codec_type,codec:stream.codec_name,language,default:Boolean(disposition.default),forced:Boolean(disposition.forced),channels:stream.channels??null,channelLayout:stream.channel_layout??null,width:stream.width??null,height:stream.height??null,fieldOrder:stream.field_order??null,frameRate:stream.avg_frame_rate||stream.r_frame_rate||null,pixelFormat:stream.pix_fmt??null,bitsPerRawSample:stream.codec_type==='video'?bitDepth:(stream.bits_per_raw_sample??null),sampleAspectRatio:stream.sample_aspect_ratio??null,displayAspectRatio:stream.display_aspect_ratio??null,primaries:stream.codec_type==='video'?color.primaries:(stream.color_primaries??null),transfer:stream.codec_type==='video'?color.transfer:(stream.color_transfer??null),colorSpace:stream.codec_type==='video'?color.colorSpace:(stream.color_space??null),colorRange:stream.codec_type==='video'?color.colorRange:(stream.color_range??null)});
+  const flags=dispositionFlags.filter(flag=>disposition[flag]===1||disposition[flag]===true);
+  facts.push({type:stream.codec_type,codec:stream.codec_name,language,default:Boolean(disposition.default),forced:Boolean(disposition.forced),flags,channels:stream.channels??null,channelLayout:stream.channel_layout??null,width:stream.width??null,height:stream.height??null,fieldOrder:stream.field_order??null,frameRate:stream.avg_frame_rate||stream.r_frame_rate||null,pixelFormat:stream.pix_fmt??null,bitsPerRawSample:stream.codec_type==='video'?bitDepth:(stream.bits_per_raw_sample??null),sampleAspectRatio:stream.sample_aspect_ratio??null,displayAspectRatio:stream.display_aspect_ratio??null,primaries:stream.codec_type==='video'?color.primaries:(stream.color_primaries??null),transfer:stream.codec_type==='video'?color.transfer:(stream.color_transfer??null),colorSpace:stream.codec_type==='video'?color.colorSpace:(stream.color_space??null),colorRange:stream.codec_type==='video'?color.colorRange:(stream.color_range??null)});
  }
  const chapterFacts=chapters.map(chapter=>{
   const start=Number(chapter?.start_time),end=Number(chapter?.end_time);
@@ -110,7 +119,7 @@ function preserved(before,after){
  if(!plain(before)||!plain(after)||before.videoCount!==after.videoCount||before.tracks.length!==after.tracks.length||before.chapters.length!==after.chapters.length)return false;
  for(let index=0;index<before.tracks.length;index++){
   const left=before.tracks[index],right=after.tracks[index];
-  if(left.type!==right.type||left.default!==right.default||left.forced!==right.forced)return false;
+  if(left.type!==right.type||left.default!==right.default||left.forced!==right.forced||left.flags.join('+')!==right.flags.join('+'))return false;
   if(left.type!=='video'&&(left.codec!==right.codec||left.language!==right.language||left.channels!==right.channels||left.channelLayout!==right.channelLayout))return false;
   if(left.type==='video'&&(right.codec!=='hevc'||left.width!==right.width||left.height!==right.height||left.frameRate!==right.frameRate||left.pixelFormat!==right.pixelFormat||left.bitsPerRawSample!==right.bitsPerRawSample||left.sampleAspectRatio!==right.sampleAspectRatio||left.displayAspectRatio!==right.displayAspectRatio||left.primaries!==right.primaries||left.transfer!==right.transfer||left.colorSpace!==right.colorSpace||left.colorRange!==right.colorRange))return false;
  }
@@ -199,6 +208,7 @@ async function preflight(args,{spawnChild=spawn,tools}={}){
   const proof={version:1,source:sourceIdentity,sourceRelativeHash:crypto.createHash('sha256').update(relative).digest('hex'),profile,roots:{source:{dev:source.root.stat.dev,ino:source.root.stat.ino},review:{dev:review.stat.dev,ino:review.stat.ino},cache:{dev:cache.stat.dev,ino:cache.stat.ino}}};
   const video=profile.tracks.find(track=>track.type==='video');
   colorArguments(args.variables?.ffmpegCommand,{primaries:video.primaries,transfer:video.transfer,colorSpace:video.colorSpace,colorRange:video.colorRange});
+  dispositionArguments(args.variables.ffmpegCommand,profile.tracks);
   const variables={...(plain(args.variables)?args.variables:{}),inFlow:{...(plain(args.variables?.inFlow)?args.variables.inFlow:{}),[stateKey]:JSON.stringify(proof)}};
   return continued(args,sourcePath,variables);
  }finally{for(const directory of workDirectory?.handles.reverse()||[])await directory.handle.close().catch(()=>{});await closeFile(source);await review?.handle.close().catch(()=>{});await cache?.handle.close().catch(()=>{});}
