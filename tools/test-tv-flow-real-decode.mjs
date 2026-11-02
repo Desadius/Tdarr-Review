@@ -31,9 +31,10 @@ const relative='Series/Season 01/Episode 01.mkv';
 const source=path.join(sourceRoot,relative),working=path.join(cacheRoot,'encoded.mkv'),output=path.join(reviewRoot,relative);
 try{
  await fs.mkdir(path.dirname(source),{recursive:true});await fs.mkdir(cacheRoot,{recursive:true});
- const chapterMetadata=path.join(temp,'chapters.ffmeta');
+ const chapterMetadata=path.join(temp,'chapters.ffmeta'),subtitles=path.join(temp,'subtitles.srt');
+ await fs.writeFile(subtitles,'1\n00:00:00,000 --> 00:00:02,000\nSynthetic line\n');
  await fs.writeFile(chapterMetadata,';FFMETADATA1\n[CHAPTER]\nTIMEBASE=1/1\nSTART=0\nEND=3\ntitle=Episode\n');
- run(ffmpeg,['-hide_banner','-v','error','-f','lavfi','-i','testsrc2=size=1280x720:rate=24','-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-f','ffmetadata','-i',chapterMetadata,'-map','0:v:0','-map','1:a:0','-map_metadata','2','-map_chapters','2','-c:v','libx264','-threads','1','-pix_fmt','yuv420p','-c:a','aac','-shortest','-t','3',source]);
+ run(ffmpeg,['-hide_banner','-v','error','-f','lavfi','-i','testsrc2=size=1280x720:rate=24','-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-f','ffmetadata','-i',chapterMetadata,'-i',subtitles,'-map','0:v:0','-map','1:a:0','-map','3:s:0','-map_metadata','2','-map_chapters','2','-c:v','libx264','-threads','1','-pix_fmt','yuv420p','-c:a','aac','-c:s','srt','-disposition:s:0','hearing_impaired','-shortest','-t','3',source]);
  const original=await fs.readFile(source),args={
   inputFileObj:{_id:source,ffProbeData:probe(source)},originalLibraryFile:{_id:source},workDir:cacheRoot,
   ffmpegPath:ffmpeg,job:{jobId:'synthetic-tv-job-269'},variables:{inFlow:{},ffmpegCommand:{init:true,overallOuputArguments:[]}},
@@ -45,8 +46,10 @@ try{
  const colourArguments=preflight.variables.ffmpegCommand.overallOuputArguments,x265Index=colourArguments.indexOf('-x265-params:v:0');
  assert.ok(x265Index>=0,'the preflight must set the libx265 VUI colour parameters');
  const encodeArguments=colourArguments.map((value,index)=>index===x265Index+1?`${value}:pools=1:frame-threads=1:log-level=error`:value);
- run(ffmpeg,['-hide_banner','-v','error','-nostdin','-i',source,'-map','0','-map_chapters','0','-c:v','libx265','-preset','ultrafast','-crf','30','-c:a','copy',...encodeArguments,'-f','matroska',working]);
- const encodedVideo=probe(working).streams.find(stream=>stream.codec_type==='video');
+ run(ffmpeg,['-hide_banner','-v','error','-nostdin','-i',source,'-map','0','-map_chapters','0','-c:v','libx265','-preset','ultrafast','-crf','30','-c:a','copy','-c:s','copy',...encodeArguments,'-f','matroska',working]);
+ const encodedStreams=probe(working).streams,encodedVideo=encodedStreams.find(stream=>stream.codec_type==='video'),encodedSubtitle=encodedStreams.find(stream=>stream.codec_type==='subtitle');
+ // FFmpeg 7.x marks the first subtitle default when none is; the preflight's explicit dispositions must prevent that.
+ assert.deepEqual([encodedSubtitle.disposition.default,encodedSubtitle.disposition.hearing_impaired],[0,1],'the subtitle keeps exactly its source flags');
  assert.deepEqual([encodedVideo.color_primaries,encodedVideo.color_transfer,encodedVideo.color_space,encodedVideo.color_range],['bt709','bt709','bt709','tv'],'the encoded VUI carries all four colour tags');
  args.inputFileObj={_id:working,ffProbeData:probe(working)};
  const completed=await finishHelper(args,{tools});assert.equal(completed.outputNumber,1);

@@ -116,7 +116,7 @@ test('TV receipt helper runs against synthetic files and never changes the sourc
   };
   const preflight=await preflightHelper(args,{tools,spawnChild:probing()});
   assert.equal(preflight.outputNumber,1);
-  assert.deepEqual(preflight.variables.ffmpegCommand.overallOuputArguments,['-color_primaries:v:0','bt709','-color_trc:v:0','bt709','-colorspace:v:0','bt709','-color_range:v:0','tv','-x265-params:v:0','colorprim=bt709:transfer=bt709:colormatrix=bt709:range=limited'],'the encode tags the result with the source colour');
+  assert.deepEqual(preflight.variables.ffmpegCommand.overallOuputArguments,['-color_primaries:v:0','bt709','-color_trc:v:0','bt709','-colorspace:v:0','bt709','-color_range:v:0','tv','-x265-params:v:0','colorprim=bt709:transfer=bt709:colormatrix=bt709:range=limited','-disposition:0','default','-disposition:1','default','-disposition:2','0'],'the encode tags the result with the source colour and every track with its own flags');
   const privateState=JSON.stringify(preflight.variables);
   for(const value of [source,sourceRoot,reviewRoot,cacheRoot,relative,'Chapter 1'])assert.ok(!privateState.includes(value),'flow state must not persist paths or chapter titles');
   args.variables=preflight.variables;
@@ -185,13 +185,13 @@ test('TV helper blocks root aliases, unknown/HDR inputs, missing job IDs and des
   const untagged=base();untagged.inputFileObj.ffProbeData=metadata({width:1920,height:1080,color_transfer:'unknown',color_primaries:undefined,color_space:'unknown',color_range:undefined});
   const untaggedPreflight=await helper(untagged,{tools,spawnChild:probing()});
   assert.equal(untaggedPreflight.outputNumber,1,'untagged 8-bit HD video is treated as BT.709 SDR');
-  assert.deepEqual(untaggedPreflight.variables.ffmpegCommand.overallOuputArguments,['-color_primaries:v:0','bt709','-color_trc:v:0','bt709','-colorspace:v:0','bt709','-color_range:v:0','tv','-x265-params:v:0','colorprim=bt709:transfer=bt709:colormatrix=bt709:range=limited']);
+  assert.deepEqual(untaggedPreflight.variables.ffmpegCommand.overallOuputArguments,['-color_primaries:v:0','bt709','-color_trc:v:0','bt709','-colorspace:v:0','bt709','-color_range:v:0','tv','-x265-params:v:0','colorprim=bt709:transfer=bt709:colormatrix=bt709:range=limited','-disposition:0','default','-disposition:1','default']);
   assert.equal(JSON.parse(untaggedPreflight.variables.inFlow.tvReviewProofV2).profile.colorInferred,true);
   // FFmpeg 7.x ignores the per-stream colour options for libx265 primaries and transfer, so the x265 VUI names must match too.
   const sdTagged=base();sdTagged.inputFileObj.ffProbeData=metadata({width:720,height:576,color_transfer:'gamma28',color_primaries:'bt470bg',color_space:'bt470bg',color_range:'pc'});
   const sdTaggedPreflight=await helper(sdTagged,{tools,spawnChild:probing()});
   assert.equal(sdTaggedPreflight.outputNumber,1);
-  assert.deepEqual(sdTaggedPreflight.variables.ffmpegCommand.overallOuputArguments.slice(-2),['-x265-params:v:0','colorprim=bt470bg:transfer=bt470bg:colormatrix=bt470bg:range=full'],'x265 uses its own names for FFmpeg gamma transfers and full range');
+  assert.deepEqual(sdTaggedPreflight.variables.ffmpegCommand.overallOuputArguments.slice(8,10),['-x265-params:v:0','colorprim=bt470bg:transfer=bt470bg:colormatrix=bt470bg:range=full'],'x265 uses its own names for FFmpeg gamma transfers and full range');
   const encodedStreams=(probe,overrides)=>({...probe,streams:[{...probe.streams[0],codec_name:'hevc',...overrides},...probe.streams.slice(1)]});
   const untaggedResult={...untagged,variables:untaggedPreflight.variables,inputFileObj:{_id:working,ffProbeData:encodedStreams(untagged.inputFileObj.ffProbeData,{})}};
   await fs.writeFile(working,'untagged encoded bytes');
@@ -290,5 +290,38 @@ test('TV helper reads chapters from the file itself, refuses lost chapters and l
   const noProbe=base(),noProbeLogs=[];noProbe.jobLog=line=>noProbeLogs.push(line);
   assert.equal((await helper(noProbe,{tools:{ffmpeg:tools.ffmpeg,ffprobe:[path.join(toolDir,'missing-ffprobe')]},spawnChild:probing()})).outputNumber,2,'no executable ffprobe fails closed');
   assert.deepEqual(noProbeLogs,['TV Review helper refused: missing-probe']);
+ }finally{await fs.rm(temp,{recursive:true,force:true});}
+});
+
+test('TV helper writes every source track flag into the encode and refuses a result whose flags changed',async()=>{
+ const helper=(await import(`${pathToFileURL(path.join(root,'templates/tdarr/tv-flow-helper.cjs')).href}?dispositions=${Date.now()}`)).default;
+ const temp=await fs.mkdtemp(path.join(os.tmpdir(),'tv-flow-dispositions-'));
+ const sourceRoot=path.join(temp,'source'),reviewRoot=path.join(temp,'review'),cacheRoot=path.join(reviewRoot,'.cache');
+ const relative='Series/Season 09/Episode 03.mkv',source=path.join(sourceRoot,relative),output=path.join(reviewRoot,relative),working=path.join(cacheRoot,'worker.mkv');
+ // Like the Peppa Pig test episode: no subtitle is default, the second one is for the hearing impaired, and the Czech dub is flagged.
+ const probe={format:{format_name:'matroska',duration:'120.0'},streams:[
+  {index:0,codec_type:'video',codec_name:'h264',width:1920,height:1080,field_order:'progressive',avg_frame_rate:'25/1',pix_fmt:'yuv420p',sample_aspect_ratio:'1:1',display_aspect_ratio:'16:9',color_transfer:'bt709',color_primaries:'bt709',color_space:'bt709',color_range:'tv',disposition:{default:1,forced:0}},
+  {index:1,codec_type:'audio',codec_name:'aac',tags:{language:'ces'},channels:2,channel_layout:'stereo',disposition:{default:1,dub:1,forced:0}},
+  {index:2,codec_type:'subtitle',codec_name:'subrip',tags:{language:'eng'},disposition:{default:0,forced:0}},
+  {index:3,codec_type:'subtitle',codec_name:'subrip',tags:{language:'eng'},disposition:{default:0,forced:0,hearing_impaired:1,attached_pic:0}}]};
+ const base=()=>({inputFileObj:{_id:source,ffProbeData:structuredClone(probe)},originalLibraryFile:{_id:source},workDir:cacheRoot,ffmpegPath:'tdarr-ffmpeg',job:{jobId:'disposition-job'},variables:{inFlow:{},ffmpegCommand:{init:true,overallOuputArguments:[]}},userVariables:{library:{tvSourceRoot:sourceRoot,tvReviewRoot:reviewRoot,tvCacheRoot:cacheRoot}}});
+ const encoded=(variables,change=streams=>streams)=>({...base(),variables,inputFileObj:{_id:working,ffProbeData:{...probe,streams:change(structuredClone(probe.streams).map((stream,index)=>index===0?{...stream,codec_name:'hevc'}:stream))}}});
+ try{
+  await fs.mkdir(path.dirname(source),{recursive:true});await fs.mkdir(cacheRoot,{recursive:true});await fs.writeFile(source,'disposition source');await fs.writeFile(working,'disposition encode');
+  const preflight=await helper(base(),{tools,spawnChild:probing(null,[])});
+  assert.equal(preflight.outputNumber,1);
+  assert.deepEqual(preflight.variables.ffmpegCommand.overallOuputArguments.slice(10),['-disposition:0','default','-disposition:1','default+dub','-disposition:2','0','-disposition:3','hearing_impaired'],'FFmpeg must not mark the first subtitle default and must keep the other flags');
+
+  const gainedDefault=encoded(preflight.variables,streams=>{streams[2].disposition={default:1,forced:0};return streams;}),logs=[];gainedDefault.jobLog=line=>logs.push(line);
+  assert.equal((await helper(gainedDefault,{tools,spawnChild:probing(null,[])})).outputNumber,2,'a subtitle that became default must not be staged');
+  assert.deepEqual(logs,['TV Review helper refused: preservation-check-failed']);
+  const lostFlag=encoded(preflight.variables,streams=>{streams[3].disposition={default:0,forced:0};return streams;});
+  assert.equal((await helper(lostFlag,{tools,spawnChild:probing(null,[])})).outputNumber,2,'a lost hearing-impaired flag must not be staged');
+  const lostDub=encoded(preflight.variables,streams=>{streams[1].disposition={default:1,forced:0};return streams;});
+  assert.equal((await helper(lostDub,{tools,spawnChild:probing(null,[])})).outputNumber,2,'a lost dub flag on the Czech audio must not be staged');
+  await assert.rejects(fs.stat(output),{code:'ENOENT'});
+
+  assert.equal((await helper(encoded(preflight.variables),{tools,spawnChild:probing(null,[])})).outputNumber,1,'identical track flags allow staging');
+  await fs.stat(output);
  }finally{await fs.rm(temp,{recursive:true,force:true});}
 });

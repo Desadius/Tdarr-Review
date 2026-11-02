@@ -1,0 +1,1 @@
+- TV flow template: every track keeps its exact source flags. FFmpeg no longer turns the first subtitle into a default track, and dub, hearing-impaired and similar flags are compared before a result is staged.
