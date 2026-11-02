@@ -1,0 +1,1 @@
+- TV flow template: chapters are read with ffprobe from the episode itself, because Tdarr 3.03 does not pass them to the flow and every episode was refused. A refusal now writes its reason code to the Tdarr job log.

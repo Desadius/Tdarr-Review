@@ -22,6 +22,19 @@ function compileFlowHelper(code){
  return flowModule.exports;
 }
 
+// Tdarr 3.03 omits ffProbeData.chapters, so the helper probes chapters itself; this fake answers that probe.
+function probing(delegate,chapters=[{start_time:'0.000000',end_time:'60.000000',tags:{title:'Chapter 1'}}]){
+ return (executable,argv,options)=>{
+  if(!argv.includes('-show_chapters'))return delegate?delegate(executable,argv,options):closingChild(0);
+  probeCalls.push({executable,argv,options});
+  const child=new EventEmitter();child.stdout=new EventEmitter();child.stderr=new EventEmitter();child.pid=process.pid;
+  queueMicrotask(()=>{child.stdout.emit('data',Buffer.from(JSON.stringify({chapters})));child.emit('close',0);});
+  return child;
+ };
+}
+function closingChild(code){const child=new EventEmitter();child.stderr=new EventEmitter();child.pid=process.pid;queueMicrotask(()=>child.emit('close',code));return child;}
+const probeCalls=[];
+
 test('versioned TV flow is a closed, non-destructive transcode graph with review-only output',async()=>{
  const flow=await loadFlow();
  assert.deepEqual(Object.keys(flow).sort(),['_id','flowEdges','flowPlugins','isUiLocked','name','priority'].sort(),'only the reviewed flow envelope may be exported');
@@ -92,11 +105,11 @@ test('TV receipt helper runs against synthetic files and never changes the sourc
   await fs.writeFile(source,Buffer.from('original synthetic episode'));
   const sourceBytes=await fs.readFile(source);
   const args={
-   inputFileObj:{_id:source,ffProbeData:{format:{format_name:'matroska',duration:'60.0'},streams:[{index:0,codec_type:'video',codec_name:'h264',width:1280,height:720,field_order:'progressive',avg_frame_rate:'24/1',pix_fmt:'yuv420p',bits_per_raw_sample:'8',sample_aspect_ratio:'1:1',display_aspect_ratio:'16:9',color_transfer:'bt709',color_primaries:'bt709',color_space:'bt709',color_range:'tv',disposition:{default:1,forced:0}},{index:1,codec_type:'audio',codec_name:'aac',tags:{language:'ces'},channels:2,channel_layout:'stereo',disposition:{default:1,forced:0}},{index:2,codec_type:'subtitle',codec_name:'subrip',tags:{language:'eng'},disposition:{default:0,forced:0}}],chapters:[{start_time:'0',end_time:'60',tags:{title:'Chapter 1'}}]}},
-   originalLibraryFile:{_id:source},workDir:cacheRoot,ffmpegPath:'/usr/bin/ffmpeg',job:{jobId:'synthetic-current-job'},variables:{inFlow:{},ffmpegCommand:{init:true,overallOuputArguments:[]}},
+   inputFileObj:{_id:source,ffProbeData:{format:{format_name:'matroska',duration:'60.0'},streams:[{index:0,codec_type:'video',codec_name:'h264',width:1280,height:720,field_order:'progressive',avg_frame_rate:'24/1',pix_fmt:'yuv420p',bits_per_raw_sample:'8',sample_aspect_ratio:'1:1',display_aspect_ratio:'16:9',color_transfer:'bt709',color_primaries:'bt709',color_space:'bt709',color_range:'tv',disposition:{default:1,forced:0}},{index:1,codec_type:'audio',codec_name:'aac',tags:{language:'ces'},channels:2,channel_layout:'stereo',disposition:{default:1,forced:0}},{index:2,codec_type:'subtitle',codec_name:'subrip',tags:{language:'eng'},disposition:{default:0,forced:0}}]}},
+   originalLibraryFile:{_id:source},workDir:cacheRoot,ffmpegPath:'/usr/bin/ffmpeg',ffProbePath:'/usr/bin/ffprobe',job:{jobId:'synthetic-current-job'},variables:{inFlow:{},ffmpegCommand:{init:true,overallOuputArguments:[]}},
    userVariables:{library:{tvSourceRoot:sourceRoot,tvReviewRoot:reviewRoot,tvCacheRoot:cacheRoot}},
   };
-  const preflight=await preflightHelper(args);
+  const preflight=await preflightHelper(args,{spawnChild:probing()});
   assert.equal(preflight.outputNumber,1);
   assert.deepEqual(preflight.variables.ffmpegCommand.overallOuputArguments,['-color_primaries:v:0','bt709','-color_trc:v:0','bt709','-colorspace:v:0','bt709','-color_range:v:0','tv'],'the encode tags the result with the source colour');
   const privateState=JSON.stringify(preflight.variables);
@@ -106,7 +119,7 @@ test('TV receipt helper runs against synthetic files and never changes the sourc
   args.inputFileObj={...args.inputFileObj,_id:working,ffProbeData:{...args.inputFileObj.ffProbeData,streams:[{...args.inputFileObj.ffProbeData.streams[0],codec_name:'hevc'},...args.inputFileObj.ffProbeData.streams.slice(1)]}};
   let decodeArgs;
   const fakeSpawn=(executable,argv,options)=>{decodeArgs={executable,argv,options};const child=new EventEmitter();child.stderr=new EventEmitter();child.pid=process.pid;queueMicrotask(()=>child.emit('close',0));return child;};
-  const completed=await finishHelper(args,{spawnChild:fakeSpawn});
+  const completed=await finishHelper(args,{spawnChild:probing(fakeSpawn)});
   assert.equal(completed.outputNumber,1);
   assert.ok(decodeArgs.argv.includes('-xerror'));
   assert.ok(decodeArgs.argv.includes('-err_detect')&&decodeArgs.argv.includes('explode'));
@@ -146,25 +159,25 @@ test('TV helper blocks root aliases, unknown/HDR inputs, missing job IDs and des
  const temp=await fs.mkdtemp(path.join(os.tmpdir(),'tv-flow-guards-'));
  const sourceRoot=path.join(temp,'source'),reviewRoot=path.join(temp,'review'),cacheRoot=path.join(reviewRoot,'.cache');
  const relative='Series/Season 01/Episode 02.mkv',source=path.join(sourceRoot,relative),output=path.join(reviewRoot,relative),working=path.join(cacheRoot,'worker.mkv');
- const metadata=(overrides={})=>({format:{format_name:'matroska',duration:'120.0'},streams:[{index:0,codec_type:'video',codec_name:'h264',width:1280,height:720,field_order:'progressive',avg_frame_rate:'24/1',pix_fmt:'yuv420p',bits_per_raw_sample:'8',sample_aspect_ratio:'1:1',display_aspect_ratio:'16:9',color_transfer:'bt709',color_primaries:'bt709',color_space:'bt709',color_range:'tv',disposition:{default:1,forced:0},...overrides},{index:1,codec_type:'audio',codec_name:'aac',tags:{language:'ces'},channels:2,channel_layout:'stereo',disposition:{default:1,forced:0}}],chapters:[]});
- const base=()=>({inputFileObj:{_id:source,ffProbeData:metadata()},originalLibraryFile:{_id:source},workDir:cacheRoot,ffmpegPath:'/usr/bin/ffmpeg',job:{jobId:'synthetic-job'},variables:{inFlow:{},ffmpegCommand:{init:true,overallOuputArguments:[]}},userVariables:{library:{tvSourceRoot:sourceRoot,tvReviewRoot:reviewRoot,tvCacheRoot:cacheRoot}}});
+ const metadata=(overrides={})=>({format:{format_name:'matroska',duration:'120.0'},streams:[{index:0,codec_type:'video',codec_name:'h264',width:1280,height:720,field_order:'progressive',avg_frame_rate:'24/1',pix_fmt:'yuv420p',bits_per_raw_sample:'8',sample_aspect_ratio:'1:1',display_aspect_ratio:'16:9',color_transfer:'bt709',color_primaries:'bt709',color_space:'bt709',color_range:'tv',disposition:{default:1,forced:0},...overrides},{index:1,codec_type:'audio',codec_name:'aac',tags:{language:'ces'},channels:2,channel_layout:'stereo',disposition:{default:1,forced:0}}]});
+ const base=()=>({inputFileObj:{_id:source,ffProbeData:metadata()},originalLibraryFile:{_id:source},workDir:cacheRoot,ffmpegPath:'/usr/bin/ffmpeg',ffProbePath:'/usr/bin/ffprobe',job:{jobId:'synthetic-job'},variables:{inFlow:{},ffmpegCommand:{init:true,overallOuputArguments:[]}},userVariables:{library:{tvSourceRoot:sourceRoot,tvReviewRoot:reviewRoot,tvCacheRoot:cacheRoot}}});
  try{
   await fs.mkdir(path.dirname(source),{recursive:true});await fs.mkdir(cacheRoot,{recursive:true});await fs.writeFile(source,'source bytes');
   const aliased=base();aliased.userVariables.library.tvReviewRoot=sourceRoot;
-  assert.equal((await helper(aliased)).outputNumber,2,'source and review roots must not alias');
+  assert.equal((await helper(aliased,{spawnChild:probing()})).outputNumber,2,'source and review roots must not alias');
   const hdr=base();hdr.inputFileObj.ffProbeData=metadata({color_transfer:'smpte2084',color_primaries:'bt2020'});
-  assert.equal((await helper(hdr)).outputNumber,2,'HDR must be routed to manual handling');
+  assert.equal((await helper(hdr,{spawnChild:probing()})).outputNumber,2,'HDR must be routed to manual handling');
   const unknown=base();unknown.inputFileObj.ffProbeData=metadata({color_transfer:undefined});
-  assert.equal((await helper(unknown)).outputNumber,2,'partially unknown color metadata must not pass as SDR');
+  assert.equal((await helper(unknown,{spawnChild:probing()})).outputNumber,2,'partially unknown color metadata must not pass as SDR');
   const untaggedSd=base();untaggedSd.inputFileObj.ffProbeData=metadata({width:720,height:576,color_transfer:undefined,color_primaries:'unknown',color_space:undefined,color_range:undefined});
-  assert.equal((await helper(untaggedSd)).outputNumber,2,'untagged SD video has no single safe default and must fail closed');
+  assert.equal((await helper(untaggedSd,{spawnChild:probing()})).outputNumber,2,'untagged SD video has no single safe default and must fail closed');
   const untaggedUhd=base();untaggedUhd.inputFileObj.ffProbeData=metadata({width:3840,height:2160,color_transfer:undefined,color_primaries:undefined,color_space:undefined});
-  assert.equal((await helper(untaggedUhd)).outputNumber,2,'untagged video above 1080p must fail closed');
+  assert.equal((await helper(untaggedUhd,{spawnChild:probing()})).outputNumber,2,'untagged video above 1080p must fail closed');
   const noCommand=base();delete noCommand.variables.ffmpegCommand;
-  assert.equal((await helper(noCommand)).outputNumber,2,'preflight must run after the FFmpeg command is built so it can tag colour');
+  assert.equal((await helper(noCommand,{spawnChild:probing()})).outputNumber,2,'preflight must run after the FFmpeg command is built so it can tag colour');
 
   const untagged=base();untagged.inputFileObj.ffProbeData=metadata({width:1920,height:1080,color_transfer:'unknown',color_primaries:undefined,color_space:'unknown',color_range:undefined});
-  const untaggedPreflight=await helper(untagged);
+  const untaggedPreflight=await helper(untagged,{spawnChild:probing()});
   assert.equal(untaggedPreflight.outputNumber,1,'untagged 8-bit HD video is treated as BT.709 SDR');
   assert.deepEqual(untaggedPreflight.variables.ffmpegCommand.overallOuputArguments,['-color_primaries:v:0','bt709','-color_trc:v:0','bt709','-colorspace:v:0','bt709','-color_range:v:0','tv']);
   assert.equal(JSON.parse(untaggedPreflight.variables.inFlow.tvReviewProofV2).profile.colorInferred,true);
@@ -173,42 +186,42 @@ test('TV helper blocks root aliases, unknown/HDR inputs, missing job IDs and des
   await fs.writeFile(working,'untagged encoded bytes');
   let untaggedDecodes=0;
   const countingSpawn=()=>{untaggedDecodes++;const child=new EventEmitter();child.stderr=new EventEmitter();child.pid=process.pid;queueMicrotask(()=>child.emit('close',0));return child;};
-  assert.equal((await helper(untaggedResult,{spawnChild:countingSpawn})).outputNumber,2,'a result that is still untagged must not be staged');
+  assert.equal((await helper(untaggedResult,{spawnChild:probing(countingSpawn)})).outputNumber,2,'a result that is still untagged must not be staged');
   assert.equal(untaggedDecodes,0);
   await assert.rejects(fs.stat(output),{code:'ENOENT'});
   const taggedResult={...untaggedResult,inputFileObj:{_id:working,ffProbeData:encodedStreams(untagged.inputFileObj.ffProbeData,{color_transfer:'bt709',color_primaries:'bt709',color_space:'bt709',color_range:'tv'})}};
-  assert.equal((await helper(taggedResult,{spawnChild:countingSpawn})).outputNumber,1,'an explicitly tagged BT.709 result of an untagged HD source is staged');
+  assert.equal((await helper(taggedResult,{spawnChild:probing(countingSpawn)})).outputNumber,1,'an explicitly tagged BT.709 result of an untagged HD source is staged');
   assert.equal(untaggedDecodes,1);
   await fs.rm(output);await fs.rm(`${output}.tdarr-receipt.json`);
   const contradictoryDepth=base();contradictoryDepth.inputFileObj.ffProbeData=metadata({bits_per_raw_sample:'10'});
-  assert.equal((await helper(contradictoryDepth)).outputNumber,2,'an explicit non-8-bit depth must fail even when pix_fmt looks 8-bit');
+  assert.equal((await helper(contradictoryDepth,{spawnChild:probing()})).outputNumber,2,'an explicit non-8-bit depth must fail even when pix_fmt looks 8-bit');
 
-  const noJob=base(),preflight=await helper(noJob);assert.equal(preflight.outputNumber,1);noJob.variables=preflight.variables;
+  const noJob=base(),preflight=await helper(noJob,{spawnChild:probing()});assert.equal(preflight.outputNumber,1);noJob.variables=preflight.variables;
   await fs.writeFile(working,'encoded bytes');noJob.job={};
   noJob.inputFileObj={_id:working,ffProbeData:{...noJob.inputFileObj.ffProbeData,streams:[{...noJob.inputFileObj.ffProbeData.streams[0],codec_name:'hevc'},...noJob.inputFileObj.ffProbeData.streams.slice(1)]}};
   let decoderCalls=0;
   const fakeSpawn=()=>{decoderCalls++;const child=new EventEmitter();child.stderr=new EventEmitter();child.pid=process.pid;queueMicrotask(()=>child.emit('close',0));return child;};
-  assert.equal((await helper(noJob,{spawnChild:fakeSpawn})).outputNumber,2,'a receipt requires the actual current job ID');
+  assert.equal((await helper(noJob,{spawnChild:probing(fakeSpawn)})).outputNumber,2,'a receipt requires the actual current job ID');
   assert.equal(decoderCalls,0,'missing job evidence must stop before decoding or staging');
   await assert.rejects(fs.stat(output),{code:'ENOENT'});
 
-  const linked=base(),linkedPreflight=await helper(linked);assert.equal(linkedPreflight.outputNumber,1);linked.variables=linkedPreflight.variables;
+  const linked=base(),linkedPreflight=await helper(linked,{spawnChild:probing()});assert.equal(linkedPreflight.outputNumber,1);linked.variables=linkedPreflight.variables;
   await fs.writeFile(working,'second encoded bytes');
   await fs.mkdir(path.dirname(output),{recursive:true});await fs.symlink(source,output);
   linked.inputFileObj={_id:working,ffProbeData:{...linked.inputFileObj.ffProbeData,streams:[{...linked.inputFileObj.ffProbeData.streams[0],codec_name:'hevc'},...linked.inputFileObj.ffProbeData.streams.slice(1)]}};
-  assert.equal((await helper(linked,{spawnChild:fakeSpawn})).outputNumber,2,'a destination link must never replace or follow a source file');
+  assert.equal((await helper(linked,{spawnChild:probing(fakeSpawn)})).outputNumber,2,'a destination link must never replace or follow a source file');
   assert.equal(await fs.readFile(source,'utf8'),'source bytes');
   await assert.rejects(fs.readFile(`${output}.tdarr-receipt.json`),{code:'ENOENT'});
   await fs.unlink(output);
 
-  const badDecode=base(),badPreflight=await helper(badDecode);assert.equal(badPreflight.outputNumber,1);badDecode.variables=badPreflight.variables;
+  const badDecode=base(),badPreflight=await helper(badDecode,{spawnChild:probing()});assert.equal(badPreflight.outputNumber,1);badDecode.variables=badPreflight.variables;
   await fs.writeFile(working,'corrupt encoded bytes');
   badDecode.inputFileObj={_id:working,ffProbeData:{...badDecode.inputFileObj.ffProbeData,streams:[{...badDecode.inputFileObj.ffProbeData.streams[0],codec_name:'hevc'},...badDecode.inputFileObj.ffProbeData.streams.slice(1)]}};
   const failedSpawn=()=>{const child=new EventEmitter();child.stderr=new EventEmitter();child.pid=process.pid;queueMicrotask(()=>child.emit('close',1));return child;};
-  assert.equal((await helper(badDecode,{spawnChild:failedSpawn})).outputNumber,2,'decoder errors must never stage a result or receipt');
+  assert.equal((await helper(badDecode,{spawnChild:probing(failedSpawn)})).outputNumber,2,'decoder errors must never stage a result or receipt');
   await assert.rejects(fs.stat(output),{code:'ENOENT'});
   const stderrSpawn=()=>{const child=new EventEmitter();child.stderr=new EventEmitter();child.pid=process.pid;queueMicrotask(()=>{child.stderr.emit('data',Buffer.from('synthetic decoder error'));child.emit('close',0);});return child;};
-  assert.equal((await helper(badDecode,{spawnChild:stderrSpawn})).outputNumber,2,'any decoder error output must fail even with exit code zero');
+  assert.equal((await helper(badDecode,{spawnChild:probing(stderrSpawn)})).outputNumber,2,'any decoder error output must fail even with exit code zero');
   await assert.rejects(fs.stat(output),{code:'ENOENT'});
  }finally{await fs.rm(temp,{recursive:true,force:true});}
 });
@@ -222,7 +235,45 @@ test('TV source resolution refuses an internal symlinked parent',async()=>{
   await fs.mkdir(path.dirname(target),{recursive:true});await fs.mkdir(sourceRoot,{recursive:true});await fs.mkdir(reviewRoot,{recursive:true});await fs.mkdir(cacheRoot,{recursive:true});
   await fs.writeFile(target,'external synthetic source');await fs.symlink(outside,path.join(sourceRoot,'Series'));
   const args={inputFileObj:{_id:source,ffProbeData:{}},originalLibraryFile:{_id:source},workDir:cacheRoot,job:{jobId:'synthetic'},userVariables:{library:{tvSourceRoot:sourceRoot,tvReviewRoot:reviewRoot,tvCacheRoot:cacheRoot}},variables:{inFlow:{}}};
-  assert.equal((await helper(args)).outputNumber,2);
+  assert.equal((await helper(args,{spawnChild:probing()})).outputNumber,2);
   assert.equal(await fs.readFile(target,'utf8'),'external synthetic source');
+ }finally{await fs.rm(temp,{recursive:true,force:true});}
+});
+
+test('TV helper reads chapters from the file itself, refuses lost chapters and logs the refusal reason',async()=>{
+ const helper=(await import(`${pathToFileURL(path.join(root,'templates/tdarr/tv-flow-helper.cjs')).href}?chapters=${Date.now()}`)).default;
+ const temp=await fs.mkdtemp(path.join(os.tmpdir(),'tv-flow-chapters-'));
+ const sourceRoot=path.join(temp,'source'),reviewRoot=path.join(temp,'review'),cacheRoot=path.join(reviewRoot,'.cache');
+ const relative='Series/Season 01/Episode 03.mkv',source=path.join(sourceRoot,relative),output=path.join(reviewRoot,relative),working=path.join(cacheRoot,'worker.mkv');
+ const probe={format:{format_name:'matroska',duration:'120.0'},streams:[{index:0,codec_type:'video',codec_name:'h264',width:1280,height:720,field_order:'progressive',avg_frame_rate:'24/1',pix_fmt:'yuv420p',sample_aspect_ratio:'1:1',display_aspect_ratio:'16:9',color_transfer:'bt709',color_primaries:'bt709',color_space:'bt709',color_range:'tv',disposition:{default:1,forced:0}},{index:1,codec_type:'audio',codec_name:'aac',tags:{language:'ces'},channels:2,channel_layout:'stereo',disposition:{default:1,forced:0}}]};
+ const twoChapters=[{start_time:'0.000000',end_time:'60.000000',tags:{title:'Intro'}},{start_time:'60.000000',end_time:'120.000000',tags:{title:'Story'}}];
+ const base=()=>({inputFileObj:{_id:source,ffProbeData:structuredClone(probe)},originalLibraryFile:{_id:source},workDir:cacheRoot,ffmpegPath:'/usr/bin/ffmpeg',ffProbePath:'/usr/bin/ffprobe',job:{jobId:'chapter-job'},variables:{inFlow:{},ffmpegCommand:{init:true,overallOuputArguments:[]}},userVariables:{library:{tvSourceRoot:sourceRoot,tvReviewRoot:reviewRoot,tvCacheRoot:cacheRoot}}});
+ const encoded=args=>({...args,inputFileObj:{_id:working,ffProbeData:{...probe,streams:[{...probe.streams[0],codec_name:'hevc'},probe.streams[1]]}}});
+ try{
+  await fs.mkdir(path.dirname(source),{recursive:true});await fs.mkdir(cacheRoot,{recursive:true});await fs.writeFile(source,'chapter source');await fs.writeFile(working,'chapter encode');
+  probeCalls.length=0;
+  const first=base(),preflight=await helper(first,{spawnChild:probing(null,twoChapters)});
+  assert.equal(preflight.outputNumber,1,'missing ffProbeData.chapters (Tdarr 3.03) must not block the flow');
+  assert.equal(probeCalls.length,1);
+  assert.equal(probeCalls[0].executable,'/usr/bin/ffprobe');
+  assert.ok(probeCalls[0].argv.includes('/proc/self/fd/3')&&probeCalls[0].argv.includes('-show_chapters'),'chapters come from the already-open source descriptor');
+  assert.equal(probeCalls[0].options.shell,false);
+  assert.equal(JSON.parse(preflight.variables.inFlow.tvReviewProofV2).profile.chapters.length,2);
+
+  const lost=encoded({...base(),variables:preflight.variables}),logs=[];lost.jobLog=line=>logs.push(line);
+  assert.equal((await helper(lost,{spawnChild:probing(null,twoChapters.slice(0,1))})).outputNumber,2,'a result that lost a chapter must not be staged');
+  assert.deepEqual(logs,['TV Review helper refused: preservation-check-failed'],'the refusal reason is a fixed code in the job log');
+  await assert.rejects(fs.stat(output),{code:'ENOENT'});
+
+  const kept=encoded({...base(),variables:preflight.variables});
+  assert.equal((await helper(kept,{spawnChild:probing(null,twoChapters)})).outputNumber,1,'preserved chapters allow staging');
+  await fs.rm(output);await fs.rm(`${output}.tdarr-receipt.json`);
+
+  const failing=base(),failLogs=[];failing.jobLog=line=>failLogs.push(line);
+  const brokenProbe=(executable,argv)=>{const child=new EventEmitter();child.stdout=new EventEmitter();child.stderr=new EventEmitter();child.pid=process.pid;queueMicrotask(()=>{child.stderr.emit('data',Buffer.from('probe error'));child.emit('close',0);});return child;};
+  assert.equal((await helper(failing,{spawnChild:brokenProbe})).outputNumber,2,'a chapter probe with error output fails closed');
+  assert.deepEqual(failLogs,['TV Review helper refused: chapter-probe-failed']);
+  const noProbe=base();delete noProbe.ffProbePath;
+  assert.equal((await helper(noProbe,{spawnChild:probing()})).outputNumber,2,'a missing ffprobe path fails closed');
  }finally{await fs.rm(temp,{recursive:true,force:true});}
 });
