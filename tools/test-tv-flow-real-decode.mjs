@@ -9,6 +9,7 @@ import {matchReviewJob} from '../review/job-matching.mjs';
 
 const ffmpeg=process.env.FFMPEG||'/usr/lib/jellyfin-ffmpeg/ffmpeg';
 const ffprobe=process.env.FFPROBE||'/usr/lib/jellyfin-ffmpeg/ffprobe';
+const tools={ffmpeg:[ffmpeg],ffprobe:[ffprobe]};
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const flow=JSON.parse(await fs.readFile(path.join(repo,'templates/tdarr/tv-flow-v1.json'),'utf8'));
 function loadFlowFunction(code){
@@ -32,21 +33,27 @@ try{
  await fs.mkdir(path.dirname(source),{recursive:true});await fs.mkdir(cacheRoot,{recursive:true});
  const chapterMetadata=path.join(temp,'chapters.ffmeta');
  await fs.writeFile(chapterMetadata,';FFMETADATA1\n[CHAPTER]\nTIMEBASE=1/1\nSTART=0\nEND=3\ntitle=Episode\n');
- run(ffmpeg,['-hide_banner','-v','error','-f','lavfi','-i','testsrc2=size=320x240:rate=24','-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-f','ffmetadata','-i',chapterMetadata,'-map','0:v:0','-map','1:a:0','-map_metadata','2','-map_chapters','2','-c:v','libx264','-threads','1','-pix_fmt','yuv420p','-x264-params','colorprim=bt709:transfer=bt709:colormatrix=bt709','-color_range','tv','-c:a','aac','-shortest','-t','3',source]);
+ run(ffmpeg,['-hide_banner','-v','error','-f','lavfi','-i','testsrc2=size=1280x720:rate=24','-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-f','ffmetadata','-i',chapterMetadata,'-map','0:v:0','-map','1:a:0','-map_metadata','2','-map_chapters','2','-c:v','libx264','-threads','1','-pix_fmt','yuv420p','-c:a','aac','-shortest','-t','3',source]);
  const original=await fs.readFile(source),args={
   inputFileObj:{_id:source,ffProbeData:probe(source)},originalLibraryFile:{_id:source},workDir:cacheRoot,
-  ffmpegPath:ffmpeg,job:{jobId:'synthetic-tv-job-269'},variables:{inFlow:{}},
+  ffmpegPath:ffmpeg,job:{jobId:'synthetic-tv-job-269'},variables:{inFlow:{},ffmpegCommand:{init:true,overallOuputArguments:[]}},
   userVariables:{library:{tvSourceRoot:sourceRoot,tvReviewRoot:reviewRoot,tvCacheRoot:cacheRoot}},
  };
- const preflight=await preflightHelper(args);assert.equal(preflight.outputNumber,1);
+ const preflight=await preflightHelper(args,{tools});assert.equal(preflight.outputNumber,1);
  args.variables=preflight.variables;
- run(ffmpeg,['-hide_banner','-v','error','-nostdin','-i',source,'-map','0','-map_chapters','0','-c:v','libx265','-x265-params','pools=1:frame-threads=1:log-level=error','-preset','ultrafast','-crf','30','-c:a','copy','-f','matroska',working]);
+ // The source is untagged HD, as many TV episodes are: the encode must carry the colour arguments the preflight added.
+ const colourArguments=preflight.variables.ffmpegCommand.overallOuputArguments,x265Index=colourArguments.indexOf('-x265-params:v:0');
+ assert.ok(x265Index>=0,'the preflight must set the libx265 VUI colour parameters');
+ const encodeArguments=colourArguments.map((value,index)=>index===x265Index+1?`${value}:pools=1:frame-threads=1:log-level=error`:value);
+ run(ffmpeg,['-hide_banner','-v','error','-nostdin','-i',source,'-map','0','-map_chapters','0','-c:v','libx265','-preset','ultrafast','-crf','30','-c:a','copy',...encodeArguments,'-f','matroska',working]);
+ const encodedVideo=probe(working).streams.find(stream=>stream.codec_type==='video');
+ assert.deepEqual([encodedVideo.color_primaries,encodedVideo.color_transfer,encodedVideo.color_space,encodedVideo.color_range],['bt709','bt709','bt709','tv'],'the encoded VUI carries all four colour tags');
  args.inputFileObj={_id:working,ffProbeData:probe(working)};
- const completed=await finishHelper(args);assert.equal(completed.outputNumber,1);
+ const completed=await finishHelper(args,{tools});assert.equal(completed.outputNumber,1);
  assert.equal(completed.outputFileObj._id,output);
  assert.deepEqual(await fs.readFile(source),original);
  const receipt=JSON.parse(await fs.readFile(`${output}.tdarr-receipt.json`,'utf8'));
  const job={_id:receipt.jobId,DB:'synthetic-tv-library',status:'Transcode success',file:source,fileSizeStartGB:receipt.source.size/2**30,fileSizeEndGB:receipt.output.size/2**30};
- assert.equal(matchReviewJob([job],{receipt,libraryId:'synthetic-tv-library',sourceRoots:[sourceRoot],relative,sourceBytes:receipt.source.size,outputBytes:receipt.output.size}),job);
+ assert.equal(matchReviewJob([job],{receipt,receiptVersions:[1,2],libraryId:'synthetic-tv-library',sourceRoots:[sourceRoot],relative,sourceBytes:receipt.source.size,outputBytes:receipt.output.size}),job);
  process.stdout.write('real synthetic transcode, full strict decode, exclusive Review staging, unchanged source, and exact-job receipt: PASS\n');
 }finally{await fs.rm(temp,{recursive:true,force:true});}
