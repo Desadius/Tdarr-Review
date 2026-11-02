@@ -264,6 +264,9 @@ test('TV helper reads chapters from the file itself, refuses lost chapters and l
   assert.equal(probeCalls[0].executable,await fs.realpath(tools.ffprobe[0]),'ffprobe is found without a path from Tdarr');
   assert.ok(probeCalls[0].argv.includes('/proc/self/fd/3')&&probeCalls[0].argv.includes('-show_chapters'),'chapters come from the already-open source descriptor');
   assert.equal(probeCalls[0].options.shell,false);
+  // ffprobe rejects ffmpeg-only options such as -nostdin ("Option not found", exit 1); stdin is ignored by spawn instead.
+  for(const ffmpegOnly of ['-nostdin','-xerror','-filter_threads','-max_alloc'])assert.ok(!probeCalls[0].argv.includes(ffmpegOnly),`ffprobe argv must not contain the ffmpeg-only option ${ffmpegOnly}`);
+  assert.equal(probeCalls[0].options.stdio?.[0],'ignore','the chapter probe must not read stdin');
   assert.equal(JSON.parse(preflight.variables.inFlow.tvReviewProofV2).profile.chapters.length,2);
 
   const lost=encoded({...base(),variables:preflight.variables}),logs=[];lost.jobLog=line=>logs.push(line);
