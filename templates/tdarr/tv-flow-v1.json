@@ -121,7 +121,7 @@
       "pluginName": "compareFileSizeRatio",
       "version": "2.0.0",
       "inputsDB": {
-        "greaterThan": "25",
+        "greaterThan": "10",
         "lessThan": "150"
       }
     },
