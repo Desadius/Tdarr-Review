@@ -13,7 +13,11 @@ concurrency:
 jobs:
   unit:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ['1/2', '2/2']
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
@@ -22,10 +26,12 @@ jobs:
       - run: npm run check
       - name: Type-check JSDoc-annotated modules (pinned dev-only TypeScript)
         run: npm run typecheck
-      - name: Run the complete suite and report Node coverage
+      - name: Run this shard of the suite and report Node coverage
+        env:
+          TEST_SHARD: ${{ matrix.shard }}
         run: npm run test:coverage
   docker-test:
-    needs: unit
+    # Runs beside the unit shards rather than after them: the isolated suite and image smoke take longer than one shard.
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:

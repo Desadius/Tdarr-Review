@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
-import {testRunnerFlags} from './test-options.mjs';
+import {listTestFiles,selectShard,testRunnerFlags} from './test-options.mjs';
 
 test('coverage enables Node collection without filtering tests or changing concurrency',()=>{
   const ordinary=testRunnerFlags([]),coverage=testRunnerFlags(['--coverage']);
@@ -22,6 +22,21 @@ test('the suite keeps its normal report and ends with a list of skipped tests',a
   assert.match(run.stdout,/ℹ skipped 1/);
   assert.match(run.stderr,/1 test was SKIPPED and did not run/);
   assert.match(run.stderr,/sample\.test\.mjs: posix only \(Requires POSIX directory fsync\)/);
+});
+
+test('CI shards cover every suite file exactly once',async()=>{
+  const all=await listTestFiles();
+  for(const count of [2,3]){
+    const shards=Array.from({length:count},(_,index)=>selectShard(all,`${index+1}/${count}`));
+    assert.deepEqual(shards.flat().sort(),[...all].sort(),'shards of '+count+' cover the suite');
+  }
+  assert.deepEqual(selectShard(all,''),all,'no shard keeps the complete suite');
+});
+
+test('an invalid shard fails instead of silently running nothing',()=>{
+  for(const shard of ['0/2','3/2','1','a/2','1/0','1/2/3']){
+    assert.throws(()=>selectShard(['a.test.mjs'],shard),/TEST_SHARD must be i\/n/);
+  }
 });
 
 test('unsupported and repeated arguments cannot silently select or bypass tests',()=>{
