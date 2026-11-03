@@ -59,6 +59,19 @@ git worktree add ../Tdarr-Review-<topic> -b claude/<topic> origin/main
 
 Commit and push from the worktree, or push from Windows and fetch in WSL, so the tests run against the committed files. Build the Review image from the worktree you are testing, then run the isolated integration command from the previous section with that worktree as the checkout. The `ffmpeg -version` line printed by that run is the FFmpeg evidence to record with the result.
 
+### Test services for end-to-end runs
+
+The maintainer keeps a test Tdarr and a test Review on the same server as production. Agents may use them without asking for each action (see [AGENTS.md](../AGENTS.md#production)). Production containers, nodes, libraries and media stay out of bounds. Connection details are private and are not written here.
+
+Before an end-to-end run, check each item:
+
+1. Test Tdarr has the movie flow (`TESTmovies1`) and library (`TESTmovies`, folder `/media/movies`, cache `/temp`). Read them through its API (`FlowsJSONDB`, `LibrarySettingsJSONDB`, mode `getAll`); do not recreate them.
+2. Test Review runs the image built from the commit under test, is healthy, and its `settings.json` has `mediaRoot` `/media/movies`, `reviewRoot` `/review`, `tdarrReviewRoot` `/pilot-review` and `libraryId` `TESTmovies`.
+3. The test corpus (`test-corpus.json` next to the test media) lists its samples as copies in the test media folder, never hardlinks of production films.
+4. Test Review has no Radarr connection and no production node is attached to the test Tdarr.
+
+Restart the test containers only for a change under test or to recover from a failure. Roll back by removing the test containers, which leaves production untouched.
+
 ### Linux tests without a local Linux
 
 When you are not on Linux, the **Linux tests (manual)** workflow (`.github/workflows/linux-tests.yml`) runs chosen suite files on GitHub's Linux runner without the Docker jobs. Push your branch, then dispatch it:
