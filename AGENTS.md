@@ -52,6 +52,7 @@ The production installation is the maintainer's Unraid server, reachable over SS
 - Read-only access to production over SSH needs no separate approval. A login or any request that writes, including a Review POST, is not read-only.
 - When reading, never print configuration values, secrets or the contents of the approval registry. Report only what the maintainer asked for.
 - Never change anything on production (files, containers, configuration) unless the maintainer explicitly asks for that change in the current conversation.
+- The maintainer's test services on the same server (the test Tdarr and the test Review, never production containers, nodes or media) may be used by agents without asking for each action: SSH access, reading, starting and restarting them, and running tests against them. Only test media and test data may be changed there.
 
 ## Releases and deployment
 
