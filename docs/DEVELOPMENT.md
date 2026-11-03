@@ -43,6 +43,22 @@ sudo apt install bubblewrap
 
 `docker build` builds the Review image locally under the tag `tdarr-review:smoke`, which `tools/docker-smoke.sh` expects; see [Docker image smoke](#docker-image-smoke) for what the smoke test checks. Neither command publishes anything.
 
+### Local test environment on Windows
+
+On a Windows PC, run the suites in WSL2, not in the Windows checkout. The WSL distribution (Ubuntu 24.04 here) provides Node 24, Docker Engine and `gh`, and the clone must stay in the Linux filesystem. The Windows checkout is for reading and editing; `npm run check` passes there, but `npm test` is not a supported environment: symlink, POSIX-mode and directory `fsync` tests fail or skip, and some path checks assume `/` separators (for example `tools/docs.test.mjs` on backslashes). Take test results only from WSL.
+
+Keep the main clone on `main` in WSL and put each branch in a worktree beside it, as [AGENTS.md](../AGENTS.md) describes:
+
+```bash
+cd ~/projects/Tdarr-Review
+git fetch origin main && git merge --ff-only origin/main
+npm run check
+npm test
+git worktree add ../Tdarr-Review-<topic> -b claude/<topic> origin/main
+```
+
+Commit and push from the worktree, or push from Windows and fetch in WSL, so the tests run against the committed files. Build the Review image from the worktree you are testing, then run the isolated integration command from the previous section with that worktree as the checkout. The `ffmpeg -version` line printed by that run is the FFmpeg evidence to record with the result.
+
 ### Linux tests without a local Linux
 
 When you are not on Linux, the **Linux tests (manual)** workflow (`.github/workflows/linux-tests.yml`) runs chosen suite files on GitHub's Linux runner without the Docker jobs. Push your branch, then dispatch it:
