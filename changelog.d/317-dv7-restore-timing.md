@@ -1,0 +1,1 @@
+- Movie flow: the Dolby Vision 7 to 8.1 restore keeps every audio and subtitle timestamp of the encode (mkvmerge muxes only the video; ffmpeg copies the other tracks) and reads feature-length video timestamps without truncation. The flow node is now mirrored in the repository with tests ([movie flow](docs/MOVIE-FLOW.md)).
